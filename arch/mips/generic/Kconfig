@@ -34,19 +34,38 @@ config LEGACY_BOARD_OCELOT
 	bool "Legacy support for Ocelot based boards"
 	depends on LEGACY_BOARD_SEAD3=n
 	select LEGACY_BOARDS
+	select MSCC_OCELOT
+	select MSCC_LUTON
+	select MSCC_JAGUAR2
+	select MSCC_SERVAL
+	select MSCC_SERVALT
+
+config MSCC_OCELOT
+	bool
 	select SOC_VCOREIII
-	select SYS_HAS_EARLY_PRINTK
-	select USE_GENERIC_EARLY_PRINTK_8250
+
+config MSCC_LUTON
+	bool
+	select SOC_VCOREIII
+
+config MSCC_JAGUAR2
+	bool
+	select SOC_VCOREIII
+
+config MSCC_SERVAL
+	bool
+	select SOC_VCOREIII
+
+config MSCC_SERVALT
+	bool
+	select SOC_VCOREIII
 
 config SOC_VCOREIII
 	bool
 	select GPIOLIB
+	select PINCTRL
 	select MSCC_OCELOT_IRQ
-	select MSCC_OCELOT #will be removed when driver no more use it
-
-#Will be removed when the driver using it will be converted to SOC_VCOREIII
-config MSCC_OCELOT
-	bool
+	select UIO_MIPS_MSCC
 
 comment "FIT/UHI Boards"
 
@@ -77,8 +96,8 @@ config FIT_IMAGE_FDT_XILFPGA
 	  from Imagination Technologies in the FIT kernel image.
 
 config FIT_IMAGE_FDT_OCELOT
-	bool "Include FDT for Microsemi Ocelot development platforms"
-	select SOC_VCOREIII
+	bool "Include FDT for Microsemi Ocelot boards"
+	select MSCC_OCELOT
 	help
 	  Enable this to include the FDT for the Ocelot development platforms
 	  from Microsemi in the FIT kernel image.
@@ -113,6 +132,38 @@ config BOARD_INGENIC
 	select MACH_INGENIC_GENERIC
 	help
 	  Enable support for boards based on Ingenic SoCs.
+
+config FIT_IMAGE_FDT_LUTON
+	bool "Include FDT for Microsemi Luton boards"
+	select MSCC_LUTON
+	help
+	  Enable this to include the FDT for the Luton development platforms
+	  from Microsemi in the FIT kernel image.
+	  This requires u-boot on the platform.
+
+config FIT_IMAGE_FDT_JAGUAR2
+	bool "Include FDT for Microsemi Jaguar2 boards"
+	select MSCC_JAGUAR2
+	help
+	  Enable this to include the FDT for the Jaguar2 development platforms
+	  from Microsemi in the FIT kernel image.
+	  This requires u-boot on the platform.
+
+config FIT_IMAGE_FDT_SERVALT
+	bool "Include FDT for Microsemi Servalt boards"
+	select MSCC_SERVALT
+	help
+	  Enable this to include the FDT for the Servalt development platforms
+	  from Microsemi in the FIT kernel image.
+	  This requires u-boot on the platform.
+
+config FIT_IMAGE_FDT_SERVAL
+	bool "Include FDT for Microsemi Serval boards"
+	select MSCC_SERVAL
+	help
+	  Enable this to include the FDT for the Serval development platforms
+	  from Microsemi in the FIT kernel image.
+	  This requires u-boot on the platform.
 
 config VIRT_BOARD_RANCHU
 	bool "Support Ranchu platform for Android emulator"

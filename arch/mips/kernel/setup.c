@@ -145,6 +145,9 @@ early_param("rd_size", rd_size_early);
 static unsigned long __init init_initrd(void)
 {
 	unsigned long end;
+#if defined(CONFIG_MIPS_RAW_APPENDED_DTB)
+	unsigned long size;
+#endif
 
 	/*
 	 * Board specific code or command line parser should have
@@ -174,6 +177,30 @@ static unsigned long __init init_initrd(void)
 	initrd_end = (unsigned long)__va(end);
 	initrd_start = (unsigned long)__va(__pa(initrd_start));
 
+#if defined(CONFIG_MIPS_RAW_APPENDED_DTB)
+	size = initrd_end - initrd_start;
+	pr_info("Initial ramdisk at: 0x%lx-0x%lx\n",
+		initrd_start, initrd_start+size);
+	pr_info("init segment at:    0x%lx-0x%lx\n",
+		(unsigned long)__init_begin, (unsigned long)__init_end);
+	pr_info("bss segment at:     0x%lx-0x%lx\n",
+		(unsigned long)__bss_start, (unsigned long)__bss_stop);
+	if (memory_intersects((void *)__bss_start, (void *)__bss_stop,
+			      (void *)initrd_start, size)) {
+		pr_err("Memory overlap between rootfs and bss segment: "
+		       "This means that your rootfs is now corrupt!!!\n");
+	}
+	if (memory_intersects((void *)__init_begin, (void *)__init_end,
+			      (void *)initrd_start, size)) {
+		unsigned long new_initrd_start =
+			round_up((unsigned long)_end, 0x100000);
+		pr_info("Memory overlap between rootfs and init segment\n");
+		memcpy((void *)new_initrd_start, (void *)initrd_start, size);
+		initrd_start = new_initrd_start;
+		initrd_end = new_initrd_start + size;
+		pr_info("Move ramdisk to: 0x%lx-0x%lx\n", initrd_start, initrd_end);
+	}
+#endif
 	ROOT_DEV = Root_RAM0;
 	return PFN_UP(end);
 disable:

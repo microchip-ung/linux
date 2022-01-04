@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: (GPL-2.0 OR MIT) */
 / {
 	images {
-		fdt@serval_pcb105 {
-			description = "MSCC Serval PCB105 Device Tree";
-			data = /incbin/("boot/dts/mscc/serval_pcb105.dtb");
+		fdt@servalt_pcb116 {
+			description = "MSCC Servalt PCB116 Device Tree";
+			data = /incbin/("boot/dts/mscc/servalt_pcb116.dtb");
 			type = "flat_dt";
 			arch = "mips";
 			compression = "none";
@@ -14,10 +14,10 @@
 	};
 
 	configurations {
-		pcb105 {
-			description = "Serval Linux kernel";
+		pcb116 {
+			description = "Servalt Linux kernel";
 			kernel = "kernel@0";
-			fdt = "fdt@serval_pcb105";
+			fdt = "fdt@servalt_pcb116";
 			ramdisk = "ramdisk";
 		};
 	};

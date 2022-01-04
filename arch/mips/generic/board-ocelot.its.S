@@ -25,16 +25,18 @@
 	};
 
 	configurations {
-		conf-ocelot_pcb123 {
+		pcb123 {
 			description = "Ocelot Linux kernel";
 			kernel = "kernel";
 			fdt = "fdt-ocelot_pcb123";
+			ramdisk = "ramdisk";
 		};
 
-		conf-ocelot_pcb120 {
+		pcb120 {
 			description = "Ocelot Linux kernel";
 			kernel = "kernel";
 			fdt = "fdt-ocelot_pcb120";
+			ramdisk = "ramdisk";
 		};
 	};
 };
