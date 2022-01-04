@@ -490,6 +490,12 @@ config SPI_JCORE
 	  This enables support for the SPI master controller in the J-Core
 	  synthesizable, open source SoC.
 
+config SPI_LAN966X_RTE
+	tristate "LAN966X SPI RTE"
+	depends on OF
+	help
+	  This sets the QSPI 0 in master mode for RTE usage
+
 config SPI_LM70_LLP
 	tristate "Parallel port adapter for LM70 eval board (DEVELOPMENT)"
 	depends on PARPORT
@@ -1056,6 +1062,12 @@ config SPI_XCOMM
 	help
 	  Support for the SPI-I2C bridge found on the Analog Devices
 	  AD-FMCOMMS1-EBZ board.
+
+config SPI_VCOREIII_BB
+	tristate "VCore-III SPI controller (DT)"
+	depends on OF
+	help
+	  SPI driver for VCore-III using bitbanging.
 
 config SPI_XILINX
 	tristate "Xilinx SPI controller common module"

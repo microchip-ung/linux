@@ -728,6 +728,12 @@ static const struct of_device_id spidev_dt_ids[] = {
 	{ .compatible = "menlo,m53cpld", .data = &spidev_of_check },
 	{ .compatible = "cisco,spi-petra", .data = &spidev_of_check },
 	{ .compatible = "micron,spi-authenta", .data = &spidev_of_check },
+	{ .compatible = "mchp,synce_builtin", .data = &spidev_of_check },
+	{ .compatible = "mchp,synce_dpll", .data = &spidev_of_check },
+	{ .compatible = "mchp,cpld", .data = &spidev_of_check },
+	{ .compatible = "mchp,cpld_fifo", .data = &spidev_of_check },
+	{ .compatible = "mchp,t1e1j1", .data = &spidev_of_check },
+	{ .compatible = "spidev", .data = &spidev_of_check },
 	{},
 };
 MODULE_DEVICE_TABLE(of, spidev_dt_ids);
