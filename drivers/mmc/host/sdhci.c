@@ -4533,6 +4533,9 @@ int sdhci_setup_host(struct sdhci_host *host)
 	    mmc_gpio_get_cd(mmc) < 0)
 		mmc->caps |= MMC_CAP_NEEDS_POLL;
 
+	if (host->quirks2 & SDHCI_QUIRK2_BROKEN_SDR104)
+		host->caps1 &= ~SDHCI_SUPPORT_SDR104;
+
 	if (!IS_ERR(mmc->supply.vqmmc)) {
 		if (enable_vqmmc) {
 			ret = regulator_enable(mmc->supply.vqmmc);
