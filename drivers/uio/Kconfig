@@ -182,4 +182,27 @@ config UIO_DFL
 	    opae-sdk/tools/libopaeuio/
 
 	  If you compile this as a module, it will be called uio_dfl.
+
+config UIO_SPARX5
+	tristate "Generic driver for Sparx5 SoC"
+	depends on PCI
+	help
+
+	  Driver for acessing Sparx5 Switch across PCI. It provides
+	  switch access from userspace.
+
+config UIO_SPARX5_IRQMUX
+	tristate "Generic driver for Sparx5 SoC"
+	depends on OF
+	help
+	  Driver for acessing Sparx5 Switch and IRQs. It provides
+	  switch access from userspace.
+
+config UIO_MIPS_MSCC
+	tristate "Generic UIO driver for Microsemi MIPS based Switches"
+	depends on OF
+	help
+	  Driver for acessing MIPS based switches. It provides
+	  switch access from userspace.
+
 endif
