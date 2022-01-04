@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/mux/microchip,sparx5-spi-mux.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Microchip Sparx5 SPI mux
+
+maintainers:
+  - Lars Povlsen <lars.povlsen@microchip.com>
+
+description: |
+  The Microchip Sparx5 SPI controller has two bus segments. In order
+  to switch between the appropriate bus for any given SPI slave
+  (defined by a chip select), this mux driver is used. The device tree
+  node for the mux will define the bus mapping for any chip
+  selects. The default bus mapping for any chip select is "0", such
+  that only non-default mappings need to be explicitly defined.
+
+properties:
+  compatible:
+    enum:
+      - microchip,sparx5-spi-mux
+
+  '#address-cells':
+    const: 1
+
+  '#size-cells':
+    const: 0
+
+  '#mux-control-cells':
+    const: 0
+
+required:
+  - compatible
+
+additionalProperties: false
+
+patternProperties:
+  "^mux@[0-9a-f]$":
+    type: object
+
+    properties:
+      reg:
+        description:
+          Chip select to define bus mapping for.
+        minimum: 0
+        maximum: 15
+
+      microchip,bus-interface:
+        description:
+          The bus interface to use for this chip select.
+        $ref: /schemas/types.yaml#/definitions/uint32
+        enum: [0, 1]
+
+    required:
+      - reg
+      - microchip,bus-interface
+
+examples:
+  - |
+    mux: mux-controller {
+      compatible = "microchip,sparx5-spi-mux";
+      #address-cells = <1>;
+      #size-cells = <0>;
+      #mux-control-cells = <0>;
+      mux@e {
+        reg = <14>;
+        microchip,bus-interface = <1>;
+      };
+    };

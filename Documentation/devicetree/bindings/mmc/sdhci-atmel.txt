@@ -5,7 +5,8 @@ Documentation/devicetree/bindings/mmc/mmc.txt and the properties used by the
 sdhci-of-at91 driver.
 
 Required properties:
-- compatible:		Must be "atmel,sama5d2-sdhci" or "microchip,sam9x60-sdhci".
+- compatible:		Must be "atmel,sama5d2-sdhci" or "microchip,sam9x60-sdhci"
+			or "microchip,lan966x-sdhci".
 - clocks:		Phandlers to the clocks.
 - clock-names:		Must be "hclock", "multclk", "baseclk" for
 			"atmel,sama5d2-sdhci".
@@ -19,6 +20,16 @@ Optional properties:
   inverted. The default polarity for this signal is described in the datasheet.
   For instance on SAMA5D2, the pin is usually tied to the GND with a resistor
   and a capacitor (see "SDMMC I/O Calibration" chapter).
+- tx-phase:		The phase shift between data and clock signals to maintain
+			setup/hold time requirements.
+			A value of 0 means 180 degrees,
+			4 means 270 degrees,
+			8 means 360 degrees,
+			12 means 90 degrees phase shift - default value.
+			180 degrees phase is best choice for generating phase difference
+			between data/command bus and output clock. It provides sufficient
+			time limit to compensate for any board delays/skew and provides
+			sufficient time margin for setup/hold time requirements.
 
 Example:
 
@@ -30,4 +41,5 @@ mmc0: sdio-host@a0000000 {
 	clock-names = "hclock", "multclk", "baseclk";
 	assigned-clocks = <&sdmmc0_gclk>;
 	assigned-clock-rates = <480000000>;
+	tx-phase = <0>;
 };

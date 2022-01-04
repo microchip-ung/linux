@@ -118,6 +118,12 @@ properties:
   phys:
     maxItems: 1
 
+  standby-gpios:
+    description:
+      A gpio node to set standby line of CAN transceiver to low.
+      If standby line is high, the transceiver will not able to
+      transmit or correctly receive data via the bus lines.
+
 required:
   - compatible
   - reg
