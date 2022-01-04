@@ -305,6 +305,34 @@ out:
 }
 static DEVICE_ATTR_RW(max_vclocks);
 
+static ssize_t pps_input_store(struct device *dev,
+			       struct device_attribute *attr,
+			       const char *buf, size_t count)
+{
+	struct ptp_clock *ptp = dev_get_drvdata(dev);
+	struct ptp_clock_info *ops = ptp->info;
+	struct ptp_clock_request req = { .type = PTP_CLK_REQ_IN_PPS };
+	int cnt, enable;
+	int err = -EINVAL;
+
+	if (!capable(CAP_SYS_TIME))
+		return -EPERM;
+
+	cnt = sscanf(buf, "%d", &enable);
+	if (cnt != 1)
+		goto out;
+
+	err = ops->enable(ops, &req, enable ? 1 : 0);
+	if (err)
+		goto out;
+
+	return count;
+out:
+	return err;
+
+}
+static DEVICE_ATTR(pps_input, 0220, NULL, pps_input_store);
+
 static struct attribute *ptp_attrs[] = {
 	&dev_attr_clock_name.attr,
 
@@ -321,6 +349,7 @@ static struct attribute *ptp_attrs[] = {
 	&dev_attr_pps_enable.attr,
 	&dev_attr_n_vclocks.attr,
 	&dev_attr_max_vclocks.attr,
+	&dev_attr_pps_input.attr,
 	NULL
 };
 
