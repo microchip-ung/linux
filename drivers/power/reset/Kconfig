@@ -158,6 +158,12 @@ config POWER_RESET_PIIX4_POWEROFF
 	  southbridge SOff state is entered in response to a request to
 	  power off the system.
 
+config POWER_RESET_LAN966X
+	bool "Microchip Lan966x reset driver"
+	select MFD_SYSCON
+	help
+	  This driver supports restart for Microchip Lan966x.
+
 config POWER_RESET_LTC2952
 	bool "LTC2952 PowerPath power-off driver"
 	depends on OF_GPIO
