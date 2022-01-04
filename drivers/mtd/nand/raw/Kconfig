@@ -264,6 +264,13 @@ config MTD_NAND_FSL_UPM
 	  Enables support for NAND Flash chips wired onto Freescale PowerPC
 	  processor localbus with User-Programmable Machine support.
 
+config MTD_NAND_VCOREIII
+	tristate "Support for generic nand on VCoreIII SoC's with PI interface"
+	depends on HAS_IOMEM && OF
+	help
+	  This enables the driver for the NAND flash controller on the
+	  VCoreIII with parallel interface for NAND.
+
 config MTD_NAND_VF610_NFC
 	tristate "Freescale VF610/MPC5125 NAND controller"
 	depends on (SOC_VF610 || COMPILE_TEST)
