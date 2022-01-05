@@ -16,6 +16,13 @@ dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls1028a-rdb.dtb
 dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls1043a-qds.dtb
 dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls1043a-rdb.dtb
 dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls1046a-frwy.dtb
+dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls1046a-miriac-sbc1046.dtb
+dtb-$(CONFIG_ARCH_LAYERSCAPE) += mchp-ls1046a-lan966x.dtb
+dtb-$(CONFIG_ARCH_LAYERSCAPE) += mchp-ls1046a-lan966x_vtss.dtb
+dtb-$(CONFIG_ARCH_LAYERSCAPE) += mchp-ls1046a-lan966x_sr.dtb
+dtb-$(CONFIG_ARCH_LAYERSCAPE) += mchp-ls1046a-lan966x_ad.dtb
+dtb-$(CONFIG_ARCH_LAYERSCAPE) += mchp-ls1046a-lan966x_mesa.dtb
+dtb-$(CONFIG_ARCH_LAYERSCAPE) += mchp-ls1046a-lan966x_mesa_sr.dtb
 dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls1046a-qds.dtb
 dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls1046a-rdb.dtb
 dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls1088a-qds.dtb
@@ -34,6 +41,11 @@ dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-lx2160a-honeycomb.dtb
 dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-lx2160a-qds.dtb
 dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-lx2160a-rdb.dtb
 dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-lx2162a-qds.dtb
+
+# DTs for miriac sbc1046 as external CPU for MSCC boards
+dtb-$(CONFIG_ARCH_LAYERSCAPE) += ls1046_pcb110.dtb
+dtb-$(CONFIG_ARCH_LAYERSCAPE) += ls1046_pcb134.dtb
+dtb-$(CONFIG_ARCH_LAYERSCAPE) += ls1046_pcb121.dtb
 
 fsl-ls1028a-qds-13bb-dtbs := fsl-ls1028a-qds.dtb fsl-ls1028a-qds-13bb.dtbo
 fsl-ls1028a-qds-65bb-dtbs := fsl-ls1028a-qds.dtb fsl-ls1028a-qds-65bb.dtbo

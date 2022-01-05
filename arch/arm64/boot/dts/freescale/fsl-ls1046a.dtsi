@@ -973,6 +973,13 @@
 			alignment = <0 0x2000000>;
 			no-map;
 		};
+
+		fdma_memory: fdma_memory{
+			compatible = "shared-dma-pool";
+			no-map;
+			allignment = <0 0x1000>;
+			reg = <0x0 0x10000000 0x0 0x20000>;
+		};
 	};
 
 	firmware {
