@@ -160,6 +160,8 @@ da9063-objs			:= da9063-core.o da9063-irq.o da9063-i2c.o
 obj-$(CONFIG_MFD_DA9063)	+= da9063.o
 obj-$(CONFIG_MFD_DA9150)	+= da9150-core.o
 
+obj-$(CONFIG_MFD_LAN966X_PCI)	+= lan966x_pci.o lan966x_pci_sr.o lan966x_pci_ad.o
+
 obj-$(CONFIG_MFD_MAX14577)	+= max14577.o
 obj-$(CONFIG_MFD_MAX77620)	+= max77620.o
 obj-$(CONFIG_MFD_MAX77650)	+= max77650.o
@@ -179,6 +181,10 @@ obj-$(CONFIG_MFD_MT6360)	+= mt6360-core.o
 obj-$(CONFIG_MFD_MT6370)	+= mt6370.o
 mt6397-objs			:= mt6397-core.o mt6397-irq.o mt6358-irq.o
 obj-$(CONFIG_MFD_MT6397)	+= mt6397.o
+
+obj-$(CONFIG_MFD_MSCC_JAGUAR2_PCI)	+= mscc_jaguar2_pci.o
+obj-$(CONFIG_MFD_MSCC_SPARX5_PCI)	+= microchip_sparx5_pci.o
+obj-$(CONFIG_MFD_MSCC_OCELOT_PCI)	+= mscc_ocelot_pci.o
 
 pcf50633-objs			:= pcf50633-core.o pcf50633-irq.o
 obj-$(CONFIG_MFD_PCF50633)	+= pcf50633.o

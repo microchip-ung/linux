@@ -1000,6 +1000,35 @@ config MFD_OCELOT
 
 	  If unsure, say N.
 
+config MFD_MSCC_JAGUAR2_PCI
+	tristate "Microsemi Jaguar2"
+	depends on PCI
+	select MFD_CORE
+	select PINCTRL
+	select UIO
+	select GENERIC_IRQ_CHIP
+	help
+	  This MFD provides support for a Jaguar2 SoC connected as a PCI device
+	  on a host. It splits all the SoC devices to their respective drivers.
+
+config MFD_MSCC_SPARX5_PCI
+	tristate "Microsemi Sparx5"
+	depends on PCI && UIO && PINCTRL
+	select MFD_CORE
+	select GENERIC_IRQ_CHIP
+	help
+	  This MFD provides support for a Sparx5 SoC connected as a PCI device
+	  on a host. It splits all the SoC devices to their respective drivers.
+
+config MFD_MSCC_OCELOT_PCI
+	tristate "Microsemi Ocelot"
+	depends on PCI && UIO
+	select MFD_CORE
+	select GENERIC_IRQ_CHIP
+	help
+	  This MFD provides support for a Ocelot SoC connected as a PCI device
+	  on a host. It splits all the SoC devices to their respective drivers.
+
 config EZX_PCAP
 	bool "Motorola EZXPCAP Support"
 	depends on SPI_MASTER
@@ -1018,6 +1047,14 @@ config MFD_CPCAP
 	  Say yes here if you want to include driver for CPCAP.
 	  It is used on many Motorola phones and tablets as a PMIC.
 	  At least Motorola Droid 4 is known to use CPCAP.
+
+config MFD_LAN966X_PCI
+	tristate "Microchip LAN966X Support"
+	depends on PCI
+	select GENERIC_IRQ_CHIP
+	help
+	  This enables the pci for multifunction driver. This is used
+	  when an external CPU is connected to LAN966X.
 
 config MFD_VIPERBOARD
 	tristate "Nano River Technologies Viperboard"
