@@ -1,0 +1,106 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * lan966x-appl-pcb8385.dts - Device Tree file for PCB8385
+ */
+/dts-v1/;
+#include "lan966x.dtsi"
+
+/ {
+	model = "Microchip LAN966X";
+	compatible = "microchip,lan966x-sunrise", "microchip,lan966x";
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	aliases {
+		serial0 = &usart3;
+	};
+
+	gpio-restart {
+		compatible = "gpio-restart";
+		gpios = <&gpio 56 GPIO_ACTIVE_LOW>;
+		priority = <200>;
+	};
+};
+
+&flx1 {
+	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_TWI>;
+	status = "okay";
+
+	i2c1: i2c@600 {
+		pinctrl-0 = <&fc1_c_pins>;
+		pinctrl-names = "default";
+		i2c-analog-filter;
+		i2c-digital-filter;
+		i2c-digital-filter-width-ns = <35>;
+		i2c-sda-hold-time-ns = <1500>;
+		status = "okay";
+	};
+};
+
+&gpio {
+	fc1_c_pins: fc1-c-rxd-pins {
+		pins = "GPIO_47", "GPIO_48";
+		function = "fc1_c";
+	};
+
+	fc3_b_pins: fc3-b-pins {
+		/* RXD, TXD */
+		pins = "GPIO_52", "GPIO_53";
+		function = "fc3_b";
+	};
+};
+
+&gpio {
+	/delete-property/ interrupts;
+	/delete-property/ interrupt-controller;
+	/delete-property/ #interrupt-cells;
+};
+
+&flx3 {
+	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_USART>;
+	status = "okay";
+
+	usart3: serial@200 {
+		compatible = "atmel,at91sam9260-usart";
+		reg = <0x200 0x200>;
+		interrupts = <GIC_SPI 51 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&nic_clk>;
+		clock-names = "usart";
+		pinctrl-0 = <&fc3_b_pins>;
+		pinctrl-names = "default";
+		atmel,fifo-size = <32>;
+		status = "okay";
+	};
+};
+
+&soc {
+	lan966x_switch_vtss: switch_vtss@0 {
+		compatible = "mchp,lan966x-switch-vtss";
+		reg = <0xe2008000 0x0000004c>;
+		reg-names = "qs";
+
+		interrupts = <GIC_SPI 12 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "xtr";
+	};
+
+	ifmux: switch_ifmux@0 {
+		compatible = "microchip,lan966x-ifmux";
+		status = "okay";
+	};
+};
+
+&uio0 {
+	interrupts = <GIC_SPI 19 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 11 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI  9 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 80 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 81 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 18 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 17 IRQ_TYPE_LEVEL_HIGH>;
+	interrupt-names = "master", "ptp_sync", "ptp_rdy",
+			  "oam_vop", "cu_phy0", "cu_phy1",
+			  "sgpio", "gpio";
+};

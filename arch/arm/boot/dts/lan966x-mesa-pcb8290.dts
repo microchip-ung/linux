@@ -1,0 +1,99 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * lan966x-mesa-pcb8290.dts - Device Tree file for PCB8290
+ */
+/dts-v1/;
+#include "lan966x.dtsi"
+
+/ {
+	model = "Microchip LAN966X";
+	compatible = "microchip,lan966x-sunrise", "microchip,lan966x";
+
+	gpio-restart {
+		compatible = "gpio-restart";
+		gpios = <&gpio 56 GPIO_ACTIVE_LOW>;
+		priority = <200>;
+	};
+};
+
+&aes {
+	status = "disabled"; /* Reserved by secure OS */
+};
+
+&flx3 {
+	compatible = "atmel,sama5d2-flexcom";
+	reg = <0xe0064000 0x00000100>,
+	      <0xe2004180 0x00000008>;
+	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_SPI>;
+	microchip,flx-shrd-pins = <4>;
+	microchip,flx-cs = <0>;
+	status = "okay";
+
+	spi3: spi@400 {
+		compatible = "atmel,at91rm9200-spi";
+		reg = <0x400 0x200>;
+		interrupts = <GIC_SPI 51 IRQ_TYPE_LEVEL_HIGH>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		clocks = <&clks GCK_ID_FLEXCOM3>;
+		clock-names = "spi_clk";
+		assigned-clocks = <&clks GCK_ID_FLEXCOM3>;
+		assigned-clock-rates = <200000000>;
+		pinctrl-0 = <&fc3_a_pins>, <&fc_shrd4_pins>;
+		pinctrl-names = "default";
+		atmel,fifo-size = <32>;
+		status = "okay";
+
+		spi@0 {
+			compatible = "mchp,synce_dpll";
+			reg = <0>;
+			spi-max-frequency = <12000000>;
+		};
+	};
+};
+
+&gpio {
+	udc_pins: ucd-pins {
+		/* VBUS_DET B */
+		pins = "GPIO_8";
+		function = "usb_slave_b";
+	};
+
+	fc3_a_pins: fca3_spi-pins {
+		/* SCK, RXD, TXD */
+		pins = "GPIO_17", "GPIO_18", "GPIO_19";
+		function = "fc3_a";
+	};
+
+	fc_shrd4_pins: fc_shrd4-pins {
+		pins = "GPIO_46";
+		function = "fc_shrd4";
+	};
+};
+
+&gpio {
+	/delete-property/ interrupts;
+	/delete-property/ interrupt-controller;
+	/delete-property/ #interrupt-cells;
+};
+
+&udc {
+	pinctrl-0 = <&udc_pins>;
+	pinctrl-names = "default";
+	atmel,vbus-gpio = <&gpio 8 GPIO_ACTIVE_HIGH>;
+	status = "okay";
+};
+
+&uio0 {
+	interrupts = <GIC_SPI 19 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 11 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI  9 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 80 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 81 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 18 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 17 IRQ_TYPE_LEVEL_HIGH>;
+	interrupt-names = "master", "ptp_sync", "ptp_rdy",
+			  "oam_vop", "cu_phy0", "cu_phy1",
+			  "sgpio", "gpio";
+};

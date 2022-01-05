@@ -1,0 +1,731 @@
+// SPDX-License-Identifier: GPL-2.0
+/dts-v1/;
+#include "bcm2711.dtsi"
+#include "bcm2835-rpi.dtsi"
+
+#include <dt-bindings/reset/raspberrypi,firmware-reset.h>
+
+#include <dt-bindings/soc/mchp,lan966x_ecpu.h>
+#include <dt-bindings/phy/phy-lan966x-serdes.h>
+#include <dt-bindings/mfd/atmel-flexcom.h>
+#include <dt-bindings/clock/microchip,lan966x.h>
+
+/ {
+	compatible = "raspberrypi,4-compute-module", "brcm,bcm2711";
+	model = "Raspberry Pi Compute Module 4";
+
+	chosen {
+		/* 8250 auxiliary UART instead of pl011 */
+		stdout-path = "serial1:115200n8";
+	};
+
+	/* Will be filled by the bootloader */
+	memory@0 {
+		device_type = "memory";
+		reg = <0 0 0>;
+	};
+
+	aliases {
+		emmc2bus = &emmc2bus;
+		pcie0 = &pcie0;
+		blconfig = &blconfig;
+		i2c102 = &i2c102;
+		i2c103 = &i2c103;
+	};
+
+	leds {
+		act {
+			gpios = <&gpio 42 GPIO_ACTIVE_HIGH>;
+		};
+
+		pwr {
+			label = "PWR";
+			gpios = <&expgpio 2 GPIO_ACTIVE_LOW>;
+			default-state = "keep";
+			linux,default-trigger = "default-on";
+		};
+	};
+
+	wifi_pwrseq: wifi-pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		reset-gpios = <&expgpio 1 GPIO_ACTIVE_LOW>;
+	};
+
+	sd_io_1v8_reg: sd_io_1v8_reg {
+		compatible = "regulator-gpio";
+		regulator-name = "vdd-sd-io";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-boot-on;
+		regulator-always-on;
+		regulator-settling-time-us = <5000>;
+		gpios = <&expgpio 4 GPIO_ACTIVE_HIGH>;
+		states = <1800000 0x1
+			  3300000 0x0>;
+		status = "okay";
+	};
+
+	sd_vcc_reg: sd_vcc_reg {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc-sd";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-boot-on;
+		enable-active-high;
+		gpio = <&expgpio 6 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+&ddc0 {
+	status = "okay";
+};
+
+&ddc1 {
+	status = "okay";
+};
+
+&firmware {
+	firmware_clocks: clocks {
+		compatible = "raspberrypi,firmware-clocks";
+		#clock-cells = <1>;
+	};
+
+	expgpio: gpio {
+		compatible = "raspberrypi,firmware-gpio";
+		gpio-controller;
+		#gpio-cells = <2>;
+		gpio-line-names = "BT_ON",
+				  "WL_ON",
+				  "PWR_LED_OFF",
+				  "ANT1",
+				  "VDD_SD_IO_SEL",
+				  "CAM_GPIO",
+				  "SD_PWR_ON",
+				  "ANT2";
+		status = "okay";
+
+		ant1: ant1 {
+			gpio-hog;
+			gpios = <3 GPIO_ACTIVE_HIGH>;
+			output-high;
+		};
+
+		ant2: ant2 {
+			gpio-hog;
+			gpios = <7 GPIO_ACTIVE_HIGH>;
+			output-low;
+		};
+	};
+
+	reset: reset {
+		compatible = "raspberrypi,firmware-reset";
+		#reset-cells = <1>;
+	};
+};
+
+&gpio {
+	/*
+	 * Parts taken from rpi_SCH_4b_4p0_reduced.pdf and
+	 * the official GPU firmware DT blob.
+	 *
+	 * Legend:
+	 * "FOO" = GPIO line named "FOO" on the schematic
+	 * "FOO_N" = GPIO line named "FOO" on schematic, active low
+	 */
+	gpio-line-names = "ID_SDA",
+			  "ID_SCL",
+			  "SDA1",
+			  "SCL1",
+			  "GPIO_GCLK",
+			  "GPIO5",
+			  "GPIO6",
+			  "SPI_CE1_N",
+			  "SPI_CE0_N",
+			  "SPI_MISO",
+			  "SPI_MOSI",
+			  "SPI_SCLK",
+			  "GPIO12",
+			  "GPIO13",
+			  /* Serial port */
+			  "TXD1",
+			  "RXD1",
+			  "GPIO16",
+			  "GPIO17",
+			  "GPIO18",
+			  "GPIO19",
+			  "GPIO20",
+			  "GPIO21",
+			  "GPIO22",
+			  "GPIO23",
+			  "GPIO24",
+			  "GPIO25",
+			  "GPIO26",
+			  "GPIO27",
+			  "RGMII_MDIO",
+			  "RGMIO_MDC",
+			  /* Used by BT module */
+			  "CTS0",
+			  "RTS0",
+			  "TXD0",
+			  "RXD0",
+			  /* Used by Wifi */
+			  "SD1_CLK",
+			  "SD1_CMD",
+			  "SD1_DATA0",
+			  "SD1_DATA1",
+			  "SD1_DATA2",
+			  "SD1_DATA3",
+			  /* Shared with SPI flash */
+			  "PWM0_MISO",
+			  "PWM1_MOSI",
+			  "STATUS_LED_G_CLK",
+			  "SPIFLASH_CE_N",
+			  "SDA0",
+			  "SCL0",
+			  "RGMII_RXCLK",
+			  "RGMII_RXCTL",
+			  "RGMII_RXD0",
+			  "RGMII_RXD1",
+			  "RGMII_RXD2",
+			  "RGMII_RXD3",
+			  "RGMII_TXCLK",
+			  "RGMII_TXCTL",
+			  "RGMII_TXD0",
+			  "RGMII_TXD1",
+			  "RGMII_TXD2",
+			  "RGMII_TXD3";
+};
+
+&hdmi0 {
+	clocks = <&firmware_clocks 13>, <&firmware_clocks 14>, <&dvp 0>, <&clk_27MHz>;
+	clock-names = "hdmi", "bvb", "audio", "cec";
+	status = "okay";
+};
+
+&hdmi1 {
+	clocks = <&firmware_clocks 13>, <&firmware_clocks 14>, <&dvp 1>, <&clk_27MHz>;
+	clock-names = "hdmi", "bvb", "audio", "cec";
+	status = "okay";
+};
+
+&hvs {
+	clocks = <&firmware_clocks 4>;
+};
+
+&pixelvalve0 {
+	status = "okay";
+};
+
+&pixelvalve1 {
+	status = "okay";
+};
+
+&pixelvalve2 {
+	status = "okay";
+};
+
+&pixelvalve4 {
+	status = "okay";
+};
+
+&pwm1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pwm1_0_gpio40 &pwm1_1_gpio41>;
+	status = "okay";
+};
+
+&rmem {
+	/*
+	 * RPi4's co-processor will copy the board's bootloader configuration
+	 * into memory for the OS to consume. It'll also update this node with
+	 * its placement information.
+	 */
+	blconfig: nvram@0 {
+		compatible = "raspberrypi,bootloader-config", "nvmem-rmem";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		reg = <0x0 0x0 0x0>;
+		no-map;
+		status = "disabled";
+	};
+};
+
+/* SDHCI is used to control the SDIO for wireless */
+&sdhci {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&emmc_gpio34>;
+	bus-width = <4>;
+	non-removable;
+	mmc-pwrseq = <&wifi_pwrseq>;
+	status = "okay";
+
+	brcmf: wifi@1 {
+		reg = <1>;
+		compatible = "brcm,bcm4329-fmac";
+	};
+};
+
+/* EMMC2 is used to drive the EMMC card */
+&emmc2 {
+	bus-width = <8>;
+	vqmmc-supply = <&sd_io_1v8_reg>;
+	vmmc-supply = <&sd_vcc_reg>;
+	broken-cd;
+	status = "disable";
+};
+
+&pcie0 {
+	pci@1,0 {
+		#address-cells = <3>;
+		#size-cells = <2>;
+		device_type = "pci";
+
+		reg = <0 0 0 0 0>;
+		ranges = <0x00000000 0x6 0x00000000  0x02000000 0x0 0xc0000000  0x0 0x40000000>;
+
+		lan966x: switch@1055,9660 {
+			compatible = "pci1055,9660";
+
+			reg = <0x0000 0 0 0 0>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			ranges = <0x00000000 0x0000000 0x6 0x00000000 0x40000000>;
+
+			#interrupt-cells = <1>;
+			interrupt-controller;
+			interrupt-parent = <&lan966x>;
+
+			clocks {
+				cpu_clk: cpu_clk {
+					compatible = "fixed-clock";
+					#clock-cells = <0>;
+					clock-frequency = <600000000>;  // CPU clock = 600MHz
+				};
+
+				fabric_clk: fabric_clk {
+					compatible = "fixed-clock";
+					#clock-cells = <0>;
+					clock-frequency = <30000000>;  // Fabric clock = 30MHz
+				};
+
+				sys_clk: sys_clk {
+					compatible = "fixed-clock";
+					#clock-cells = <0>;
+					clock-frequency = <15625000>;  // System clock = 15.625MHz
+				};
+
+				nic_clk: nic_clk {
+					compatible = "fixed-clock";
+					#clock-cells = <0>;
+					clock-frequency = <200000000>;  // NIC clock = 200MHz
+				};
+			};
+
+			cpu_ctrl: syscon@e00c0000 {
+				compatible = "microchip,lan966x-cpu-syscon", "syscon";
+				reg = <0x20c0000 0x350>;
+			};
+
+			switch_ctrl: syscon@e200400c {
+				compatible = "microchip,lan966x-switch-syscon", "syscon";
+				reg = <0x400c 0x4>;
+			};
+
+			chip_ctrl: syscon@e2010000 {
+				compatible = "microchip,lan966x-chip-syscon", "syscon";
+				reg = <0x10010 0x14>;
+			};
+
+			switch_reset: switch_reset@0 {
+				compatible = "microchip,lan966x-switch-reset";
+				#reset-cells = <1>;
+				cpu-syscon = <&cpu_ctrl>;
+				switch-syscon = <&switch_ctrl>;
+				chip-syscon = <&chip_ctrl>;
+			};
+
+			lan966x_gpio: pinctrl@e2004070 {
+				compatible = "microchip,lan966x-pinctrl";
+				reg = <GCB_GPIO_ADDR GCB_GPIO_SIZE>,
+				      <CHIP_TOP_GPIO_CFG_ADDR CHIP_TOP_GPIO_CFG_SIZE>;
+				gpio-controller;
+				#gpio-cells = <2>;
+				gpio-ranges = <&lan966x_gpio 0 0 78>;
+				status = "okay";
+
+				tod_pins: tod_pins {
+					pins = "GPIO_36";
+					function = "ptpsync_1";
+				};
+
+				sgpio_a_pins: sgpio-pins {
+					/* SCK, D0, D1, LD */
+					pins = "GPIO_32", "GPIO_33", "GPIO_34", "GPIO_35";
+					function = "sgpio_a";
+				};
+
+				fc4_b_rx_pins: fc4-b-rx-pins {
+					pins = "GPIO_57";
+					function = "fc4_b";
+				};
+
+				fc4_b_tx_pins: fc4-b-tx-pins {
+					pins = "GPIO_58";
+					function = "fc4_b";
+				};
+			};
+
+			flx4: flexcom@e0070000 {
+				compatible = "atmel,sama5d2-flexcom";
+				reg = <FLEXCOM_4_FLEXCOM_REG_ADDR FLEXCOM_4_FLEXCOM_REG_SIZE>;
+				clocks = <&fabric_clk>;
+				#address-cells = <1>;
+				#size-cells = <1>;
+				ranges = <0x0 0x02070000 0x800>;
+
+				atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_TWI>;
+				status = "okay";
+
+				i2c_lan966x: i2c@600 {
+					compatible = "microchip,sam9x60-i2c";
+					reg = <0x600 0x200>;
+					interrupts = <52>;
+					#address-cells = <1>;
+					#size-cells = <0>;
+					clocks = <&nic_clk>;
+					pinctrl-0 = <&fc4_b_rx_pins>, <&fc4_b_tx_pins>;
+					pinctrl-names = "default";
+					i2c-analog-filter;
+					i2c-digital-filter;
+					i2c-digital-filter-width-ns = <35>;
+					i2c-sda-hold-time-ns = <1500>;
+					status = "okay";
+				};
+			};
+
+			sgpio0: gpio@61101036c {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				compatible = "microchip,sparx5-sgpio";
+				status = "okay";
+				clocks = <&fabric_clk>;
+				pinctrl-0 = <&sgpio_a_pins>;
+				pinctrl-names = "default";
+				bus-frequency = <6000000>;
+				resets = <&switch_reset 0>;
+				reset-names = "switch";
+				reg = <GCB_SIO_CTRL_ADDR GCB_SIO_CTRL_SIZE>;
+				microchip,sgpio-port-ranges = <0 3>, <8 11>;
+				sgpio_in0: gpio@0 {
+					compatible = "microchip,sparx5-sgpio-bank";
+					reg = <0>;
+					gpio-controller;
+					#gpio-cells = <3>;
+					ngpios = <64>;
+					interrupts = <18>;
+					interrupt-controller;
+					#interrupt-cells = <3>;
+				};
+				sgpio_out0: gpio@1 {
+					compatible = "microchip,sparx5-sgpio-bank";
+					reg = <1>;
+					gpio-controller;
+					#gpio-cells = <3>;
+					ngpios = <64>;
+				};
+			};
+
+			hsio: syscon@710d0000 {
+				compatible = "microchip,lan966x-hsio", "syscon", "simple-mfd";
+				reg = <HSIO_ADDR HSIO_SIZE>;
+
+				serdes: serdes {
+					compatible = "microchip,lan966x-serdes";
+					#phy-cells = <2>;
+				};
+			};
+
+			lan966x_mdio1: mdio@413c {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				compatible = "mscc,ocelot-miim";
+				reg = <GCB_MIIM_1_ADDR GCB_MIIM_1_SIZE>;
+				status = "okay";
+
+				resets = <&switch_reset 0>;
+				reset-names = "switch";
+
+				lan966x_phy0: ethernet-lan966x_phy@0 {
+					reg = <1>;
+				};
+
+				lan966x_phy1: ethernet-lan966x_phy@1 {
+					reg = <2>;
+				};
+			};
+
+			i2c0_emux: i2c0-emux@0 {
+				compatible = "i2c-mux-gpio";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				i2c-parent = <&i2c_lan966x>;
+				mux-gpios = <&sgpio_out0 11 0 GPIO_ACTIVE_HIGH>, // p11b0
+					    <&sgpio_out0 11 1 GPIO_ACTIVE_HIGH>; // p11b1
+				select-delay = <10000>; /* The signal needs to get stabilized */
+				i2c102: i2c_sfp1 {
+					reg = <1>;
+					#address-cells = <1>;
+					#size-cells = <0>;
+				};
+				i2c103: i2c_sfp2 {
+					reg = <2>;
+					#address-cells = <1>;
+					#size-cells = <0>;
+				};
+			};
+
+			sfp_eth2: sfp-eth2 {
+				compatible       = "sff,sfp";
+				i2c-bus          = <&i2c102>;
+				tx-disable-gpios = <&sgpio_out0 10 0 GPIO_ACTIVE_LOW>;
+				los-gpios        = <&sgpio_in0  2 0 GPIO_ACTIVE_HIGH>;
+				mod-def0-gpios   = <&sgpio_in0  2 1 GPIO_ACTIVE_LOW>;
+				tx-fault-gpios   = <&sgpio_in0  1 0 GPIO_ACTIVE_HIGH>;
+			};
+
+			sfp_eth3: sfp-eth3 {
+				compatible       = "sff,sfp";
+				i2c-bus          = <&i2c103>;
+				tx-disable-gpios = <&sgpio_out0 10 1 GPIO_ACTIVE_LOW>;
+				los-gpios        = <&sgpio_in0  3 0 GPIO_ACTIVE_HIGH>;
+				mod-def0-gpios   = <&sgpio_in0  3 1 GPIO_ACTIVE_LOW>;
+				tx-fault-gpios   = <&sgpio_in0  1 1 GPIO_ACTIVE_HIGH>;
+			};
+
+			lan966x_switch: switch@0 {
+				compatible = "mchp,lan966x-switch";
+				reg = <ORG_0_ADDR ORG_0_SIZE>,
+				      <SYS_ADDR SYS_SIZE>,
+				      <QS_ADDR QS_SIZE>,
+				      <QSYS_ADDR QSYS_SIZE>,
+
+				      <ANA_ADDR ANA_SIZE>,
+				      <REW_ADDR REW_SIZE>,
+				      <GCB_ADDR 0x44>,
+				      <PTP_ADDR PTP_SIZE>,
+
+				      <VCAP_0_ADDR VCAP_0_SIZE>,
+				      <VCAP_1_ADDR VCAP_1_SIZE>,
+				      <VCAP_2_ADDR VCAP_2_SIZE>,
+				      <AFI_ADDR AFI_SIZE>,
+				      <MEP_ADDR MEP_SIZE>,
+
+				      <CPU_ADDR CPU_SIZE>,
+				      <FDMA_ADDR FDMA_SIZE>,
+				      <CHIP_TOP_ADDR CHIP_TOP_SIZE>,
+
+				      <DEV_0_ADDR DEV_0_SIZE>,
+				      <DEV_1_ADDR DEV_1_SIZE>,
+				      <DEV_2_ADDR DEV_2_SIZE>,
+				      <DEV_3_ADDR DEV_3_SIZE>,
+				      <DEV_4_ADDR DEV_4_SIZE>,
+				      <DEV_5_ADDR DEV_5_SIZE>,
+				      <DEV_6_ADDR DEV_6_SIZE>,
+				      <DEV_7_ADDR DEV_7_SIZE>;
+
+				reg-names = "org", "sys", "qs", "qsys",
+					    "ana", "rew", "gcb", "ptp",
+					    "es0", "s1", "s2", "afi", "mep",
+					    "cpu", "fdma", "chip_top",
+					    "port0", "port1", "port2", "port3",
+					    "port4", "port5", "port6", "port7";
+
+				interrupts = <10 11 12 9>;
+				interrupt-names = "ptp-sync", "ptp", "xtr", "ana";
+
+				resets = <&switch_reset 0>;
+				reset-names = "switch";
+
+				pinctrl-0 = <&tod_pins>;
+				pinctrl-names = "default";
+
+				status = "okay";
+
+				ethernet-ports {
+					#address-cells = <1>;
+					#size-cells = <0>;
+
+					port0: port@0 {
+						status = "okay";
+						phy-handle = <&lan966x_phy0>;
+
+						reg = <0>;
+						phy-mode = "gmii";
+						phys = <&serdes 0 CU(0)>;
+
+						#address-cells = <1>;
+						#size-cells = <0>;
+
+						delay0 {
+							reg = <0>;
+							speed = <1000>;
+							rx_delay = <0x25000>;
+							tx_delay = <0x25000>;
+						};
+
+						delay1 {
+							reg = <0>;
+							speed = <100>;
+							rx_delay = <0x8f050>;
+							tx_delay = <0x8f050>;
+						};
+
+						delay2 {
+							reg = <0>;
+							speed = <10>;
+							rx_delay = <0x4b8000>;
+							tx_delay = <0x4b8000>;
+						};
+					};
+
+					port1: port@1 {
+						status = "okay";
+						phy-handle = <&lan966x_phy1>;
+
+						reg = <1>;
+						phy-mode = "gmii";
+						phys = <&serdes 1 CU(1)>;
+
+						#address-cells = <1>;
+						#size-cells = <0>;
+
+						delay0 {
+							reg = <0>;
+							speed = <1000>;
+							rx_delay = <0x25000>;
+							tx_delay = <0x25000>;
+						};
+
+						delay1 {
+							reg = <0>;
+							speed = <100>;
+							rx_delay = <0x8f050>;
+							tx_delay = <0x8f050>;
+						};
+
+						delay2 {
+							reg = <0>;
+							speed = <10>;
+							rx_delay = <0x4b8000>;
+							tx_delay = <0x4b8000>;
+						};
+					};
+
+					port2: port@2 {
+						status = "okay";
+
+						reg = <2>;
+						phy-mode = "sgmii";
+						phys = <&serdes 2 SERDES6G(0)>;
+						sfp = <&sfp_eth2>;
+						managed = "in-band-status";
+
+						#address-cells = <1>;
+						#size-cells = <0>;
+
+						delay0 {
+							reg = <0>;
+							speed = <1000>;
+							rx_delay = <0x25000>;
+							tx_delay = <0x25000>;
+						};
+
+						delay1 {
+							reg = <0>;
+							speed = <100>;
+							rx_delay = <0x8f050>;
+							tx_delay = <0x8f050>;
+						};
+
+						delay2 {
+							reg = <0>;
+							speed = <10>;
+							rx_delay = <0x4b8000>;
+							tx_delay = <0x4b8000>;
+						};
+					};
+
+					port3: port@3 {
+						status = "okay";
+
+						reg = <3>;
+						phy-mode = "sgmii";
+						phys = <&serdes 3 SERDES6G(1)>;
+						sfp = <&sfp_eth3>;
+						managed = "in-band-status";
+
+						#address-cells = <1>;
+						#size-cells = <0>;
+
+						delay0 {
+							reg = <0>;
+							speed = <1000>;
+							rx_delay = <0x25000>;
+							tx_delay = <0x25000>;
+						};
+
+						delay1 {
+							reg = <0>;
+							speed = <100>;
+							rx_delay = <0x8f050>;
+							tx_delay = <0x8f050>;
+						};
+
+						delay2 {
+							reg = <0>;
+							speed = <10>;
+							rx_delay = <0x4b8000>;
+							tx_delay = <0x4b8000>;
+						};
+					};
+				};
+			};
+		};
+	};
+};
+
+/* uart0 communicates with the BT module */
+&uart0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart0_ctsrts_gpio30 &uart0_gpio32>;
+	uart-has-rtscts;
+	status = "okay";
+
+	bluetooth {
+		compatible = "brcm,bcm43438-bt";
+		max-speed = <2000000>;
+		shutdown-gpios = <&expgpio 0 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+/* uart1 is mapped to the pin header */
+&uart1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart1_gpio14>;
+	status = "okay";
+};
+
+&vchiq {
+	interrupts = <GIC_SPI 34 IRQ_TYPE_LEVEL_HIGH>;
+};
+
+&vc4 {
+	status = "okay";
+};
+
+&vec {
+	status = "disabled";
+};
