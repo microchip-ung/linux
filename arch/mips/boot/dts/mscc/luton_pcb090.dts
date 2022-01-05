@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2018 Microsemi Corporation
+ */
+
+/dts-v1/;
+#include "luton_common.dtsi"
+
+/ {
+	model = "Luton26 PCB090 Reference Board";
+	compatible = "mscc,luton-pcb090", "mscc,luton";
+};
+
+&spi0 {
+	cs-gpios = <0>, <&gpio 10 0>;
+	// synce module
+	spi@1 {
+		compatible = "mchp,synce_dpll";
+		reg = <1>; /* CS1 */
+		spi-max-frequency = <1000000>;
+	};
+};

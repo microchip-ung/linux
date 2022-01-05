@@ -1,5 +1,9 @@
-// SPDX-License-Identifier: (GPL-2.0 OR MIT)
-/* Copyright (c) 2020 Microsemi Corporation */
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2018 Microsemi Corporation
+ */
+
+#include <dt-bindings/gpio/gpio.h>
 
 / {
 	#address-cells = <1>;
@@ -43,33 +47,38 @@
 		clock-mult = <1>;
 	};
 
-	ahb@60000000 {
+	/* Satisfy the platforms need of at least one timer */
+	timer@0 {
+		compatible = "mchp,mips-timer";
+	};
+
+	ahb: ahb@6000000 {
 		compatible = "simple-bus";
 		#address-cells = <1>;
 		#size-cells = <1>;
-		ranges = <0 0x60000000 0x20000000>;
+		ranges;
 
 		interrupt-parent = <&intc>;
 
-		cpu_ctrl: syscon@10000000 {
+		cpu_ctrl: syscon@70000000 {
 			compatible = "mscc,ocelot-cpu-syscon", "syscon";
-			reg = <0x10000000 0x2c>;
+			reg = <0x70000000 0x2c>;
 		};
 
-		intc: interrupt-controller@10000084 {
+		intc: interrupt-controller@70000084 {
 			compatible = "mscc,luton-icpu-intr";
-			reg = <0x10000084 0x70>;
+			reg = <0x70000084 0x70>;
 			#interrupt-cells = <1>;
 			interrupt-controller;
 			interrupt-parent = <&cpuintc>;
 			interrupts = <2>;
 		};
 
-		uart0: serial@10100000 {
+		uart0: serial@70100000 {
 			pinctrl-0 = <&uart_pins>;
 			pinctrl-names = "default";
 			compatible = "ns16550a";
-			reg = <0x10100000 0x20>;
+			reg = <0x70100000 0x20>;
 			interrupts = <6>;
 			clocks = <&ahb_clk>;
 			reg-io-width = <4>;
@@ -78,39 +87,116 @@
 			status = "disabled";
 		};
 
-		i2c0: i2c@10100400 {
-			compatible = "mscc,ocelot-i2c", "snps,designware-i2c";
-			pinctrl-0 = <&i2c_pins>;
-			pinctrl-names = "default";
-			reg = <0x10100400 0x100>, <0x100002a4 0x8>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-			interrupts = <11>;
-			clocks = <&ahb_clk>;
-
-			status = "disabled";
+		reset@60070090 {
+			compatible = "mscc,luton-chip-reset";
+			reg = <0x60070090 0x4>, <0x70000000 0x2c>;
 		};
 
-		gpio: pinctrl@70068 {
+		gpio: pinctrl@60070068 {
 			compatible = "mscc,luton-pinctrl";
-			reg = <0x70068 0x28>;
+			reg = <0x60070068 0x28>;
 			gpio-controller;
 			#gpio-cells = <2>;
 			gpio-ranges = <&gpio 0 0 32>;
-			interrupt-controller;
-			interrupts = <13>;
-			#interrupt-cells = <2>;
 
-			i2c_pins: i2c-pins {
-				pins = "GPIO_5", "GPIO_6";
-				function = "twi";
+			sgpio_pins: sgpio-pins {
+				pins = "GPIO_0", "GPIO_1", "GPIO_2", "GPIO_3";
+				function = "sg0";
 			};
-
 			uart_pins: uart-pins {
 				pins = "GPIO_30", "GPIO_31";
 				function = "uart";
 			};
-
+			i2c_pins: i2c-pins {
+				pins = "GPIO_5", "GPIO_6";
+				function = "twi";
+			};
 		};
+
+		i2c0: i2c@70100400 {
+			compatible = "mscc,ocelot-i2c", "snps,designware-i2c";
+			status = "disabled";
+			pinctrl-0 = <&i2c_pins>;
+			pinctrl-names = "default";
+			reg = <0x70100400 0x100>, <0x700002a4 0x8>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			interrupts = <11>;
+			clock-frequency = <100000>;
+			clocks = <&ahb_clk>;
+		};
+
+		uio0: vcoreiii_switch@70000000 {
+			compatible = "mscc,uio_luton_irqmux";
+			reg = <0x60000000 0x10200000>;
+			reg-names = "origin1_2";
+			interrupt-parent = <&intc>;
+			interrupts = <2>, // VCore SW0
+				     <0>, <13>, <14>, <26>;
+			interrupt-names = "master",
+					  "ext_src0", "sgpio0",
+					  "dev_all", "ptp_sync";
+			status = "disabled";
+		};
+
+		sgpio0: gpio@60070130 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "mscc,luton-sgpio";
+			status = "disabled";
+			clocks = <&ahb_clk>;
+			pinctrl-0 = <&sgpio_pins>;
+			pinctrl-names = "default";
+			reg = <0x60070130 0x100>;
+			sgpio_in0: gpio@0 {
+				compatible = "microchip,luton-sgpio-bank";
+				reg = <0>;
+				gpio-controller;
+				#gpio-cells = <3>;
+				ngpios = <96>;
+			};
+			sgpio_out0: gpio@1 {
+				compatible = "microchip,luton-sgpio-bank";
+				reg = <1>;
+				gpio-controller;
+				#gpio-cells = <3>;
+				ngpios = <96>;
+			};
+		};
+
+		spi0: spi@70000064 {
+			compatible = "mscc,luton-bb-spi";
+			status = "okay";
+			reg = <0x70000064 0x4>, <0x40000000 0x4000000>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+
+		fdma: fdma@0 {
+			compatible = "mscc,luton-fdma";
+			status = "okay";
+			reg = <0x60000000 0x01000000>, <0x70000000 0x00200000>;
+			interrupts = <10>;
+		};
+
+		ifmux: ifmux@0 {
+			compatible = "mscc,luton-ifmux";
+			status = "okay";
+		};
+
+		vcfw_uio@8ec00000 {
+			/* Firmware ramload memory */
+			compatible = "mscc,vcfw_uio";
+			reg = <0x8ec00000 0x1000000>;
+		};
+
+	};
+
+	pi_nand: nand@50000000 {
+		compatible = "mscc,luton-nand";
+		status = "disabled";
+		reg = <0x50000000 0x100>, <0x70000030 4>;
+		nand-use-soft-ecc-engine;
+		nand-ecc-algo = "hamming";
 	};
 };

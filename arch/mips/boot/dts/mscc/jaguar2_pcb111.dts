@@ -17,50 +17,66 @@
 		i2c151  = &i2c151;
 		i2c152  = &i2c152;
 		i2c203  = &i2c203;
+		ptp_dac = &ptp_dac;
 	};
+};
 
-	i2c0_imux: i2c0-imux {
-		compatible = "i2c-mux-pinctrl";
+&spi0 {
+	status = "okay";
+	spi-flash@0 {
+		label = "spi_flash";
+		compatible = "macronix,mx25l25635f", "jedec,spi-nor";
+		spi-max-frequency = <18000000>; /* input clock */
+		reg = <0>; /* CS0 */
+	};
+	// synce module
+	spi@1 {
+		compatible = "mchp,synce_dpll";
+		reg = <0x1>; /* CS1 */
+		pinctrl-0 = <&synce_pins>;
+		pinctrl-names = "default";
+		spi-max-frequency = <8000000>;
+	};
+	// CPLD register interface
+	spi@e {
+		compatible = "mchp,synce_builtin";
+		reg = <0xe>; /* CS14 */
+		pinctrl-0 = <&cpld_pins>;
+		pinctrl-names = "default";
+		spi-max-frequency = <8000000>;
+	};
+	// CPLD FIFO interface
+	spi@f {
+		compatible = "mchp,cpld_fifo";
+		reg = <0xf>; /* CS15 */
+		pinctrl-0 = <&cpld_fifo_pins>;
+		pinctrl-names = "default";
+		spi-max-frequency = <8000000>;
+	};
+};
+
+&pi_nand {
+	status = "okay";
+	chip-delay = <100>; // MX30LF1GE8AB with internal ECC has 45-70 us tR_ECC
+	waitcc = <8>;       // Slow down NAND CS via waitcc - appx 77ns
+	partitions {
+		compatible = "fixed-partitions";
 		#address-cells = <1>;
-		#size-cells = <0>;
-		i2c-parent = <&i2c0>;
-		pinctrl-names =
-			"i2c149", "i2c150", "i2c151", "i2c152", "i2c203", "idle";
-		pinctrl-0 = <&i2cmux_0>;
-		pinctrl-1 = <&i2cmux_1>;
-		pinctrl-2 = <&i2cmux_2>;
-		pinctrl-3 = <&i2cmux_3>;
-		pinctrl-4 = <&i2cmux_pins_i>; // Added by convention for PoE
-		pinctrl-5 = <&i2cmux_pins_i>;
-		i2c149: i2c@0 {
-			reg = <0x0>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-		};
-		i2c150: i2c@1 {
-			reg = <0x1>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-		};
-		i2c151: i2c@2 {
-			reg = <0x2>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-		};
-		i2c152: i2c@3 {
-			reg = <0x3>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-		};
-		i2c203: i2c@4 {
-			reg = <0x4>;
-			#address-cells = <1>;
-			#size-cells = <0>;
+		#size-cells = <1>;
+		/* 256MiB */
+		partition@0 {
+			    label = "rootfs_nand_data";
+			    reg = <0x0000000 0x10000000>;
 		};
 	};
 };
 
 &gpio {
+	synce_pins: synce-pins {
+		// GPIO 16 == SI_nCS1
+		pins = "GPIO_16";
+		function = "si";
+	};
 	synce_builtin_pins: synce-builtin-pins {
 		// GPIO 49 == SI_nCS13
 		pins = "GPIO_49";
@@ -103,5 +119,58 @@
 		pins = "GPIO_21";
 		function = "twi_scl_m";
 		output-high;
+	};
+};
+
+&ahb {
+	i2c0_imux: i2c0-imux@0 {
+		compatible = "i2c-mux-pinctrl";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c-parent = <&i2c0>;
+		pinctrl-names =
+			"i2c149", "i2c150", "i2c151", "i2c152", "i2c203", "idle";
+		pinctrl-0 = <&i2cmux_0>;
+		pinctrl-1 = <&i2cmux_1>;
+		pinctrl-2 = <&i2cmux_2>;
+		pinctrl-3 = <&i2cmux_3>;
+		pinctrl-4 = <&i2cmux_pins_i>; // Added by convention for PoE
+		pinctrl-5 = <&i2cmux_pins_i>;
+		i2c149: i2c_sfp_plus_a {
+			reg = <0x0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c150: i2c_sfp_plus_b {
+			reg = <0x1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c151: i2c_sfp_plus_c {
+			reg = <0x2>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c152: i2c_sfp_plus_d {
+			reg = <0x3>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c203: i2c_pd69xxx {
+			reg = <0x4>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+	};
+};
+
+&i2c0 {
+	// PTP DAC device on address 0xF on the main I2C segment
+	ptp_dac: i2c_ptp_dac@f {
+		// This provides the device name
+		compatible = "ptp_dac";
+		reg = <0xf>;
+		#address-cells = <1>;
+		#size-cells = <0>;
 	};
 };

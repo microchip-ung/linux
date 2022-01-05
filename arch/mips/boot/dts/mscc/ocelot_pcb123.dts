@@ -3,13 +3,23 @@
 
 /dts-v1/;
 
-#include "ocelot.dtsi"
+#include "ocelot_common.dtsi"
 
 / {
+	model = "Ocelot PCB123 Reference Board";
 	compatible = "mscc,ocelot-pcb123", "mscc,ocelot";
 
-	chosen {
-		stdout-path = "serial0:115200n8";
+	aliases {
+	    i2c0   = &i2c0;
+	    i2c201 = &i2c0;
+	    i2c104 = &i2c104;
+	    i2c105 = &i2c105;
+	    i2c106 = &i2c106;
+	    i2c107 = &i2c107;
+	    i2c108 = &i2c108;
+	    i2c109 = &i2c109;
+	    i2c110 = &i2c110;
+	    i2c111 = &i2c111;
 	};
 
 	memory@0 {
@@ -18,32 +28,68 @@
 	};
 };
 
-&uart0 {
+&sgpio0 {
 	status = "okay";
-};
-
-&uart2 {
-	status = "okay";
-};
-
-&spi {
-	status = "okay";
-
-	flash@0 {
-		compatible = "macronix,mx25l25635f", "jedec,spi-nor";
-		spi-max-frequency = <20000000>;
-		reg = <0>;
+	microchip,sgpio-port-ranges = <0 24>;
+	gpio@0 {
+		ngpios = <64>;
+	};
+	gpio@1 {
+		ngpios = <64>;
 	};
 };
 
-&i2c {
-	clock-frequency = <100000>;
-	i2c-sda-hold-time-ns = <300>;
-	status = "okay";
-};
-
-&mdio0 {
-	status = "okay";
+&ahb {
+	i2c0_emux: i2c0-emux@0 {
+		compatible = "i2c-mux-gpio";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		select-delay = <8000>; // delay 8ms due to shift register
+		i2c-parent = <&i2c0>;
+		mux-gpios = <&sgpio_out0 13 0 GPIO_ACTIVE_HIGH>, // p13b0
+			    <&sgpio_out0 13 1 GPIO_ACTIVE_HIGH>, // p13b1
+			    <&sgpio_out0 14 0 GPIO_ACTIVE_HIGH>; // p14b0
+		i2c104: i2c_sfp1 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c105: i2c_sfp2 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c106: i2c_sfp3 {
+			reg = <2>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c107: i2c_sfp4 {
+			reg = <3>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c108: i2c_sfp5 {
+			reg = <4>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c109: i2c_sfp6 {
+			reg = <5>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c110: i2c_sfp7 {
+			reg = <6>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c111: i2c_sfp8 {
+			reg = <7>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+	};
 };
 
 &port0 {

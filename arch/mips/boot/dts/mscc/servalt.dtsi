@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 /*
- * Copyright (c) 2020 Microsemi Corporation
+ * Copyright (c) 2018 Microsemi Corporation
  */
 
 #include <dt-bindings/gpio/gpio.h>
@@ -8,14 +8,7 @@
 / {
 	#address-cells = <1>;
 	#size-cells = <1>;
-	compatible = "mscc,jr2";
-
-	aliases {
-		spi0 = &spi0;
-		serial0 = &uart0;
-		serial1 = &uart2;
-		gpio0 = &gpio;
-	};
+	compatible = "mscc,servalt";
 
 	cpus {
 		#address-cells = <1>;
@@ -27,6 +20,11 @@
 			clocks = <&cpu_clk>;
 			reg = <0>;
 		};
+	};
+
+	aliases {
+		serial0 = &uart0;
+		gpio0 = &gpio;
 	};
 
 	cpuintc: interrupt-controller {
@@ -69,7 +67,7 @@
 		};
 
 		intc: interrupt-controller@70000070 {
-			compatible = "mscc,jaguar2-icpu-intr";
+			compatible = "mscc,servalt-icpu-intr";
 			reg = <0x70000070 0x94>;
 			#interrupt-cells = <1>;
 			interrupt-controller;
@@ -103,82 +101,57 @@
 			status = "disabled";
 		};
 
-		spi0: spi@70101000 {
-			compatible = "mscc,jaguar2-spi";
-			#address-cells = <1>;
-			#size-cells = <0>;
-			reg = <0x70101000 0x100>, <0x7000003c 0x18>, <0x40000000 0x4000000>;
-			interrupts = <10>;
-			num-cs = <16>;
-			reg-io-width = <4>;
-			reg-shift = <2>;
-			clocks = <&ahb_clk>;
-
-			status = "disabled";
-		};
-
 		reset@71010008 {
-			compatible = "mscc,jaguar2-chip-reset";
-			reg = <0x71010008 0x4>, <0x70000000 0x2c>;
+			compatible = "mscc,ocelot-chip-reset";
+			reg = <0x71010008 0x4>, <0x70000000 0x2c>, <0x71170000 0x190>;
 			microchip,cpu-reset-only;
 			microchip,reset-switch-core;
 		};
 
-		gpio: pinctrl@71070038 {
-			compatible = "mscc,jaguar2-pinctrl";
-			reg = <0x71010038 0x90>;
+		spi0: spi@70000050 {
+			compatible = "mscc,luton-bb-spi";
+			status = "okay";
+			reg = <0x70000050 0x4>, <0x40000000 0x4000000>;
+			interrupts = <10>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+
+		gpio: pinctrl@71070034 {
+			compatible = "mscc,servalt-pinctrl";
+			reg = <0x71010034 0x90>;
 			gpio-controller;
 			#gpio-cells = <2>;
-			gpio-ranges = <&gpio 0 0 64>;
+			gpio-ranges = <&gpio 0 0 36>;
 
-			sgpio0_pins: sgpio0-pins {
+			sgpio_pins: sgpio-pins {
 				pins = "GPIO_0", "GPIO_1", "GPIO_2", "GPIO_3";
 				function = "sg0";
 			};
 
-			sgpio1_pins: sgpio1-pins {
-				pins = "GPIO_4", "GPIO_5", "GPIO_12", "GPIO_13";
-				function = "sg1";
-			};
-
-			sgpio2_pins: sgpio2-pins {
-				pins = "GPIO_30", "GPIO_31", "GPIO_32", "GPIO_33";
-				function = "sg2";
-			};
-
-			uart_pins: uart-pins {
-				pins = "GPIO_10", "GPIO_11";
-				function = "uart";
-			};
-
-			uart2_pins: uart2-pins {
-				pins = "GPIO_24", "GPIO_25";
-				function = "uart2";
-			};
-
-			cs1_pins: cs1-pins {
-				pins = "GPIO_16";
-				function = "si";
-			};
-
-			cs2_pins: cs2-pins {
-				pins = "GPIO_17";
-				function = "si";
-			};
-
-			cs3_pins: cs3-pins {
-				pins = "GPIO_18";
-				function = "si";
-			};
-
 			i2c_pins: i2c-pins {
-				pins = "GPIO_14", "GPIO_15";
+				pins = "GPIO_24", "GPIO_25";
 				function = "twi";
 			};
 
 			i2c2_pins: i2c2-pins {
-				pins = "GPIO_28", "GPIO_29";
-				function = "twi2";
+				pins = "GPIO_22", "GPIO_23";
+				function = "twi";
+			};
+
+			uart_pins: uart-pins {
+				pins = "GPIO_6", "GPIO_7";
+				function = "uart";
+			};
+
+			uart2_pins: uart2-pins {
+				pins = "GPIO_20", "GPIO_21";
+				function = "uart2";
+			};
+
+			cs1_pins: cs1-pins {
+				pins = "GPIO_8";
+				function = "si";
 			};
 		};
 
@@ -187,7 +160,7 @@
 			status = "disabled";
 			pinctrl-0 = <&i2c_pins>;
 			pinctrl-names = "default";
-			reg = <0x70100400 0x100>, <0x700001b8 0x8>;
+			reg = <0x70100400 0x100>, <0x70000198 8>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 			interrupts = <8>;
@@ -208,15 +181,15 @@
 			clocks = <&ahb_clk>;
 		};
 
-		sgpio0: gpio@71010150 {
+		sgpio0: gpio@71010120 {
 			#address-cells = <1>;
 			#size-cells = <0>;
 			compatible = "mscc,ocelot-sgpio";
-			status = "disabled";
 			clocks = <&ahb_clk>;
-			pinctrl-0 = <&sgpio0_pins>;
+			status = "disabled";
+			pinctrl-0 = <&sgpio_pins>;
 			pinctrl-names = "default";
-			reg = <0x71010150 0x100>;
+			reg = <0x71010120 0x10C>;
 			sgpio_in0: gpio@0 {
 				compatible = "microchip,ocelot-sgpio-bank";
 				reg = <0>;
@@ -233,80 +206,28 @@
 			};
 		};
 
-		sgpio1: gpio@7101025c {
-			#address-cells = <1>;
-			#size-cells = <0>;
-			compatible = "mscc,ocelot-sgpio";
-			status = "disabled";
-			clocks = <&ahb_clk>;
-			pinctrl-0 = <&sgpio1_pins>;
-			pinctrl-names = "default";
-			reg = <0x7101025c 0x100>;
-			sgpio_in1: gpio@0 {
-				compatible = "microchip,ocelot-sgpio-bank";
-				reg = <0>;
-				gpio-controller;
-				#gpio-cells = <3>;
-				ngpios = <96>;
-			};
-			sgpio_out1: gpio@1 {
-				compatible = "microchip,ocelot-sgpio-bank";
-				reg = <1>;
-				gpio-controller;
-				#gpio-cells = <3>;
-				ngpios = <96>;
-			};
-		};
-
-		sgpio2: gpio@71010368 {
-			compatible = "mscc,ocelot-sgpio";
-			#address-cells = <1>;
-			#size-cells = <0>;
-			status = "disabled";
-			clocks = <&ahb_clk>;
-			pinctrl-0 = <&sgpio2_pins>;
-			pinctrl-names = "default";
-			reg = <0x71010368 0x100>;
-			sgpio_in2: gpio@0 {
-				compatible = "microchip,ocelot-sgpio-bank";
-				reg = <0>;
-				gpio-controller;
-				#gpio-cells = <3>;
-				ngpios = <96>;
-			};
-			sgpio_out2: gpio@1 {
-				compatible = "microchip,ocelot-sgpio-bank";
-				reg = <1>;
-				gpio-controller;
-				#gpio-cells = <3>;
-				ngpios = <96>;
-			};
-		};
-
 		uio0: vcoreiii_switch@70000000 {
 			compatible = "mscc,uio_jaguar2_irqmux";
 			reg = <0x70000000 0x02000000>;
 			reg-names = "origin1_2";
 			interrupt-parent = <&intc>;
 			interrupts = <11>, // VCore SW0
-				     <0>,
-				     <13>,<14>,<15>,
-				     <22>,<23>,<28>;
+				     <13>,
+				     <19>, <20>, <25>;
 			interrupt-names = "master",
-					  "dev_all",
-					  "sgpio0", "sgpio1", "sgpio2",
+					  "sgpio0",
 					  "ptp_rdy", "ptp_sync", "oam_vop";
 			status = "disabled";
 		};
 
 		fdma: fdma@0 {
-			compatible = "mscc,jaguar2-fdma";
+			compatible = "mscc,servalt-fdma";
 			reg = <0x70000000 0x00200000>, <0x71000000 0x01000000>;
-			interrupts = <20>;
+			interrupts = <17>;
 		};
 
 		ifmux: ifmux@0 {
-			compatible = "mscc,jaguar2-ifmux";
+			compatible = "mscc,servalt-ifmux";
 		};
 
 		vcfw_uio@8ec00000 {
@@ -315,13 +236,5 @@
 			reg = <0x8ec00000 0x1000000>;
 		};
 
-	};
-
-	pi_nand: nand@50000000 {
-		compatible = "mscc,jaguar2-nand";
-		status = "disabled";
-		reg = <0x50000000 0x100>, <0x70000030 4>;
-		nand-use-soft-ecc-engine;
-		nand-ecc-algo = "hamming";
 	};
 };

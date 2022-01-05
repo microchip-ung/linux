@@ -23,3 +23,7 @@
 	status = "okay";
 	i2c-sda-hold-time-ns = <300>;
 };
+
+&uio0 {
+	status = "okay";
+};

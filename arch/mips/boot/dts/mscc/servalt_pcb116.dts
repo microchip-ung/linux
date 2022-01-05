@@ -1,0 +1,215 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2018 Microsemi Corporation
+ */
+
+/dts-v1/;
+#include "servalt.dtsi"
+
+/ {
+	model = "ServalT PCB116 Reference Board";
+	compatible = "mscc,servalt-pcb116", "mscc,servalt";
+
+	aliases {
+		spi0 = &spi0;
+		serial0 = &uart0;
+		i2c0    = &i2c0;
+		i2c100  = &i2c100;
+		i2c101  = &i2c101;
+		i2c102  = &i2c102;
+		i2c103  = &i2c103;
+		i2c104  = &i2c104;
+		i2c105  = &i2c105;
+		i2c106  = &i2c106;
+		i2c107  = &i2c107;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+};
+
+&uart0 {
+	status = "okay";
+};
+
+&uart2 {
+	status = "okay";
+};
+
+&i2c0 {
+	status = "okay";
+	i2c-sda-hold-time-ns = <300>;
+};
+
+&uio0 {
+	status = "okay";
+};
+
+&spi0 {
+	status = "okay";
+	spi-flash@0 {
+		label = "spi_flash";
+		compatible = "macronix,mx25l25635f", "jedec,spi-nor";
+		spi-max-frequency = <18000000>; /* input clock */
+		reg = <0>; /* CS0 */
+	};
+	spi-flash@1 {
+		compatible = "spi-nand";
+		pinctrl-0 = <&cs1_pins>;
+		pinctrl-names = "default";
+		spi-max-frequency = <15625000>;
+		reg = <1>; /* CS1 */
+		nand-use-soft-ecc-engine;
+		nand-ecc-algo = "hamming";
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			/* 256MiB */
+			partition@0 {
+				    label = "rootfs_nand_data";
+				    reg = <0x0000000 0x10000000>;
+			};
+		};
+	};
+	// CPLD for Synce CPLD
+	spi@2 {
+		compatible = "mchp,synce_dpll";
+		reg = <2>; /* CS2 */
+		pinctrl-0 = <&synce_dpll_pins>;
+		pinctrl-names = "default";
+		spi-max-frequency = <8000000>;
+	};
+};
+
+&gpio {
+	synce_dpll_pins: synce-dpll-pins {
+		// GPIO 9 == SI_nCS2
+		pins = "GPIO_9";
+		function = "si";
+	};
+	i2c_pins: i2c-pins {
+		/* SCL (GPIO_25) always muxed */
+		pins = "GPIO_24";
+		function = "twi";
+	};
+	i2cmux_pins_i: i2cmux-pins-i {
+		pins = "GPIO_25", "GPIO_26", "GPIO_27", "GPIO_28",
+		       "GPIO_29", "GPIO_30", "GPIO_31", "GPIO_32";
+		function = "twi_scl_m";
+		output-low;
+	};
+	i2cmux_0: i2cmux-0 {
+		pins = "GPIO_25";
+		function = "twi_scl_m";
+		output-high;
+	};
+	i2cmux_1: i2cmux-1 {
+		pins = "GPIO_26";
+		function = "twi_scl_m";
+		output-high;
+	};
+	i2cmux_2: i2cmux-2 {
+		pins = "GPIO_27";
+		function = "twi_scl_m";
+		output-high;
+	};
+	i2cmux_3: i2cmux-3 {
+		pins = "GPIO_28";
+		function = "twi_scl_m";
+		output-high;
+	};
+	i2cmux_4: i2cmux-4 {
+		pins = "GPIO_29";
+		function = "twi_scl_m";
+		output-high;
+	};
+	i2cmux_5: i2cmux-5 {
+		pins = "GPIO_30";
+		function = "twi_scl_m";
+		output-high;
+	};
+	i2cmux_6: i2cmux-6 {
+		pins = "GPIO_31";
+		function = "twi_scl_m";
+		output-high;
+	};
+	i2cmux_7: i2cmux-7 {
+		pins = "GPIO_32";
+		function = "twi_scl_m";
+		output-high;
+	};
+	irqext0_pins: irqext0-pins {
+		pins = "GPIO_4";
+		function = "irq0_in";
+	};
+};
+
+&ahb {
+	i2c0_imux: i2c0-imux@0 {
+		compatible = "i2c-mux-pinctrl";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c-parent = <&i2c0>;
+		pinctrl-names =
+			"i2c100", "i2c101", "i2c102", "i2c103",
+			"i2c104", "i2c105", "i2c106", "i2c107",
+			"idle";
+		pinctrl-0 = <&i2cmux_0>;
+		pinctrl-1 = <&i2cmux_1>;
+		pinctrl-2 = <&i2cmux_2>;
+		pinctrl-3 = <&i2cmux_3>;
+		pinctrl-4 = <&i2cmux_4>;
+		pinctrl-5 = <&i2cmux_5>;
+		pinctrl-6 = <&i2cmux_6>;
+		pinctrl-7 = <&i2cmux_7>;
+		pinctrl-8 = <&i2cmux_pins_i>;
+		i2c100: i2c_sfp0 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c101: i2c_sfp1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c102: i2c_sfp2 {
+			reg = <2>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c103: i2c_sfp3 {
+			reg = <3>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c104: i2c_sfp4 {
+			reg = <4>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c105: i2c_sfp5 {
+			reg = <5>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c106: i2c_sfp6 {
+			reg = <6>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c107: i2c_sfp7 {
+			reg = <7>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+	};
+	dying_gasp: dying_gasp@0 {
+		compatible = "mscc,dying-gasp";
+		interrupts = <1>;
+		pinctrl-0 = <&irqext0_pins>;
+		pinctrl-names = "ext0_irq";
+	};
+};
