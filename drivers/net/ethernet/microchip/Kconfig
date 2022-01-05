@@ -58,4 +58,42 @@ config LAN743X
 source "drivers/net/ethernet/microchip/lan966x/Kconfig"
 source "drivers/net/ethernet/microchip/sparx5/Kconfig"
 
+config LAN966X_INTERNAL_SWITCH
+	tristate "LAN966X support"
+	select PHYLINK
+	select VCAP
+	help
+	  Support for the Microchip LAN966X Gigabit Ethernet chip.
+
+config LAN966X_INTERNAL_SWITCH_AD
+	tristate "LAN966X adaro support"
+	select PHYLINK
+	help
+	  Support for the Microchip LAN966X Gigabit Ethernet chip.
+
+config LAN966X_INTERNAL_SWITCH_SR
+	tristate "LAN966X sunrise support"
+	select PHYLINK
+	help
+	  Support for the Microchip LAN966X Gigabit Ethernet chip.
+
+config LAN966X_INTERNAL_SWITCH_VTSS
+	tristate "LAN966X vtss support"
+	depends on LAN966X_INTERNAL_SWITCH || LAN966X_INTERNAL_SWITCH_SR || LAN966X_INTERNAL_SWITCH_AD
+	help
+	  Support for the Microchip LAN966X Gigabit Ethernet chip.
+
+
+config LAN966X_INTERNAL_DEBUG
+	bool "LAN966X Switch debugging"
+	depends on LAN966X_INTERNAL_SWITCH
+	help
+	  LAN966X Switch debugging,
+
+	  This adds VCAP and TC command debugging to the runtime.
+
+	  Do not enable this, unless you are debugging the driver.
+
 endif # NET_VENDOR_MICROCHIP
+
+source "drivers/net/ethernet/microchip/vcap/Kconfig"
