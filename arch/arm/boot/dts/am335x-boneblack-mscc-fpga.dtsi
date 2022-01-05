@@ -1,0 +1,65 @@
+/*
+ * Copyright (C) 2018 Microsemi Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
+
+&am33xx_pinmux {
+	bb_spi1_pins: pinmux_bb_spi1_pins {
+		pinctrl-single,pins = <
+		AM33XX_PADCONF(0x990, PIN_INPUT_PULLUP, MUX_MODE3)
+		AM33XX_PADCONF(0x994, PIN_INPUT_PULLUP, MUX_MODE3)
+		AM33XX_PADCONF(0x998, PIN_OUTPUT_PULLUP, MUX_MODE3)
+		AM33XX_IOPAD(0x844, PIN_OUTPUT_PULLUP | MUX_MODE7) /* gpmc_a1.gpio1_17 */
+				/* AM33XX_PADCONF(0x99c,  PIN_OUTPUT_PULLUP, MUX_MODE3) */
+				/* AM33XX_IOPAD(0x9ac, PIN_OUTPUT_PULLUP | MUX_MODE7) /* mcasp0_ahclkx.gpio3_21 */
+				/* AM33XX_IOPAD(0x9a4, PIN_OUTPUT_PULLUP | MUX_MODE7) /* mcasp0_fsr.gpio3_19 */
+		>;
+	};
+};
+
+&spi1 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&bb_spi1_pins>;
+/*	cs-gpios = <&gpio1 17 0>, <&gpio3 21 0>, <&gpio3 19 0>;	 */
+	cs-gpios = <&gpio1 17 0>;
+	channel@0 {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		compatible = "spidev";
+
+		reg = <0>;
+		spi-max-frequency = <16000000>;
+		spi-cpha;
+	};
+
+	channel@1 {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		compatible = "spidev";
+
+		reg = <1>;
+		spi-max-frequency = <16000000>;
+		spi-cpha;
+	};
+
+	channel@2 {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		compatible = "spidev";
+
+		reg = <2>;
+		spi-max-frequency = <16000000>;
+		spi-cpha;
+	};
+
+};
