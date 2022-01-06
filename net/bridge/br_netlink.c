@@ -20,6 +20,9 @@
 #include "br_private_tunnel.h"
 #include "br_private_mcast_eht.h"
 
+#define IFLA_BRIDGE_VLAN_ID_MAX 4095
+#define IFLA_BRIDGE_VLAN_BITMASK_LEN_BYTES (((IFLA_BRIDGE_VLAN_ID_MAX + 1) + 7) / 8)
+
 static int __get_num_vlan_infos(struct net_bridge_vlan_group *vg,
 				u32 filter_mask)
 {
@@ -436,8 +439,7 @@ nla_put_failure:
 static int br_fill_ifinfo(struct sk_buff *skb,
 			  const struct net_bridge_port *port,
 			  u32 pid, u32 seq, int event, unsigned int flags,
-			  u32 filter_mask, const struct net_device *dev,
-			  bool getlink)
+			  u32 filter_mask, const struct net_device *dev)
 {
 	u8 operstate = netif_running(dev) ? dev->operstate : IF_OPER_DOWN;
 	struct nlattr *af = NULL;
@@ -489,7 +491,9 @@ static int br_fill_ifinfo(struct sk_buff *skb,
 			   RTEXT_FILTER_MRP |
 			   RTEXT_FILTER_CFM_CONFIG |
 			   RTEXT_FILTER_CFM_STATUS |
-			   RTEXT_FILTER_MST)) {
+			   RTEXT_FILTER_MST |
+			   RTEXT_FILTER_CFM_MIP_CONFIG |
+			   RTEXT_FILTER_CFM_EVENT)) {
 		af = nla_nest_start_noflag(skb, IFLA_AF_SPEC);
 		if (!af)
 			goto nla_put_failure;
@@ -538,11 +542,12 @@ static int br_fill_ifinfo(struct sk_buff *skb,
 			goto nla_put_failure;
 	}
 
-	if (filter_mask & (RTEXT_FILTER_CFM_CONFIG | RTEXT_FILTER_CFM_STATUS)) {
+	if (filter_mask & (RTEXT_FILTER_CFM_CONFIG | RTEXT_FILTER_CFM_STATUS |
+			   RTEXT_FILTER_CFM_EVENT)) {
 		struct nlattr *cfm_nest = NULL;
 		int err;
 
-		if (!br_cfm_created(br) || port)
+		if (!br_cfm_mep_created(br) || port)
 			goto done;
 
 		cfm_nest = nla_nest_start(skb, IFLA_BRIDGE_CFM);
@@ -551,7 +556,7 @@ static int br_fill_ifinfo(struct sk_buff *skb,
 
 		if (filter_mask & RTEXT_FILTER_CFM_CONFIG) {
 			rcu_read_lock();
-			err = br_cfm_config_fill_info(skb, br);
+			err = br_cfm_mep_config_fill_info(skb, br);
 			rcu_read_unlock();
 			if (err)
 				goto nla_put_failure;
@@ -559,7 +564,15 @@ static int br_fill_ifinfo(struct sk_buff *skb,
 
 		if (filter_mask & RTEXT_FILTER_CFM_STATUS) {
 			rcu_read_lock();
-			err = br_cfm_status_fill_info(skb, br, getlink);
+			err = br_cfm_status_fill_info(skb, br);
+			rcu_read_unlock();
+			if (err)
+				goto nla_put_failure;
+		}
+
+		if (filter_mask & RTEXT_FILTER_CFM_EVENT) {
+			rcu_read_lock();
+			err = br_cfm_event_fill_info(skb, br);
 			rcu_read_unlock();
 			if (err)
 				goto nla_put_failure;
@@ -586,6 +599,26 @@ static int br_fill_ifinfo(struct sk_buff *skb,
 			goto nla_put_failure;
 
 		nla_nest_end(skb, mst_nest);
+	}
+
+	if (filter_mask & RTEXT_FILTER_CFM_MIP_CONFIG) {
+		struct nlattr *cfm_nest = NULL;
+		int err;
+
+		if (!br_cfm_mip_created(br) || port)
+			goto done;
+
+		cfm_nest = nla_nest_start(skb, IFLA_BRIDGE_CFM);
+		if (!cfm_nest)
+			goto nla_put_failure;
+
+		rcu_read_lock();
+		err = br_cfm_mip_config_fill_info(skb, br);
+		rcu_read_unlock();
+		if (err)
+			goto nla_put_failure;
+
+		nla_nest_end(skb, cfm_nest);
 	}
 
 done:
@@ -631,7 +664,7 @@ void br_info_notify(int event, const struct net_bridge *br,
 	if (skb == NULL)
 		goto errout;
 
-	err = br_fill_ifinfo(skb, port, 0, 0, event, 0, filter, dev, false);
+	err = br_fill_ifinfo(skb, port, 0, 0, event, 0, filter, dev);
 	if (err < 0) {
 		/* -EMSGSIZE implies BUG in br_nlmsg_size() */
 		WARN_ON(err == -EMSGSIZE);
@@ -665,11 +698,12 @@ int br_getlink(struct sk_buff *skb, u32 pid, u32 seq,
 	    !(filter_mask & RTEXT_FILTER_BRVLAN_COMPRESSED) &&
 	    !(filter_mask & RTEXT_FILTER_MRP) &&
 	    !(filter_mask & RTEXT_FILTER_CFM_CONFIG) &&
+	    !(filter_mask & RTEXT_FILTER_CFM_MIP_CONFIG) &&
 	    !(filter_mask & RTEXT_FILTER_CFM_STATUS))
 		return 0;
 
 	return br_fill_ifinfo(skb, port, pid, seq, RTM_NEWLINK, nlflags,
-			      filter_mask, dev, true);
+			      filter_mask, dev);
 }
 
 static int br_vlan_info(struct net_bridge *br, struct net_bridge_port *p,
@@ -789,12 +823,16 @@ static int br_afspec(struct net_bridge *br,
 		     int cmd, bool *changed,
 		     struct netlink_ext_ack *extack)
 {
+	struct bridge_vlan_info vinfo;
 	struct bridge_vlan_info *vinfo_curr = NULL;
 	struct bridge_vlan_info *vinfo_last = NULL;
 	struct nlattr *attr;
 	struct vtunnel_info tinfo_last = {};
 	struct vtunnel_info tinfo_curr = {};
 	int err = 0, rem;
+	u8 vids[IFLA_BRIDGE_VLAN_BITMASK_LEN_BYTES];
+	u16 i, j, vid = 0;
+	u8 mask;
 
 	nla_for_each_nested(attr, af_spec, rem) {
 		err = 0;
@@ -821,6 +859,25 @@ static int br_afspec(struct net_bridge *br,
 						   extack);
 			if (err)
 				return err;
+			break;
+		case IFLA_BRIDGE_VLAN_BLOCK:
+			if (nla_len(attr) != IFLA_BRIDGE_VLAN_BITMASK_LEN_BYTES)
+				return -EINVAL;
+			memcpy(vids, nla_data(attr), IFLA_BRIDGE_VLAN_BITMASK_LEN_BYTES);
+			for(i = 0, vid = 0; i < IFLA_BRIDGE_VLAN_BITMASK_LEN_BYTES; ++i) {
+				for(j = 0, mask = 1; j < 8; ++j, mask <<= 1) {
+					if (vids[i] & mask) {
+						vinfo.flags = 0;
+						vinfo.vid = vid;
+						err = br_process_vlan_info(br, p, cmd, &vinfo,
+									&vinfo_last, changed,
+									extack);
+						if (err)
+							return err;
+					}
+					vid++;
+				}
+			}
 			break;
 		case IFLA_BRIDGE_MRP:
 			err = br_mrp_parse(br, p, attr, cmd, extack);
@@ -878,6 +935,8 @@ static const struct nla_policy br_port_policy[IFLA_BRPORT_MAX + 1] = {
 	[IFLA_BRPORT_LOCKED] = { .type = NLA_U8 },
 	[IFLA_BRPORT_BACKUP_PORT] = { .type = NLA_U32 },
 	[IFLA_BRPORT_MCAST_EHT_HOSTS_LIMIT] = { .type = NLA_U32 },
+	[IFLA_BRPORT_FLUSH_VID] = {.type = NLA_BINARY,
+		.len = IFLA_BRIDGE_VLAN_BITMASK_LEN_BYTES},
 };
 
 /* Change the state of the port and notify spanning tree */
@@ -919,9 +978,12 @@ static void br_set_port_flag(struct net_bridge_port *p, struct nlattr *tb[],
 static int br_setport(struct net_bridge_port *p, struct nlattr *tb[],
 		      struct netlink_ext_ack *extack)
 {
+	u8 vids[IFLA_BRIDGE_VLAN_BITMASK_LEN_BYTES];
 	unsigned long old_flags, changed_mask;
 	bool br_vlan_tunnel_old;
+	u16 i, j, vid;
 	int err;
+	u8 mask;
 
 	old_flags = p->flags;
 	br_vlan_tunnel_old = (old_flags & BR_VLAN_TUNNEL) ? true : false;
@@ -977,6 +1039,19 @@ static int br_setport(struct net_bridge_port *p, struct nlattr *tb[],
 
 	if (tb[IFLA_BRPORT_FLUSH])
 		br_fdb_delete_by_port(p->br, p, 0, 0);
+
+	if (tb[IFLA_BRPORT_FLUSH_VID]) {
+		if (nla_len(tb[IFLA_BRPORT_FLUSH_VID]) != IFLA_BRIDGE_VLAN_BITMASK_LEN_BYTES)
+			return -EINVAL;
+		memcpy(vids, nla_data(tb[IFLA_BRPORT_FLUSH_VID]), IFLA_BRIDGE_VLAN_BITMASK_LEN_BYTES);
+		for(i = 0, vid = 0; i < IFLA_BRIDGE_VLAN_BITMASK_LEN_BYTES; ++i) {
+			for(j = 0, mask = 1; j < 8; ++j, mask <<= 1) {
+				if (vids[i] & mask)
+					br_fdb_delete_by_port(p->br, p, vid, 0);
+				vid++;
+			}
+		}
+	}
 
 #ifdef CONFIG_BRIDGE_IGMP_SNOOPING
 	if (tb[IFLA_BRPORT_MULTICAST_ROUTER]) {

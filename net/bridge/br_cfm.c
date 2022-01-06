@@ -41,14 +41,36 @@ static struct br_cfm_peer_mep *br_peer_mep_find(struct br_cfm_mep *mep,
 	return NULL;
 }
 
-static struct net_bridge_port *br_mep_get_port(struct net_bridge *br,
-					       u32 ifindex)
+static struct net_bridge_port *br_get_port_ifindex(struct net_bridge *br, u32 ifindex)
 {
 	struct net_bridge_port *port;
 
 	list_for_each_entry(port, &br->port_list, list)
 		if (port->dev->ifindex == ifindex)
 			return port;
+
+	return NULL;
+}
+
+static struct br_cfm_mip *br_mip_find(struct net_bridge *br, u32 instance)
+{
+	struct br_cfm_mip *mip;
+
+	hlist_for_each_entry(mip, &br->mip_list, head)
+		if (mip->instance == instance)
+			return mip;
+
+	return NULL;
+}
+
+static struct br_cfm_mip *br_mip_find_ifindex_vlan(struct net_bridge *br,
+						   u32 port_ifindex, u32 vlan_ifindex)
+{
+	struct br_cfm_mip *mip;
+
+	hlist_for_each_entry(mip, &br->mip_list, head)
+		if (mip->create.port_ifindex == port_ifindex && mip->create.vlan_ifindex == vlan_ifindex)
+			return mip;
 
 	return NULL;
 }
@@ -138,11 +160,11 @@ static void ccm_rx_timer_start(struct br_cfm_peer_mep *peer_mep)
 			   usecs_to_jiffies(interval_us / 4));
 }
 
-static void br_cfm_notify(int event, const struct net_bridge_port *port)
+static void br_cfm_notify(int event, struct net_bridge *br)
 {
-	u32 filter = RTEXT_FILTER_CFM_STATUS;
+	u32 filter = RTEXT_FILTER_CFM_EVENT;
 
-	br_info_notify(event, port->br, NULL, filter);
+	br_info_notify(event, br, NULL, filter);
 }
 
 static void cc_peer_enable(struct br_cfm_peer_mep *peer_mep)
@@ -185,9 +207,11 @@ static struct sk_buff *ccm_frame_build(struct br_cfm_mep *mep,
 	}
 	skb->dev = b_port->dev;
 	rcu_read_unlock();
-	/* The device cannot be deleted until the work_queue functions has
-	 * completed. This function is called from ccm_tx_work_expired()
-	 * that is a work_queue functions.
+	/* This function is called from ccm_tx_work_expired that
+	 * is a work_queue function.
+	 * It is also called from br_cfm_cc_rdi_set and br_cfm_cc_ccm_tx
+	 * that has the RTNL.
+	 * Due to this the device cannot be deleted.
 	 */
 
 	skb->protocol = htons(ETH_P_CFM);
@@ -261,8 +285,10 @@ static void ccm_frame_tx(struct sk_buff *skb)
 	dev_queue_xmit(skb);
 }
 
-/* This function is called with the configured CC 'expected_interval'
- * in order to drive CCM transmission when enabled.
+/* If switchdev do NOT support CCM transmission - this function is called with the
+ * configured CC 'expected_interval' in order to drive CCM transmission when enabled.
+ * If Switchdev support CCM transmission - this is the transmission period end
+ * timeout - meaning the transmission period has ended.
  */
 static void ccm_tx_work_expired(struct work_struct *work)
 {
@@ -270,10 +296,22 @@ static void ccm_tx_work_expired(struct work_struct *work)
 	struct br_cfm_mep *mep;
 	struct sk_buff *skb;
 	u32 interval_us;
+	int swd_ret;
 
 	del_work = to_delayed_work(work);
 	mep = container_of(del_work, struct br_cfm_mep, ccm_tx_dwork);
 
+	/* Transmission period has ended so try to stop CCM transmission in Switchdev */
+	rtnl_lock();
+	swd_ret = br_cfm_switchdev_cc_ccm_tx(mep->br, mep, NULL, BR_CFM_CCM_INTERVAL_NONE, false, NULL);
+	rtnl_unlock();
+	if (!swd_ret || (swd_ret && swd_ret != -EOPNOTSUPP)) {
+		/* Transmission is terminated in switchdev. */
+		mep->cc_ccm_tx_info.period = 0;
+		return;
+	}
+
+	/* No switchdev support send next CCM */
 	if (time_before_eq(mep->ccm_tx_end, jiffies)) {
 		/* Transmission period has ended */
 		mep->cc_ccm_tx_info.period = 0;
@@ -318,7 +356,7 @@ static void ccm_rx_work_expired(struct work_struct *work)
 		rcu_read_lock();
 		b_port = rcu_dereference(peer_mep->mep->b_port);
 		if (b_port)
-			br_cfm_notify(RTM_NEWLINK, b_port);
+			br_cfm_notify(RTM_NEWLINK, b_port->br);
 		rcu_read_unlock();
 	}
 }
@@ -446,7 +484,7 @@ static int br_cfm_frame_rx(struct net_bridge_port *port, struct sk_buff *skb)
 			peer_mep->cc_status.ccm_defect = false;
 
 			/* Change in CCM defect status - notify */
-			br_cfm_notify(RTM_NEWLINK, port);
+			br_cfm_notify(RTM_NEWLINK, br);
 
 			/* Start CCM RX timer */
 			ccm_rx_timer_start(peer_mep);
@@ -501,6 +539,7 @@ int br_cfm_mep_create(struct net_bridge *br,
 {
 	struct net_bridge_port *p;
 	struct br_cfm_mep *mep;
+	int swd_ret;
 
 	ASSERT_RTNL();
 
@@ -524,7 +563,7 @@ int br_cfm_mep_create(struct net_bridge *br,
 				   "Invalid direction value");
 		return -EINVAL;
 	}
-	p = br_mep_get_port(br, create->ifindex);
+	p = br_get_port_ifindex(br, create->ifindex);
 	if (!p) {
 		NL_SET_ERR_MSG_MOD(extack,
 				   "Port is not related to bridge");
@@ -547,6 +586,11 @@ int br_cfm_mep_create(struct net_bridge *br,
 		}
 	}
 
+	/* Try create MEP in Switchdev */
+	swd_ret = br_cfm_switchdev_mep_create(br, instance, create, extack);
+	if (swd_ret && swd_ret != -EOPNOTSUPP)
+		return swd_ret;
+
 	mep = kzalloc(sizeof(*mep), GFP_KERNEL);
 	if (!mep)
 		return -ENOMEM;
@@ -554,11 +598,15 @@ int br_cfm_mep_create(struct net_bridge *br,
 	mep->create = *create;
 	mep->instance = instance;
 	rcu_assign_pointer(mep->b_port, p);
+	mep->br = br;
 
 	INIT_HLIST_HEAD(&mep->peer_mep_list);
 	INIT_DELAYED_WORK(&mep->ccm_tx_dwork, ccm_tx_work_expired);
 
-	if (hlist_empty(&br->mep_list))
+	if ((swd_ret == -EOPNOTSUPP) && hlist_empty(&br->mep_list))
+		/* There is no switchdev support and this is the first MEP created
+		 * Initiate to receive CFM frames
+		 */
 		br_add_frame(br, &cfm_frame_type);
 
 	hlist_add_tail_rcu(&mep->head, &br->mep_list);
@@ -566,11 +614,13 @@ int br_cfm_mep_create(struct net_bridge *br,
 	return 0;
 }
 
-static void mep_delete_implementation(struct net_bridge *br,
-				      struct br_cfm_mep *mep)
+static int mep_delete_implementation(struct net_bridge *br,
+				     struct br_cfm_mep *mep,
+				     struct netlink_ext_ack *extack)
 {
 	struct br_cfm_peer_mep *peer_mep;
 	struct hlist_node *n_store;
+	int swd_ret;
 
 	ASSERT_RTNL();
 
@@ -585,10 +635,29 @@ static void mep_delete_implementation(struct net_bridge *br,
 
 	RCU_INIT_POINTER(mep->b_port, NULL);
 	hlist_del_rcu(&mep->head);
+
+	if (mep->ccm_tx_swd) {
+		/* Transmitting using Switchdev is ongoing.
+		 * Try stop transmission in Switchdev
+		 */
+		(void)br_cfm_switchdev_cc_ccm_tx(br, mep, NULL, BR_CFM_CCM_INTERVAL_NONE,
+						 false, extack);
+	}
+
+	/* Try delete MEP in Switchdev */
+	swd_ret = br_cfm_switchdev_mep_delete(br, mep, extack);
+	if (swd_ret != -EOPNOTSUPP)
+		goto free;
+
+	/* Switchdev not supported. If no MEPs or MIPs are created stop receiving CFM frames */
+	swd_ret = 0;
+	if (hlist_empty(&br->mep_list) && (hlist_empty(&br->mip_list)))
+		br_del_frame(br, &cfm_frame_type);
+
+free:
 	kfree_rcu(mep, rcu);
 
-	if (hlist_empty(&br->mep_list))
-		br_del_frame(br, &cfm_frame_type);
+	return swd_ret;
 }
 
 int br_cfm_mep_delete(struct net_bridge *br,
@@ -606,9 +675,7 @@ int br_cfm_mep_delete(struct net_bridge *br,
 		return -ENOENT;
 	}
 
-	mep_delete_implementation(br, mep);
-
-	return 0;
+	return mep_delete_implementation(br, mep, extack);
 }
 
 int br_cfm_mep_config_set(struct net_bridge *br,
@@ -617,6 +684,7 @@ int br_cfm_mep_config_set(struct net_bridge *br,
 			  struct netlink_ext_ack *extack)
 {
 	struct br_cfm_mep *mep;
+	int swd_ret;
 
 	ASSERT_RTNL();
 
@@ -626,6 +694,11 @@ int br_cfm_mep_config_set(struct net_bridge *br,
 				   "MEP instance does not exists");
 		return -ENOENT;
 	}
+
+	/* Try configure MEP in Switchdev */
+	swd_ret = br_cfm_switchdev_mep_config_set(br, mep, config, extack);
+	if (swd_ret && swd_ret != -EOPNOTSUPP)
+		return swd_ret;
 
 	mep->config = *config;
 
@@ -639,6 +712,7 @@ int br_cfm_cc_config_set(struct net_bridge *br,
 {
 	struct br_cfm_peer_mep *peer_mep;
 	struct br_cfm_mep *mep;
+	int swd_ret;
 
 	ASSERT_RTNL();
 
@@ -653,6 +727,19 @@ int br_cfm_cc_config_set(struct net_bridge *br,
 	if (memcmp(config, &mep->cc_config, sizeof(*config)) == 0)
 		return 0;
 
+	/* Try configure CC in Switchdev */
+	swd_ret = br_cfm_switchdev_cc_config_set(br, mep, config, extack);
+	if (swd_ret && swd_ret != -EOPNOTSUPP)
+		return swd_ret;
+
+	mep->cc_config = *config;
+	mep->ccm_rx_snumber = 0;
+	mep->ccm_tx_snumber = 1;
+
+	/* Return if switchdev. CCM is not transmitted or received here */
+	if (!swd_ret)
+		return 0;
+
 	if (config->enable && !mep->cc_config.enable)
 		/* CC is enabled */
 		hlist_for_each_entry(peer_mep, &mep->peer_mep_list, head)
@@ -663,10 +750,6 @@ int br_cfm_cc_config_set(struct net_bridge *br,
 		hlist_for_each_entry(peer_mep, &mep->peer_mep_list, head)
 			cc_peer_disable(peer_mep);
 
-	mep->cc_config = *config;
-	mep->ccm_rx_snumber = 0;
-	mep->ccm_tx_snumber = 1;
-
 	return 0;
 }
 
@@ -676,6 +759,7 @@ int br_cfm_cc_peer_mep_add(struct net_bridge *br, const u32 instance,
 {
 	struct br_cfm_peer_mep *peer_mep;
 	struct br_cfm_mep *mep;
+	int swd_ret;
 
 	ASSERT_RTNL();
 
@@ -693,18 +777,28 @@ int br_cfm_cc_peer_mep_add(struct net_bridge *br, const u32 instance,
 		return -EEXIST;
 	}
 
+	/* Try add peer MEP in Switchdev */
+	swd_ret = br_cfm_switchdev_cc_peer_mep_add(br, mep, mepid, extack);
+	if (swd_ret && swd_ret != -EOPNOTSUPP)
+		return swd_ret;
+
 	peer_mep = kzalloc(sizeof(*peer_mep), GFP_KERNEL);
 	if (!peer_mep)
 		return -ENOMEM;
 
 	peer_mep->mepid = mepid;
 	peer_mep->mep = mep;
+
+	hlist_add_tail_rcu(&peer_mep->head, &mep->peer_mep_list);
+
+	/* Return if switchdev. CCM is not transmitted or received here */
+	if (!swd_ret)
+		return 0;
+
 	INIT_DELAYED_WORK(&peer_mep->ccm_rx_dwork, ccm_rx_work_expired);
 
 	if (mep->cc_config.enable)
 		cc_peer_enable(peer_mep);
-
-	hlist_add_tail_rcu(&peer_mep->head, &mep->peer_mep_list);
 
 	return 0;
 }
@@ -715,6 +809,7 @@ int br_cfm_cc_peer_mep_remove(struct net_bridge *br, const u32 instance,
 {
 	struct br_cfm_peer_mep *peer_mep;
 	struct br_cfm_mep *mep;
+	int swd_ret;
 
 	ASSERT_RTNL();
 
@@ -732,18 +827,27 @@ int br_cfm_cc_peer_mep_remove(struct net_bridge *br, const u32 instance,
 		return -ENOENT;
 	}
 
+	hlist_del_rcu(&peer_mep->head);
+
+	/* Try remove peer MEP in Switchdev */
+	swd_ret = br_cfm_switchdev_cc_peer_mep_remove(br, mep, mepid, extack);
+	if (swd_ret != -EOPNOTSUPP)
+		goto free;
+
+	swd_ret = 0;
 	cc_peer_disable(peer_mep);
 
-	hlist_del_rcu(&peer_mep->head);
+free:
 	kfree_rcu(peer_mep, rcu);
 
-	return 0;
+	return swd_ret;
 }
 
 int br_cfm_cc_rdi_set(struct net_bridge *br, const u32 instance,
 		      const bool rdi, struct netlink_ext_ack *extack)
 {
 	struct br_cfm_mep *mep;
+	int swd_ret;
 
 	ASSERT_RTNL();
 
@@ -756,6 +860,10 @@ int br_cfm_cc_rdi_set(struct net_bridge *br, const u32 instance,
 
 	mep->rdi = rdi;
 
+	swd_ret = br_cfm_switchdev_cc_rdi_set(br, mep, rdi, extack);
+	if (swd_ret && swd_ret != -EOPNOTSUPP)
+		return swd_ret;
+
 	return 0;
 }
 
@@ -764,6 +872,8 @@ int br_cfm_cc_ccm_tx(struct net_bridge *br, const u32 instance,
 		     struct netlink_ext_ack *extack)
 {
 	struct br_cfm_mep *mep;
+	struct sk_buff *skb;
+	int swd_ret;
 
 	ASSERT_RTNL();
 
@@ -780,39 +890,255 @@ int br_cfm_cc_ccm_tx(struct net_bridge *br, const u32 instance,
 			/* Transmission is not enabled - just return */
 			return 0;
 
-		/* Transmission is ongoing, the end time is recalculated */
+		/* Transmission is ongoing */
+
+		if (mep->ccm_tx_swd) {
+			/* Switchdev transmission started. Re-start period end timer */
+			cancel_delayed_work_sync(&mep->ccm_tx_dwork);
+			queue_delayed_work(system_wq, &mep->ccm_tx_dwork,
+					   msecs_to_jiffies(tx_info->period * 1000));
+		}
+		/* The period end time is recalculated */
 		mep->ccm_tx_end = jiffies +
 				  usecs_to_jiffies(tx_info->period * 1000000);
 		return 0;
 	}
 
+	/* tx_info has changed */
+
 	if (tx_info->period == 0 && mep->cc_ccm_tx_info.period == 0)
 		/* Some change in info and transmission is not ongoing */
 		goto save;
 
-	if (tx_info->period != 0 && mep->cc_ccm_tx_info.period != 0) {
-		/* Some change in info and transmission is ongoing
-		 * The end time is recalculated
-		 */
-		mep->ccm_tx_end = jiffies +
-				  usecs_to_jiffies(tx_info->period * 1000000);
-
-		goto save;
-	}
-
 	if (tx_info->period == 0 && mep->cc_ccm_tx_info.period != 0) {
+		/* Stop transmission */
+
+		/* Try stop transmission in Switchdev */
+		(void)br_cfm_switchdev_cc_ccm_tx(br, mep, NULL, BR_CFM_CCM_INTERVAL_NONE,
+						 false, extack);
+
 		cancel_delayed_work_sync(&mep->ccm_tx_dwork);
 		goto save;
 	}
 
+	/* Try start transmitting using Switchdev */
+	skb = ccm_frame_build(mep, tx_info);
+	if (!skb)
+		return -ENOMEM;
+	swd_ret = br_cfm_switchdev_cc_ccm_tx(br, mep, skb, mep->cc_config.exp_interval,
+					     tx_info->seq_no_update, extack);
+	if (swd_ret && swd_ret != -EOPNOTSUPP)
+		return swd_ret;
+	if (!swd_ret) {
+		/* Switchdev transmission started */
+		mep->ccm_tx_swd = true;
+		/* Start period end timer */
+		cancel_delayed_work_sync(&mep->ccm_tx_dwork);
+		queue_delayed_work(system_wq, &mep->ccm_tx_dwork,
+				   msecs_to_jiffies(tx_info->period * 1000));
+		goto save;
+	}
+
+	/* Switchdev CCM tx is not supported */
+	swd_ret = 0;
+	mep->ccm_tx_swd = false;
+
 	/* Start delayed work to transmit CCM frames. It is done with zero delay
-	 * to send first frame immediately
+	 * to send first frame immediately.
 	 */
 	mep->ccm_tx_end = jiffies + usecs_to_jiffies(tx_info->period * 1000000);
 	queue_delayed_work(system_wq, &mep->ccm_tx_dwork, 0);
 
 save:
 	mep->cc_ccm_tx_info = *tx_info;
+
+	return swd_ret;
+}
+
+int br_cfm_cc_mep_status_get(struct net_bridge *br, const u32 instance,
+			     struct br_cfm_mep_status *const status)
+{
+	struct br_cfm_mep *mep;
+	int swd_ret;
+
+	ASSERT_RTNL();
+
+	mep = br_mep_find(br, instance);
+	if (!mep)
+		return -ENOENT;
+
+	/* Try get status calling switchdev */
+	swd_ret = br_cfm_switchdev_mep_status_get(br, mep, status);
+	if (!swd_ret || (swd_ret && swd_ret != -EOPNOTSUPP))
+		return swd_ret;
+
+	*status = mep->status;
+
+	/* Clear all 'seen' indications */
+	mep->status.opcode_unexp_seen = false;
+	mep->status.version_unexp_seen = false;
+	mep->status.rx_level_low_seen = false;
+
+	return 0;
+}
+
+int br_cfm_cc_peer_status_get(struct net_bridge *br, const u32 instance,
+			      u32 mepid,
+			      struct br_cfm_cc_peer_status *const status)
+{
+	struct br_cfm_peer_mep *peer_mep;
+	struct br_cfm_mep *mep;
+	int swd_ret;
+
+	ASSERT_RTNL();
+
+	mep = br_mep_find(br, instance);
+	if (!mep)
+		return -ENOENT;
+
+	peer_mep = br_peer_mep_find(mep, mepid);
+	if (!peer_mep)
+		return -ENOENT;
+
+	/* Try get peer MEP status calling switchdev */
+	swd_ret =
+	br_cfm_switchdev_cc_peer_status_get(br, mep, mepid, status);
+	if (!swd_ret || (swd_ret && swd_ret != -EOPNOTSUPP))
+		return swd_ret;
+
+	*status = peer_mep->cc_status;
+
+	/* Clear all 'seen' indications */
+	peer_mep->cc_status.seen = false;
+	peer_mep->cc_status.tlv_seen = false;
+	peer_mep->cc_status.seq_unexp_seen = false;
+
+	return 0;
+}
+
+int br_cfm_mip_create(struct net_bridge *br,
+		      const u32 instance,
+		      struct br_cfm_mip_create *const create,
+		      struct netlink_ext_ack *extack)
+{
+	struct net_bridge_port *p;
+	struct br_cfm_mip *mip;
+	struct net_device *dev;
+	int swd_ret;
+	ASSERT_RTNL();
+
+	if (create->direction != BR_CFM_MIP_DIRECTION_DOWN) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Invalid direction value");
+		return -EINVAL;
+	}
+	p = br_get_port_ifindex(br, create->port_ifindex);
+	if (!p) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Port is not related to bridge");
+		return -EINVAL;
+	}
+	mip = br_mip_find(br, instance);
+	if (mip) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "MIP instance already exists");
+		return -EEXIST;
+	}
+	dev = dev_get_by_index(&init_net, create->vlan_ifindex);
+	if (!dev)
+		return -EINVAL;
+	if (!is_vlan_dev(dev)) {
+		dev_put(dev);
+		NL_SET_ERR_MSG_MOD(extack,
+				   "The VLAN ifindex device is not a VLAN");
+		return -EINVAL;
+	}
+	dev_put(dev);
+
+	/* Only one instance can be created per port per VLAN */
+	mip = br_mip_find_ifindex_vlan(br, create->port_ifindex, create->vlan_ifindex);
+	if (mip) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Only one MIP on a port per VLAN is allowed");
+		return -EINVAL;
+	}
+
+	/* Try create MIP in Switchdev */
+	swd_ret = br_cfm_switchdev_mip_create(br, instance, create, extack);
+	if (swd_ret && swd_ret != -EOPNOTSUPP)
+		return swd_ret;
+	mip = kzalloc(sizeof(*mip), GFP_KERNEL);
+	if (!mip)
+		return -ENOMEM;
+	mip->swd = swd_ret != -EOPNOTSUPP;
+
+	mip->create = *create;
+	mip->instance = instance;
+
+	hlist_add_tail_rcu(&mip->head, &br->mip_list);
+
+	return 0;
+}
+
+static int mip_delete_implementation(struct net_bridge *br,
+				     struct br_cfm_mip *mip,
+				     struct netlink_ext_ack *extack)
+{
+	int swd_ret;
+
+	ASSERT_RTNL();
+
+	hlist_del_rcu(&mip->head);
+
+	/* Try delete MIP in Switchdev */
+	swd_ret = br_cfm_switchdev_mip_delete(br, mip, extack);
+
+	kfree_rcu(mip, rcu);
+
+	return swd_ret;
+}
+
+int br_cfm_mip_delete(struct net_bridge *br,
+		      const u32 instance,
+		      struct netlink_ext_ack *extack)
+{
+	struct br_cfm_mip *mip;
+
+	ASSERT_RTNL();
+
+	mip = br_mip_find(br, instance);
+	if (!mip) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "MIP instance does not exists");
+		return -ENOENT;
+	}
+
+	return mip_delete_implementation(br, mip, extack);
+}
+
+int br_cfm_mip_config_set(struct net_bridge *br,
+			  const u32 instance,
+			  const struct br_cfm_mip_config *const config,
+			  struct netlink_ext_ack *extack)
+{
+	struct br_cfm_mip *mip;
+	int swd_ret;
+
+	ASSERT_RTNL();
+
+	mip = br_mip_find(br, instance);
+	if (!mip) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "MIP instance does not exists");
+		return -ENOENT;
+	}
+
+	/* Try configure MIP in Switchdev */
+	swd_ret = br_cfm_switchdev_mip_config_set(br, mip, config, extack);
+	if (swd_ret && swd_ret != -EOPNOTSUPP)
+		return swd_ret;
+
+	mip->config = *config;
 
 	return 0;
 }
@@ -847,9 +1173,14 @@ int br_cfm_peer_mep_count(struct net_bridge *br, u32 *count)
 	return 0;
 }
 
-bool br_cfm_created(struct net_bridge *br)
+bool br_cfm_mep_created(struct net_bridge *br)
 {
 	return !hlist_empty(&br->mep_list);
+}
+
+bool br_cfm_mip_created(struct net_bridge *br)
+{
+	return !hlist_empty(&br->mip_list);
 }
 
 /* Deletes the CFM instances on a specific bridge port
@@ -858,10 +1189,41 @@ void br_cfm_port_del(struct net_bridge *br, struct net_bridge_port *port)
 {
 	struct hlist_node *n_store;
 	struct br_cfm_mep *mep;
+	struct br_cfm_mip *mip;
 
 	ASSERT_RTNL();
 
 	hlist_for_each_entry_safe(mep, n_store, &br->mep_list, head)
 		if (mep->create.ifindex == port->dev->ifindex)
-			mep_delete_implementation(br, mep);
+			(void)mep_delete_implementation(br, mep, NULL);
+
+	hlist_for_each_entry_safe(mip, n_store, &br->mip_list, head)
+		if (mip->create.port_ifindex == port->dev->ifindex)
+			(void)mip_delete_implementation(br, mip, NULL);
 }
+
+/* Notification function called from CFM driver */
+void br_cfm_notification(struct net_device *dev, const struct br_cfm_notif_info *const notif_info)
+{
+	struct net_bridge *br = netdev_priv(dev);
+	struct br_cfm_peer_mep *peer_mep;
+	struct br_cfm_mep *mep;
+
+	rcu_read_lock();
+	mep = br_mep_find(br, notif_info->instance);
+	if (!mep)
+		goto unlock;
+
+	peer_mep = br_peer_mep_find(mep, notif_info->peer_mepid);
+	if (!peer_mep)
+		goto unlock;
+
+	peer_mep->cc_status.ccm_defect = notif_info->ccm_defect;
+	rcu_read_unlock();
+
+	br_cfm_notify(RTM_NEWLINK, br);
+
+unlock:
+	rcu_read_unlock();
+}
+EXPORT_SYMBOL_GPL(br_cfm_notification);

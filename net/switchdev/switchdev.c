@@ -126,6 +126,20 @@ static int switchdev_port_attr_notify(enum switchdev_notifier_type nt,
 	return 0;
 }
 
+static int switchdev_port_attr_get_now(struct net_device *dev,
+				       const struct switchdev_attr *attr,
+				       struct netlink_ext_ack *extack)
+{
+	int err;
+
+	err = switchdev_port_attr_notify(SWITCHDEV_PORT_ATTR_GET, dev, attr,
+					 extack);
+	WARN(err, "%s: Commit of attribute (id=%d) failed.\n",
+	     dev->name, attr->id);
+
+	return err;
+}
+
 static int switchdev_port_attr_set_now(struct net_device *dev,
 				       const struct switchdev_attr *attr,
 				       struct netlink_ext_ack *extack)
@@ -175,6 +189,15 @@ int switchdev_port_attr_set(struct net_device *dev,
 	return switchdev_port_attr_set_now(dev, attr, extack);
 }
 EXPORT_SYMBOL_GPL(switchdev_port_attr_set);
+
+int switchdev_port_attr_get(struct net_device *dev,
+			    const struct switchdev_attr *attr,
+			    struct netlink_ext_ack *extack)
+{
+	ASSERT_RTNL();
+	return switchdev_port_attr_get_now(dev, attr, extack);
+}
+EXPORT_SYMBOL_GPL(switchdev_port_attr_get);
 
 static size_t switchdev_obj_size(const struct switchdev_obj *obj)
 {
@@ -862,3 +885,60 @@ void switchdev_bridge_port_unoffload(struct net_device *brport_dev,
 					  NULL);
 }
 EXPORT_SYMBOL_GPL(switchdev_bridge_port_unoffload);
+
+static int __switchdev_handle_port_attr_get(struct net_device *dev,
+					    struct switchdev_notifier_port_attr_info *port_attr_info,
+					    bool (*check_cb)(const struct net_device *dev),
+					    int (*set_cb)(struct net_device *dev, const void *ctx,
+						          const struct switchdev_attr *attr,
+						          struct netlink_ext_ack *extack))
+{
+	struct switchdev_notifier_info *info = &port_attr_info->info;
+	struct netlink_ext_ack *extack;
+	struct net_device *lower_dev;
+	struct list_head *iter;
+	int err = -EOPNOTSUPP;
+
+	extack = switchdev_notifier_info_to_extack(info);
+
+	if (check_cb(dev)) {
+		port_attr_info->handled = true;
+		return set_cb(dev, info->ctx, port_attr_info->attr, extack);
+	}
+
+	/* Switch ports might be stacked under e.g. a LAG. Ignore the
+	 * unsupported devices, another driver might be able to handle them. But
+	 * propagate to the callers any hard errors.
+	 *
+	 * If the driver does its own bookkeeping of stacked ports, it's not
+	 * necessary to go through this helper.
+	 */
+	netdev_for_each_lower_dev(dev, lower_dev, iter) {
+		if (netif_is_bridge_master(lower_dev))
+			continue;
+
+		err = __switchdev_handle_port_attr_get(lower_dev, port_attr_info,
+						       check_cb, set_cb);
+		if (err && err != -EOPNOTSUPP)
+			return err;
+	}
+
+	return err;
+}
+
+int switchdev_handle_port_attr_get(struct net_device *dev,
+				   struct switchdev_notifier_port_attr_info *port_attr_info,
+				   bool (*check_cb)(const struct net_device *dev),
+				   int (*set_cb)(struct net_device *dev, const void *ctx,
+				                 const struct switchdev_attr *attr,
+				                 struct netlink_ext_ack *extack))
+{
+	int err;
+
+	err = __switchdev_handle_port_attr_get(dev, port_attr_info, check_cb,
+					       set_cb);
+	if (err == -EOPNOTSUPP)
+		err = 0;
+	return err;
+}
+EXPORT_SYMBOL_GPL(switchdev_handle_port_attr_get);

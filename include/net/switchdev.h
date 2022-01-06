@@ -31,6 +31,8 @@ enum switchdev_attr_id {
 	SWITCHDEV_ATTR_ID_BRIDGE_MST,
 	SWITCHDEV_ATTR_ID_MRP_PORT_ROLE,
 	SWITCHDEV_ATTR_ID_VLAN_MSTI,
+	SWITCHDEV_ATTR_ID_CFM_MEP_STATUS_GET,
+	SWITCHDEV_ATTR_ID_CFM_CC_PEER_STATUS_GET,
 };
 
 struct switchdev_mst_state {
@@ -66,6 +68,8 @@ struct switchdev_attr {
 		bool mc_disabled;			/* MC_DISABLED */
 		u8 mrp_port_role;			/* MRP_PORT_ROLE */
 		struct switchdev_vlan_msti vlan_msti;	/* VLAN_MSTI */
+		struct switchdev_cfm_mep_status *cfm_mep_status;
+		struct switchdev_cfm_cc_peer_status *cfm_cc_peer_status;
 	} u;
 };
 
@@ -81,6 +85,16 @@ enum switchdev_obj_id {
 	SWITCHDEV_OBJ_ID_IN_TEST_MRP,
 	SWITCHDEV_OBJ_ID_IN_ROLE_MRP,
 	SWITCHDEV_OBJ_ID_IN_STATE_MRP,
+#if IS_ENABLED(CONFIG_BRIDGE_CFM)
+	SWITCHDEV_OBJ_ID_MEP_CFM,
+	SWITCHDEV_OBJ_ID_MEP_CONFIG_CFM,
+	SWITCHDEV_OBJ_ID_CC_CONFIG_CFM,
+	SWITCHDEV_OBJ_ID_CC_PEER_MEP_CFM,
+	SWITCHDEV_OBJ_ID_CC_RDI_CFM,
+	SWITCHDEV_OBJ_ID_CC_CCM_TX_CFM,
+	SWITCHDEV_OBJ_ID_MIP_CFM,
+	SWITCHDEV_OBJ_ID_MIP_CONFIG_CFM,
+#endif
 };
 
 struct switchdev_obj {
@@ -119,6 +133,150 @@ struct switchdev_obj_port_mdb {
 #define SWITCHDEV_OBJ_PORT_MDB(OBJ) \
 	container_of((OBJ), struct switchdev_obj_port_mdb, obj)
 
+
+#if IS_ENABLED(CONFIG_BRIDGE_CFM)
+struct switchdev_mac_addr {
+	unsigned char	addr[ETH_ALEN];
+};
+
+/* SWITCHDEV_OBJ_ID_MEP_CFM
+ * MEP domain
+ */
+enum switchdev_cfm_domain {
+	SWITCHDEV_CFM_PORT,
+	SWITCHDEV_CFM_VLAN,
+};
+
+/* MEP direction */
+enum switchdev_cfm_direction {
+	SWITCHDEV_CFM_DIRECTION_DOWN,
+	SWITCHDEV_CFM_DIRECTION_UP,
+};
+
+struct switchdev_obj_cfm_mep {
+	struct switchdev_obj obj;
+	u32 instance;
+	enum switchdev_cfm_domain domain; /* Domain for this MEP */
+	enum switchdev_cfm_direction direction; /* Up or Down MEP direction */
+	struct net_device *port; /* Residence port */
+};
+
+#define SWITCHDEV_OBJ_CFM_MEP(OBJ) \
+	container_of((OBJ), struct switchdev_obj_cfm_mep, obj)
+
+struct switchdev_obj_cfm_mep_config_set {
+	struct switchdev_obj obj;
+	u32 instance;
+	u32 mdlevel;
+	u32 mepid;
+	struct switchdev_mac_addr unicast_mac;
+};
+
+#define SWITCHDEV_OBJ_CFM_MEP_CONFIG_SET(OBJ) \
+	container_of((OBJ), struct switchdev_obj_cfm_mep_config_set, obj)
+
+#define SWITCHDEV_CFM_MAID_LENGTH	48
+
+struct switchdev_cfm_maid {
+	u8 data[SWITCHDEV_CFM_MAID_LENGTH];
+};
+
+enum switchdev_cfm_ccm_interval {
+	SWITCHDEV_CFM_CCM_INTERVAL_NONE,
+	SWITCHDEV_CFM_CCM_INTERVAL_3_3_MS,
+	SWITCHDEV_CFM_CCM_INTERVAL_10_MS,
+	SWITCHDEV_CFM_CCM_INTERVAL_100_MS,
+	SWITCHDEV_CFM_CCM_INTERVAL_1_SEC,
+	SWITCHDEV_CFM_CCM_INTERVAL_10_SEC,
+	SWITCHDEV_CFM_CCM_INTERVAL_1_MIN,
+	SWITCHDEV_CFM_CCM_INTERVAL_10_MIN,
+};
+
+struct switchdev_obj_cfm_cc_config_set {
+	struct switchdev_obj obj;
+	u32 instance;
+	struct switchdev_cfm_maid maid;
+	enum switchdev_cfm_ccm_interval interval;
+	bool enable;
+};
+
+#define SWITCHDEV_OBJ_CFM_CC_CONFIG_SET(OBJ) \
+	container_of((OBJ), struct switchdev_obj_cfm_cc_config_set, obj)
+
+struct switchdev_obj_cfm_cc_peer_mep {
+	struct switchdev_obj obj;
+	u32 instance;
+	u32 peer_mep_id;
+};
+
+#define SWITCHDEV_OBJ_CFM_CC_PEER_MEP(OBJ) \
+	container_of((OBJ), struct switchdev_obj_cfm_cc_peer_mep, obj)
+
+struct switchdev_obj_cfm_cc_rdi_set {
+	struct switchdev_obj obj;
+	u32 instance;
+	bool rdi;
+};
+
+#define SWITCHDEV_OBJ_CFM_CC_RDI_SET(OBJ) \
+	container_of((OBJ), struct switchdev_obj_cfm_cc_rdi_set, obj)
+
+struct switchdev_obj_cfm_cc_ccm_tx {
+	struct switchdev_obj obj;
+	u32 instance;
+	struct sk_buff *skb;
+	enum switchdev_cfm_ccm_interval interval;
+	bool seq_no_update;
+};
+
+#define SWITCHDEV_OBJ_CFM_CC_CCM_TX(OBJ) \
+	container_of((OBJ), struct switchdev_obj_cfm_cc_ccm_tx, obj)
+
+
+struct switchdev_cfm_mep_status {
+	u32 instance;
+	bool opcode_unexp_seen;
+	bool rx_level_low_seen;
+};
+
+struct switchdev_cfm_cc_peer_status {
+	u32 instance;
+	u32 mepid;
+	u8 ccm_defect:1;
+	u8 rdi:1;
+	u8 seen:1; /* CCM PDU received */
+	u8 seq_unexp_seen:1;
+};
+
+struct switchdev_obj_cfm_mip {
+	struct switchdev_obj obj;
+	u32 instance;
+	enum switchdev_cfm_direction direction; /* Up or Down MIP direction */
+	struct net_device *port; /* Residence port */
+	u32 vid; /* The VLAN ID */
+};
+
+#define SWITCHDEV_OBJ_CFM_MIP(OBJ) \
+	container_of((OBJ), struct switchdev_obj_cfm_mip, obj)
+
+enum switchdev_cfm_raps_handling {
+	SWITCHDEV_CFM_RAPS_HANDLING_NONE,
+	SWITCHDEV_CFM_RAPS_HANDLING_COPY_CPU,
+	SWITCHDEV_CFM_RAPS_HANDLING_REDIR_CPU,
+	SWITCHDEV_CFM_RAPS_HANDLING_DISCARD,
+};
+
+struct switchdev_obj_cfm_mip_config_set {
+	struct switchdev_obj obj;
+	u32 instance;
+	u32 mdlevel;
+	struct switchdev_mac_addr unicast_mac;
+	enum switchdev_cfm_raps_handling raps_handling;
+};
+
+#define SWITCHDEV_OBJ_CFM_MIP_CONFIG_SET(OBJ) \
+	container_of((OBJ), struct switchdev_obj_cfm_mip_config_set, obj)
+#endif
 
 /* SWITCHDEV_OBJ_ID_MRP */
 struct switchdev_obj_mrp {
@@ -222,6 +380,7 @@ enum switchdev_notifier_type {
 	SWITCHDEV_PORT_OBJ_ADD, /* Blocking. */
 	SWITCHDEV_PORT_OBJ_DEL, /* Blocking. */
 	SWITCHDEV_PORT_ATTR_SET, /* May be blocking . */
+	SWITCHDEV_PORT_ATTR_GET, /* May be blocking . */
 
 	SWITCHDEV_VXLAN_FDB_ADD_TO_BRIDGE,
 	SWITCHDEV_VXLAN_FDB_DEL_TO_BRIDGE,
@@ -303,6 +462,9 @@ void switchdev_deferred_process(void);
 int switchdev_port_attr_set(struct net_device *dev,
 			    const struct switchdev_attr *attr,
 			    struct netlink_ext_ack *extack);
+int switchdev_port_attr_get(struct net_device *dev,
+			    const struct switchdev_attr *attr,
+			    struct netlink_ext_ack *extack);
 int switchdev_port_obj_add(struct net_device *dev,
 			   const struct switchdev_obj *obj,
 			   struct netlink_ext_ack *extack);
@@ -367,6 +529,13 @@ int switchdev_handle_port_attr_set(struct net_device *dev,
 			int (*set_cb)(struct net_device *dev, const void *ctx,
 				      const struct switchdev_attr *attr,
 				      struct netlink_ext_ack *extack));
+int switchdev_handle_port_attr_get(struct net_device *dev,
+				   struct switchdev_notifier_port_attr_info *port_attr_info,
+				   bool (*check_cb)(const struct net_device *dev),
+				   int (*set_cb)(struct net_device *dev,
+					         const void *ctx,
+					         const struct switchdev_attr *attr,
+					         struct netlink_ext_ack *extack));
 #else
 
 static inline int
@@ -393,6 +562,13 @@ static inline void switchdev_deferred_process(void)
 }
 
 static inline int switchdev_port_attr_set(struct net_device *dev,
+					  const struct switchdev_attr *attr,
+					  struct netlink_ext_ack *extack)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int switchdev_port_attr_get(struct net_device *dev,
 					  const struct switchdev_attr *attr,
 					  struct netlink_ext_ack *extack)
 {
@@ -516,6 +692,17 @@ switchdev_handle_port_attr_set(struct net_device *dev,
 			int (*set_cb)(struct net_device *dev, const void *ctx,
 				      const struct switchdev_attr *attr,
 				      struct netlink_ext_ack *extack))
+{
+	return 0;
+}
+
+static inline int
+switchdev_handle_port_attr_get(struct net_device *dev,
+			       struct switchdev_notifier_port_attr_info *port_attr_info,
+			       bool (*check_cb)(const struct net_device *dev),
+			       int (*set_cb)(struct net_device *dev, const void *ctx,
+			                     const struct switchdev_attr *attr,
+			                     struct netlink_ext_ack *extack))
 {
 	return 0;
 }
