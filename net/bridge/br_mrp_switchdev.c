@@ -101,7 +101,7 @@ br_mrp_switchdev_set_ring_role(struct net_bridge *br, struct br_mrp *mrp,
 enum br_mrp_hw_support
 br_mrp_switchdev_send_ring_test(struct net_bridge *br, struct br_mrp *mrp,
 				u32 interval, u8 max_miss, u32 period,
-				bool monitor)
+				bool monitor, u8 best_mac[ETH_ALEN])
 {
 	struct switchdev_obj_ring_test_mrp test = {
 		.obj.orig_dev = br->dev,
@@ -115,6 +115,8 @@ br_mrp_switchdev_send_ring_test(struct net_bridge *br, struct br_mrp *mrp,
 
 	if (!IS_ENABLED(CONFIG_NET_SWITCHDEV))
 		return BR_MRP_SW;
+
+	ether_addr_copy(test.best_mac, best_mac);
 
 	return br_mrp_switchdev_port_obj(br, &test.obj, interval != 0);
 }

@@ -230,6 +230,7 @@ enum {
 	IFLA_BRIDGE_MRP_START_TEST_MAX_MISS,
 	IFLA_BRIDGE_MRP_START_TEST_PERIOD,
 	IFLA_BRIDGE_MRP_START_TEST_MONITOR,
+	IFLA_BRIDGE_MRP_START_TEST_BEST_MAC,
 	__IFLA_BRIDGE_MRP_START_TEST_MAX,
 };
 
@@ -310,6 +311,7 @@ struct br_mrp_start_test {
 	__u32 max_miss;
 	__u32 period;
 	__u32 monitor;
+	__u8  best_mac[ETH_ALEN];
 };
 
 struct br_mrp_in_state {

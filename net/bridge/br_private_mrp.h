@@ -36,6 +36,7 @@ struct br_mrp {
 	u32				test_count_miss;
 	u32				test_max_miss;
 	bool				test_monitor;
+	u8				test_best_mac[ETH_ALEN];
 
 	struct delayed_work		in_test_work;
 	u32				in_test_interval;
@@ -89,7 +90,7 @@ int br_mrp_switchdev_set_ring_state(struct net_bridge *br, struct br_mrp *mrp,
 enum br_mrp_hw_support
 br_mrp_switchdev_send_ring_test(struct net_bridge *br, struct br_mrp *mrp,
 				u32 interval, u8 max_miss, u32 period,
-				bool monitor);
+				bool monitor, u8 best_mac[ETH_ALEN]);
 int br_mrp_port_switchdev_set_state(struct net_bridge_port *p, u32 state);
 int br_mrp_port_switchdev_set_role(struct net_bridge_port *p,
 				   enum br_mrp_port_role_type role);
