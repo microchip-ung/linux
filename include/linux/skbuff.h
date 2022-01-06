@@ -582,6 +582,12 @@ struct skb_shared_info {
 	unsigned int	gso_type;
 	u32		tskey;
 
+	/* When non-NULL, this function is called instead of
+	 * skb_free_head() when the data associated with an
+	 * SKB is released (#dataref reaches zero).
+	 */
+	void (*free)(struct sk_buff *skb);
+
 	/*
 	 * Warning : all fields before dataref are cleared in __alloc_skb()
 	 */

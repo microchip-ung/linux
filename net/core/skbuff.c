@@ -751,8 +751,12 @@ static void skb_clone_fraglist(struct sk_buff *skb)
 static void skb_free_head(struct sk_buff *skb)
 {
 	unsigned char *head = skb->head;
+	struct skb_shared_info *shinfo = skb_shinfo(skb);
 
-	if (skb->head_frag) {
+	if (shinfo->free) {
+		if (!atomic_read(&shinfo->dataref))
+			shinfo->free(skb);
+	} else if (skb->head_frag) {
 		if (skb_pp_recycle(skb, head))
 			return;
 		skb_free_frag(head);
@@ -1879,6 +1883,7 @@ int pskb_expand_head(struct sk_buff *skb, int nhead, int ntail,
 	skb->cloned   = 0;
 	skb->hdr_len  = 0;
 	skb->nohdr    = 0;
+	skb_shinfo(skb)->free = NULL;
 	atomic_set(&skb_shinfo(skb)->dataref, 1);
 
 	skb_metadata_clear(skb);
