@@ -122,6 +122,14 @@ config RESET_MCHP_SPARX5
 	help
 	  This driver supports switch core reset for the Microchip Sparx5 SoC.
 
+config RESET_MCHP_LAN966X_PHY
+	bool "Microchip lan966x phy reset driver"
+	depends on SOC_LAN966 || COMPILE_TEST
+	select MFD_SYSCON
+	help
+	  This driver supports the release of phy reset for the
+	  Microchip lan966x SoC.
+
 config RESET_MESON
 	tristate "Meson Reset Driver"
 	depends on ARCH_MESON || COMPILE_TEST
