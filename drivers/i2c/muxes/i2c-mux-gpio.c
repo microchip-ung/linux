@@ -14,6 +14,8 @@
 #include <linux/slab.h>
 #include <linux/bits.h>
 #include <linux/gpio/consumer.h>
+#include <linux/delay.h>
+
 /* FIXME: stop poking around inside gpiolib */
 #include "../../gpio/gpiolib.h"
 
@@ -21,6 +23,7 @@ struct gpiomux {
 	struct i2c_mux_gpio_platform_data data;
 	int ngpios;
 	struct gpio_desc **gpios;
+	int select_delay;
 };
 
 static void i2c_mux_gpio_set(const struct gpiomux *mux, unsigned val)
@@ -30,6 +33,8 @@ static void i2c_mux_gpio_set(const struct gpiomux *mux, unsigned val)
 	values[0] = val;
 
 	gpiod_set_array_value_cansleep(mux->ngpios, mux->gpios, NULL, values);
+	if (mux->select_delay)
+		udelay(mux->select_delay);
 }
 
 static int i2c_mux_gpio_select(struct i2c_mux_core *muxc, u32 chan)
@@ -115,6 +120,8 @@ static int i2c_mux_gpio_probe_fw(struct gpiomux *mux,
 
 	if (device_property_read_u32(dev, "idle-state", &mux->data.idle))
 		mux->data.idle = I2C_MUX_GPIO_NO_IDLE;
+
++	device_property_read_u32(dev, "select-delay", &mux->select_delay);
 
 	return 0;
 }
