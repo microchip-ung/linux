@@ -176,6 +176,19 @@ void __init of_core_init(void)
 		pr_err("failed to register existing nodes\n");
 		return;
 	}
+
+	if (!of_root) {
+		of_root = kzalloc(sizeof(*of_root), GFP_KERNEL);
+		if (!of_root) {
+			mutex_unlock(&of_mutex);
+			pr_err("failed to create root node\n");
+			return;
+		}
+
+		of_root->full_name = "/";
+		of_node_init(of_root);
+	}
+
 	for_each_of_allnodes(np) {
 		__of_attach_node_sysfs(np);
 		if (np->phandle && !phandle_cache[of_phandle_cache_hash(np->phandle)])
@@ -184,8 +197,7 @@ void __init of_core_init(void)
 	mutex_unlock(&of_mutex);
 
 	/* Symlink in /proc as required by userspace ABI */
-	if (of_root)
-		proc_symlink("device-tree", NULL, "/sys/firmware/devicetree/base");
+	proc_symlink("device-tree", NULL, "/sys/firmware/devicetree/base");
 }
 
 static struct property *__of_find_property(const struct device_node *np,

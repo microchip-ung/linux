@@ -1462,6 +1462,11 @@ enum of_reconfig_change {
 };
 
 #ifdef CONFIG_OF_DYNAMIC
+struct device_node *of_node_alloc(const char *name, gfp_t allocflags);
+struct property *of_property_alloc(const char *name, const void *value,
+				   size_t len, gfp_t allocflags);
+void of_property_free(const struct property *prop);
+
 extern int of_reconfig_notifier_register(struct notifier_block *);
 extern int of_reconfig_notifier_unregister(struct notifier_block *);
 extern int of_reconfig_notify(unsigned long, struct of_reconfig_data *rd);
@@ -1506,6 +1511,21 @@ static inline int of_changeset_update_property(struct of_changeset *ocs,
 	return of_changeset_action(ocs, OF_RECONFIG_UPDATE_PROPERTY, np, prop);
 }
 #else /* CONFIG_OF_DYNAMIC */
+static inline struct device_node *of_node_alloc(const char *name,
+						gfp_t allocflags)
+{
+	return NULL;
+}
+
+static inline
+struct property *of_property_alloc(const char *name, const void *value,
+				   size_t len, gfp_t allocflags)
+{
+	return NULL;
+}
+
+static inline  void of_property_free(const struct property *prop) {}
+
 static inline int of_reconfig_notifier_register(struct notifier_block *nb)
 {
 	return -EINVAL;
@@ -1569,8 +1589,8 @@ struct of_overlay_notify_data {
 
 #ifdef CONFIG_OF_OVERLAY
 
-int of_overlay_fdt_apply(const void *overlay_fdt, u32 overlay_fdt_size,
-			 int *ovcs_id);
+int of_overlay_fdt_apply_to_node(const void *overlay_fdt, u32 overlay_fdt_size,
+				 int *ovcs_id, struct device_node *target);
 int of_overlay_remove(int *ovcs_id);
 int of_overlay_remove_all(void);
 
@@ -1579,8 +1599,10 @@ int of_overlay_notifier_unregister(struct notifier_block *nb);
 
 #else
 
-static inline int of_overlay_fdt_apply(void *overlay_fdt, u32 overlay_fdt_size,
-				       int *ovcs_id)
+static inline int of_overlay_fdt_apply_to_node(const void *overlay_fdt,
+					       u32 overlay_fdt_size,
+					       int *ovcs_id,
+					       struct device_node *target)
 {
 	return -ENOTSUPP;
 }
@@ -1606,5 +1628,12 @@ static inline int of_overlay_notifier_unregister(struct notifier_block *nb)
 }
 
 #endif
+
+static inline int of_overlay_fdt_apply(const void *overlay_fdt,
+				       u32 overlay_fdt_size, int *ovcs_id)
+{
+	return of_overlay_fdt_apply_to_node(overlay_fdt, overlay_fdt_size,
+					    ovcs_id, NULL);
+}
 
 #endif /* _LINUX_OF_H */

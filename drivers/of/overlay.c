@@ -725,7 +725,8 @@ static struct device_node *find_target(struct device_node *info_node)
  * detected in @overlay_root.  On error return, the caller of
  * init_overlay_changeset() must call free_overlay_changeset().
  */
-static int init_overlay_changeset(struct overlay_changeset *ovcs)
+static int init_overlay_changeset(struct overlay_changeset *ovcs,
+				  struct device_node *target)
 {
 	struct device_node *node, *overlay_node;
 	struct fragment *fragment;
@@ -786,7 +787,10 @@ static int init_overlay_changeset(struct overlay_changeset *ovcs)
 
 		fragment = &fragments[cnt];
 		fragment->overlay = overlay_node;
-		fragment->target = find_target(node);
+		if (target)
+			fragment->target = target;
+		else
+			fragment->target = find_target(node);
 		if (!fragment->target) {
 			of_node_put(fragment->overlay);
 			ret = -EINVAL;
@@ -899,7 +903,8 @@ static void free_overlay_changeset(struct overlay_changeset *ovcs)
  * the caller of of_overlay_apply() must call free_overlay_changeset().
  */
 
-static int of_overlay_apply(struct overlay_changeset *ovcs)
+static int of_overlay_apply(struct overlay_changeset *ovcs,
+			    struct device_node *target)
 {
 	int ret = 0, ret_revert, ret_tmp;
 
@@ -907,7 +912,7 @@ static int of_overlay_apply(struct overlay_changeset *ovcs)
 	if (ret)
 		goto out;
 
-	ret = init_overlay_changeset(ovcs);
+	ret = init_overlay_changeset(ovcs, target);
 	if (ret)
 		goto out;
 
@@ -965,8 +970,8 @@ out:
  * the caller should call of_overlay_remove() with the value in *@ret_ovcs_id.
  */
 
-int of_overlay_fdt_apply(const void *overlay_fdt, u32 overlay_fdt_size,
-			 int *ret_ovcs_id)
+int of_overlay_fdt_apply_to_node(const void *overlay_fdt, u32 overlay_fdt_size,
+				 int *ret_ovcs_id, struct device_node *target)
 {
 	void *new_fdt;
 	void *new_fdt_align;
@@ -1036,7 +1041,7 @@ int of_overlay_fdt_apply(const void *overlay_fdt, u32 overlay_fdt_size,
 	}
 	ovcs->overlay_mem = overlay_mem;
 
-	ret = of_overlay_apply(ovcs);
+	ret = of_overlay_apply(ovcs, target);
 	/*
 	 * If of_overlay_apply() error, calling free_overlay_changeset() may
 	 * result in a memory leak if the apply partly succeeded, so do NOT
@@ -1054,7 +1059,7 @@ out_unlock:
 	of_overlay_mutex_unlock();
 	return ret;
 }
-EXPORT_SYMBOL_GPL(of_overlay_fdt_apply);
+EXPORT_SYMBOL_GPL(of_overlay_fdt_apply_to_node);
 
 /*
  * Find @np in @tree.

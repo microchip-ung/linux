@@ -16,12 +16,147 @@
 #include "pci.h"
 
 #ifdef CONFIG_PCI
+static int of_pci_add_property(struct of_changeset *ocs, struct device_node *np,
+			       const char *name, const void *value, int length)
+{
+	int ret;
+	struct property *prop = of_property_alloc(name, value, length,
+						  GFP_KERNEL);
+	if (!prop)
+		return -ENOMEM;
+
+	ret = of_changeset_add_property(ocs, np, prop);
+	if (ret)
+		of_property_free(prop);
+
+	return ret;
+}
+
+static int of_pci_add_cells_props(struct device_node *node,
+				  struct of_changeset *cs, int n_addr_cells,
+				  int n_size_cells)
+{
+	__be32 val;
+	int ret;
+
+	ret = of_pci_add_property(cs, node, "ranges", NULL, 0);
+	if (ret)
+		return ret;
+
+	val = __cpu_to_be32(n_addr_cells);
+	ret = of_pci_add_property(cs, node, "#address-cells", &val,
+				  sizeof(__be32));
+	if (ret)
+		return ret;
+
+	val = __cpu_to_be32(n_size_cells);
+	return of_pci_add_property(cs, node, "#size-cells", &val,
+				   sizeof(__be32));
+}
+
+static int of_pci_add_pci_bus_props(struct device_node *node,
+				    struct of_changeset *cs)
+{
+	int ret;
+
+	ret = of_pci_add_property(cs, node, "device_type", "pci",
+				  strlen("pci") + 1);
+	if (ret)
+		return ret;
+
+	return of_pci_add_cells_props(node, cs, 3, 2);
+}
+
+static void of_pci_make_dev_node(struct pci_dev *dev)
+{
+	static struct of_changeset cs;
+	const char *pci_type = "dev";
+	struct device_node *node;
+	__be32 val[5] = {0};
+	int ret;
+
+	node = of_node_alloc(NULL, GFP_KERNEL);
+	if (!node)
+		return;
+
+	node->parent = dev->bus->dev.of_node;
+	of_changeset_init(&cs);
+
+	if (pci_is_bridge(dev)) {
+		ret = of_pci_add_pci_bus_props(node, &cs);
+		if (ret)
+			goto changeset_destroy;
+		pci_type = "pci";
+	}
+
+	node->full_name = kasprintf(GFP_KERNEL, "%s@%x,%x", pci_type,
+				    PCI_SLOT(dev->devfn), PCI_FUNC(dev->devfn));
+
+	val[0] = __cpu_to_be32(dev->devfn << 8);
+	val[4] = __cpu_to_be32(SZ_4K);
+	ret = of_pci_add_property(&cs, node, "reg", val, 5 * sizeof(__be32));
+	if (ret)
+		goto changeset_destroy;
+
+	ret = of_changeset_attach_node(&cs, node);
+	if (ret)
+		goto changeset_destroy;
+
+	ret = of_changeset_apply(&cs);
+	if (ret)
+		goto changeset_destroy;
+
+	dev->dev.of_node = node;
+
+	return;
+
+changeset_destroy:
+	of_changeset_destroy(&cs);
+	kfree(node);
+}
+
+static struct device_node *of_pci_create_root_bus_node(struct pci_bus *bus)
+{
+	static struct of_changeset cs;
+	struct device_node *node;
+	int ret;
+
+	node = of_node_alloc("pci", GFP_KERNEL);
+	if (!node)
+		return NULL;
+
+	node->parent = of_root;
+
+	of_changeset_init(&cs);
+	ret = of_pci_add_pci_bus_props(node, &cs);
+	if (ret)
+		goto changeset_destroy;
+
+	ret = of_changeset_attach_node(&cs, node);
+	if (ret)
+		goto changeset_destroy;
+
+	ret = of_changeset_apply(&cs);
+	if (ret)
+		goto changeset_destroy;
+
+	return node;
+
+changeset_destroy:
+	of_changeset_destroy(&cs);
+	kfree(node);
+
+	return NULL;
+}
+
 void pci_set_of_node(struct pci_dev *dev)
 {
 	if (!dev->bus->dev.of_node)
 		return;
 	dev->dev.of_node = of_pci_find_child_device(dev->bus->dev.of_node,
 						    dev->devfn);
+	if (!dev->dev.of_node)
+		of_pci_make_dev_node(dev);
 	if (dev->dev.of_node)
 		dev->dev.fwnode = &dev->dev.of_node->fwnode;
 }
@@ -39,6 +174,8 @@ void pci_set_bus_of_node(struct pci_bus *bus)
 
 	if (bus->self == NULL) {
 		node = pcibios_get_phb_of_node(bus);
+		if (!node)
+			node = of_pci_create_root_bus_node(bus);
 	} else {
 		node = of_node_get(bus->self->dev.of_node);
 		if (node && of_property_read_bool(node, "external-facing"))

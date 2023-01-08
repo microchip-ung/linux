@@ -115,7 +115,26 @@ extern void *__unflatten_device_tree(const void *blob,
  * without taking node references, so you either have to
  * own the devtree lock or work on detached trees only.
  */
-struct property *__of_prop_dup(const struct property *prop, gfp_t allocflags);
+
+/**
+ * __of_prop_dup - Copy a property dynamically.
+ * @prop:	Property to copy
+ * @allocflags:	Allocation flags (typically pass GFP_KERNEL)
+ *
+ * Copy a property by dynamically allocating the memory of both the
+ * property structure and the property name & contents. The property's
+ * flags have the OF_DYNAMIC bit set so that we can differentiate between
+ * dynamically allocated properties and not.
+ *
+ * Return: The newly allocated property or NULL on out of memory error.
+ */
+static inline
+struct property *__of_prop_dup(const struct property *prop, gfp_t allocflags)
+{
+	return of_property_alloc(prop->name, prop->value, prop->length,
+				 allocflags);
+}
+
 struct device_node *__of_node_dup(const struct device_node *np,
 				  const char *full_name);
 
