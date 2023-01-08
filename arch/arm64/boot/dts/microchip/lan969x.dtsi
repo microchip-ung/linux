@@ -1,0 +1,193 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+
+/*
+ * Copyright (c) 2022 Microchip Technology Inc. and its subsidiaries.
+ */
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/mfd/atmel-flexcom.h>
+
+/ {
+	compatible = "microchip,lan969x";
+	interrupt-parent = <&gic>;
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	cpus {
+		#address-cells = <2>;
+		#size-cells = <0>;
+		cpu0: cpu@0 {
+			compatible = "arm,cortex-a53";
+			device_type = "cpu";
+			reg = <0x0 0x0>;
+			next-level-cache = <&L2_0>;
+		};
+		L2_0: l2-cache0 {
+			compatible = "cache";
+		};
+	};
+
+	memory {
+		device_type = "memory";
+		reg = <0x60000000 0x40000000>;  /* 1GB */
+	};
+
+	arm-pmu {
+		compatible = "arm,cortex-a53-pmu";
+		interrupts = <GIC_SPI 77 IRQ_TYPE_LEVEL_HIGH>;
+	};
+
+	timer {
+		compatible = "arm,armv8-timer";
+		interrupts = <GIC_PPI 13 IRQ_TYPE_LEVEL_LOW>, /* Secure Phys IRQ */
+			     <GIC_PPI 14 IRQ_TYPE_LEVEL_LOW>, /* Non-secure Phys IRQ */
+			     <GIC_PPI 11 IRQ_TYPE_LEVEL_LOW>, /* Virt IRQ */
+			     <GIC_PPI 10 IRQ_TYPE_LEVEL_LOW>; /* Hyp IRQ */
+	};
+
+	fabric_clk: fabric_clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <20000000>;
+	};
+
+	nic_clk: nic_clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <200000000>;	/* NIC clock = 200MHz */
+	};
+
+	dummy_clk: dummy_clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <30000000>;	/* CPU clock = 30MHz */
+	};
+
+	axi {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		cpu_ctrl: syscon@e00c0000 {
+			compatible = "microchip,lan966x-cpu-syscon", "syscon";
+			reg = <0xE00C0000 0x16>;
+		};
+
+		switch_ctrl: syscon@e201000c {
+			compatible = "microchip,lan966x-switch-syscon", "syscon";
+			reg = <0xe201000c 0x8>;
+		};
+
+		cpu_reset: cpu_reset@0 {
+			compatible = "microchip,lan966x-chip-reset";
+			#reset-cells = <1>;
+		};
+
+		gic: interrupt-controller@e8c10000 {
+			compatible = "arm,gic-400";
+			#interrupt-cells = <3>;
+			interrupt-controller;
+			reg = <0xe8c11000 0x1000>, /* Distributor GICD_ */
+			      <0xe8c12000 0x2000>, /* CPU interface GICC_ */
+			      <0xe8c14000 0x2000>, /* Virt interface control */
+			      <0xe8c16000 0x2000>; /* Virt CPU interface */
+			interrupts = <GIC_PPI 9 IRQ_TYPE_LEVEL_HIGH>;
+		};
+
+		gpio: pinctrl@e20100d4 {
+			compatible = "microchip,lan969x-pinctrl";
+			reg = <0xe20100d4 0xd4>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			gpio-ranges = <&gpio 0 0 66>;
+
+			fc0_pins: fc0_uart_pins {
+				pins = "GPIO_3", "GPIO_4";
+				function = "fc";
+			};
+
+			fc1_pins: fc1_uart_pins {
+				pins = "GPIO_28", "GPIO_29";
+				function = "fc";
+			};
+
+			fc2_pins: fc2_uart_pins {
+				pins = "GPIO_65", "GPIO_66";
+				function = "fc";
+			};
+
+			fc3_pins: fc3_uart_pins {
+				pins = "GPIO_55", "GPIO_56";
+				function = "fc";
+			};
+
+			emmc_sd_pins: emmc-sd-pins {
+				/* eMMC_SD - CMD, CLK, D0, D1, D2, D3, D4, D5, D6, D7, RSTN */
+				pins = "GPIO_14", "GPIO_15", "GPIO_16", "GPIO_17",
+					"GPIO_18", "GPIO_19", "GPIO_20", "GPIO_21",
+					"GPIO_22", "GPIO_23", "GPIO_24";
+				function = "emmc_sd";
+			};
+		};
+
+		flx0: flexcom@e0040000 {
+			compatible = "atmel,sama5d2-flexcom";
+			reg = <0xe0040000 0x100>;
+			clocks = <&fabric_clk>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0x0 0xe0040000 0x800>;
+			status = "disabled";
+		};
+
+		otp0: otp@e0021000 {
+			compatible = "microchip,lan969x-otp";
+			reg = <0xe0021000 0x300>;
+		};
+
+		sdmmc0: sdhci-host@e0830000 {
+			compatible = "microchip,lan966x-sdhci";
+			pinctrl-0 = <&emmc_sd_pins>;
+			pinctrl-names = "default";
+			reg = <0xe0830000 0x00000300>;
+			interrupts = <GIC_SPI 64 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&dummy_clk>, <&dummy_clk>;
+			clock-names = "hclock", "multclk";
+			status = "disabled";
+		};
+
+		sdmmc1: sdhci-host@e0838000 {
+			compatible = "microchip,lan966x-sdhci";
+			reg = <0xe0838000 0x00000300>;
+			interrupts = <GIC_SPI 50 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&dummy_clk>, <&dummy_clk>;
+			clock-names = "hclock", "multclk";
+			status = "disabled";
+		};
+
+		qspi0: spi@e0804000 {
+			compatible = "microchip,lan966x-qspi";
+			reg = <0xe0804000 0x00000100>, <0x20000000 0x08000000>;
+			reg-names = "qspi_base", "qspi_mmap";
+			interrupts = <GIC_SPI 43 IRQ_TYPE_LEVEL_HIGH>;
+			clocks =  <&dummy_clk>, <&dummy_clk>;
+			clock-names = "pclk", "gclk";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+
+		qspi2: spi@e0834000 {
+			compatible = "microchip,lan966x-qspi";
+			reg = <0xe0834000 0x00000100>, <0x30000000 0x04000000>;
+			reg-names = "qspi_base", "qspi_mmap";
+			interrupts = <GIC_SPI 66 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&dummy_clk>, <&dummy_clk>;
+			clock-names = "pclk", "gclk";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+	};
+};
