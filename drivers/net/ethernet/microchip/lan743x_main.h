@@ -5,6 +5,7 @@
 #define _LAN743X_H
 
 #include <linux/phy.h>
+#include <linux/irq.h>
 #include "lan743x_ptp.h"
 
 #define DRIVER_AUTHOR   "Bryan Whitehead <Bryan.Whitehead@microchip.com>"
@@ -378,7 +379,9 @@
 #define INT_BIT_ALL_TX_			(0x000F0000)
 #define INT_BIT_SW_GP_			BIT(9)
 #define INT_BIT_1588_			BIT(7)
-#define INT_BIT_ALL_OTHER_		(INT_BIT_SW_GP_ | INT_BIT_1588_)
+#define INT_BIT_EXT_PHY_		BIT(5)
+#define INT_BIT_ALL_OTHER_		\
+	(INT_BIT_SW_GP_ | INT_BIT_1588_ | INT_BIT_EXT_PHY_)
 #define INT_BIT_MAS_			BIT(0)
 
 #define INT_SET				(0x784)
@@ -1038,6 +1041,11 @@ struct lan743x_adapter {
 	u8			max_tx_channels;
 	u8			used_tx_channels;
 	u8			max_vector_count;
+
+	struct irq_chip		irqchip;
+	struct irq_domain	*irqdomain;
+	struct fwnode_handle	*irqfwnode;
+	u32			phy_irq;
 
 #define LAN743X_ADAPTER_FLAG_OTP		BIT(0)
 	u32			flags;

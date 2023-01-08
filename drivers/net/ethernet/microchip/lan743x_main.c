@@ -6,6 +6,7 @@
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/crc32.h>
+#include <linux/irqdomain.h>
 #include <linux/microchipphy.h>
 #include <linux/net_tstamp.h>
 #include <linux/of_mdio.h>
@@ -330,6 +331,10 @@ static void lan743x_intr_shared_isr(void *context, u32 int_sts, u32 flags)
 		if (int_sts & INT_BIT_1588_) {
 			lan743x_ptp_isr(adapter);
 			int_sts &= ~INT_BIT_1588_;
+		}
+		if (int_sts & INT_BIT_EXT_PHY_) {
+			generic_handle_domain_irq(adapter->irqdomain, 0);
+			int_sts &= ~INT_BIT_EXT_PHY_;
 		}
 	}
 	if (int_sts)
@@ -1483,12 +1488,53 @@ static void lan743x_phy_close(struct lan743x_adapter *adapter)
 	netdev->phydev = NULL;
 }
 
+static void lan743x_phy_setup_irqs(struct lan743x_adapter *adapter)
+{
+	adapter->irqfwnode = irq_domain_alloc_named_fwnode("LAN743x-MSI");
+	if (!adapter->irqfwnode)
+		return;
+
+	adapter->irqdomain = irq_domain_create_linear(adapter->irqfwnode, 1,
+						      &irq_domain_simple_ops,
+						      adapter);
+	if (!adapter->irqdomain)
+		goto free_irqfwnode;
+
+	adapter->phy_irq = irq_create_mapping(adapter->irqdomain, 0);
+	if (!adapter->phy_irq)
+		goto remove_irqdomain;
+
+	adapter->irqchip = dummy_irq_chip;
+	adapter->irqchip.name = "lan743x";
+	irq_set_chip_and_handler_name(adapter->phy_irq, &adapter->irqchip,
+				      handle_simple_irq, "phy");
+	return;
+
+remove_irqdomain:
+	irq_domain_remove(adapter->irqdomain);
+
+free_irqfwnode:
+	irq_domain_free_fwnode(adapter->irqfwnode);
+
+	return;
+}
+
+static void lan743x_phy_clear_irqs(struct lan743x_adapter *adapter)
+{
+	irq_dispose_mapping(adapter->phy_irq);
+	irq_domain_remove(adapter->irqdomain);
+	irq_domain_free_fwnode(adapter->irqfwnode);
+}
+
 static int lan743x_phy_open(struct lan743x_adapter *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
 	struct lan743x_phy *phy = &adapter->phy;
 	struct phy_device *phydev;
 	int ret = -EIO;
+
+	if ((adapter->csr.id_rev & ID_REV_ID_MASK_) == ID_REV_ID_LAN7431_)
+		lan743x_phy_setup_irqs(adapter);
 
 	/* try devicetree phy, or fixed link */
 	phydev = of_phy_get_and_connect(netdev, adapter->pdev->dev.of_node,
@@ -1500,6 +1546,7 @@ static int lan743x_phy_open(struct lan743x_adapter *adapter)
 		if (!phydev)
 			goto return_error;
 
+		phydev->irq = adapter->phy_irq;
 		if (adapter->is_pci11x1x)
 			ret = phy_connect_direct(netdev, phydev,
 						 lan743x_phy_link_status_change,
@@ -1507,10 +1554,19 @@ static int lan743x_phy_open(struct lan743x_adapter *adapter)
 		else
 			ret = phy_connect_direct(netdev, phydev,
 						 lan743x_phy_link_status_change,
-						 PHY_INTERFACE_MODE_GMII);
+						 phydev->interface);
 		if (ret)
 			goto return_error;
 	}
+
+	/* Enable the interrupts from PHY only on lan7431 because on lan7430 the
+	 * the register that contains interrupt status is always active
+	 */
+	if (phydev->irq &&
+	   ((adapter->csr.id_rev & ID_REV_ID_MASK_) == ID_REV_ID_LAN7431_))
+		lan743x_csr_write(adapter, INT_EN_SET,
+				  lan743x_csr_read(adapter, INT_EN_SET) |
+				  INT_BIT_EXT_PHY_);
 
 	/* MAC doesn't support 1000T Half */
 	phy_remove_link_mode(phydev, ETHTOOL_LINK_MODE_1000baseT_Half_BIT);
@@ -2117,6 +2173,7 @@ static netdev_tx_t lan743x_tx_xmit_frame(struct lan743x_tx *tx,
 					 (unsigned short)8);
 	}
 
+	skb_tx_timestamp(skb);
 	if (lan743x_tx_frame_start(tx,
 				   skb->data, head_length,
 				   start_frame_length,
@@ -3088,8 +3145,11 @@ static int lan743x_netdev_ioctl(struct net_device *netdev,
 {
 	if (!netif_running(netdev))
 		return -EINVAL;
-	if (cmd == SIOCSHWTSTAMP)
-		return lan743x_ptp_ioctl(netdev, ifr, cmd);
+
+	if (!phy_has_hwtstamp(netdev->phydev))
+		if (cmd == SIOCSHWTSTAMP)
+			return lan743x_ptp_ioctl(netdev, ifr, cmd);
+
 	return phy_mii_ioctl(netdev->phydev, ifr, cmd);
 }
 
@@ -3199,6 +3259,7 @@ static void lan743x_full_cleanup(struct lan743x_adapter *adapter)
 {
 	unregister_netdev(adapter->netdev);
 
+	lan743x_phy_clear_irqs(adapter);
 	lan743x_mdiobus_cleanup(adapter);
 	lan743x_hardware_cleanup(adapter);
 	lan743x_pci_cleanup(adapter);
