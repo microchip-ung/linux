@@ -14,6 +14,8 @@
 #include <asm/unwind.h>
 #include <asm/hardware/cache-b15-rac.h>
 
+.arch armv7-a
+
 #include "proc-macros.S"
 
 #ifdef CONFIG_CPU_ICACHE_MISMATCH_WORKAROUND
