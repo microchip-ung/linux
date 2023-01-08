@@ -496,6 +496,15 @@ config VCPU_STALL_DETECTOR
 
 	  If you do not intend to run this kernel as a guest, say N.
 
+config MCHP_TFA_CTL
+	tristate
+	default SOC_LAN966 || COMPILE_TEST
+	select ARM_PSCI
+	select CRYPTO_SHA256
+	help
+	  This will enable an interface for functions supplied by the
+	  Microchip LAN966X SoC secure firmware.
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
