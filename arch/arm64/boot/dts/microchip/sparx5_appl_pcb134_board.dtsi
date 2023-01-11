@@ -1,0 +1,116 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2023 Microchip Technology Inc. and its subsidiaries.
+ */
+
+#include "sparx5_pcb134_board.dtsi"
+#include "sparx5_appl_pcb_common.dtsi"
+
+/{
+	aliases {
+	    i2c0   = &i2c0;
+	    i2c100 = &i2c_sfp1;
+	    i2c101 = &i2c_sfp2;
+	    i2c102 = &i2c_sfp3;
+	    i2c103 = &i2c_sfp4;
+	    i2c104 = &i2c_sfp5;
+	    i2c105 = &i2c_sfp6;
+	    i2c106 = &i2c_sfp7;
+	    i2c107 = &i2c_sfp8;
+	    i2c108 = &i2c_sfp9;
+	    i2c109 = &i2c_sfp10;
+	    i2c110 = &i2c_sfp11;
+	    i2c111 = &i2c_sfp12;
+	    i2c112 = &i2c_sfp13;
+	    i2c113 = &i2c_sfp14;
+	    i2c114 = &i2c_sfp15;
+	    i2c115 = &i2c_sfp16;
+	    i2c116 = &i2c_sfp17;
+	    i2c117 = &i2c_sfp18;
+	    i2c118 = &i2c_sfp19;
+	    i2c119 = &i2c_sfp20;
+	};
+};
+
+&spi0 {
+	/delete-node/ spi@0;
+
+	// synce module
+	spi@7 {
+		compatible = "mchp,synce_dpll";
+		reg = <7>;
+		pinctrl-0 = <&synce_pins>;
+		pinctrl-names = "default";
+		spi-max-frequency = <8000000>;
+	};
+	// redwood onboard ptp dpll
+	spi@8 {
+		compatible = "mchp,synce_builtin";
+		reg = <8>;
+		pinctrl-0 = <&synce_builtin_pins>;
+		pinctrl-names = "default";
+		spi-max-frequency = <8000000>;
+	};
+};
+
+&gpio {
+	/* Used for LED control, so only claim output pins */
+	sgpio0_pins: sgpio-pins {
+		pins = "GPIO_0", "GPIO_1";
+		function = "sg0";
+	};
+
+	/* Used for LED control, so only claim output pins */
+	sgpio1_pins: sgpio1-pins {
+		pins = "GPIO_4", "GPIO_5";
+		function = "sg1";
+	};
+
+	synce_pins: synce-pins {
+		// CS7
+		pins = "GPIO_28";
+		function = "si";
+	};
+
+	synce_builtin_pins: synce-builtin-pins {
+		// CS8
+		pins = "GPIO_29";
+		function = "si";
+	};
+};
+
+&switch {
+	status = "disabled";
+	/delete-property/ resets;
+	/delete-property/ reset-names;
+	/delete-node/ ethernet-ports;
+};
+
+&axi {
+	/delete-node/ sfp-eth12;
+	/delete-node/ sfp-eth13;
+	/delete-node/ sfp-eth14;
+	/delete-node/ sfp-eth15;
+	/delete-node/ sfp-eth48;
+	/delete-node/ sfp-eth49;
+	/delete-node/ sfp-eth50;
+	/delete-node/ sfp-eth51;
+	/delete-node/ sfp-eth52;
+	/delete-node/ sfp-eth53;
+	/delete-node/ sfp-eth54;
+	/delete-node/ sfp-eth55;
+	/delete-node/ sfp-eth56;
+	/delete-node/ sfp-eth57;
+	/delete-node/ sfp-eth58;
+	/delete-node/ sfp-eth59;
+	/delete-node/ sfp-eth60;
+	/delete-node/ sfp-eth61;
+	/delete-node/ sfp-eth62;
+	/delete-node/ sfp-eth63;
+};
+
+&mdio3 {
+	status = "disabled";
+	/delete-node/ ethernet-phy@64;
+};
+

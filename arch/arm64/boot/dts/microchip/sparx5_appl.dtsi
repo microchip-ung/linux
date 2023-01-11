@@ -1,0 +1,119 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2023 Microchip Technology Inc. and its subsidiaries.
+ */
+
+/ {
+	timer {
+		clock-frequency = <250000000>;
+	};
+
+	axi: axi@600000000 {
+
+		cpu_ctrl: syscon@600000000 {
+			/delete-node/ mux-controller;
+		};
+		/delete-node/ cpu_ctrl;
+
+		cpu_ctrl: syscon@600000000 {
+			compatible = "microchip,sparx5-cpu-syscon", "syscon";
+			reg = <0x6 0x00000000 0xd0>;
+		};
+
+		/delete-node/ reset-controller@611010008;
+
+		reset: reset@611010008 {
+			compatible = "microchip,sparx5-chip-reset";
+			reg = <0x6 0x11010008 0x4>,  <6 0x00000000 0xd0>;
+			/* Reset switch core at load */
+			microchip,reset-switch-core;
+			#reset-cells = <1>;
+		};
+
+		mux: mux-controller {
+			compatible = "microchip,sparx5-spi-mux";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			#mux-control-cells = <0>;
+		};
+
+		spi0: spi@600104000 {
+			mux-controls = <&mux>;
+		};
+
+		sgpio0: gpio@61101036c {
+			/delete-property/ resets;
+			/delete-property/ reset-names;
+			/delete-property/ reg;
+
+			reg = <0x6 0x1101036c 0x118>;
+		};
+
+		sgpio1: gpio@611010484 {
+			/delete-property/ resets;
+			/delete-property/ reset-names;
+			/delete-property/ reg;
+
+			reg = <0x6 0x11010484 0x118>;
+		};
+
+		sgpio2: gpio@61101059c {
+			/delete-property/ resets;
+			/delete-property/ reset-names;
+			/delete-property/ reg;
+
+			reg = <0x6 0x1101059c 0x118>;
+		};
+
+		uio0: vcoreiii_switch@600000000 {
+			compatible = "microchip,uio_sparx5_irqmux";
+			reg = <0x6 0x00000000 0x12000000>;
+			reg-names = "origin1_2";
+			status = "disabled";
+		};
+
+		dma: dma-controller@600000000 {
+			compatible = "microchip,vsc7558-fdma";
+			reg = <0x6 0x10000000 0x10000000>, // CSR
+			      <0x6 0x00000000 0x10000000>; // VCore
+			#dma-cells = <1>;
+			dma-channels = <8>;
+			interrupts = <GIC_SPI 25 IRQ_TYPE_LEVEL_HIGH>;
+			status = "disabled";
+		};
+
+		ifh0: ifh_switch_port@0 {
+			compatible = "microchip,vsc7558-fdma-ifh";
+			reg = <0x6 0x10000000 0x10000000>; // CSR
+			dmas = <&dma 0>, <&dma 6>;
+			dma-names = "tx", "rx";
+			interrupts = <GIC_SPI 30 IRQ_TYPE_LEVEL_HIGH>,<GIC_SPI 31 IRQ_TYPE_LEVEL_HIGH>;
+			interrupt-names = "xtr", "inj";
+			status = "disabled";
+		};
+
+		ifh1: ifh_switch_port@1 {
+			compatible = "microchip,vsc7558-fdma-ifh";
+			reg = <0x6 0x10000000 0x10000000>; // CSR
+			dmas = <&dma 1>, <&dma 7>;
+			dma-names = "tx", "rx";
+			interrupts = <GIC_SPI 30 IRQ_TYPE_LEVEL_HIGH>,<GIC_SPI 31 IRQ_TYPE_LEVEL_HIGH>;
+			interrupt-names = "xtr", "inj";
+			status = "disabled";
+		};
+
+		ifmux: vcoreiii_switch_ifmux@600000000 {
+			compatible = "microchip,sparx5-ifmux";
+			status = "disabled";
+		};
+
+		serdes@10808000 {
+			status = "disabled";
+		};
+
+		mdio@61101031c {
+			status = "disabled";
+		};
+
+	};
+};

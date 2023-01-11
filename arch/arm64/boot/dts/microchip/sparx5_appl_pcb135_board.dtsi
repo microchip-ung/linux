@@ -1,0 +1,156 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2023 Microchip Technology Inc. and its subsidiaries.
+ */
+
+#include "sparx5_pcb135_board.dtsi"
+#include "sparx5_appl_pcb_common.dtsi"
+
+/{
+	aliases {
+	    i2c0   = &i2c0;
+	    i2c152 = &i2c_sfp1;
+	    i2c153 = &i2c_sfp2;
+	    i2c154 = &i2c_sfp3;
+	    i2c155 = &i2c_sfp4;
+	};
+};
+
+&gpio {
+	cpld_pins: cpld-pins {
+		// CS1
+		pins = "GPIO_16";
+		function = "si";
+	};
+	synce_pins: synce-pins {
+		// CS2
+		pins = "GPIO_17";
+		function = "si";
+	};
+	synce_builtin_pins: synce-builtin-pins {
+		// CS3
+		pins = "GPIO_18";
+		function = "si";
+	};
+	/* Used for LED control, so only claim output pins */
+	sgpio0_pins: sgpio-pins {
+		pins = "GPIO_0", "GPIO_1";
+		function = "sg0";
+	};
+
+	/* Used for LED control, so only claim output pins */
+	sgpio1_pins: sgpio1-pins {
+		pins = "GPIO_4", "GPIO_5";
+		function = "sg1";
+	};
+};
+
+&spi0 {
+	/delete-node/ spi@0;
+
+	// cpld
+	spi@1 {
+		compatible = "mchp,cpld";
+		reg = <1>;
+		pinctrl-0 = <&cpld_pins>;
+		pinctrl-names = "default";
+		spi-max-frequency = <8000000>;
+	};
+	// synce module
+	spi@2 {
+		compatible = "mchp,synce_dpll";
+		reg = <2>;
+		pinctrl-0 = <&synce_pins>;
+		pinctrl-names = "default";
+		spi-max-frequency = <8000000>;
+	};
+	// redwood onboard ptp dpll
+	spi@3 {
+		compatible = "mchp,synce_builtin";
+		reg = <3>;
+		pinctrl-0 = <&synce_builtin_pins>;
+		pinctrl-names = "default";
+		spi-max-frequency = <8000000>;
+	};
+};
+
+&sgpio2 {
+	status = "disabled";
+	/delete-property/ microchip,sgpio-port-ranges;
+};
+
+&switch {
+	status = "disabled";
+	/delete-property/ resets;
+	/delete-property/ reset-names;
+	/delete-node/ ethernet-ports;
+};
+
+&axi {
+	/delete-node/ sfp-eth60;
+	/delete-node/ sfp-eth61;
+	/delete-node/ sfp-eth62;
+	/delete-node/ sfp-eth63;
+};
+
+&mdio0 {
+	status = "disabled";
+	/delete-node/ ethernet-phy@0;
+	/delete-node/ ethernet-phy@1;
+	/delete-node/ ethernet-phy@2;
+	/delete-node/ ethernet-phy@3;
+	/delete-node/ ethernet-phy@4;
+	/delete-node/ ethernet-phy@5;
+	/delete-node/ ethernet-phy@6;
+	/delete-node/ ethernet-phy@7;
+	/delete-node/ ethernet-phy@8;
+	/delete-node/ ethernet-phy@9;
+	/delete-node/ ethernet-phy@10;
+	/delete-node/ ethernet-phy@11;
+	/delete-node/ ethernet-phy@12;
+	/delete-node/ ethernet-phy@13;
+	/delete-node/ ethernet-phy@14;
+	/delete-node/ ethernet-phy@15;
+	/delete-node/ ethernet-phy@16;
+	/delete-node/ ethernet-phy@17;
+	/delete-node/ ethernet-phy@18;
+	/delete-node/ ethernet-phy@19;
+	/delete-node/ ethernet-phy@20;
+	/delete-node/ ethernet-phy@21;
+	/delete-node/ ethernet-phy@22;
+	/delete-node/ ethernet-phy@23;
+};
+
+&mdio1 {
+	status = "disabled";
+	/delete-node/ ethernet-phy@24;
+	/delete-node/ ethernet-phy@25;
+	/delete-node/ ethernet-phy@26;
+	/delete-node/ ethernet-phy@27;
+	/delete-node/ ethernet-phy@28;
+	/delete-node/ ethernet-phy@29;
+	/delete-node/ ethernet-phy@30;
+	/delete-node/ ethernet-phy@31;
+	/delete-node/ ethernet-phy@32;
+	/delete-node/ ethernet-phy@33;
+	/delete-node/ ethernet-phy@34;
+	/delete-node/ ethernet-phy@35;
+	/delete-node/ ethernet-phy@36;
+	/delete-node/ ethernet-phy@37;
+	/delete-node/ ethernet-phy@38;
+	/delete-node/ ethernet-phy@39;
+	/delete-node/ ethernet-phy@40;
+	/delete-node/ ethernet-phy@41;
+	/delete-node/ ethernet-phy@42;
+	/delete-node/ ethernet-phy@43;
+	/delete-node/ ethernet-phy@44;
+	/delete-node/ ethernet-phy@45;
+	/delete-node/ ethernet-phy@46;
+	/delete-node/ ethernet-phy@47;
+};
+
+&mdio3 {
+	status = "disabled";
+	/delete-node/ ethernet-phy@64;
+};
+

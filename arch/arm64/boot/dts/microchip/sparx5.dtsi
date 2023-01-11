@@ -40,14 +40,16 @@
 			compatible = "arm,cortex-a53";
 			device_type = "cpu";
 			reg = <0x0 0x0>;
-			enable-method = "psci";
+			enable-method = "spin-table";
+			cpu-release-addr = <0x0 0x0000fff8>;
 			next-level-cache = <&L2_0>;
 		};
 		cpu1: cpu@1 {
 			compatible = "arm,cortex-a53";
 			device_type = "cpu";
 			reg = <0x0 0x1>;
-			enable-method = "psci";
+			enable-method = "spin-table";
+			cpu-release-addr = <0x0 0x0000fff8>;
 			next-level-cache = <&L2_0>;
 		};
 		L2_0: l2-cache0 {
@@ -59,11 +61,6 @@
 		compatible = "arm,cortex-a53-pmu";
 		interrupts = <GIC_PPI 7 IRQ_TYPE_LEVEL_HIGH>;
 		interrupt-affinity = <&cpu0>, <&cpu1>;
-	};
-
-	psci {
-		compatible = "arm,psci-0.2";
-		method = "smc";
 	};
 
 	timer {
