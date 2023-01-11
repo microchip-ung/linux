@@ -35,4 +35,18 @@ config MSCC_OCELOT_SWITCH
 	  This driver supports the Ocelot network switch device as present on
 	  the Ocelot SoCs (VSC7514).
 
+config MSCC_SPARX5_SWITCH
+	tristate "Sparx5 switch driver"
+	depends on HAS_IOMEM
+	select PHYLIB
+	select REGMAP_MMIO
+	select OF
+	select OF_EARLY_FLATTREE
+	select CMA
+	select DMA_CMA
+	select OF_RESERVED_MEM
+	select MSCC_SPARX5_FDMA
+	help
+	  This driver supports the Sparx5 network switch device.
+
 endif # NET_VENDOR_MICROSEMI

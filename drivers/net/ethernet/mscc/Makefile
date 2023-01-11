@@ -16,3 +16,5 @@ mscc_ocelot-y := \
 	ocelot_fdma.o \
 	ocelot_net.o \
 	ocelot_vsc7514.o
+
+obj-$(CONFIG_MSCC_SPARX5_SWITCH) += mscc_ifh.o
