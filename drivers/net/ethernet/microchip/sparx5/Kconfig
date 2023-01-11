@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Microchip network device configuration
+#
+
 config SPARX5_SWITCH
 	tristate "Sparx5 switch driver"
 	depends on NET_SWITCHDEV
@@ -9,5 +14,16 @@ config SPARX5_SWITCH
 	select PHYLINK
 	select PHY_SPARX5_SERDES
 	select RESET_CONTROLLER
+	select VCAP
 	help
 	  This driver supports the Sparx5 network switch device.
+
+config SPARX5_DEBUG
+	bool "Sparx5 Switch debugging"
+	depends on SPARX5_SWITCH
+	help
+	  Sparx5 Switch debugging,
+
+	  This adds VCAP and TC command debugging to the runtime.
+
+	  Do not enable this, unless you are debugging the driver.

@@ -198,12 +198,15 @@ static const struct sparx5_main_io_resource sparx5_main_iomap[] =  {
 	{ TARGET_QSYS,               0x110a0000, 2 }, /* 0x6110a0000 */
 	{ TARGET_QFWD,               0x110b0000, 2 }, /* 0x6110b0000 */
 	{ TARGET_XQS,                0x110c0000, 2 }, /* 0x6110c0000 */
+	{ TARGET_VCAP_ES2,           0x110d0000, 2 }, /* 0x6110d0000 */
+	{ TARGET_VCAP_ES0,           0x110e0000, 2 }, /* 0x6110e0000 */
 	{ TARGET_CLKGEN,             0x11100000, 2 }, /* 0x611100000 */
 	{ TARGET_ANA_AC_POL,         0x11200000, 2 }, /* 0x611200000 */
 	{ TARGET_QRES,               0x11280000, 2 }, /* 0x611280000 */
 	{ TARGET_EACL,               0x112c0000, 2 }, /* 0x6112c0000 */
 	{ TARGET_ANA_CL,             0x11400000, 2 }, /* 0x611400000 */
 	{ TARGET_ANA_L3,             0x11480000, 2 }, /* 0x611480000 */
+	{ TARGET_ANA_AC_SDLB,        0x11500000, 2 }, /* 0x611500000 */
 	{ TARGET_HSCH,               0x11580000, 2 }, /* 0x611580000 */
 	{ TARGET_REW,                0x11600000, 2 }, /* 0x611600000 */
 	{ TARGET_ANA_L2,             0x11800000, 2 }, /* 0x611800000 */
@@ -279,6 +282,7 @@ static int sparx5_create_port(struct sparx5 *sparx5,
 	spx5_port->phylink_pcs.poll = true;
 	spx5_port->phylink_pcs.ops = &sparx5_phylink_pcs_ops;
 	spx5_port->is_mrouter = false;
+	INIT_LIST_HEAD(&spx5_port->tc.templates);
 	sparx5->ports[config->portno] = spx5_port;
 
 	err = sparx5_port_init(sparx5, spx5_port, &config->conf);
@@ -290,6 +294,9 @@ static int sparx5_create_port(struct sparx5 *sparx5,
 
 	/* Setup VLAN */
 	sparx5_vlan_port_setup(sparx5, spx5_port->portno);
+
+	/* Setup QoS */
+	sparx5_qos_port_setup(sparx5, spx5_port->portno);
 
 	/* Create a phylink for PHY management.  Also handles SFPs */
 	spx5_port->phylink_config.dev = &spx5_port->ndev->dev;
@@ -682,9 +689,9 @@ static int sparx5_start(struct sparx5 *sparx5)
 		if (GCB_CHIP_ID_REV_ID_GET(sparx5->chip_id) > 0)
 			err = devm_request_threaded_irq(sparx5->dev,
 							sparx5->fdma_irq,
-							NULL,
 							sparx5_fdma_handler,
-							IRQF_ONESHOT,
+							NULL,
+							IRQF_SHARED,
 							"sparx5-fdma", sparx5);
 		if (!err)
 			err = sparx5_fdma_start(sparx5);
@@ -716,6 +723,10 @@ static int sparx5_start(struct sparx5 *sparx5)
 		sparx5->ptp = 1;
 	}
 
+	sparx5_netlink_fp_init();
+	sparx5_netlink_qos_init(sparx5);
+
+	err = sparx5_vcap_init(sparx5);
 	return err;
 }
 
@@ -754,6 +765,8 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 
 	/* Default values, some from DT */
 	sparx5->coreclock = SPX5_CORE_CLOCK_DEFAULT;
+
+	sparx5->debugfs_root = debugfs_create_dir("sparx5", NULL);
 
 	ports = of_get_child_by_name(np, "ethernet-ports");
 	if (!ports) {
@@ -883,6 +896,9 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		dev_err(sparx5->dev, "PTP failed\n");
 		goto cleanup_ports;
 	}
+
+	sparx5_debugfs(sparx5);
+
 	goto cleanup_config;
 
 cleanup_ports:
@@ -900,6 +916,8 @@ static int mchp_sparx5_remove(struct platform_device *pdev)
 {
 	struct sparx5 *sparx5 = platform_get_drvdata(pdev);
 
+	debugfs_remove_recursive(sparx5->debugfs_root);
+	sparx5_vcap_destroy(sparx5);
 	if (sparx5->xtr_irq) {
 		disable_irq(sparx5->xtr_irq);
 		sparx5->xtr_irq = -ENXIO;

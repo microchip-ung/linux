@@ -265,6 +265,7 @@ struct net_device *sparx5_create_netdev(struct sparx5 *sparx5, u32 portno)
 	spx5_port->ndev = ndev;
 	spx5_port->sparx5 = sparx5;
 	spx5_port->portno = portno;
+	snprintf(ndev->name, IFNAMSIZ, "eth%d", portno);
 
 	ndev->netdev_ops = &sparx5_port_netdev_ops;
 	ndev->ethtool_ops = &sparx5_ethtool_ops;

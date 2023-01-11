@@ -1141,6 +1141,61 @@ static void sparx5_check_stats_work(struct work_struct *work)
 			   SPX5_STATS_CHECK_DELAY);
 }
 
+bool sparx5_get_cpuport_stats(struct sparx5 *sparx5, int portno, int idx,
+			      const char **name, u64 *val)
+{
+	u64 *portstats = &sparx5->stats[portno * sparx5->num_stats];
+
+	if (idx >= spx5_stats_green_p0_rx_fwd) {
+		*name = sparx5->stats_layout[idx - spx5_stats_mm_rx_assembly_err_cnt];
+		*val = portstats[idx];
+		return true;
+	}
+	return false;
+}
+
+void sparx5_update_cpuport_stats(struct sparx5 *sparx5, int portno)
+{
+	/* Use XQS counters only */
+	sparx5_get_queue_sys_stats(sparx5, portno);
+}
+
+void sparx5_get_port_stats(struct sparx5 *sparx5, int portno,
+			   struct sparx5_port_stats *stats)
+{
+	struct sparx5_port *port = sparx5->ports[portno];
+	void __iomem *inst;
+	u64 *portstats;
+
+	portstats = &sparx5->stats[portno * sparx5->num_stats];
+	if (sparx5_is_baser(port->conf.portmode)) {
+		u32 tinst = sparx5_port_dev_index(portno);
+		u32 dev = sparx5_to_high_dev(portno);
+
+		inst = spx5_inst_get(sparx5, dev, tinst);
+		sparx5_get_dev_mac_stats(portstats, inst, tinst);
+	} else {
+		inst = spx5_inst_get(sparx5, TARGET_ASM, 0);
+		sparx5_get_asm_mac_stats(portstats, inst, portno);
+	}
+	stats->rx_unicast   = portstats[spx5_stats_rx_uc_cnt] +
+		portstats[spx5_stats_pmac_rx_uc_cnt];
+	stats->rx_multicast = portstats[spx5_stats_rx_mc_cnt] +
+		portstats[spx5_stats_pmac_rx_mc_cnt];
+	stats->rx_broadcast = portstats[spx5_stats_rx_bc_cnt] +
+		portstats[spx5_stats_pmac_rx_bc_cnt];
+	stats->tx_unicast   = portstats[spx5_stats_tx_uc_cnt] +
+		portstats[spx5_stats_pmac_tx_uc_cnt];
+	stats->tx_multicast = portstats[spx5_stats_tx_mc_cnt] +
+		portstats[spx5_stats_pmac_tx_mc_cnt];
+	stats->tx_broadcast = portstats[spx5_stats_tx_bc_cnt] +
+		portstats[spx5_stats_pmac_tx_bc_cnt];
+	stats->rx_bytes = portstats[spx5_stats_rx_ok_bytes_cnt] +
+		portstats[spx5_stats_pmac_rx_ok_bytes_cnt];
+	stats->tx_bytes = portstats[spx5_stats_tx_ok_bytes_cnt] +
+		portstats[spx5_stats_pmac_tx_ok_bytes_cnt];
+}
+
 static int sparx5_get_link_settings(struct net_device *ndev,
 				    struct ethtool_link_ksettings *cmd)
 {

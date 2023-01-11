@@ -163,6 +163,25 @@ struct sparx5_port_config {
 	u32 sd_sgpio;
 };
 
+struct sparx5_port_policer {
+	struct flow_stats prev;
+	struct flow_stats stats;
+	/* port policers holds the client reference (cookie) */
+	unsigned long policer;
+};
+
+struct sparx5_port_tc {
+	 /* ingress/egress using shared filter block */
+	bool block_shared[2];
+	 /* protocol assigned template per vcap lookup */
+	u16 flower_template_proto[SPARX5_VCAP_LOOKUP_MAX];
+	/* list of flower templates for this port */
+	struct list_head templates;
+	/* Port statistics */
+	struct flow_stats prev_mirror_stats;
+	struct sparx5_port_policer port_policer[SPX5_POLICERS_PER_PORT];
+};
+
 struct sparx5_port {
 	struct net_device *ndev;
 	struct sparx5 *sparx5;
