@@ -198,7 +198,7 @@ static int sparx5_psfp_debugfs_show(struct seq_file *s, void *unused)
 		e = &sparx5_sf_pool[i];
 
 		if (e->ref_cnt <= 0)
-			continue;
+		 	continue;
 
 		/* Get sfid, sgid and fmid */
 		sfid = ANA_L2_TSN_CFG_TSN_SFID_GET(

@@ -27,6 +27,8 @@
 #include "sparx5_main_regs.h"
 #include "sparx5_main.h"
 #include "sparx5_port.h"
+#include "vcap_api_client.h"
+#include "sparx5_debugfs.h"
 #include "sparx5_qos.h"
 
 #define QLIM_WM(fraction) \
@@ -281,8 +283,8 @@ static int sparx5_create_port(struct sparx5 *sparx5,
 	spx5_port->custom_etype = 0x8880; /* Vitesse */
 	spx5_port->phylink_pcs.poll = true;
 	spx5_port->phylink_pcs.ops = &sparx5_phylink_pcs_ops;
-	spx5_port->is_mrouter = false;
 	INIT_LIST_HEAD(&spx5_port->tc.templates);
+	spx5_port->is_mrouter = false;
 	sparx5->ports[config->portno] = spx5_port;
 
 	err = sparx5_port_init(sparx5, spx5_port, &config->conf);
@@ -682,6 +684,14 @@ static int sparx5_start(struct sparx5 *sparx5)
 
 	sparx5_board_init(sparx5);
 	err = sparx5_register_notifier_blocks(sparx5);
+	if (err)
+		return err;
+
+	err = sparx5_vcap_init(sparx5);
+	if (err) {
+		sparx5_unregister_notifier_blocks(sparx5);
+		return err;
+	}
 
 	/* Start Frame DMA with fallback to register based INJ/XTR */
 	err = -ENXIO;
@@ -726,7 +736,6 @@ static int sparx5_start(struct sparx5 *sparx5)
 	sparx5_netlink_fp_init();
 	sparx5_netlink_qos_init(sparx5);
 
-	err = sparx5_vcap_init(sparx5);
 	return err;
 }
 
@@ -896,7 +905,6 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		dev_err(sparx5->dev, "PTP failed\n");
 		goto cleanup_ports;
 	}
-
 	sparx5_debugfs(sparx5);
 
 	goto cleanup_config;
@@ -917,7 +925,6 @@ static int mchp_sparx5_remove(struct platform_device *pdev)
 	struct sparx5 *sparx5 = platform_get_drvdata(pdev);
 
 	debugfs_remove_recursive(sparx5->debugfs_root);
-	sparx5_vcap_destroy(sparx5);
 	if (sparx5->xtr_irq) {
 		disable_irq(sparx5->xtr_irq);
 		sparx5->xtr_irq = -ENXIO;
@@ -929,6 +936,7 @@ static int mchp_sparx5_remove(struct platform_device *pdev)
 	sparx5_ptp_deinit(sparx5);
 	sparx5_fdma_stop(sparx5);
 	sparx5_cleanup_ports(sparx5);
+	sparx5_vcap_destroy(sparx5);
 	/* Unregister netdevs */
 	sparx5_unregister_notifier_blocks(sparx5);
 	destroy_workqueue(sparx5->mact_queue);

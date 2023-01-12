@@ -518,9 +518,15 @@ static int sparx5_handle_port_mdb_add(struct net_device *dev,
 {
 	struct sparx5_port *port = netdev_priv(dev);
 	struct sparx5 *spx5 = port->sparx5;
-	u16 pgid_idx, vid;
-	u32 mact_entry;
-	int res, err;
+	struct sparx5_mdb_entry *entry;
+	bool is_host, is_new;
+	int err, i;
+	u16 vid;
+
+	if (!sparx5_netdevice_check(dev))
+		return -EOPNOTSUPP;
+
+	is_host = netif_is_bridge_master(v->obj.orig_dev);
 
 	/* When VLAN unaware the vlan value is not parsed and we receive vid 0.
 	 * Fall back to bridge vid 1.
@@ -530,50 +536,36 @@ static int sparx5_handle_port_mdb_add(struct net_device *dev,
 	else
 		vid = v->vid;
 
-	res = sparx5_mact_find(spx5, v->addr, vid, &mact_entry);
-
-	if (res == 0) {
-		pgid_idx = LRN_MAC_ACCESS_CFG_2_MAC_ENTRY_ADDR_GET(mact_entry);
-
-		/* MC_IDX starts after the port masks in the PGID table */
-		pgid_idx += SPX5_PORTS;
-		sparx5_pgid_update_mask(port, pgid_idx, true);
-	} else {
-		err = sparx5_pgid_alloc_mcast(spx5, &pgid_idx);
-		if (err) {
-			netdev_warn(dev, "multicast pgid table full\n");
+	is_new = false;
+	entry = sparx5_mdb_get_entry(spx5, v->addr, vid);
+	if (!entry) {
+		err = sparx5_alloc_mdb_entry(spx5, v->addr, vid, &entry);
+		is_new = true;
+		if (err)
 			return err;
-		}
-		sparx5_pgid_update_mask(port, pgid_idx, true);
-		err = sparx5_mact_learn(spx5, pgid_idx, v->addr, vid);
-		if (err) {
-			netdev_warn(dev, "could not learn mac address %pM\n", v->addr);
-			sparx5_pgid_update_mask(port, pgid_idx, false);
-			return err;
-		}
 	}
 
-	return 0;
-}
+	mutex_lock(&spx5->mdb_lock);
 
-static int sparx5_mdb_del_entry(struct net_device *dev,
-				struct sparx5 *spx5,
-				const unsigned char mac[ETH_ALEN],
-				const u16 vid,
-				u16 pgid_idx)
-{
-	int err;
+	/* Add any mrouter ports to the new entry */
+	if (is_new && ether_addr_is_ip_mcast(v->addr))
+		for (i = 0; i < SPX5_PORTS; i++)
+			if (spx5->ports[i] && spx5->ports[i]->is_mrouter)
+				sparx5_pgid_update_mask(spx5->ports[i],
+							entry->pgid_idx,
+							true);
 
-	err = sparx5_mact_forget(spx5, mac, vid);
-	if (err) {
-		netdev_warn(dev, "could not forget mac address %pM", mac);
-		return err;
+	if (is_host && !entry->cpu_copy) {
+		sparx5_cpu_copy_ena(spx5, entry->pgid_idx, true);
+		entry->cpu_copy = true;
+	} else if (!is_host) {
+		sparx5_pgid_update_mask(port, entry->pgid_idx, true);
+		set_bit(port->portno, entry->port_mask);
 	}
-	err = sparx5_pgid_free(spx5, pgid_idx);
-	if (err) {
-		netdev_err(dev, "attempted to free already freed pgid\n");
-		return err;
-	}
+	mutex_unlock(&spx5->mdb_lock);
+
+	sparx5_mact_learn(spx5, entry->pgid_idx, entry->addr, entry->vid);
+
 	return 0;
 }
 
@@ -583,33 +575,45 @@ static int sparx5_handle_port_mdb_del(struct net_device *dev,
 {
 	struct sparx5_port *port = netdev_priv(dev);
 	struct sparx5 *spx5 = port->sparx5;
-	u16 pgid_idx, vid;
-	u32 mact_entry, res, pgid_entry[3];
-	int err;
+	struct sparx5_mdb_entry *entry;
+	bool is_host;
+	u16 vid;
+
+	if (!sparx5_netdevice_check(dev))
+		return -EOPNOTSUPP;
+
+	is_host = netif_is_bridge_master(v->obj.orig_dev);
 
 	if (!br_vlan_enabled(spx5->hw_bridge_dev))
 		vid = 1;
 	else
 		vid = v->vid;
 
-	res = sparx5_mact_find(spx5, v->addr, vid, &mact_entry);
+	entry = sparx5_mdb_get_entry(spx5, v->addr, vid);
+	if (!entry)
+		return 0;
 
-	if (res == 0) {
-		pgid_idx = LRN_MAC_ACCESS_CFG_2_MAC_ENTRY_ADDR_GET(mact_entry);
+	mutex_lock(&spx5->mdb_lock);
+	if (is_host && entry->cpu_copy) {
+		sparx5_cpu_copy_ena(spx5, entry->pgid_idx, false);
+		entry->cpu_copy = false;
+	} else if (!is_host) {
+		clear_bit(port->portno, entry->port_mask);
 
-		/* MC_IDX starts after the port masks in the PGID table */
-		pgid_idx += SPX5_PORTS;
-		sparx5_pgid_update_mask(port, pgid_idx, false);
-
-		sparx5_pgid_read_mask(spx5, pgid_idx, pgid_entry);
-		if (bitmap_empty((unsigned long *)pgid_entry, SPX5_PORTS)) {
-			/* No ports are in MC group. Remove entry */
-			err = sparx5_mdb_del_entry(dev, spx5, v->addr, vid, pgid_idx);
-			if (err)
-				return err;
-		}
+		/* Port not mrouter port or addr is L2 mcast, remove port from mask. */
+		if (!port->is_mrouter || !ether_addr_is_ip_mcast(v->addr))
+			sparx5_pgid_update_mask(port, entry->pgid_idx, false);
 	}
+	mutex_unlock(&spx5->mdb_lock);
 
+	if (bitmap_empty(entry->port_mask, SPX5_PORTS) && !entry->cpu_copy) {
+		 /* Clear pgid in case mrouter ports exists
+		  * that are not part of the group.
+		  */
+		sparx5_pgid_clear(spx5, entry->pgid_idx);
+		sparx5_mact_forget(spx5, entry->addr, entry->vid);
+		sparx5_free_mdb_entry(spx5, entry->addr, entry->vid);
+	}
 	return 0;
 }
 

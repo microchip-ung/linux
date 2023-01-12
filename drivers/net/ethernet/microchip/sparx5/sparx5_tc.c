@@ -1,14 +1,110 @@
 // SPDX-License-Identifier: GPL-2.0+
-/* Microchip Sparx5 Switch driver
+/* Microchip VCAP API
  *
  * Copyright (c) 2022 Microchip Technology Inc. and its subsidiaries.
  */
 
-#include <net/pkt_cls.h>
-
 #include "sparx5_tc.h"
+#include "sparx5_tc_dbg.h"
+#include "sparx5_main_regs.h"
 #include "sparx5_main.h"
 #include "sparx5_qos.h"
+
+/*
+ * tc block handling
+ */
+static LIST_HEAD(sparx5_block_cb_list);
+
+static int sparx5_tc_block_cb(enum tc_setup_type type,
+			       void *type_data,
+			       void *cb_priv, bool ingress)
+{
+	struct net_device *ndev = cb_priv;
+
+	switch (type) {
+	case TC_SETUP_CLSMATCHALL:
+		return sparx5_tc_matchall(ndev, type_data, ingress);
+	case TC_SETUP_CLSFLOWER:
+		return sparx5_tc_flower(ndev, type_data, ingress);
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+
+static int sparx5_tc_block_cb_ingress(enum tc_setup_type type,
+				      void *type_data,
+				      void *cb_priv)
+{
+	return sparx5_tc_block_cb(type, type_data, cb_priv, true);
+}
+
+static int sparx5_tc_block_cb_egress(enum tc_setup_type type,
+				     void *type_data,
+				     void *cb_priv)
+{
+	return sparx5_tc_block_cb(type, type_data, cb_priv, false);
+}
+
+static int sparx5_tc_setup_block(struct net_device *ndev,
+				 struct flow_block_offload *fbo)
+{
+	struct sparx5_port *port = netdev_priv(ndev);
+	flow_setup_cb_t *cb;
+
+	if (fbo->binder_type == FLOW_BLOCK_BINDER_TYPE_CLSACT_INGRESS) {
+		cb = sparx5_tc_block_cb_ingress;
+		port->tc.block_shared[0] = fbo->block_shared;
+	} else if (fbo->binder_type == FLOW_BLOCK_BINDER_TYPE_CLSACT_EGRESS) {
+		cb = sparx5_tc_block_cb_egress;
+		port->tc.block_shared[1] = fbo->block_shared;
+	} else {
+		return -EOPNOTSUPP;
+	}
+
+	return flow_block_cb_setup_simple(fbo, &sparx5_block_cb_list,
+					  cb, ndev, ndev, false);
+}
+
+static int sparx5_tc_setup_qdisc_taprio(struct net_device *ndev,
+					struct tc_taprio_qopt_offload *qopt)
+{
+	struct sparx5_port *port = netdev_priv(ndev);
+	int i, err;
+
+	netdev_dbg(port->ndev,
+		   "port %u enable %d\n",
+		   port->portno, qopt->enable);
+	if (qopt->enable) {
+		netdev_dbg(port->ndev,
+			   "base_time %lld cycle_time %llu cycle_time_extension %llu\n",
+			   qopt->base_time, qopt->cycle_time,
+			   qopt->cycle_time_extension);
+		for (i = 0; i < qopt->num_entries; i++) {
+			netdev_dbg(port->ndev,
+				   "[%d]: command %u gate_mask %x interval %u\n",
+				   i, qopt->entries[i].command,
+				   qopt->entries[i].gate_mask,
+				   qopt->entries[i].interval);
+		}
+		err = sparx5_tas_enable(port, qopt);
+	} else {
+		err = sparx5_tas_disable(port);
+	}
+
+	return err;
+}
+
+static int sparx5_tc_setup_qdisc_mqprio(struct net_device *ndev,
+					struct tc_mqprio_qopt_offload *m)
+{
+	/* Let the kernel know we support hw offload */
+	m->qopt.hw = TC_MQPRIO_HW_OFFLOAD_TCS;
+
+	if (m->qopt.num_tc == 0)
+		return sparx5_tc_mqprio_del(ndev);
+	else
+		return sparx5_tc_mqprio_add(ndev, m->qopt.num_tc);
+}
 
 static void sparx5_tc_get_layer_and_idx(u32 parent, u32 portno, u32 *layer,
 					u32 *idx)
@@ -21,17 +117,6 @@ static void sparx5_tc_get_layer_and_idx(u32 parent, u32 portno, u32 *layer,
 		*layer = 0;
 		*idx = SPX5_HSCH_L0_GET_IDX(portno, queue);
 	}
-}
-
-static int sparx5_tc_setup_qdisc_mqprio(struct net_device *ndev,
-					struct tc_mqprio_qopt_offload *m)
-{
-	m->qopt.hw = TC_MQPRIO_HW_OFFLOAD_TCS;
-
-	if (m->qopt.num_tc == 0)
-		return sparx5_tc_mqprio_del(ndev);
-	else
-		return sparx5_tc_mqprio_add(ndev, m->qopt.num_tc);
 }
 
 static int sparx5_tc_setup_qdisc_tbf(struct net_device *ndev,
@@ -92,7 +177,6 @@ static int sparx5_tc_setup_qdisc_ets(struct net_device *ndev,
 
 		return sparx5_tc_ets_add(port, params);
 	case TC_ETS_DESTROY:
-
 		return sparx5_tc_ets_del(port);
 	case TC_ETS_GRAFT:
 		return -EOPNOTSUPP;
@@ -107,7 +191,14 @@ static int sparx5_tc_setup_qdisc_ets(struct net_device *ndev,
 int sparx5_port_setup_tc(struct net_device *ndev, enum tc_setup_type type,
 			 void *type_data)
 {
+	pr_debug("%s:%d: %s: type: %s\n", __func__, __LINE__, netdev_name(ndev),
+		 tc_dbg_tc_setup_type(type));
+
 	switch (type) {
+	case TC_SETUP_BLOCK:
+		return sparx5_tc_setup_block(ndev, type_data);
+	case TC_SETUP_QDISC_TAPRIO:
+		return sparx5_tc_setup_qdisc_taprio(ndev, type_data);
 	case TC_SETUP_QDISC_MQPRIO:
 		return sparx5_tc_setup_qdisc_mqprio(ndev, type_data);
 	case TC_SETUP_QDISC_TBF:
@@ -117,6 +208,5 @@ int sparx5_port_setup_tc(struct net_device *ndev, enum tc_setup_type type,
 	default:
 		return -EOPNOTSUPP;
 	}
-
 	return 0;
 }

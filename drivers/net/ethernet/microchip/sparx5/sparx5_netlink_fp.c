@@ -229,6 +229,7 @@ static struct genl_family sparx5_qos_fp_port_genl_family = {
 	.policy		= sparx5_qos_fp_port_genl_policy,
 	.ops		= sparx5_qos_fp_port_genl_ops,
 	.n_ops		= ARRAY_SIZE(sparx5_qos_fp_port_genl_ops),
+	.resv_start_op	= MCHP_QOS_FP_PORT_GENL_STATUS_GET + 1,
 };
 
 int sparx5_netlink_fp_init(void)

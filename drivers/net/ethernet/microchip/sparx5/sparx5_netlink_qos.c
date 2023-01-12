@@ -165,6 +165,7 @@ static struct genl_family sparx5_qos_genl_family = {
 	.policy		= sparx5_qos_genl_policy,
 	.ops		= sparx5_qos_genl_ops,
 	.n_ops		= ARRAY_SIZE(sparx5_qos_genl_ops),
+	.resv_start_op	= MCHP_QOS_GENL_DSCP_PRIO_DPL_GET + 1,
 };
 
 int sparx5_netlink_qos_init(struct sparx5 *sparx5)

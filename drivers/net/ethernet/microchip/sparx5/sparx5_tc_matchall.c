@@ -71,16 +71,16 @@ static int sparx5_alloc_mirror_probe(struct net_device *ndev,
 	/* Check if the device is already used as a monitor */
 	for (idx = 0; idx < SPX5_MIRROR_PROBE_MAX; ++idx)
 		if (sparx5->mirror_probe[idx].mdev == ndev)
-			return -EINVAL;
+		    	return -EINVAL;
 	/* Find a probe with same direction and monitor port */
 	for (idx = 0; idx < SPX5_MIRROR_PROBE_MAX; ++idx)
 		if (sparx5->mirror_probe[idx].ingress == ingress &&
 		    sparx5->mirror_probe[idx].mdev == mdev)
-			return idx;
+		    	return idx;
 	/* Find a free probe */
 	for (idx = 0; idx < SPX5_MIRROR_PROBE_MAX; ++idx)
 		if (!sparx5->mirror_probe[idx].mdev)
-			return idx;
+		    	return idx;
 	return -ENOENT;
 }
 
@@ -95,7 +95,7 @@ static int sparx5_free_mirror_probe(struct net_device *ndev,
 	for (idx = 0; idx < SPX5_MIRROR_PROBE_MAX; ++idx)
 		if (sparx5->mirror_probe[idx].ingress == ingress &&
 		    sparx5->mirror_probe[idx].mdev == mdev)
-			return idx;
+		    	return idx;
 	return -ENOENT;
 }
 
@@ -221,11 +221,11 @@ static int sparx5_alloc_port_policer_idx(struct sparx5_port *port,
 	/* Check if the this policer (cookie) already exists */
 	for (polidx = 0; polidx < SPX5_POLICERS_PER_PORT; ++polidx)
 		if (port->tc.port_policer[polidx].policer == cookie)
-			return polidx;
+		    	return polidx;
 	/* Find a free port policer */
 	for (polidx = 0; polidx < SPX5_POLICERS_PER_PORT; ++polidx)
 		if (!port->tc.port_policer[polidx].policer)
-			return polidx;
+		    	return polidx;
 	return -ENOENT;
 }
 
@@ -237,7 +237,7 @@ static int sparx5_free_port_policer_idx(struct sparx5_port *port,
 	/* Find existing policer (cookie) */
 	for (polidx = 0; polidx < SPX5_POLICERS_PER_PORT; ++polidx)
 		if (port->tc.port_policer[polidx].policer == cookie)
-			return polidx;
+		    	return polidx;
 	return -ENOENT;
 }
 

@@ -367,12 +367,12 @@ void tc_dbg_actions_dump(const struct net_device *dev,
 			break;
 		case FLOW_ACTION_POLICE:
 			pr_debug("%s:%d: %s: [%d] %s index %u burst %u rate_bytes_ps %llu mtu %u\n", __func__, __LINE__, netdev_name(dev),
-				 i, idn, e->police.index, e->police.burst,
+				 i, idn, e->hw_index, e->police.burst,
 				 e->police.rate_bytes_ps, e->police.mtu);
 			break;
 		case FLOW_ACTION_GATE:
 			pr_debug("%s:%d: %s: [%d] %s index %u prio %d basetime %llu cycletime %llu cycletimeext %llu num_entries %u\n", __func__, __LINE__, netdev_name(dev),
-				 i, idn, e->gate.index, e->gate.prio,
+				 i, idn, e->hw_index, e->gate.prio,
 				 e->gate.basetime, e->gate.cycletime,
 				 e->gate.cycletimeext, e->gate.num_entries);
 			for (g = 0; g < e->gate.num_entries; g++) {

@@ -17,6 +17,8 @@
 #include <linux/net_tstamp.h>
 #include <linux/ptp_clock_kernel.h>
 #include <linux/hrtimer.h>
+#include "sparx5_qos.h"
+#include <linux/debugfs.h>
 
 #include "sparx5_main_regs.h"
 
@@ -95,6 +97,16 @@ enum sparx5_vlan_port_type {
 #define IFH_PDU_TYPE_PTP		0x5
 #define IFH_PDU_TYPE_IPV4_UDP_PTP	0x6
 #define IFH_PDU_TYPE_IPV6_UDP_PTP	0x7
+
+#define SPARX5_VCAP_LOOKUP_MAX		(6+4+1+2) /* IS0, IS2, ES0, ES2 */
+
+#define SPX5_POLICERS_PER_PORT		4  /* port policers */
+
+#define SPX5_MIRROR_PROBE_MAX 3
+#define SPX5_QFWD_MP_OFFSET 9
+
+/* Hierarchical Scheduler Leaking groups */
+#define HSCH_LEAK_GRP_CNT 4 /* Four leak groups (linked lists) per layer */
 
 struct sparx5;
 
@@ -210,6 +222,11 @@ struct sparx5_port {
 	u16 ts_id;
 	struct sk_buff_head tx_skbs;
 	bool is_mrouter;
+	/* QOS port configuration */
+	struct mchp_qos_port_conf qos_port_conf;
+	/* Frame preemption configuration */
+	struct sparx5_fp_port_conf fp;
+	struct sparx5_port_tc tc;
 };
 
 enum sparx5_core_clockfreq {
@@ -243,6 +260,25 @@ struct sparx5_mdb_entry {
 	u16 vid;
 	u16 pgid_idx;
 };
+
+enum sparx5_mirrorprobe_dir {
+	SPX5_MP_DISABLED = 0,
+	SPX5_MP_EGRESS = 1,
+	SPX5_MP_INGRESS = 2,
+	SPX5_MP_BOTH = 3,
+};
+
+struct sparx5_mirror_probe {
+	DECLARE_BITMAP(srcports, SPX5_PORTS);
+	bool ingress;
+	struct net_device *mdev;
+};
+
+struct sparx5_layer {
+	/* Leak groups */
+	struct sparx5_leak_group leak_groups[HSCH_LEAK_GRP_CNT];
+};
+
 
 #define SPARX5_PTP_TIMEOUT		msecs_to_jiffies(10)
 #define SPARX5_SKB_CB(skb) \
@@ -307,8 +343,17 @@ struct sparx5 {
 	struct mutex ptp_lock; /* lock for ptp interface state */
 	u16 ptp_skbs;
 	int ptp_irq;
+	/* VCAP */
+	struct vcap_control *vcap_ctrl;
+	/* Common root for debugfs */
+	struct dentry *debugfs_root;
 	/* PGID allocation map */
 	u8 pgid_map[PGID_TABLE_SIZE];
+	struct sparx5_mirror_probe mirror_probe[SPX5_MIRROR_PROBE_MAX];
+	/* Hierarchical Scheduler Layers */
+	struct sparx5_layer layers[SPX5_HSCH_LAYER_CNT];
+	/* Time Aware Shaper */
+	struct mutex tas_lock;
 };
 
 /* sparx5_switchdev.c */
@@ -373,6 +418,23 @@ int sparx5_config_auto_calendar(struct sparx5 *sparx5);
 int sparx5_config_dsm_calendar(struct sparx5 *sparx5);
 
 /* sparx5_ethtool.c */
+struct sparx5_port_stats {
+	u64 rx_unicast;
+	u64 rx_multicast;
+	u64 rx_broadcast;
+	u64 tx_unicast;
+	u64 tx_multicast;
+	u64 tx_broadcast;
+	u64 rx_bytes;
+	u64 tx_bytes;
+};
+
+void sparx5_get_port_stats(struct sparx5 *sparx5, int portno,
+			   struct sparx5_port_stats *stats);
+void sparx5_update_cpuport_stats(struct sparx5 *sparx5, int portno);
+bool sparx5_get_cpuport_stats(struct sparx5 *sparx5, int portno, int idx,
+			      const char **name, u64 *val);
+
 void sparx5_get_stats64(struct net_device *ndev, struct rtnl_link_stats64 *stats);
 int sparx_stats_init(struct sparx5 *sparx5);
 
@@ -400,6 +462,19 @@ int sparx5_ptp_txtstamp_request(struct sparx5_port *port,
 void sparx5_ptp_txtstamp_release(struct sparx5_port *port,
 				 struct sk_buff *skb);
 irqreturn_t sparx5_ptp_irq_handler(int irq, void *args);
+int sparx5_ptp_gettime64(struct ptp_clock_info *ptp,
+			 struct timespec64 *ts);
+
+/* netlink */
+int sparx5_netlink_qos_init(struct sparx5 *sparx5);
+void sparx5_netlink_qos_uninit(void);
+int sparx5_netlink_fp_init(void);
+void sparx5_netlink_fp_uninit(void);
+
+/* sparx5_vcap_impl.c */
+int sparx5_vcap_init(struct sparx5 *sparx5);
+int sparx5_vcap_client(struct net_device *ndev);
+void sparx5_vcap_destroy(struct sparx5 *sparx5);
 
 /* sparx5_pgid.c */
 enum sparx5_pgid_type {
@@ -412,6 +487,10 @@ void sparx5_pgid_init(struct sparx5 *spx5);
 int sparx5_pgid_alloc_glag(struct sparx5 *spx5, u16 *idx);
 int sparx5_pgid_alloc_mcast(struct sparx5 *spx5, u16 *idx);
 int sparx5_pgid_free(struct sparx5 *spx5, u16 idx);
+
+/* sparx5_tc.c */
+int sparx5_setup_tc(struct net_device *dev, enum tc_setup_type type,
+		    void *type_data);
 
 /* Clock period in picoseconds */
 static inline u32 sparx5_clk_period(enum sparx5_core_clockfreq cclock)

@@ -1301,7 +1301,7 @@ static int sparx5_tc_flower_parse_act_police(struct sparx5_policer *pol,
 	pol->type = SPX5_POL_SERVICE;
 	pol->rate = div_u64(act->police.rate_bytes_ps, 1000) * 8;
 	pol->burst = act->police.burst;
-	pol->idx = act->police.index;
+	pol->idx = act->hw_index;
 
 	return 0;
 }
@@ -1412,7 +1412,7 @@ static int sparx5_tc_flower_replace(struct net_device *ndev,
 			if (err)
 				goto out;
 
-			tc_sg_idx = act->gate.index;
+			tc_sg_idx = act->hw_index;
 
 			break;
 		}
