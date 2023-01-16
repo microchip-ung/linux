@@ -303,7 +303,22 @@ static int sparx5_add_port_policer(struct net_device *ndev,
 
 	if (!ingress)
 		return -EINVAL;
+
 	if (port->tc.block_shared[1])
+		return -ENOKEY;
+
+	if (action->police.exceed.act_id != FLOW_ACTION_DROP)
+		return -ENOSYS;
+
+	if (action->police.notexceed.act_id != FLOW_ACTION_PIPE &&
+	    action->police.notexceed.act_id != FLOW_ACTION_ACCEPT)
+		return -EOPNOTSUPP;
+
+	if (action->police.peakrate_bytes_ps || action->police.avrate ||
+	    action->police.overhead)
+		return -EOPNOTSUPP;
+
+	if (action->police.rate_pkt_ps)
 		return -EOPNOTSUPP;
 
 	pr_debug("%s:%d: %s cookie: %lu\n", __func__, __LINE__,
@@ -411,13 +426,21 @@ static int sparx5_tc_matchall_replace(struct net_device *ndev,
 				NL_SET_ERR_MSG_MOD(tmo->common.extack,
 						   "Policer is not supported on egress");
 				break;
-			case -EOPNOTSUPP:
+			case -ENOKEY:
 				NL_SET_ERR_MSG_MOD(tmo->common.extack,
 						   "Policer is not supported on shared ingress blocks");
+				break;
+			case -EOPNOTSUPP:
+				NL_SET_ERR_MSG_MOD(tmo->common.extack,
+						   "Policer parameters are not supported");
 				break;
 			case -ENOENT:
 				NL_SET_ERR_MSG_MOD(tmo->common.extack,
 						   "No more port policers available");
+				break;
+			case -ENOSYS:
+				NL_SET_ERR_MSG_MOD(tmo->common.extack,
+						   "Offload only supports exceed action drop");
 				break;
 			default:
 				NL_SET_ERR_MSG_MOD(tmo->common.extack,
