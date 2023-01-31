@@ -149,7 +149,7 @@ static struct vcap_rule *sparx5_ptp_add_ipv6_event_key(struct sparx5_port *port)
 {
 	int rule_id = SPARX5_PTP_RULE_ID_OFFSET +
 		      port->portno * SPARX5_PTP_TRAP_RULES_CNT + 3;
-	int chain_id = SPARX5_VCAP_CID_IS2_L1;
+	int chain_id = SPARX5_VCAP_CID_IS2_L2;
 	int prio = (port->portno << 8) + 1;
 	struct vcap_rule *vrule;
 	int err;
@@ -171,7 +171,7 @@ static struct vcap_rule *sparx5_ptp_add_ipv6_general_key(struct sparx5_port *por
 {
 	int rule_id = SPARX5_PTP_RULE_ID_OFFSET +
 		      port->portno * SPARX5_PTP_TRAP_RULES_CNT + 4;
-	int chain_id = SPARX5_VCAP_CID_IS2_L1;
+	int chain_id = SPARX5_VCAP_CID_IS2_L2;
 	int prio = (port->portno << 8) + 1;
 	struct vcap_rule *vrule;
 	int err;
@@ -348,12 +348,11 @@ static int sparx5_setup_ptp_traps(struct sparx5_port *port, bool l2, bool l4)
 		err |= sparx5_ptp_del_ipv6_rules(port);
 	}
 
-	if (err)
-		return err;
+	return err;
 
-	return 0;
 err_ipv6:
-	sparx5_ptp_del_ipv6_rules(port);
+	sparx5_ptp_del_ipv4_rules(port);
+
 err_ipv4:
 	if (l2)
 		sparx5_ptp_del_l2_rule(port);
@@ -927,7 +926,7 @@ int sparx5_ptp_init(struct sparx5 *sparx5)
 	/* Enable master counters */
 	spx5_wr(PTP_PTP_DOM_CFG_PTP_ENA_SET(0x7), sparx5, PTP_PTP_DOM_CFG);
 
-	for (i = 0; i < sparx5->port_count; i++) {
+	for (i = 0; i < SPX5_PORTS; i++) {
 		port = sparx5->ports[i];
 		if (!port)
 			continue;
@@ -943,7 +942,7 @@ void sparx5_ptp_deinit(struct sparx5 *sparx5)
 	struct sparx5_port *port;
 	int i;
 
-	for (i = 0; i < sparx5->port_count; i++) {
+	for (i = 0; i < SPX5_PORTS; i++) {
 		port = sparx5->ports[i];
 		if (!port)
 			continue;
