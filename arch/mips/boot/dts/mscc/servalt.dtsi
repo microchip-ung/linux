@@ -34,16 +34,26 @@
 		compatible = "mti,cpu-interrupt-controller";
 	};
 
+	/* This is kept for backwards compatibility, since the MIPS cpu clock
+	 * will hang if using the platform clock driver, presumeably as the CPU
+	 * clock is needed at a very early stage.
+	 */
 	cpu_clk: cpu-clock {
 		compatible = "fixed-clock";
 		#clock-cells = <0>;
-		clock-frequency = <500000000>;
+		clock-frequency = <416666666>;
+	};
+
+	dyn_cpu_clk: dyn-cpu-clock {
+		compatible = "microchip,vcoreiii-servalt-pll";
+		reg = <0x71170000 8>;
+		#clock-cells = <0>;
 	};
 
 	ahb_clk: ahb-clk {
 		compatible = "fixed-factor-clock";
 		#clock-cells = <0>;
-		clocks = <&cpu_clk>;
+		clocks = <&dyn_cpu_clk>;
 		clock-div = <2>;
 		clock-mult = <1>;
 	};
