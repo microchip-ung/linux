@@ -1600,7 +1600,14 @@ static struct ocelot_match_data luton_desc = {
 		.npins = ARRAY_SIZE(luton_pins),
 		.pctlops = &ocelot_pctl_ops,
 		.pmxops = &ocelot_pmx_ops,
+		.confops = &ocelot_confops,
 		.owner = THIS_MODULE,
+	},
+	.pincfg_data = {
+		.pd_bit = BIT(4),
+		.pu_bit = BIT(3),
+		.drive_bits = GENMASK(1, 0),
+		.schmitt_bit = BIT(2),
 	},
 };
 
@@ -1611,7 +1618,14 @@ static struct ocelot_match_data serval_desc = {
 		.npins = ARRAY_SIZE(serval_pins),
 		.pctlops = &ocelot_pctl_ops,
 		.pmxops = &ocelot_pmx_ops,
+		.confops = &ocelot_confops,
 		.owner = THIS_MODULE,
+	},
+	.pincfg_data = {
+		.pd_bit = BIT(4),
+		.pu_bit = BIT(3),
+		.drive_bits = GENMASK(1, 0),
+		.schmitt_bit = BIT(2),
 	},
 };
 
@@ -1622,7 +1636,14 @@ static struct ocelot_match_data ocelot_desc = {
 		.npins = ARRAY_SIZE(ocelot_pins),
 		.pctlops = &ocelot_pctl_ops,
 		.pmxops = &ocelot_pmx_ops,
+		.confops = &ocelot_confops,
 		.owner = THIS_MODULE,
+	},
+	.pincfg_data = {
+		.pd_bit = BIT(4),
+		.pu_bit = BIT(3),
+		.drive_bits = GENMASK(1, 0),
+		.schmitt_bit = BIT(2),
 	},
 };
 
@@ -1633,7 +1654,14 @@ static struct ocelot_match_data jaguar2_desc = {
 		.npins = ARRAY_SIZE(jaguar2_pins),
 		.pctlops = &ocelot_pctl_ops,
 		.pmxops = &ocelot_pmx_ops,
+		.confops = &ocelot_confops,
 		.owner = THIS_MODULE,
+	},
+	.pincfg_data = {
+		.pd_bit = BIT(4),
+		.pu_bit = BIT(3),
+		.drive_bits = GENMASK(1, 0),
+		.schmitt_bit = BIT(2),
 	},
 };
 
@@ -1644,7 +1672,14 @@ static struct ocelot_match_data servalt_desc = {
 		.npins = ARRAY_SIZE(servalt_pins),
 		.pctlops = &ocelot_pctl_ops,
 		.pmxops = &ocelot_pmx_ops,
+		.confops = &ocelot_confops,
 		.owner = THIS_MODULE,
+	},
+	.pincfg_data = {
+		.pd_bit = BIT(4),
+		.pu_bit = BIT(3),
+		.drive_bits = GENMASK(1, 0),
+		.schmitt_bit = BIT(2),
 	},
 };
 
