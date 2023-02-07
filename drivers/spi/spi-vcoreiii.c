@@ -287,6 +287,7 @@ static int vcoreiii_bb_probe(struct platform_device *pdev)
 
 	master->mode_bits = SPI_CPHA | SPI_CPOL | SPI_CS_HIGH;
 	master->use_gpio_descriptors = true;
+	master->num_chipselect = MAX_CS;
 
 	master->transfer_one_message = vcoreiii_bb_transfer_one_message;
 
