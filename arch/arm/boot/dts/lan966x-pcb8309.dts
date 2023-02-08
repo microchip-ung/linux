@@ -133,6 +133,19 @@
 };
 
 &gpio {
+	emmc_sd_pins: emmc-sd-pins {
+		/* eMMC_SD - CMD, CLK, D0, D1, D2, D3, RSTN */
+		pins = "GPIO_67", "GPIO_68", "GPIO_69", "GPIO_70",
+			"GPIO_71", "GPIO_72", "GPIO_77";
+		function = "emmc_sd";
+	};
+
+	emmc_pins: emmc-pins {
+		/* eMMC - D4, D5, D6, D7 */
+		pins = "GPIO_73", "GPIO_74", "GPIO_75", "GPIO_76";
+		function = "emmc";
+	};
+
 	fc3_b_pins: fc3-b-pins {
 		/* RXD, TXD */
 		pins = "GPIO_52", "GPIO_53";
@@ -191,6 +204,33 @@
 	managed = "in-band-status";
 	phy-mode = "sgmii";
 	phys = <&serdes 3 SERDES6G(1)>;
+	status = "okay";
+};
+
+&qspi0 {
+	status = "okay";
+
+	spi-flash@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <20000000>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+		spi-tx-bus-width = <4>;
+		spi-rx-bus-width = <4>;
+		m25p,fast-read;
+	};
+};
+
+&sdmmc0 {
+	bus-width = <8>;
+	cap-mmc-highspeed;
+	cap-mmc-hw-reset;
+	non-removable;
+	pinctrl-0 = <&emmc_sd_pins>, <&emmc_pins>;
+	pinctrl-names = "default";
+	no-1-8-v;
+	tx-phase = <0>; /* 180 degrees phase shift */
 	status = "okay";
 };
 
