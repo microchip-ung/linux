@@ -2143,7 +2143,7 @@ static int ocelot_pinctrl_probe(struct platform_device *pdev)
 	info->dev = dev;
 
 	/* Pinconf registers */
-	if (info->desc->confops) {
+	if (info->desc->confops && platform_get_resource(pdev, IORESOURCE_MEM, 1)) {
 		pincfg = ocelot_pinctrl_create_pincfg(pdev, info);
 		if (IS_ERR(pincfg))
 			dev_dbg(dev, "Failed to create pincfg regmap\n");
