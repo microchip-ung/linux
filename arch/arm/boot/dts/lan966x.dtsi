@@ -106,6 +106,26 @@
 			status = "disabled";
 		};
 
+		usb: usb@300000 {
+			compatible = "microchip,lan966x-dwc3";
+			clocks = <&clks GCK_GATE_UHPHS>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges;
+			status = "disabled";
+
+			usb_dwc3: usb_dwc3@300000 {
+				compatible = "snps,dwc3";
+				reg = <0x300000 0x80000>;
+				interrupts = <GIC_SPI 82 IRQ_TYPE_LEVEL_HIGH>;
+				phy_type = "utmi";
+				clocks = <&clks GCK_ID_USB_REFCLK>;
+				clock-names = "ref";
+				assigned-clocks = <&clks GCK_ID_USB_REFCLK>;
+				assigned-clock-rates = <100000000>;
+			};
+		};
+
 		switch: switch@e0000000 {
 			compatible = "microchip,lan966x-switch";
 			reg = <0xe0000000 0x0100000>,
