@@ -69,6 +69,20 @@
 			gpios = <&sgpio_out 3 1 GPIO_ACTIVE_LOW>;
 			default-state = "off";
 		};
+
+		led-p1-green {
+			label = "cu0:green";
+			gpios = <&sgpio_out 0 0 GPIO_ACTIVE_LOW>;
+			default-state = "off";
+			linux,default-trigger = "e200413c.mdio-mii:01:link";
+		};
+
+		led-p2-green {
+			label = "cu1:green";
+			gpios = <&sgpio_out 1 0 GPIO_ACTIVE_LOW>;
+			default-state = "off";
+			linux,default-trigger = "e200413c.mdio-mii:02:link";
+		};
 	};
 
 	mux: mux-controller {
