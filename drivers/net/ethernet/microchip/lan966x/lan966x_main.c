@@ -1165,6 +1165,10 @@ static int lan966x_probe(struct platform_device *pdev)
 	lan966x_vcap_init(lan966x);
 	lan966x_qos_init(lan966x);
 
+	lan966x_netlink_fp_init();
+	lan966x_netlink_frer_init(lan966x);
+	lan966x_netlink_qos_init(lan966x);
+
 	return 0;
 
 cleanup_ptp:
@@ -1188,6 +1192,10 @@ cleanup_ports:
 static int lan966x_remove(struct platform_device *pdev)
 {
 	struct lan966x *lan966x = platform_get_drvdata(pdev);
+
+	lan966x_netlink_frer_uninit();
+	lan966x_netlink_fp_uninit();
+	lan966x_netlink_qos_uninit();
 
 	lan966x_vcap_uninit(lan966x);
 

@@ -589,6 +589,13 @@ int lan966x_mirror_vcap_add(const struct lan966x_port *port,
 			    struct lan966x_port *monitor_port);
 void lan966x_mirror_vcap_del(struct lan966x *lan966x);
 
+int lan966x_netlink_fp_init(void);
+void lan966x_netlink_fp_uninit(void);
+int lan966x_netlink_frer_init(struct lan966x *lan966x);
+void lan966x_netlink_frer_uninit(void);
+int lan966x_netlink_qos_init(struct lan966x *lan966x);
+void lan966x_netlink_qos_uninit(void);
+
 static inline void __iomem *lan_addr(void __iomem *base[],
 				     int id, int tinst, int tcnt,
 				     int gbase, int ginst,
