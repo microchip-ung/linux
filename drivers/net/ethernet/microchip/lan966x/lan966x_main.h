@@ -16,6 +16,8 @@
 #include "lan966x_regs.h"
 #include "lan966x_ifh.h"
 
+#include "lan966x_afi.h"
+
 #define TABLE_UPDATE_SLEEP_US		10
 #define TABLE_UPDATE_TIMEOUT_US		100000
 
@@ -271,6 +273,8 @@ struct lan966x {
 	struct lan966x_port *mirror_monitor;
 	u32 mirror_mask[2];
 	u32 mirror_count;
+
+	struct lan966x_afi afi;
 };
 
 struct lan966x_port_config {
