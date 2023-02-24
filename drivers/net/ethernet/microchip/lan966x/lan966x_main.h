@@ -214,6 +214,13 @@ struct lan966x_skb_cb {
 #define LAN966X_SKB_CB(skb) \
 	((struct lan966x_skb_cb *)((skb)->cb))
 
+struct lan966x_tc_policer {
+	/* kilobit per second */
+	u32 rate;
+	/* bytes */
+	u32 burst;
+};
+
 struct lan966x {
 	struct device *dev;
 
@@ -312,6 +319,7 @@ struct lan966x_port_config {
 	bool autoneg;
 };
 
+#define LAN966X_VCAP_LOOKUP_MAX (3+2+1) /* IS1, IS2, ES0 */
 struct lan966x_port_tc {
 	bool ingress_shared_block;
 	unsigned long police_id;
@@ -319,6 +327,10 @@ struct lan966x_port_tc {
 	unsigned long egress_mirror_id;
 	struct flow_stats police_stat;
 	struct flow_stats mirror_stat;
+
+	u16 flower_template_proto[LAN966X_VCAP_LOOKUP_MAX];
+	/* list of flower templates for this port */
+	struct list_head templates;
 };
 
 struct lan966x_port {
@@ -564,6 +576,18 @@ void lan966x_mirror_port_stats(struct lan966x_port *port,
 
 int lan966x_qos_init(struct lan966x *lan966x);
 void lan966x_qos_port_init(struct lan966x_port *port);
+
+int lan966x_tc_flower(struct lan966x_port *port,
+		      struct flow_cls_offload *f,
+		      bool ingress);
+
+int lan966x_police_del(struct lan966x_port *port, u16 pol_idx);
+int lan966x_police_add(struct lan966x_port *port,
+		       struct lan966x_tc_policer *pol,
+		       u16 pol_idx);
+int lan966x_mirror_vcap_add(const struct lan966x_port *port,
+			    struct lan966x_port *monitor_port);
+void lan966x_mirror_vcap_del(struct lan966x *lan966x);
 
 static inline void __iomem *lan_addr(void __iomem *base[],
 				     int id, int tinst, int tcnt,

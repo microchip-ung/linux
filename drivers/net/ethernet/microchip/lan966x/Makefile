@@ -14,7 +14,7 @@ lan966x-switch-objs  := lan966x_main.o lan966x_phylink.o lan966x_port.o \
 			lan966x_tc_matchall.o lan966x_police.o lan966x_mirror.o
 
 lan966x-switch-objs +=  lan966x_afi.o lan966x_vcap_impl.o lan966x_vcap_ag_api.o \
-			lan966x_qos.o
+			lan966x_qos.o lan966x_tc_flower.o
 
 # Provide include files
 ccflags-y += -I$(srctree)/drivers/net/ethernet/microchip/vcap
