@@ -145,8 +145,10 @@ static void lan966x_port_link_up(struct lan966x_port *port)
 {
 	struct lan966x_port_config *config = &port->config;
 	struct lan966x *lan966x = port->lan966x;
+	struct lan966x_path_delay *path_delay;
 	int speed = 0, mode = 0;
 	int atop_wm = 0;
+	u8 tweaks = 5;
 
 	switch (config->speed) {
 	case SPEED_10:
@@ -250,6 +252,16 @@ static void lan966x_port_link_up(struct lan966x_port *port)
 	       SYS_ATOP(port->chip_port));
 	lan_wr(lan966x_wm_enc(atop_wm), lan966x, SYS_ATOP_TOT_CFG);
 
+	/* Update RX/TX delay */
+	list_for_each_entry(path_delay, &port->path_delays, list) {
+		if (path_delay->speed == config->speed) {
+			lan_wr(path_delay->rx_delay + port->rx_delay,
+			       lan966x, SYS_PTP_RXDLY_CFG(port->chip_port));
+			lan_wr(path_delay->tx_delay,
+			       lan966x, SYS_PTP_TXDLY_CFG(port->chip_port));
+		}
+	}
+
 	/* This needs to be at the end */
 	/* Enable MAC module */
 	lan_wr(DEV_MAC_ENA_CFG_RX_ENA_SET(1) |
@@ -259,6 +271,45 @@ static void lan966x_port_link_up(struct lan966x_port *port)
 	/* Take out the clock from reset */
 	lan_wr(DEV_CLOCK_CFG_LINK_SPEED_SET(speed),
 	       lan966x, DEV_CLOCK_CFG(port->chip_port));
+
+	/* When running at 10 these tweaks need to be set */
+	if (speed == LAN966X_SPEED_10)
+		tweaks = 7;
+	else
+		tweaks = 5;
+
+	/* Enable phase detector */
+	/* First it is needed to disable and then enable it and after that it
+	 * needed to clear the failed bit which is set by default. Also there
+	 * are 2 phase detector ctrl one for TX and one for RX
+	 */
+	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(0),
+		DEV_PHAD_CTRL_PHAD_ENA,
+		lan966x, DEV_PHAD_CTRL(port->chip_port, 0));
+
+	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(0),
+		DEV_PHAD_CTRL_PHAD_ENA,
+		lan966x, DEV_PHAD_CTRL(port->chip_port, 1));
+
+	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(1) |
+		DEV_PHAD_CTRL_TWEAKS_SET(tweaks) |
+		DEV_PHAD_CTRL_PHAD_FAILED_SET(1) |
+		DEV_PHAD_CTRL_LOCK_ACC_SET(0),
+		DEV_PHAD_CTRL_PHAD_ENA |
+		DEV_PHAD_CTRL_TWEAKS |
+		DEV_PHAD_CTRL_PHAD_FAILED |
+		DEV_PHAD_CTRL_LOCK_ACC,
+		lan966x, DEV_PHAD_CTRL(port->chip_port, 0));
+
+	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(1) |
+		DEV_PHAD_CTRL_TWEAKS_SET(tweaks) |
+		DEV_PHAD_CTRL_PHAD_FAILED_SET(1) |
+		DEV_PHAD_CTRL_LOCK_ACC_SET(0),
+		DEV_PHAD_CTRL_PHAD_ENA |
+		DEV_PHAD_CTRL_TWEAKS |
+		DEV_PHAD_CTRL_PHAD_FAILED |
+		DEV_PHAD_CTRL_LOCK_ACC,
+		lan966x, DEV_PHAD_CTRL(port->chip_port, 1));
 
 	/* Core: Enable port for frame transfer */
 	lan_wr(QSYS_SW_PORT_MODE_PORT_ENA_SET(1) |
@@ -324,6 +375,20 @@ void lan966x_port_status_get(struct lan966x_port *port,
 			state->speed = SPEED_2500;
 
 		state->duplex = DUPLEX_FULL;
+	}
+
+	/* RX latency register is 2^8, so LSB = 1/(2^8)ns ~ 3.90625ps
+	 * So for 1G we need to add 800ps per barrel shifter delay: 800 /
+	 * 3.90625 = 0xCD
+	 * So for 2.5G we need to add 320ps per barrel shifter delay: 320 /
+	 * 3.90625 = 0x52
+	 */
+	if (state->link && state->speed == SPEED_1000) {
+		port->rx_delay = DEV_PCS1G_LINK_STATUS_DELAY_VAR_GET(val) * 0xcd;
+	} else if (state->link && state->speed == SPEED_2500) {
+		port->rx_delay = DEV_PCS1G_LINK_STATUS_DELAY_VAR_GET(val) * 0x52;
+	} else {
+		port->rx_delay = 0;
 	}
 }
 

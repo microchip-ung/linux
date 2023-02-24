@@ -732,6 +732,46 @@ static void lan966x_cleanup_ports(struct lan966x *lan966x)
 		devm_free_irq(lan966x->dev, lan966x->ptp_ext_irq, lan966x);
 }
 
+static int lan966x_port_parse_delays(struct lan966x_port *port,
+				     struct fwnode_handle *portnp)
+{
+	struct fwnode_handle *delay;
+	int err;
+
+	INIT_LIST_HEAD(&port->path_delays);
+
+	fwnode_for_each_available_child_node(portnp, delay) {
+		struct lan966x_path_delay *path_delay;
+		s32 tx_delay;
+		s32 rx_delay;
+		u32 speed;
+
+		err = fwnode_property_read_u32(delay, "speed", &speed);
+		if (err)
+			return err;
+
+		err = fwnode_property_read_u32(delay, "rx_delay", &rx_delay);
+		if (err)
+			return err;
+
+		err = fwnode_property_read_u32(delay, "tx_delay", &tx_delay);
+		if (err)
+			return err;
+
+		path_delay = devm_kzalloc(&port->dev->dev,
+					  sizeof(*path_delay), GFP_KERNEL);
+		if (!path_delay)
+			return -ENOMEM;
+
+		path_delay->rx_delay = rx_delay;
+		path_delay->tx_delay = tx_delay;
+		path_delay->speed = speed;
+		list_add_tail(&path_delay->list, &port->path_delays);
+	}
+
+	return 0;
+}
+
 static int lan966x_probe_port(struct lan966x *lan966x, u32 p,
 			      phy_interface_t phy_mode,
 			      struct fwnode_handle *portnp)
@@ -818,6 +858,8 @@ static int lan966x_probe_port(struct lan966x *lan966x, u32 p,
 	lan966x_vlan_port_set_vlan_aware(port, 0);
 	lan966x_vlan_port_set_vid(port, HOST_PVID, false, false);
 	lan966x_vlan_port_apply(port);
+
+	lan966x_port_parse_delays(port, portnp);
 
 	return 0;
 }

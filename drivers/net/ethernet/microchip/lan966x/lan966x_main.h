@@ -221,6 +221,13 @@ struct lan966x_tc_policer {
 	u32 burst;
 };
 
+struct lan966x_path_delay {
+	struct list_head list;
+	u32 rx_delay;
+	u32 tx_delay;
+	u32 speed;
+};
+
 struct lan966x {
 	struct device *dev;
 
@@ -364,6 +371,9 @@ struct lan966x_port {
 
 	struct mchp_qos_port_conf qos_port_conf;
 	struct lan966x_fp_port_conf fp;
+
+	struct list_head path_delays;
+	u32 rx_delay;
 };
 
 extern const struct phylink_mac_ops lan966x_phylink_mac_ops;
