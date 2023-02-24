@@ -578,6 +578,77 @@ static int lan966x_get_ts_info(struct net_device *dev,
 	return 0;
 }
 
+static int lan966x_get_eee(struct net_device *dev, struct ethtool_eee *eee)
+{
+	struct lan966x_port *port = netdev_priv(dev);
+	struct lan966x *lan966x = port->lan966x;
+	struct phylink *phylink = port->phylink;
+	u32 val;
+	int ret;
+
+	if (!phylink)
+		return -EIO;
+
+	ret = phylink_ethtool_get_eee(phylink, eee);
+	if (ret < 0)
+		return ret;
+
+	val = lan_rd(lan966x, DEV_EEE_CFG(port->chip_port));
+	if (DEV_EEE_CFG_EEE_ENA_GET(val)) {
+		eee->eee_enabled = true;
+		eee->eee_active = !!(eee->advertised & eee->lp_advertised);
+		eee->tx_lpi_enabled = true;
+
+		eee->tx_lpi_timer = DEV_EEE_CFG_EEE_TIMER_WAKEUP_GET(val);
+	} else {
+		eee->eee_enabled = false;
+		eee->eee_active = false;
+		eee->tx_lpi_enabled = false;
+		eee->tx_lpi_timer = 0;
+	}
+
+	return 0;
+}
+
+static int lan966x_set_eee(struct net_device *dev, struct ethtool_eee *eee)
+{
+	struct lan966x_port *port;
+	struct phylink *phylink;
+	struct lan966x *lan966x;
+	int ret;
+
+	if (!dev)
+		return -EINVAL;
+
+	port = netdev_priv(dev);
+	if (!port)
+		return -EINVAL;
+
+	lan966x = port->lan966x;
+	phylink = port->phylink;
+
+	if (!phylink)
+		return -EIO;
+
+	if (eee->eee_enabled) {
+		ret = phylink_init_eee(phylink, 0);
+		if (ret)
+			return ret;
+
+		lan_rmw(DEV_EEE_CFG_EEE_ENA_SET(1) |
+			DEV_EEE_CFG_EEE_TIMER_WAKEUP_SET(eee->tx_lpi_timer),
+			DEV_EEE_CFG_EEE_ENA |
+			DEV_EEE_CFG_EEE_TIMER_WAKEUP,
+			lan966x, DEV_EEE_CFG(port->chip_port));
+	} else {
+		lan_rmw(DEV_EEE_CFG_EEE_ENA_SET(0),
+			DEV_EEE_CFG_EEE_ENA,
+			lan966x, DEV_EEE_CFG(port->chip_port));
+	}
+
+	return 0;
+}
+
 const struct ethtool_ops lan966x_ethtool_ops = {
 	.get_link_ksettings     = lan966x_get_link_ksettings,
 	.set_link_ksettings     = lan966x_set_link_ksettings,
@@ -590,6 +661,8 @@ const struct ethtool_ops lan966x_ethtool_ops = {
 	.get_rmon_stats		= lan966x_get_eth_rmon_stats,
 	.get_link		= ethtool_op_get_link,
 	.get_ts_info		= lan966x_get_ts_info,
+	.get_eee		= lan966x_get_eee,
+	.set_eee		= lan966x_set_eee,
 };
 
 static void lan966x_check_stats_work(struct work_struct *work)
