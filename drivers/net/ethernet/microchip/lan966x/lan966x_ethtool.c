@@ -282,7 +282,7 @@ static const struct lan966x_stat_layout lan966x_stats_layout[] = {
 #define SYS_COUNT_DR_GREEN_PRIO_7	131
 
 /* Add a possibly wrapping 32 bit value to a 64 bit counter */
-static void lan966x_add_cnt(u64 *cnt, u32 val)
+void lan966x_add_cnt(u64 *cnt, u32 val)
 {
 	if (val < (*cnt & U32_MAX))
 		*cnt += (u64)1 << 32; /* value has wrapped */

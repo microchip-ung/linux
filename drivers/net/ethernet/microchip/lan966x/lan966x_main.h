@@ -18,6 +18,7 @@
 
 #include "lan966x_afi.h"
 #include <linux/debugfs.h>
+#include "lan966x_qos.h"
 
 #define TABLE_UPDATE_SLEEP_US		10
 #define TABLE_UPDATE_TIMEOUT_US		100000
@@ -89,6 +90,13 @@
 
 #define SE_IDX_QUEUE			0  /* 0-79 : Queue scheduler elements */
 #define SE_IDX_PORT			80 /* 80-89 : Port schedular elements */
+
+#define LAN966X_VLAN_SRC_CHK        0x01
+#define LAN966X_VLAN_MIRROR         0x02
+#define LAN966X_VLAN_LEARN_DISABLED 0x04
+#define LAN966X_VLAN_PRIV_VLAN      0x08
+#define LAN966X_VLAN_FLOOD_DIS      0x10
+#define LAN966X_VLAN_SEC_FWD_ENA    0x20
 
 /* MAC table entry types.
  * ENTRYTYPE_NORMAL is subject to aging.
@@ -229,6 +237,7 @@ struct lan966x {
 
 	u16 vlan_mask[VLAN_N_VID];
 	DECLARE_BITMAP(cpu_vlan_mask, VLAN_N_VID);
+	u8 vlan_flags[VLAN_N_VID];
 
 	/* stats */
 	const struct lan966x_stat_layout *stats_layout;
@@ -282,6 +291,15 @@ struct lan966x {
 
 	/* Common root for debugfs */
 	struct dentry *debugfs_root;
+
+	/* QoS configuration and state */
+	struct lan966x_qos_conf qos;
+
+	/* PSFP configuration and state */
+	struct lan966x_psfp_conf psfp;
+
+	/* FRER configuration and state */
+	struct lan966x_frer_conf frer;
 };
 
 struct lan966x_port_config {
@@ -331,6 +349,9 @@ struct lan966x_port {
 	enum netdev_lag_hash hash_type;
 
 	struct lan966x_port_tc tc;
+
+	struct mchp_qos_port_conf qos_port_conf;
+	struct lan966x_fp_port_conf fp;
 };
 
 extern const struct phylink_mac_ops lan966x_phylink_mac_ops;
@@ -338,6 +359,8 @@ extern const struct phylink_pcs_ops lan966x_phylink_pcs_ops;
 extern const struct ethtool_ops lan966x_ethtool_ops;
 extern struct notifier_block lan966x_switchdev_nb __read_mostly;
 extern struct notifier_block lan966x_switchdev_blocking_nb __read_mostly;
+
+void lan966x_add_cnt(u64 *cnt, u32 val);
 
 bool lan966x_netdevice_check(const struct net_device *dev);
 
@@ -410,6 +433,7 @@ void lan966x_vlan_port_add_vlan(struct lan966x_port *port,
 void lan966x_vlan_port_del_vlan(struct lan966x_port *port, u16 vid);
 void lan966x_vlan_cpu_add_vlan(struct lan966x *lan966x, u16 vid);
 void lan966x_vlan_cpu_del_vlan(struct lan966x *lan966x, u16 vid);
+void lan966x_vlan_set_mask(struct lan966x *lan966x, u16 vid);
 
 void lan966x_fdb_write_entries(struct lan966x *lan966x, u16 vid);
 void lan966x_fdb_erase_entries(struct lan966x *lan966x, u16 vid);
@@ -537,6 +561,9 @@ int lan966x_mirror_port_del(struct lan966x_port *port,
 void lan966x_mirror_port_stats(struct lan966x_port *port,
 			       struct flow_stats *stats,
 			       bool ingress);
+
+int lan966x_qos_init(struct lan966x *lan966x);
+void lan966x_qos_port_init(struct lan966x_port *port);
 
 static inline void __iomem *lan_addr(void __iomem *base[],
 				     int id, int tinst, int tcnt,

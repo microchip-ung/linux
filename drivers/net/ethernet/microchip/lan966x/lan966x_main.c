@@ -1143,6 +1143,7 @@ static int lan966x_probe(struct platform_device *pdev)
 		lan966x->ports[p]->serdes = serdes;
 
 		lan966x_port_init(lan966x->ports[p]);
+		lan966x_qos_port_init(lan966x->ports[p]);
 	}
 
 	lan966x_mdb_init(lan966x);
@@ -1160,6 +1161,7 @@ static int lan966x_probe(struct platform_device *pdev)
 
 	/* Init vcap */
 	lan966x_vcap_init(lan966x);
+	lan966x_qos_init(lan966x);
 
 	return 0;
 
