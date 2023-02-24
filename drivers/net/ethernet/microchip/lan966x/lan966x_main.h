@@ -17,6 +17,7 @@
 #include "lan966x_ifh.h"
 
 #include "lan966x_afi.h"
+#include <linux/debugfs.h>
 
 #define TABLE_UPDATE_SLEEP_US		10
 #define TABLE_UPDATE_TIMEOUT_US		100000
@@ -275,6 +276,12 @@ struct lan966x {
 	u32 mirror_count;
 
 	struct lan966x_afi afi;
+
+	/* VCAP api */
+	struct vcap_control *vcap_ctrl;
+
+	/* Common root for debugfs */
+	struct dentry *debugfs_root;
 };
 
 struct lan966x_port_config {

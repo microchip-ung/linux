@@ -14,6 +14,8 @@
 
 #include "lan966x_main.h"
 
+#include "lan966x_vcap_impl.h"
+
 #define XTR_EOF_0			0x00000080U
 #define XTR_EOF_1			0x01000080U
 #define XTR_EOF_2			0x02000080U
@@ -47,6 +49,9 @@ static const struct lan966x_main_io_resource lan966x_main_iomap[] =  {
 	{ TARGET_PTP,                    0xc000, 1 }, /* 0xe200c000 */
 	{ TARGET_CHIP_TOP,              0x10000, 1 }, /* 0xe2010000 */
 	{ TARGET_REW,                   0x14000, 1 }, /* 0xe2014000 */
+	{ TARGET_VCAP,                  0x18000, 1 }, /* 0xe2018000 */
+	{ TARGET_VCAP + 1,              0x20000, 1 }, /* 0xe2020000 */
+	{ TARGET_VCAP + 2,              0x24000, 1 }, /* 0xe2024000 */
 	{ TARGET_SYS,                   0x28000, 1 }, /* 0xe2028000 */
 	{ TARGET_DEV,                   0x34000, 1 }, /* 0xe2034000 */
 	{ TARGET_DEV +  1,              0x38000, 1 }, /* 0xe2038000 */
@@ -1014,6 +1019,8 @@ static int lan966x_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, lan966x);
 	lan966x->dev = &pdev->dev;
 
+	lan966x->debugfs_root = debugfs_create_dir("lan966x", NULL);
+
 	if (!device_get_mac_address(&pdev->dev, mac_addr)) {
 		ether_addr_copy(lan966x->base_mac, mac_addr);
 	} else {
@@ -1151,6 +1158,9 @@ static int lan966x_probe(struct platform_device *pdev)
 	if (err)
 		goto cleanup_ptp;
 
+	/* Init vcap */
+	lan966x_vcap_init(lan966x);
+
 	return 0;
 
 cleanup_ptp:
@@ -1175,6 +1185,8 @@ static int lan966x_remove(struct platform_device *pdev)
 {
 	struct lan966x *lan966x = platform_get_drvdata(pdev);
 
+	lan966x_vcap_uninit(lan966x);
+
 	lan966x_taprio_deinit(lan966x);
 	lan966x_fdma_deinit(lan966x);
 	lan966x_cleanup_ports(lan966x);
@@ -1187,6 +1199,8 @@ static int lan966x_remove(struct platform_device *pdev)
 	lan966x_mdb_deinit(lan966x);
 	lan966x_fdb_deinit(lan966x);
 	lan966x_ptp_deinit(lan966x);
+
+	debugfs_remove_recursive(lan966x->debugfs_root);
 
 	return 0;
 }
