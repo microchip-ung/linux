@@ -5,6 +5,8 @@
 
 #include "lan966x_main.h"
 
+#include "lan966x_mrp.h"
+
 static struct notifier_block lan966x_netdevice_nb __read_mostly;
 
 static void lan966x_port_set_mcast_ip_flood(struct lan966x_port *port,
@@ -235,6 +237,9 @@ static int lan966x_port_attr_set(struct net_device *dev, const void *ctx,
 	case SWITCHDEV_ATTR_ID_BRIDGE_MC_DISABLED:
 		lan966x_port_mc_set(port, !attr->u.mc_disabled);
 		break;
+	case SWITCHDEV_ATTR_ID_MRP_PORT_ROLE:
+		lan966x_handle_mrp_port_role(port, attr->u.mrp_port_role);
+		break;
 	default:
 		err = -EOPNOTSUPP;
 		break;
@@ -422,6 +427,27 @@ static int lan966x_bridge_check(struct net_device *dev,
 					      info->info.extack);
 }
 
+static void lan966x_bridge_change_addr(struct net_device *dev)
+{
+	struct net_device *lower;
+	struct list_head *iter;
+
+	if (!netif_is_bridge_master(dev))
+		return;
+
+	netdev_for_each_lower_dev(dev, lower, iter) {
+		struct lan966x_port *port;
+		struct lan966x *lan966x;
+
+		if (!lan966x_netdevice_check(lower))
+			continue;
+
+		port = netdev_priv(lower);
+		lan966x = port->lan966x;
+		lan966x_mrp_update_mac(lan966x, dev->dev_addr);
+	}
+}
+
 static int lan966x_netdevice_port_event(struct net_device *dev,
 					struct notifier_block *nb,
 					unsigned long event, void *ptr)
@@ -446,6 +472,9 @@ static int lan966x_netdevice_port_event(struct net_device *dev,
 
 				return err;
 			}
+			break;
+		case NETDEV_CHANGEADDR:
+			lan966x_bridge_change_addr(dev);
 			break;
 		default:
 			return 0;
@@ -562,6 +591,27 @@ static int lan966x_handle_port_obj_add(struct net_device *dev, const void *ctx,
 	case SWITCHDEV_OBJ_ID_HOST_MDB:
 		err = lan966x_handle_port_mdb_add(port, obj);
 		break;
+	case SWITCHDEV_OBJ_ID_MRP:
+		err = lan966x_handle_mrp_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_RING_TEST_MRP:
+		err = lan966x_handle_mrp_ring_test_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_RING_ROLE_MRP:
+		err = lan966x_handle_mrp_ring_role_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_RING_STATE_MRP:
+		err = lan966x_handle_mrp_ring_state_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_IN_TEST_MRP:
+		err = lan966x_handle_mrp_in_test_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_IN_ROLE_MRP:
+		err = lan966x_handle_mrp_in_role_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_IN_STATE_MRP:
+		err = lan966x_handle_mrp_in_state_add(port, obj);
+		break;
 	default:
 		err = -EOPNOTSUPP;
 		break;
@@ -600,6 +650,21 @@ static int lan966x_handle_port_obj_del(struct net_device *dev, const void *ctx,
 	case SWITCHDEV_OBJ_ID_PORT_MDB:
 	case SWITCHDEV_OBJ_ID_HOST_MDB:
 		err = lan966x_handle_port_mdb_del(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_MRP:
+		err = lan966x_handle_mrp_del(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_RING_TEST_MRP:
+		err = lan966x_handle_mrp_ring_test_del(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_RING_ROLE_MRP:
+		err = lan966x_handle_mrp_ring_role_del(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_IN_TEST_MRP:
+		err = lan966x_handle_mrp_in_test_del(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_IN_ROLE_MRP:
+		err = lan966x_handle_mrp_in_role_del(port, obj);
 		break;
 	default:
 		err = -EOPNOTSUPP;

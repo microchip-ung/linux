@@ -42,6 +42,26 @@ int br_mrp_in_port_open(struct net_device *dev, u8 loc);
 
 struct sk_buff *br_mrp_alloc_test(struct net_device *dev, u32 port_role);
 struct sk_buff *br_mrp_alloc_in_test(struct net_device *dev, u32 port_role);
+#else
+static inline int br_mrp_ring_port_open(struct net_device *dev, u8 loc)
+{
+    return 0;
+}
+
+static inline int br_mrp_in_port_open(struct net_device *dev, u8 loc)
+{
+    return 0;
+}
+
+static inline struct sk_buff *br_mrp_alloc_test(struct net_device *dev, u32 port_role)
+{
+	return NULL;
+}
+
+static inline struct sk_buff *br_mrp_alloc_in_test(struct net_device *dev, u32 port_role)
+{
+	return NULL;
+}
 #endif
 
 #define BR_HAIRPIN_MODE		BIT(0)

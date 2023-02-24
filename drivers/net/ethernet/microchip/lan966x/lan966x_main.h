@@ -19,6 +19,7 @@
 #include "lan966x_afi.h"
 #include <linux/debugfs.h>
 #include "lan966x_qos.h"
+#include <uapi/linux/mrp_bridge.h>
 
 #define TABLE_UPDATE_SLEEP_US		10
 #define TABLE_UPDATE_TIMEOUT_US		100000
@@ -97,6 +98,8 @@
 #define LAN966X_VLAN_PRIV_VLAN      0x08
 #define LAN966X_VLAN_FLOOD_DIS      0x10
 #define LAN966X_VLAN_SEC_FWD_ENA    0x20
+
+#define PGID_MRP  (PGID_AGGR - 7)
 
 /* MAC table entry types.
  * ENTRYTYPE_NORMAL is subject to aging.
@@ -228,6 +231,39 @@ struct lan966x_path_delay {
 	u32 speed;
 };
 
+struct lan966x_mrp {
+	struct list_head list;
+
+	struct lan966x *lan966x;
+	struct lan966x_port *p_port;
+	struct lan966x_port *s_port;
+	struct lan966x_port *i_port;
+
+	enum br_mrp_ring_role_type ring_role;
+	enum br_mrp_ring_state_type ring_state;
+	enum br_mrp_in_role_type in_role;
+	enum br_mrp_in_state_type in_state;
+	bool mra_support;
+	bool monitor;
+	u32 ring_id;
+	u32 in_id;
+
+	u32 ring_interval;
+	u32 in_interval;
+
+	u8 ring_loc_idx;
+	u8 in_loc_idx;
+
+	u32 ring_transitions;
+	u32 in_transitions;
+
+	struct delayed_work ring_loc_work;
+	struct delayed_work in_loc_rc_work;
+
+	u32 interval;
+	u32 max_miss;
+};
+
 struct lan966x {
 	struct device *dev;
 
@@ -314,6 +350,9 @@ struct lan966x {
 
 	/* FRER configuration and state */
 	struct lan966x_frer_conf frer;
+
+	struct list_head mrp_list;
+	u8 loc_period_mask;
 };
 
 struct lan966x_port_config {
@@ -338,6 +377,21 @@ struct lan966x_port_tc {
 	u16 flower_template_proto[LAN966X_VCAP_LOOKUP_MAX];
 	/* list of flower templates for this port */
 	struct list_head templates;
+};
+
+struct lan966x_port_mrp {
+	u32 ring_test_flow;
+	u32 in_test_flow;
+	struct lan966x_mrp *mrp;
+
+	enum br_mrp_port_role_type role;
+	enum br_mrp_port_state_type state;
+
+	bool ring_loc_interrupt;
+	bool in_loc_interrupt;
+
+	u32 ring_id;
+	u32 in_id;
 };
 
 struct lan966x_port {
@@ -374,6 +428,11 @@ struct lan966x_port {
 
 	struct list_head path_delays;
 	u32 rx_delay;
+
+	struct lan966x_port_mrp mrp;
+	int mrp_is1_p_port_rule_id;
+	int mrp_is1_s_port_rule_id;
+	int mrp_is1_i_port_rule_id;
 };
 
 extern const struct phylink_mac_ops lan966x_phylink_mac_ops;
@@ -605,6 +664,19 @@ int lan966x_netlink_frer_init(struct lan966x *lan966x);
 void lan966x_netlink_frer_uninit(void);
 int lan966x_netlink_qos_init(struct lan966x *lan966x);
 void lan966x_netlink_qos_uninit(void);
+
+netdev_tx_t lan966x_xmit(struct lan966x_port *port,
+			 struct sk_buff *skb,
+			 __be32 ifh[IFH_LEN]);
+
+void lan966x_ifh_set_bypass(void *ifh, u64 bypass);
+void lan966x_ifh_set_port(void *ifh, u64 bypass);
+void lan966x_ifh_set_rew_op(void *ifh, u64 rew_op);
+void lan966x_ifh_set_timestamp(void *ifh, u64 timestamp);
+void lan966x_ifh_set_afi(void *ifh, u64 afi);
+void lan966x_ifh_set_rew_oam(void *ifh, u64 rew_oam);
+void lan966x_ifh_set_oam_type(void *ifh, u64 oam_type);
+void lan966x_ifh_set_seq_num(void *ifh, u64 seq_num);
 
 static inline void __iomem *lan_addr(void __iomem *base[],
 				     int id, int tinst, int tcnt,

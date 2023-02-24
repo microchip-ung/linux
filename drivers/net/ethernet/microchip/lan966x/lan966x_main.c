@@ -15,6 +15,7 @@
 #include "lan966x_main.h"
 
 #include "lan966x_vcap_impl.h"
+#include "lan966x_mrp.h"
 
 #define XTR_EOF_0			0x00000080U
 #define XTR_EOF_1			0x01000080U
@@ -50,6 +51,7 @@ static const struct lan966x_main_io_resource lan966x_main_iomap[] =  {
 	{ TARGET_CHIP_TOP,              0x10000, 1 }, /* 0xe2010000 */
 	{ TARGET_REW,                   0x14000, 1 }, /* 0xe2014000 */
 	{ TARGET_VCAP,                  0x18000, 1 }, /* 0xe2018000 */
+	{ TARGET_MEP,                   0x1c000, 1 }, /* 0xe201c000 */
 	{ TARGET_VCAP + 1,              0x20000, 1 }, /* 0xe2020000 */
 	{ TARGET_VCAP + 2,              0x24000, 1 }, /* 0xe2024000 */
 	{ TARGET_SYS,                   0x28000, 1 }, /* 0xe2028000 */
@@ -307,13 +309,13 @@ err:
 	return NETDEV_TX_BUSY;
 }
 
-static void lan966x_ifh_set_bypass(void *ifh, u64 bypass)
+void lan966x_ifh_set_bypass(void *ifh, u64 bypass)
 {
 	packing(ifh, &bypass, IFH_POS_BYPASS + IFH_WID_BYPASS - 1,
 		IFH_POS_BYPASS, IFH_LEN * 4, PACK, 0);
 }
 
-static void lan966x_ifh_set_port(void *ifh, u64 bypass)
+void lan966x_ifh_set_port(void *ifh, u64 bypass)
 {
 	packing(ifh, &bypass, IFH_POS_DSTS + IFH_WID_DSTS - 1,
 		IFH_POS_DSTS, IFH_LEN * 4, PACK, 0);
@@ -337,23 +339,63 @@ static void lan966x_ifh_set_vid(void *ifh, u64 vid)
 		IFH_POS_TCI, IFH_LEN * 4, PACK, 0);
 }
 
-static void lan966x_ifh_set_rew_op(void *ifh, u64 rew_op)
+void lan966x_ifh_set_rew_op(void *ifh, u64 rew_op)
 {
 	packing(ifh, &rew_op, IFH_POS_REW_CMD + IFH_WID_REW_CMD - 1,
 		IFH_POS_REW_CMD, IFH_LEN * 4, PACK, 0);
 }
 
-static void lan966x_ifh_set_timestamp(void *ifh, u64 timestamp)
+void lan966x_ifh_set_timestamp(void *ifh, u64 timestamp)
 {
 	packing(ifh, &timestamp, IFH_POS_TIMESTAMP + IFH_WID_TIMESTAMP - 1,
 		IFH_POS_TIMESTAMP, IFH_LEN * 4, PACK, 0);
+}
+
+void lan966x_ifh_set_afi(void *ifh, u64 afi)
+{
+	packing(ifh, &afi, IFH_POS_AFI + IFH_WID_AFI - 1,
+		IFH_POS_AFI, IFH_LEN * 4, PACK, 0);
+}
+
+void lan966x_ifh_set_rew_oam(void *ifh, u64 rew_oam)
+{
+	packing(ifh, &rew_oam, IFH_POS_REW_OAM + IFH_WID_REW_OAM - 1,
+		IFH_POS_REW_OAM, IFH_LEN * 4, PACK, 0);
+}
+
+void lan966x_ifh_set_oam_type(void *ifh, u64 oam_type)
+{
+	packing(ifh, &oam_type, IFH_POS_PDU_TYPE + IFH_WID_PDU_TYPE - 1,
+		IFH_POS_PDU_TYPE, IFH_LEN * 4, PACK, 0);
+}
+
+void lan966x_ifh_set_seq_num(void *ifh, u64 seq_num)
+{
+	packing(ifh, &seq_num, IFH_POS_SEQ_NUM + IFH_WID_SEQ_NUM - 1,
+		IFH_POS_SEQ_NUM, IFH_LEN * 4, PACK, 0);
+}
+
+netdev_tx_t lan966x_xmit(struct lan966x_port *port,
+			 struct sk_buff *skb,
+			 __be32 ifh[IFH_LEN])
+{
+	struct lan966x *lan966x = port->lan966x;
+	int err;
+
+	spin_lock(&lan966x->tx_lock);
+	if (port->lan966x->fdma)
+		err = lan966x_fdma_xmit(skb, ifh, port->dev);
+	else
+		err = lan966x_port_ifh_xmit(skb, ifh, port->dev);
+	spin_unlock(&lan966x->tx_lock);
+
+	return err;
 }
 
 static netdev_tx_t lan966x_port_xmit(struct sk_buff *skb,
 				     struct net_device *dev)
 {
 	struct lan966x_port *port = netdev_priv(dev);
-	struct lan966x *lan966x = port->lan966x;
 	__be32 ifh[IFH_LEN];
 	int err;
 
@@ -374,14 +416,7 @@ static netdev_tx_t lan966x_port_xmit(struct sk_buff *skb,
 		lan966x_ifh_set_timestamp(ifh, LAN966X_SKB_CB(skb)->ts_id);
 	}
 
-	spin_lock(&lan966x->tx_lock);
-	if (port->lan966x->fdma)
-		err = lan966x_fdma_xmit(skb, ifh, dev);
-	else
-		err = lan966x_port_ifh_xmit(skb, ifh, dev);
-	spin_unlock(&lan966x->tx_lock);
-
-	return err;
+	return lan966x_xmit(port, skb, ifh);
 }
 
 static int lan966x_port_change_mtu(struct net_device *dev, int new_mtu)
@@ -683,7 +718,11 @@ static irqreturn_t lan966x_ana_irq_handler(int irq, void *args)
 {
 	struct lan966x *lan966x = args;
 
-	return lan966x_mac_irq_handler(lan966x);
+	lan966x_mac_irq_handler(lan966x);
+	lan966x_mrp_ring_open(lan966x);
+	lan966x_mrp_in_open(lan966x);
+
+	return IRQ_HANDLED;
 }
 
 static void lan966x_cleanup_ports(struct lan966x *lan966x)
@@ -1211,6 +1250,8 @@ static int lan966x_probe(struct platform_device *pdev)
 	lan966x_netlink_frer_init(lan966x);
 	lan966x_netlink_qos_init(lan966x);
 
+	lan966x_mrp_init(lan966x);
+
 	return 0;
 
 cleanup_ptp:
@@ -1234,6 +1275,8 @@ cleanup_ports:
 static int lan966x_remove(struct platform_device *pdev)
 {
 	struct lan966x *lan966x = platform_get_drvdata(pdev);
+
+	lan966x_mrp_uninit(lan966x);
 
 	lan966x_netlink_frer_uninit();
 	lan966x_netlink_fp_uninit();

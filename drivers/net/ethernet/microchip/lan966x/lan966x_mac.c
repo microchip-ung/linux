@@ -534,6 +534,10 @@ irqreturn_t lan966x_mac_irq_handler(struct lan966x *lan966x)
 	bool stop = true;
 	u32 val;
 
+	/* Check if the mac table triggered this, if not just bail out */
+	if (!(ANA_ANAINTR_INTR_GET(lan_rd(lan966x, ANA_ANAINTR))))
+		return IRQ_HANDLED;
+
 	/* Start the scan from 0, 0 */
 	lan_wr(ANA_MACTINDX_M_INDEX_SET(0) |
 	       ANA_MACTINDX_BUCKET_SET(0),
