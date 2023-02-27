@@ -264,6 +264,21 @@ struct lan966x_mrp {
 	u32 max_miss;
 };
 
+#define MEP_AFI_ID_NONE 0xFFFFFFFF
+struct lan966x_mep {
+	struct hlist_node head;
+	u32 instance;
+	u32 voe_idx;
+	u32 afi_id;
+	struct lan966x_port *port;
+};
+
+struct lan966x_mip {
+	struct hlist_node head;
+	u32 instance;
+	struct lan966x_port *port;
+};
+
 struct lan966x {
 	struct device *dev;
 
@@ -353,6 +368,11 @@ struct lan966x {
 
 	struct list_head mrp_list;
 	u8 loc_period_mask;
+
+	struct hlist_head mep_list;
+	struct hlist_head mip_list;
+	/* IS1 rule ID for RAPS frames */
+	int raps_is1_rule_id;
 };
 
 struct lan966x_port_config {
@@ -433,6 +453,9 @@ struct lan966x_port {
 	int mrp_is1_p_port_rule_id;
 	int mrp_is1_s_port_rule_id;
 	int mrp_is1_i_port_rule_id;
+
+	/* IS1 rule ID for RAPS frames */
+	int raps_is1_rule_id;
 };
 
 extern const struct phylink_mac_ops lan966x_phylink_mac_ops;

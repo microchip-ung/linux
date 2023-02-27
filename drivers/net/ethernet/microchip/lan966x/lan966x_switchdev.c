@@ -6,6 +6,7 @@
 #include "lan966x_main.h"
 
 #include "lan966x_mrp.h"
+#include "lan966x_cfm.h"
 
 static struct notifier_block lan966x_netdevice_nb __read_mostly;
 
@@ -533,6 +534,28 @@ static bool lan966x_foreign_dev_check(const struct net_device *dev,
 	return true;
 }
 
+static int lan966x_port_attr_get(struct net_device *dev, const void *ctx,
+				 const struct switchdev_attr *attr,
+				 struct netlink_ext_ack *extack)
+{
+	struct lan966x_port *port = netdev_priv(dev);
+
+	switch (attr->id) {
+	case SWITCHDEV_ATTR_ID_CFM_CC_PEER_STATUS_GET:
+		lan966x_handle_cfm_cc_peer_status_get(port,
+						      attr->u.cfm_cc_peer_status);
+		break;
+	case SWITCHDEV_ATTR_ID_CFM_MEP_STATUS_GET:
+		lan966x_handle_cfm_mep_status_get(port,
+						  attr->u.cfm_mep_status);
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	return 0;
+}
+
 static int lan966x_switchdev_event(struct notifier_block *nb,
 				   unsigned long event, void *ptr)
 {
@@ -551,6 +574,11 @@ static int lan966x_switchdev_event(struct notifier_block *nb,
 							   lan966x_netdevice_check,
 							   lan966x_foreign_dev_check,
 							   lan966x_handle_fdb);
+		return notifier_from_errno(err);
+	case SWITCHDEV_PORT_ATTR_GET:
+		err = switchdev_handle_port_attr_get(dev, ptr,
+						     lan966x_netdevice_check,
+						     lan966x_port_attr_get);
 		return notifier_from_errno(err);
 	}
 
@@ -612,6 +640,30 @@ static int lan966x_handle_port_obj_add(struct net_device *dev, const void *ctx,
 	case SWITCHDEV_OBJ_ID_IN_STATE_MRP:
 		err = lan966x_handle_mrp_in_state_add(port, obj);
 		break;
+	case SWITCHDEV_OBJ_ID_MEP_CFM:
+		err = lan966x_handle_cfm_mep_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_MEP_CONFIG_CFM:
+		err = lan966x_handle_cfm_mep_config_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_CC_PEER_MEP_CFM:
+		err = lan966x_handle_cfm_cc_peer_mep_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_CC_CONFIG_CFM:
+		err = lan966x_handle_cfm_cc_config_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_CC_RDI_CFM:
+		err = lan966x_handle_cfm_cc_rdi_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_CC_CCM_TX_CFM:
+		err = lan966x_handle_cfm_cc_ccm_tx_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_MIP_CFM:
+		err = lan966x_handle_cfm_mip_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_MIP_CONFIG_CFM:
+		err = lan966x_handle_cfm_mip_config_add(port, obj);
+		break;
 	default:
 		err = -EOPNOTSUPP;
 		break;
@@ -666,6 +718,15 @@ static int lan966x_handle_port_obj_del(struct net_device *dev, const void *ctx,
 	case SWITCHDEV_OBJ_ID_IN_ROLE_MRP:
 		err = lan966x_handle_mrp_in_role_del(port, obj);
 		break;
+	case SWITCHDEV_OBJ_ID_MEP_CFM:
+		err = lan966x_handle_cfm_mep_del(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_CC_PEER_MEP_CFM:
+		err = lan966x_handle_cfm_cc_peer_mep_del(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_MIP_CFM:
+		err = lan966x_handle_cfm_mip_del(port, obj);
+		break;
 	default:
 		err = -EOPNOTSUPP;
 		break;
@@ -696,6 +757,11 @@ static int lan966x_switchdev_blocking_event(struct notifier_block *nb,
 		err = switchdev_handle_port_attr_set(dev, ptr,
 						     lan966x_netdevice_check,
 						     lan966x_port_attr_set);
+		return notifier_from_errno(err);
+	case SWITCHDEV_PORT_ATTR_GET:
+		err = switchdev_handle_port_attr_get(dev, ptr,
+						     lan966x_netdevice_check,
+						     lan966x_port_attr_get);
 		return notifier_from_errno(err);
 	}
 

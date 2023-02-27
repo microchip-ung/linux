@@ -16,6 +16,7 @@
 
 #include "lan966x_vcap_impl.h"
 #include "lan966x_mrp.h"
+#include "lan966x_cfm.h"
 
 #define XTR_EOF_0			0x00000080U
 #define XTR_EOF_1			0x01000080U
@@ -721,6 +722,7 @@ static irqreturn_t lan966x_ana_irq_handler(int irq, void *args)
 	lan966x_mac_irq_handler(lan966x);
 	lan966x_mrp_ring_open(lan966x);
 	lan966x_mrp_in_open(lan966x);
+	lan966x_handle_cfm_interrupt(lan966x);
 
 	return IRQ_HANDLED;
 }
@@ -1252,6 +1254,8 @@ static int lan966x_probe(struct platform_device *pdev)
 
 	lan966x_mrp_init(lan966x);
 
+	lan966x_cfm_init(lan966x);
+
 	return 0;
 
 cleanup_ptp:
@@ -1275,6 +1279,8 @@ cleanup_ports:
 static int lan966x_remove(struct platform_device *pdev)
 {
 	struct lan966x *lan966x = platform_get_drvdata(pdev);
+
+	lan966x_cfm_uninit(lan966x);
 
 	lan966x_mrp_uninit(lan966x);
 
