@@ -85,7 +85,6 @@ enum switchdev_obj_id {
 	SWITCHDEV_OBJ_ID_IN_TEST_MRP,
 	SWITCHDEV_OBJ_ID_IN_ROLE_MRP,
 	SWITCHDEV_OBJ_ID_IN_STATE_MRP,
-#if IS_ENABLED(CONFIG_BRIDGE_CFM)
 	SWITCHDEV_OBJ_ID_MEP_CFM,
 	SWITCHDEV_OBJ_ID_MEP_CONFIG_CFM,
 	SWITCHDEV_OBJ_ID_CC_CONFIG_CFM,
@@ -94,7 +93,6 @@ enum switchdev_obj_id {
 	SWITCHDEV_OBJ_ID_CC_CCM_TX_CFM,
 	SWITCHDEV_OBJ_ID_MIP_CFM,
 	SWITCHDEV_OBJ_ID_MIP_CONFIG_CFM,
-#endif
 };
 
 struct switchdev_obj {
@@ -134,7 +132,6 @@ struct switchdev_obj_port_mdb {
 	container_of((OBJ), struct switchdev_obj_port_mdb, obj)
 
 
-#if IS_ENABLED(CONFIG_BRIDGE_CFM)
 struct switchdev_mac_addr {
 	unsigned char	addr[ETH_ALEN];
 };
@@ -276,7 +273,6 @@ struct switchdev_obj_cfm_mip_config_set {
 
 #define SWITCHDEV_OBJ_CFM_MIP_CONFIG_SET(OBJ) \
 	container_of((OBJ), struct switchdev_obj_cfm_mip_config_set, obj)
-#endif
 
 /* SWITCHDEV_OBJ_ID_MRP */
 struct switchdev_obj_mrp {
