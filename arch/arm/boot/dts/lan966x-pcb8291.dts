@@ -4,7 +4,7 @@
  */
 /dts-v1/;
 #include "lan966x.dtsi"
-#include "lan966x_switch_internal.dtsi"
+#include "lan966x-port-delay-pcb8291.dtsi"
 #include "dt-bindings/phy/phy-lan966x-serdes.h"
 
 / {

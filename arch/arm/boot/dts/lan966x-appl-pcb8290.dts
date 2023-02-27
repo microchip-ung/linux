@@ -141,7 +141,7 @@
 
 &soc {
 	lan966x_switch_vtss: switch_vtss@0 {
-		compatible = "mchp,lan966x-switch-vtss";
+		compatible = "mchp,lan966x-switch-appl";
 		reg = <0xe2008000 0x0000004c>;
 		reg-names = "qs";
 
