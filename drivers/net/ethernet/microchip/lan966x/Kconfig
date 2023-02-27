@@ -10,3 +10,8 @@ config LAN966X_SWITCH
 	select VCAP
 	help
 	  This driver supports the Lan966x network switch device.
+
+config LAN966X_SWITCH_APPL
+	tristate "Lan966x switch driver used by APPL"
+	help
+	  This driver supports the Lan966x network switch device for APPL.
