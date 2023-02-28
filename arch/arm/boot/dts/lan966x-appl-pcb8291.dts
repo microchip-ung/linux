@@ -7,10 +7,10 @@
 
 / {
 	model = "Microchip LAN966X";
-	compatible = "microchip,lan966x-sunrise", "microchip,lan966x";
+	compatible = "microchip,lan9662-pcb8291", "microchip,lan9662", "microchip,lan966";
 
 	aliases {
-		serial1 = &usart3;
+		serial0 = &usart3;
 	};
 
 	gpio-restart {
@@ -18,6 +18,10 @@
 		gpios = <&gpio 56 GPIO_ACTIVE_LOW>;
 		priority = <200>;
 	};
+};
+
+&aes {
+	status = "disabled"; /* Reserved by secure OS */
 };
 
 &flx3 {
