@@ -5,8 +5,6 @@
 #include "fsl-ls1046a.dtsi"
 #include "fsl-ls1046a-miriac-mpxls1046.dtsi"
 
-#include <dt-bindings/soc/mchp,lan966x_ecpu.h>
-
 / {
 	model = "Microsys miriac SBC-LS1046A LAN966X";
 	compatible = "microsys,sbc1046a", "microsys,mpxls1046a", "fsl,ls1046a";
@@ -161,8 +159,8 @@
 			};
 
 			lan966x_switch: switch@0 {
-				compatible = "mchp,lan966x-switch-vtss";
-				reg = <QS_ADDR QS_SIZE>;
+				compatible = "mchp,lan966x-switch-appl";
+				reg = <0x00008000 0x0000004c>;
 				reg-names = "qs";
 			};
 

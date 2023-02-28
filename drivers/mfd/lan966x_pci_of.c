@@ -19,7 +19,6 @@
 #include <linux/pci_ids.h>
 #include <linux/pinctrl/pinconf-generic.h>
 #include <linux/platform_device.h>
-#include <dt-bindings/soc/mchp,lan966x_icpu.h>
 
 #include "lan966x_pci_of.h"
 #include "lan966x_pci_irq.h"

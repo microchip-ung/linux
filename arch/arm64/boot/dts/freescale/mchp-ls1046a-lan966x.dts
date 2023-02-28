@@ -5,8 +5,6 @@
 #include "fsl-ls1046a.dtsi"
 #include "fsl-ls1046a-miriac-mpxls1046.dtsi"
 
-#include <dt-bindings/soc/mchp,lan966x_ecpu.h>
-
 / {
 	model = "Microsys miriac SBC-LS1046A LAN966X";
 	compatible = "microsys,sbc1046a", "microsys,mpxls1046a", "fsl,ls1046a";
@@ -243,50 +241,16 @@
 			};
 
 			lan966x_switch: switch@0 {
-				compatible = "mchp,lan966x-switch";
-				reg = <ORG_0_ADDR ORG_0_SIZE>,
-				      <SYS_ADDR SYS_SIZE>,
-				      <QS_ADDR QS_SIZE>,
-				      <QSYS_ADDR QSYS_SIZE>,
-
-				      <ANA_ADDR ANA_SIZE>,
-				      <REW_ADDR REW_SIZE>,
-				      <GCB_ADDR 0x44>,
-				      <PTP_ADDR PTP_SIZE>,
-
-				      <VCAP_0_ADDR VCAP_0_SIZE>,
-				      <VCAP_1_ADDR VCAP_1_SIZE>,
-				      <VCAP_2_ADDR VCAP_2_SIZE>,
-				      <AFI_ADDR AFI_SIZE>,
-				      <MEP_ADDR MEP_SIZE>,
-
-				      <CPU_ADDR CPU_SIZE>,
-				      <FDMA_ADDR FDMA_SIZE>,
-
-				      <DEV_0_ADDR DEV_0_SIZE>,
-				      <DEV_1_ADDR DEV_1_SIZE>,
-				      <DEV_2_ADDR DEV_2_SIZE>,
-				      <DEV_3_ADDR DEV_3_SIZE>,
-				      <DEV_4_ADDR DEV_4_SIZE>,
-				      <DEV_5_ADDR DEV_5_SIZE>,
-				      <DEV_6_ADDR DEV_6_SIZE>,
-				      <DEV_7_ADDR DEV_7_SIZE>;
-
-				reg-names = "org", "sys", "qs", "qsys",
-					    "ana", "rew", "gcb", "ptp",
-					    "es0", "s1", "s2", "afi", "mep",
-					    "cpu", "fdma",
-					    "port0", "port1", "port2", "port3",
-					    "port4", "port5", "port6", "port7";
+				compatible = "microchip,lan966x-switch";
+				reg = <0x00000000 0x0100000>,
+				      <0x02000000 0x0800000>;
+				reg-names = "cpu", "gcb";
 
 				interrupts = <10 11 12 9>;
 				interrupt-names = "ptp-sync", "ptp", "xtr", "ana";
 
 				pinctrl-0 = <&tod_pins>;
 				pinctrl-names = "default";
-
-				dmas = <&dma 0>, <&dma 6>;
-				dma-names = "tx", "rx";
 
 				ethernet-ports {
 					#address-cells = <1>;
