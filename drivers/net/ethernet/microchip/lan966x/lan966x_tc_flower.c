@@ -2,6 +2,7 @@
 /* Copyright (C) 2020 Microchip Technology Inc. */
 
 #include <net/tcp.h> /* TCP flags */
+#include <net/tc_act/tc_gate.h>
 
 #include "vcap_api_client.h"
 #include "lan966x_vcap_impl.h"
@@ -1432,6 +1433,8 @@ static int lan966x_tc_flower_replace(struct lan966x_port *port,
 	struct lan966x_multiple_rules multi = {0};
 	struct lan966x_tc_policer pol = {0};
 	struct net_device *ndev = port->dev;
+	struct lan966x_psfp_sg_cfg sg = {0};
+	struct lan966x_psfp_sf_cfg sf = {0};
 	struct flow_action_entry *act;
 	struct flow_rule *frule;
 	struct vcap_rule *vrule;
@@ -1439,6 +1442,8 @@ static int lan966x_tc_flower_replace(struct lan966x_port *port,
 	u16 l3_proto;
 	int err, idx;
 	u32 polidx;
+	u32 sfi_ix;
+	u32 sgi_ix;
 
 	vrule = vcap_alloc_rule(ndev, fco->common.chain_index, VCAP_USER_TC,
 				fco->common.prio, 0);
@@ -1680,6 +1685,122 @@ static int lan966x_tc_flower_replace(struct lan966x_port *port,
 			if (err) {
 				NL_SET_ERR_MSG_MOD(fco->common.extack,
 						   "Cannot set skkedit priority");
+				err = -EINVAL;
+				goto out;
+			}
+
+			break;
+		case FLOW_ACTION_GATE:
+			if (admin->vtype != VCAP_TYPE_IS1) {
+				NL_SET_ERR_MSG_MOD(fco->common.extack,
+						   "Cannot use gate on non is1");
+				err = -EOPNOTSUPP;
+				goto out;
+			}
+
+			if (act->hw_index == U32_MAX) {
+				NL_SET_ERR_MSG_MOD(fco->common.extack,
+						   "Cannot use reserved stream gate");
+				return -EINVAL;
+			}
+			if ((act->gate.prio < -1) ||
+			    (act->gate.prio > LAN966X_PSFP_SG_MAX_IPV)) {
+				NL_SET_ERR_MSG_MOD(fco->common.extack,
+						   "Invalid initial priority");
+				return -EINVAL;
+			}
+			if ((act->gate.cycletime < LAN966X_PSFP_SG_MIN_CYCLE_TIME_NS) ||
+			    (act->gate.cycletime > LAN966X_PSFP_SG_MAX_CYCLE_TIME_NS)) {
+				NL_SET_ERR_MSG_MOD(fco->common.extack,
+						   "Invalid cycle time");
+				return -EINVAL;
+			}
+			if (act->gate.cycletimeext > LAN966X_PSFP_SG_MAX_CYCLE_TIME_NS) {
+				NL_SET_ERR_MSG_MOD(fco->common.extack,
+						   "Invalid cycle time ext");
+				return -EINVAL;
+			}
+			if (act->gate.num_entries >= LAN966X_PSFP_NUM_GCE) {
+				NL_SET_ERR_MSG_MOD(fco->common.extack,
+						   "Invalid number of entries");
+				return -EINVAL;
+			}
+
+			sg.gate_state = true;
+			sg.ipv = act->gate.prio;
+			sg.basetime = act->gate.basetime;
+			sg.cycletime = act->gate.cycletime;
+			sg.cycletimeext = act->gate.cycletimeext;
+			sg.num_entries = act->gate.num_entries;
+
+			for (int i = 0; i < act->gate.num_entries; i++) {
+				if ((act->gate.entries[i].interval < LAN966X_PSFP_SG_MIN_CYCLE_TIME_NS) ||
+				    (act->gate.entries[i].interval > LAN966X_PSFP_SG_MAX_CYCLE_TIME_NS)) {
+					NL_SET_ERR_MSG_MOD(fco->common.extack,
+							   "Invalid interval");
+					err = -EINVAL;
+					goto out;
+				}
+				if ((act->gate.entries[i].ipv < -1) ||
+				    (act->gate.entries[i].ipv > LAN966X_PSFP_SG_MAX_IPV)) {
+					NL_SET_ERR_MSG_MOD(fco->common.extack,
+							   "Invalid internal priority");
+					err = -EINVAL;
+					goto out;
+				}
+				if (act->gate.entries[i].maxoctets < -1) {
+					NL_SET_ERR_MSG_MOD(fco->common.extack,
+							   "Invalid max octets");
+					err = -EINVAL;
+					goto out;
+				}
+
+				sg.gce[i].gate_state = (act->gate.entries[i].gate_state != 0);
+				sg.gce[i].interval = act->gate.entries[i].interval;
+				sg.gce[i].ipv = act->gate.entries[i].ipv;
+				sg.gce[i].maxoctets = act->gate.entries[i].maxoctets;
+			}
+
+			err = lan966x_sfi_ix_reserve(port->lan966x,
+						     &sfi_ix);
+			if (err < 0) {
+				NL_SET_ERR_MSG_MOD(fco->common.extack,
+						   "Cannot reserve stream filter");
+				goto out;
+			}
+
+			err = lan966x_sgi_ix_reserve(port->lan966x,
+						     LAN966X_RES_POOL_USER_IS1,
+						     act->hw_index,
+						     &sgi_ix);
+			if (err < 0) {
+				NL_SET_ERR_MSG_MOD(fco->common.extack,
+						   "Cannot reserve stream gate");
+				goto out;
+			}
+
+			err = lan966x_psfp_sg_set(port->lan966x, sgi_ix, &sg);
+			if (err) {
+				NL_SET_ERR_MSG_MOD(fco->common.extack,
+						   "Cannot set stream gate");
+				goto out;
+			}
+
+			err = lan966x_psfp_sf_set(port->lan966x, sfi_ix, &sf);
+			if (err < 0) {
+				NL_SET_ERR_MSG_MOD(fco->common.extack,
+						   "Cannot set stream filter");
+				goto out;
+			}
+
+			err = vcap_rule_add_action_bit(vrule, VCAP_AF_SGID_ENA, VCAP_BIT_1);
+			err |= vcap_rule_add_action_u32(vrule, VCAP_AF_SGID_VAL, sgi_ix);
+			err |= vcap_rule_add_action_bit(vrule, VCAP_AF_SFID_ENA, VCAP_BIT_1);
+			err |= vcap_rule_add_action_u32(vrule, VCAP_AF_SFID_VAL, sfi_ix);
+			if (err) {
+				NL_SET_ERR_MSG_MOD(fco->common.extack,
+						   "Cannot set sgid and sfid");
+
 				err = -EINVAL;
 				goto out;
 			}

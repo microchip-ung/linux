@@ -2753,6 +2753,66 @@ const struct vcap_field is1_s1_actionfield[] = {
 		.offset = 72,
 		.width = 1,
 	},
+	[VCAP_AF_VLAN_POP_CNT_ENA] = {
+		.type = VCAP_FIELD_BIT,
+		.offset = 73,
+		.width = 1,
+	},
+	[VCAP_AF_VLAN_POP_CNT] = {
+		.type = VCAP_FIELD_U32,
+		.offset = 74,
+		.width = 2,
+	},
+	[VCAP_AF_CUSTOM_ACE_TYPE_ENA] = {
+		.type = VCAP_FIELD_U32,
+		.offset = 76,
+		.width = 4,
+	},
+	[VCAP_AF_SFID_ENA] = {
+		.type = VCAP_FIELD_BIT,
+		.offset = 80,
+		.width = 1,
+	},
+	[VCAP_AF_SFID_VAL] = {
+		.type = VCAP_FIELD_U32,
+		.offset = 81,
+		.width = 8,
+	},
+	[VCAP_AF_SGID_ENA] = {
+		.type = VCAP_FIELD_BIT,
+		.offset = 89,
+		.width = 1,
+	},
+	[VCAP_AF_SGID_VAL] = {
+		.type = VCAP_FIELD_U32,
+		.offset = 90,
+		.width = 8,
+	},
+	[VCAP_AF_POLICE_ENA] = {
+		.type = VCAP_FIELD_BIT,
+		.offset = 98,
+		.width = 1,
+	},
+	[VCAP_AF_POLICE_IDX] = {
+		.type = VCAP_FIELD_U32,
+		.offset = 99,
+		.width = 9,
+	},
+	[VCAP_AF_OAM_SEL] = {
+		.type = VCAP_FIELD_U32,
+		.offset = 108,
+		.width = 3,
+	},
+	[VCAP_AF_MRP_SEL] = {
+		.type = VCAP_FIELD_U32,
+		.offset = 111,
+		.width = 2,
+	},
+	[VCAP_AF_DLR_SEL] = {
+		.type = VCAP_FIELD_U32,
+		.offset = 113,
+		.width = 2,
+	},
 };
 
 const struct vcap_field is2_base_type_actionfield[] = {
@@ -3385,11 +3445,13 @@ const char *vcap_actionfield_names[] = {
 	[VCAP_AF_COPY_QUEUE_NUM]                 =  "COPY_QUEUE_NUM",
 	[VCAP_AF_CPU_COPY_ENA]                   =  "CPU_COPY_ENA",
 	[VCAP_AF_CPU_QUEUE_NUM]                  =  "CPU_QUEUE_NUM",
+	[VCAP_AF_CUSTOM_ACE_TYPE_ENA]            =  "CUSTOM_ACE_TYPE_ENA",
 	[VCAP_AF_DEI_A_VAL]                      =  "DEI_A_VAL",
 	[VCAP_AF_DEI_B_VAL]                      =  "DEI_B_VAL",
 	[VCAP_AF_DEI_C_VAL]                      =  "DEI_C_VAL",
 	[VCAP_AF_DEI_ENA]                        =  "DEI_ENA",
 	[VCAP_AF_DEI_VAL]                        =  "DEI_VAL",
+	[VCAP_AF_DLR_SEL]                        =  "DLR_SEL",
 	[VCAP_AF_DP_ENA]                         =  "DP_ENA",
 	[VCAP_AF_DP_VAL]                         =  "DP_VAL",
 	[VCAP_AF_DSCP_ENA]                       =  "DSCP_ENA",
@@ -3419,8 +3481,10 @@ const char *vcap_actionfield_names[] = {
 	[VCAP_AF_MIRROR_ENA]                     =  "MIRROR_ENA",
 	[VCAP_AF_MIRROR_PROBE]                   =  "MIRROR_PROBE",
 	[VCAP_AF_MIRROR_PROBE_ID]                =  "MIRROR_PROBE_ID",
+	[VCAP_AF_MRP_SEL]                        =  "MRP_SEL",
 	[VCAP_AF_NXT_IDX]                        =  "NXT_IDX",
 	[VCAP_AF_NXT_IDX_CTRL]                   =  "NXT_IDX_CTRL",
+	[VCAP_AF_OAM_SEL]                        =  "OAM_SEL",
 	[VCAP_AF_PAG_OVERRIDE_MASK]              =  "PAG_OVERRIDE_MASK",
 	[VCAP_AF_PAG_VAL]                        =  "PAG_VAL",
 	[VCAP_AF_PCP_A_VAL]                      =  "PCP_A_VAL",
@@ -3443,6 +3507,10 @@ const char *vcap_actionfield_names[] = {
 	[VCAP_AF_QOS_VAL]                        =  "QOS_VAL",
 	[VCAP_AF_REW_OP]                         =  "REW_OP",
 	[VCAP_AF_RT_DIS]                         =  "RT_DIS",
+	[VCAP_AF_SFID_ENA]                       =  "SFID_ENA",
+	[VCAP_AF_SFID_VAL]                       =  "SFID_VAL",
+	[VCAP_AF_SGID_ENA]                       =  "SGID_ENA",
+	[VCAP_AF_SGID_VAL]                       =  "SGID_VAL",
 	[VCAP_AF_TAG_A_DEI_SEL]                  =  "TAG_A_DEI_SEL",
 	[VCAP_AF_TAG_A_PCP_SEL]                  =  "TAG_A_PCP_SEL",
 	[VCAP_AF_TAG_A_TPID_SEL]                 =  "TAG_A_TPID_SEL",
@@ -3462,6 +3530,8 @@ const char *vcap_actionfield_names[] = {
 	[VCAP_AF_VID_C_VAL]                      =  "VID_C_VAL",
 	[VCAP_AF_VID_REPLACE_ENA]                =  "VID_REPLACE_ENA",
 	[VCAP_AF_VID_VAL]                        =  "VID_VAL",
+	[VCAP_AF_VLAN_POP_CNT]                   =  "VLAN_POP_CNT",
+	[VCAP_AF_VLAN_POP_CNT_ENA]               =  "VLAN_POP_CNT_ENA",
 };
 
 /* VCAPs */
