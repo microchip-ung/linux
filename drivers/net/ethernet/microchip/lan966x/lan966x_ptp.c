@@ -3,6 +3,10 @@
 #include <linux/ptp_classify.h>
 
 #include "lan966x_main.h"
+#include "lan966x_vcap_impl.h"
+
+#include "vcap_api.h"
+#include "vcap_api_client.h"
 
 #define LAN966X_MAX_PTP_ID	512
 
@@ -35,18 +39,308 @@ static u64 lan966x_ptp_get_nominal_value(void)
 	return 0x304d4873ecade305;
 }
 
+#define LAN966X_PTP_RULE_ID_OFFSET 2048
+#define LAN966X_PTP_TRAP_RULES_CNT	5
+static struct vcap_rule *lan966x_ptp_add_l2_key(struct lan966x_port *port)
+{
+	int rule_id = LAN966X_PTP_RULE_ID_OFFSET +
+		      port->chip_port * LAN966X_PTP_TRAP_RULES_CNT + 0;
+	int chain_id = LAN966X_VCAP_CID_IS2_L0;
+	int prio = (port->chip_port << 8) + 1;
+	struct vcap_rule *vrule;
+	int err;
+
+	vrule = vcap_alloc_rule(port->dev, chain_id, VCAP_USER_PTP, prio, rule_id);
+	if (!vrule || IS_ERR(vrule))
+		return NULL;
+
+	err = vcap_rule_add_key_u32(vrule, VCAP_KF_ETYPE, ETH_P_1588, ~0);
+	if (err) {
+		vcap_del_rule(port->dev, rule_id);
+		return NULL;
+	}
+
+	return vrule;
+}
+
+static struct vcap_rule *lan966x_ptp_add_ipv4_event_key(struct lan966x_port *port)
+{
+	int rule_id = LAN966X_PTP_RULE_ID_OFFSET +
+		      port->chip_port * LAN966X_PTP_TRAP_RULES_CNT + 1;
+	int chain_id = LAN966X_VCAP_CID_IS2_L0;
+	int prio = (port->chip_port << 8) + 1;
+	struct vcap_rule *vrule;
+	int err;
+
+	vrule = vcap_alloc_rule(port->dev, chain_id, VCAP_USER_PTP, prio, rule_id);
+	if (!vrule || IS_ERR(vrule))
+		return NULL;
+
+	err = vcap_rule_add_key_u32(vrule, VCAP_KF_L4_DPORT, 319, ~0);
+	if (err) {
+		vcap_del_rule(port->dev, rule_id);
+		return NULL;
+	}
+
+	return vrule;
+}
+
+static struct vcap_rule *lan966x_ptp_add_ipv4_general_key(struct lan966x_port *port)
+{
+	int rule_id = LAN966X_PTP_RULE_ID_OFFSET +
+		      port->chip_port * LAN966X_PTP_TRAP_RULES_CNT + 2;
+	int chain_id = LAN966X_VCAP_CID_IS2_L0;
+	int prio = (port->chip_port << 8) + 1;
+	struct vcap_rule *vrule;
+	int err;
+
+	vrule = vcap_alloc_rule(port->dev, chain_id, VCAP_USER_PTP, prio, rule_id);
+	if (!vrule || IS_ERR(vrule))
+		return NULL;
+
+	err = vcap_rule_add_key_u32(vrule, VCAP_KF_L4_DPORT, 320, ~0);
+	if (err) {
+		vcap_del_rule(port->dev, rule_id);
+		return NULL;
+	}
+
+	return vrule;
+}
+
+static struct vcap_rule *lan966x_ptp_add_ipv6_event_key(struct lan966x_port *port)
+{
+	int rule_id = LAN966X_PTP_RULE_ID_OFFSET +
+		      port->chip_port * LAN966X_PTP_TRAP_RULES_CNT + 3;
+	int chain_id = LAN966X_VCAP_CID_IS2_L0;
+	int prio = (port->chip_port << 8) + 1;
+	struct vcap_rule *vrule;
+	int err;
+
+	vrule = vcap_alloc_rule(port->dev, chain_id, VCAP_USER_PTP, prio, rule_id);
+	if (!vrule || IS_ERR(vrule))
+		return NULL;
+
+	err = vcap_rule_add_key_u32(vrule, VCAP_KF_L4_DPORT, 319, ~0);
+	if (err) {
+		vcap_del_rule(port->dev, rule_id);
+		return NULL;
+	}
+
+	return vrule;
+}
+
+static struct vcap_rule *lan966x_ptp_add_ipv6_general_key(struct lan966x_port *port)
+{
+	int rule_id = LAN966X_PTP_RULE_ID_OFFSET +
+		      port->chip_port * LAN966X_PTP_TRAP_RULES_CNT + 4;
+	int chain_id = LAN966X_VCAP_CID_IS2_L0;
+	int prio = (port->chip_port << 8) + 1;
+	struct vcap_rule *vrule;
+	int err;
+
+	vrule = vcap_alloc_rule(port->dev, chain_id, VCAP_USER_PTP, prio, rule_id);
+	if (!vrule || IS_ERR(vrule))
+		return NULL;
+
+	err = vcap_rule_add_key_u32(vrule, VCAP_KF_L4_DPORT, 320, ~0);
+	if (err) {
+		vcap_del_rule(port->dev, rule_id);
+		return NULL;
+	}
+
+	return vrule;
+}
+
+static int lan966x_ptp_add_trap(struct lan966x_port *port,
+				struct vcap_rule* (*lan966x_add_ptp_key)(struct lan966x_port*),
+				u16 proto)
+{
+	struct vcap_rule *vrule;
+	int err;
+
+	vrule = lan966x_add_ptp_key(port);
+	if (!vrule)
+		return -ENOMEM;
+
+	err = vcap_set_rule_set_actionset(vrule, VCAP_AFS_BASE_TYPE);
+	err |= vcap_rule_add_action_bit(vrule, VCAP_AF_CPU_COPY_ENA, VCAP_BIT_1);
+	err |= vcap_rule_add_action_u32(vrule, VCAP_AF_MASK_MODE, LAN966X_PMM_REPLACE);
+	err |= vcap_val_rule(vrule, proto);
+	if (err)
+		goto free_rule;
+
+	err = vcap_add_rule(vrule);
+
+free_rule:
+	/* Free the local copy of the rule */
+	vcap_free_rule(vrule);
+	return err;
+}
+
+static int lan966x_ptp_del(struct lan966x_port *port, int rule_id)
+{
+	return vcap_del_rule(port->dev, rule_id);
+}
+
+static int lan966x_ptp_del_l2(struct lan966x_port *port)
+{
+	int rule_id = LAN966X_PTP_RULE_ID_OFFSET +
+		      port->chip_port * LAN966X_PTP_TRAP_RULES_CNT + 0;
+
+	return lan966x_ptp_del(port, rule_id);
+}
+
+static int lan966x_ptp_del_ipv4_event(struct lan966x_port *port)
+{
+	int rule_id = LAN966X_PTP_RULE_ID_OFFSET +
+		      port->chip_port * LAN966X_PTP_TRAP_RULES_CNT + 1;
+
+	return lan966x_ptp_del(port, rule_id);
+}
+
+static int lan966x_ptp_del_ipv4_general(struct lan966x_port *port)
+{
+	int rule_id = LAN966X_PTP_RULE_ID_OFFSET +
+		      port->chip_port * LAN966X_PTP_TRAP_RULES_CNT + 2;
+
+	return lan966x_ptp_del(port, rule_id);
+}
+
+static int lan966x_ptp_del_ipv6_event(struct lan966x_port *port)
+{
+	int rule_id = LAN966X_PTP_RULE_ID_OFFSET +
+		      port->chip_port * LAN966X_PTP_TRAP_RULES_CNT + 3;
+
+	return lan966x_ptp_del(port, rule_id);
+}
+
+static int lan966x_ptp_del_ipv6_general(struct lan966x_port *port)
+{
+	int rule_id = LAN966X_PTP_RULE_ID_OFFSET +
+		      port->chip_port * LAN966X_PTP_TRAP_RULES_CNT + 4;
+
+	return lan966x_ptp_del(port, rule_id);
+}
+
+static int lan966x_ptp_add_l2_rule(struct lan966x_port *port)
+{
+	return lan966x_ptp_add_trap(port, lan966x_ptp_add_l2_key, ETH_P_ALL);
+}
+
+static int lan966x_ptp_del_l2_rule(struct lan966x_port *port)
+{
+	return lan966x_ptp_del_l2(port);
+}
+
+static int lan966x_ptp_add_ipv4_rules(struct lan966x_port *port)
+{
+	int err;
+
+	err = lan966x_ptp_add_trap(port, lan966x_ptp_add_ipv4_event_key,
+				   ETH_P_IP);
+	if (err)
+		return err;
+
+	err = lan966x_ptp_add_trap(port, lan966x_ptp_add_ipv4_general_key,
+				   ETH_P_IP);
+	if (err)
+		lan966x_ptp_del_ipv4_event(port);
+
+	return err;
+}
+
+static int lan966x_ptp_del_ipv4_rules(struct lan966x_port *port)
+{
+	int err;
+
+	err = lan966x_ptp_del_ipv4_event(port);
+	err |= lan966x_ptp_del_ipv4_general(port);
+
+	return err;
+}
+
+static int lan966x_ptp_add_ipv6_rules(struct lan966x_port *port)
+{
+	int err;
+
+	err = lan966x_ptp_add_trap(port, lan966x_ptp_add_ipv6_event_key,
+				   ETH_P_IPV6);
+	if (err)
+		return err;
+
+	err = lan966x_ptp_add_trap(port, lan966x_ptp_add_ipv6_general_key,
+				   ETH_P_IPV6);
+	if (err)
+		lan966x_ptp_del_ipv6_event(port);
+
+	return err;
+}
+
+static int lan966x_ptp_del_ipv6_rules(struct lan966x_port *port)
+{
+	int err;
+
+	err = lan966x_ptp_del_ipv6_event(port);
+	err |= lan966x_ptp_del_ipv6_general(port);
+
+	return err;
+}
+
+static int lan966x_ptp_add_traps(struct lan966x_port *port)
+{
+	int err;
+
+	err = lan966x_ptp_add_l2_rule(port);
+	if (err)
+		goto err_l2;
+
+	err = lan966x_ptp_add_ipv4_rules(port);
+	if (err)
+		goto err_ipv4;
+
+	err = lan966x_ptp_add_ipv6_rules(port);
+	if (err)
+		goto err_ipv6;
+
+	return err;
+
+err_ipv6:
+	lan966x_ptp_del_ipv4_rules(port);
+err_ipv4:
+	lan966x_ptp_del_l2_rule(port);
+err_l2:
+	return err;
+}
+
+int lan966x_ptp_del_traps(struct lan966x_port *port)
+{
+	int err;
+
+	err = lan966x_ptp_del_l2_rule(port);
+	err |= lan966x_ptp_del_ipv4_rules(port);
+	err |= lan966x_ptp_del_ipv6_rules(port);
+
+	return err;
+}
+
+int lan966x_ptp_setup_traps(struct lan966x_port *port, struct ifreq *ifr)
+{
+	struct hwtstamp_config cfg;
+
+	if (copy_from_user(&cfg, ifr->ifr_data, sizeof(cfg)))
+		return -EFAULT;
+
+	if (cfg.rx_filter == HWTSTAMP_FILTER_NONE)
+		return lan966x_ptp_del_traps(port);
+	else
+		return lan966x_ptp_add_traps(port);
+}
+
 int lan966x_ptp_hwtstamp_set(struct lan966x_port *port, struct ifreq *ifr)
 {
 	struct lan966x *lan966x = port->lan966x;
 	struct hwtstamp_config cfg;
 	struct lan966x_phc *phc;
-
-	/* For now don't allow to run ptp on ports that are part of a bridge,
-	 * because in case of transparent clock the HW will still forward the
-	 * frames, so there would be duplicate frames
-	 */
-	if (lan966x->bridge_mask & BIT(port->chip_port))
-		return -EINVAL;
 
 	if (copy_from_user(&cfg, ifr->ifr_data, sizeof(cfg)))
 		return -EFAULT;
