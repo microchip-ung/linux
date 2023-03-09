@@ -125,6 +125,7 @@ config ARCH_LAN969X
 	bool "ARMv8 based Microchip LAN969X SoC family"
 	select PINCTRL
 	select DW_APB_TIMER_OF
+	select COMMON_CLK_LAN966X
 	help
 	  This enables support for the Microchip LAN969X ARMv8-based
 	  SoC family of TSN-capable gigabit switches.
