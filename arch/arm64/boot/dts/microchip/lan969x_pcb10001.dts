@@ -1,0 +1,45 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+
+/*
+ * Copyright (c) 2022 Microchip Technology Inc. and its subsidiaries.
+ */
+
+/dts-v1/;
+
+#include "lan969x.dtsi"
+
+/ {
+	model = "lan969x_pcb10001";
+	aliases {
+		serial0 = &usart0;
+	};
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+};
+
+&flx0 {
+	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_USART>;
+	status = "okay";
+
+	usart0: serial@200 {
+		pinctrl-0 = <&fc0_pins>;
+		pinctrl-names = "default";
+		status = "okay";
+	};
+};
+
+&gpio {
+	fc0_pins: fc0-pins {
+		pins = "GPIO_3", "GPIO_4";
+		function = "fc";
+	};
+};
+
+&serdes {
+	status = "okay";
+};
+
+&switch {
+	status = "okay";
+};

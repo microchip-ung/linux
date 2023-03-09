@@ -16,38 +16,60 @@
 	chosen {
 		stdout-path = "serial0:115200n8";
 	};
-};
 
-&flx0 {
-	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_USART>;
-	status = "okay";
-	usart0: serial@200 {
-		status = "okay";
-		compatible = "atmel,at91sam9260-usart";
-		reg = <0x200 0x200>;
-		interrupts = <GIC_SPI 46 IRQ_TYPE_LEVEL_HIGH>;
-		clocks = <&fabric_clk>;
-		clock-names = "usart";
-		atmel,fifo-size = <32>;
-		pinctrl-0 = <&fc0_pins>;
-		pinctrl-names = "default";
+	dummy_clk: dummy_clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <30000000>;	/* CPU clock = 30MHz */
 	};
 };
 
-&sdmmc0 {
+&clks {
+	status = "disabled";
+};
+
+&fabric_clk {
+	clock-frequency = <20000000>;
+};
+
+&flx0 {
+	clocks = <&fabric_clk>;
+
+	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_USART>;
 	status = "okay";
-	max-frequency = <24000000>;	/* Sunrise limitation */
-	/* Disable HS modes */
-	sdhci-caps-mask = <0x0 0x00200000>;
-	bus-width = <4>;
-	non-removable;
-	no-1-8-v;
-	disable-wp;
+
+	usart0: serial@200 {
+		clocks = <&fabric_clk>;
+
+		pinctrl-0 = <&fc0_pins>;
+		pinctrl-names = "default";
+		status = "okay";
+	};
+};
+
+&gpio {
+	fc0_pins: fc0_uart_pins {
+		pins = "GPIO_3", "GPIO_4";
+		function = "fc";
+	};
+
+	emmc_sd_pins: emmc-sd-pins {
+		/* eMMC_SD - CMD, CLK, D0, D1, D2, D3, D4, D5, D6, D7, RSTN */
+		pins = "GPIO_14", "GPIO_15", "GPIO_16", "GPIO_17",
+		       "GPIO_18", "GPIO_19", "GPIO_20", "GPIO_21",
+		       "GPIO_22", "GPIO_23", "GPIO_24";
+		function = "emmc_sd";
+	};
 };
 
 &qspi0 {
+	clocks = <&dummy_clk>, <&dummy_clk>;
+	/delete-property/ assigned-clocks;
+	/delete-property/ assigned-clock-rates;
+
 	compatible = "microchip,sunrise-qspi";
 	status = "okay";
+
 	spi-flash@0 {
 		compatible = "jedec,spi-nor";
 		reg = <0>;
@@ -58,4 +80,25 @@
 		spi-rx-bus-width = <4>;
 		m25p,fast-read;
 	};
+};
+
+&reset {
+	status = "disabled";
+};
+
+&sdmmc0 {
+	clocks = <&dummy_clk>, <&dummy_clk>;
+	/delete-property/ assigned-clocks;
+	/delete-property/ assigned-clock-rates;
+
+	pinctrl-0 = <&emmc_sd_pins>;
+	pinctrl-names = "default";
+	max-frequency = <24000000>;	/* Sunrise limitation */
+	/* Disable HS modes */
+	sdhci-caps-mask = <0x0 0x00200000>;
+	bus-width = <4>;
+	non-removable;
+	no-1-8-v;
+	disable-wp;
+	status = "okay";
 };

@@ -1,17 +1,24 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
-
 /*
- * Copyright (c) 2022 Microchip Technology Inc. and its subsidiaries.
+ * Copyright (c) 2023 Microchip Technology Inc. and its subsidiaries.
  */
 
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/mfd/atmel-flexcom.h>
+#include <dt-bindings/clock/microchip,lan969x.h>
+#include <dt-bindings/dma/at91.h>
+#include <dt-bindings/gpio/gpio.h>
 
 / {
 	compatible = "microchip,lan969x";
 	interrupt-parent = <&gic>;
 	#address-cells = <1>;
 	#size-cells = <1>;
+
+	arm-pmu {
+		compatible = "arm,cortex-a53-pmu";
+		interrupts = <GIC_SPI 77 IRQ_TYPE_LEVEL_HIGH>;
+	};
 
 	cpus {
 		#address-cells = <2>;
@@ -27,14 +34,38 @@
 		};
 	};
 
-	memory {
-		device_type = "memory";
-		reg = <0x60000000 0x40000000>;  /* 1GB */
+	clocks {
+		fx100_clk: fx100-clk {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <320000000>;
+		};
+
+		cpu_clk: cpu-clk {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <1000000000>;
+		};
+
+		ddr_clk: ddr-clk {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <600000000>;
+		};
+
+		fabric_clk: fabric-clk {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <200000000>;
+		};
 	};
 
-	arm-pmu {
-		compatible = "arm,cortex-a53-pmu";
-		interrupts = <GIC_SPI 77 IRQ_TYPE_LEVEL_HIGH>;
+	clks: clock-controller@e00c00a8 {
+		compatible = "microchip,lan969x-gck";
+		#clock-cells = <1>;
+		clocks = <&cpu_clk>, <&ddr_clk>, <&fx100_clk>;
+		clock-names = "cpu", "ddr", "sys";
+		reg = <0xe00c00b4 0x30>, <0xe00c0308 0x4>;
 	};
 
 	timer {
@@ -45,46 +76,474 @@
 			     <GIC_PPI 10 IRQ_TYPE_LEVEL_LOW>; /* Hyp IRQ */
 	};
 
-	fabric_clk: fabric_clk {
-		compatible = "fixed-clock";
-		#clock-cells = <0>;
-		clock-frequency = <20000000>;
+	uio0: mscc_switch@e0000000 {
+		compatible = "microchip,uio_lan969x_irqmux";
+		reg = <0xe0000000 0x4000000>;
 	};
 
-	nic_clk: nic_clk {
-		compatible = "fixed-clock";
-		#clock-cells = <0>;
-		clock-frequency = <200000000>;	/* NIC clock = 200MHz */
-	};
-
-	dummy_clk: dummy_clk {
-		compatible = "fixed-clock";
-		#clock-cells = <0>;
-		clock-frequency = <30000000>;	/* CPU clock = 30MHz */
-	};
-
-	axi {
+	axi: axi {
 		compatible = "simple-bus";
 		#address-cells = <1>;
 		#size-cells = <1>;
 		ranges;
 
+		otp0: otp@e0021000 {
+			compatible = "microchip,lan969x-otp";
+			reg = <0xe0021000 0x300>;
+		};
+
+		switch: switch@e0000000 {
+			compatible = "microchip,lan969x-switch";
+			reg = <0xe0000000 0x0020000>,
+			      <0xe2000000 0x0800000>;
+			reg-names = "cpu", "gcb";
+			interrupt-names = "xtr", "fdma", "ptp";
+			interrupts = <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>,
+				     <GIC_SPI 88 IRQ_TYPE_LEVEL_HIGH>,
+				     <GIC_SPI  8 IRQ_TYPE_LEVEL_HIGH>;
+			resets = <&reset 0>;
+			reset-names = "switch";
+			status = "disabled";
+
+			ethernet_ports: ethernet-ports {
+				#address-cells = <1>;
+				#size-cells = <0>;
+			};
+		};
+
+		flx0: flexcom@e0040000 {
+			compatible = "atmel,sama5d2-flexcom";
+			reg = <0xe0040000 0x100>;
+			clocks = <&clks GCK_ID_FLEXCOM0>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0x0 0xe0040000 0x800>;
+			status = "disabled";
+
+			usart0: serial@200 {
+				compatible = "atmel,at91sam9260-usart";
+				reg = <0x200 0x200>;
+				interrupts = <GIC_SPI 46 IRQ_TYPE_LEVEL_HIGH>;
+				dmas = <&dma0 AT91_XDMAC_DT_PERID(3)>,
+				       <&dma0 AT91_XDMAC_DT_PERID(2)>;
+				dma-names = "tx", "rx";
+				clocks = <&fabric_clk>;
+				clock-names = "usart";
+				atmel,fifo-size = <32>;
+				status = "disabled";
+			};
+
+			spi0: spi@400 {
+				compatible = "atmel,at91rm9200-spi";
+				reg = <0x400 0x200>;
+				interrupts = <GIC_SPI 46 IRQ_TYPE_LEVEL_HIGH>;
+				dmas = <&dma0 AT91_XDMAC_DT_PERID(3)>,
+				       <&dma0 AT91_XDMAC_DT_PERID(2)>;
+				dma-names = "tx", "rx";
+				clocks = <&fabric_clk>;
+				clock-names = "spi_clk";
+				atmel,fifo-size = <32>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "disabled";
+			};
+
+			i2c0: i2c@600 {
+				compatible = "microchip,sam9x60-i2c";
+				reg = <0x600 0x200>;
+				interrupts = <GIC_SPI 46 IRQ_TYPE_LEVEL_HIGH>;
+				dmas = <&dma0 AT91_XDMAC_DT_PERID(3)>,
+				       <&dma0 AT91_XDMAC_DT_PERID(2)>;
+				dma-names = "tx", "rx";
+				clocks = <&fabric_clk>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "disabled";
+			};
+		};
+
+		flx1: flexcom@e0044000 {
+			compatible = "atmel,sama5d2-flexcom";
+			reg = <0xe0044000 0x100>;
+			clocks = <&clks GCK_ID_FLEXCOM1>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0x0 0xe0044000 0x800>;
+			status = "disabled";
+
+			usart1: serial@200 {
+				compatible = "atmel,at91sam9260-usart";
+				reg = <0x200 0x200>;
+				interrupts = <GIC_SPI 47 IRQ_TYPE_LEVEL_HIGH>;
+				dmas = <&dma0 AT91_XDMAC_DT_PERID(3)>,
+				       <&dma0 AT91_XDMAC_DT_PERID(2)>;
+				dma-names = "tx", "rx";
+				clocks = <&fabric_clk>;
+				clock-names = "usart";
+				atmel,fifo-size = <32>;
+				status = "disabled";
+			};
+
+			spi1: spi@400 {
+				compatible = "atmel,at91rm9200-spi";
+				reg = <0x400 0x200>;
+				interrupts = <GIC_SPI 47 IRQ_TYPE_LEVEL_HIGH>;
+				dmas = <&dma0 AT91_XDMAC_DT_PERID(3)>,
+				       <&dma0 AT91_XDMAC_DT_PERID(2)>;
+				dma-names = "tx", "rx";
+				clocks = <&fabric_clk>;
+				clock-names = "spi_clk";
+				atmel,fifo-size = <32>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "disabled";
+			};
+
+			i2c1: i2c@600 {
+				compatible = "microchip,sam9x60-i2c";
+				reg = <0x600 0x200>;
+				interrupts = <GIC_SPI 47 IRQ_TYPE_LEVEL_HIGH>;
+				dmas = <&dma0 AT91_XDMAC_DT_PERID(3)>,
+				       <&dma0 AT91_XDMAC_DT_PERID(2)>;
+				dma-names = "tx", "rx";
+				clocks = <&fabric_clk>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "disabled";
+			};
+		};
+
+		trng: rng@e0048000 {
+			compatible = "atmel,at91sam9g45-trng";
+			reg = <0xe0048000 0x100>;
+			clocks = <&fabric_clk>;
+			status = "disabled";
+		};
+
+		aes: crypto@e004c000 {
+			compatible = "atmel,at91sam9g46-aes";
+			reg = <0xe004c000 0x100>;
+			interrupts = <GIC_SPI 51 IRQ_TYPE_LEVEL_HIGH>;
+			dmas = <&dma0 AT91_XDMAC_DT_PERID(12)>,
+			       <&dma0 AT91_XDMAC_DT_PERID(13)>;
+			dma-names = "tx", "rx";
+			clocks = <&fabric_clk>;
+			clock-names = "aes_clk";
+			status = "disabled";
+		};
+
+		flx2: flexcom@e0060000 {
+			compatible = "atmel,sama5d2-flexcom";
+			reg = <0xe0060000 0x100>;
+			clocks = <&clks GCK_ID_FLEXCOM2>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0x0 0xe0060000 0x800>;
+			status = "disabled";
+
+			usart2: serial@200 {
+				compatible = "atmel,at91sam9260-usart";
+				reg = <0x200 0x200>;
+				interrupts = <GIC_SPI 48 IRQ_TYPE_LEVEL_HIGH>;
+				dmas = <&dma0 AT91_XDMAC_DT_PERID(7)>,
+				       <&dma0 AT91_XDMAC_DT_PERID(6)>;
+				dma-names = "tx", "rx";
+				clocks = <&fabric_clk>;
+				clock-names = "usart";
+				atmel,fifo-size = <32>;
+				status = "disabled";
+			};
+
+			spi2: spi@400 {
+				compatible = "atmel,at91rm9200-spi";
+				reg = <0x400 0x200>;
+				interrupts = <GIC_SPI 48 IRQ_TYPE_LEVEL_HIGH>;
+				dmas = <&dma0 AT91_XDMAC_DT_PERID(7)>,
+				       <&dma0 AT91_XDMAC_DT_PERID(6)>;
+				dma-names = "tx", "rx";
+				clocks = <&fabric_clk>;
+				clock-names = "spi_clk";
+				atmel,fifo-size = <32>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "disabled";
+			};
+
+			i2c2: i2c@600 {
+				compatible = "microchip,sam9x60-i2c";
+				reg = <0x600 0x200>;
+				interrupts = <GIC_SPI 48 IRQ_TYPE_LEVEL_HIGH>;
+				dmas = <&dma0 AT91_XDMAC_DT_PERID(7)>,
+				       <&dma0 AT91_XDMAC_DT_PERID(6)>;
+				dma-names = "tx", "rx";
+				clocks = <&fabric_clk>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "disabled";
+			};
+		};
+
+		flx3: flexcom@e0064000 {
+			compatible = "atmel,sama5d2-flexcom";
+			reg = <0xe0064000 0x100>;
+			clocks = <&clks GCK_ID_FLEXCOM3>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0x0 0xe0064000 0x800>;
+			status = "disabled";
+
+			usart3: serial@200 {
+				compatible = "atmel,at91sam9260-usart";
+				reg = <0x200 0x200>;
+				interrupts = <GIC_SPI 49 IRQ_TYPE_LEVEL_HIGH>;
+				dmas = <&dma0 AT91_XDMAC_DT_PERID(9)>,
+				       <&dma0 AT91_XDMAC_DT_PERID(8)>;
+				dma-names = "tx", "rx";
+				clocks = <&fabric_clk>;
+				clock-names = "usart";
+				atmel,fifo-size = <32>;
+				status = "disabled";
+			};
+
+			spi3: spi@400 {
+				compatible = "atmel,at91rm9200-spi";
+				reg = <0x400 0x200>;
+				interrupts = <GIC_SPI 49 IRQ_TYPE_LEVEL_HIGH>;
+				dmas = <&dma0 AT91_XDMAC_DT_PERID(9)>,
+				       <&dma0 AT91_XDMAC_DT_PERID(8)>;
+				dma-names = "tx", "rx";
+				clocks = <&fabric_clk>;
+				clock-names = "spi_clk";
+				atmel,fifo-size = <32>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "disabled";
+			};
+
+			i2c3: i2c@600 {
+				compatible = "microchip,sam9x60-i2c";
+				reg = <0x600 0x200>;
+				interrupts = <GIC_SPI 49 IRQ_TYPE_LEVEL_HIGH>;
+				dmas = <&dma0 AT91_XDMAC_DT_PERID(9)>,
+				       <&dma0 AT91_XDMAC_DT_PERID(8)>;
+				dma-names = "tx", "rx";
+				clocks = <&fabric_clk>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "disabled";
+			};
+		};
+
+		dma0: dma-controller@e0068000 {
+			compatible = "microchip,sama7g5-dma";
+			reg = <0xe0068000 0x1000>;
+			interrupts = <GIC_SPI 44 IRQ_TYPE_LEVEL_HIGH>;
+			#dma-cells = <1>;
+			clocks = <&fabric_clk>;
+			clock-names = "dma_clk";
+			status = "disabled";
+		};
+
+		sha: crypto@e006c000 {
+			compatible = "atmel,at91sam9g46-sha";
+			reg = <0xe006c000 0xec>;
+			interrupts = <GIC_SPI 55 IRQ_TYPE_LEVEL_HIGH>;
+			dmas = <&dma0 AT91_XDMAC_DT_PERID(14)>;
+			dma-names = "tx";
+			clocks = <&fabric_clk>;
+			clock-names = "sha_clk";
+			status = "disabled";
+		};
+
+		timer0: timer@e008c000 {
+			compatible = "snps,dw-apb-timer";
+			reg = <0xe008c000 0x400>;
+			clocks = <&fabric_clk>;
+			clock-names = "timer";
+			interrupts = <GIC_SPI 37 IRQ_TYPE_LEVEL_HIGH>;
+			status = "disabled";
+		};
+
+		watchdog: watchdog@e0090000 {
+			compatible = "snps,dw-wdt";
+			reg = <0xe0090000 0x1000>;
+			interrupts = <GIC_SPI 36 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&fabric_clk>;
+			status = "disabled";
+		};
+
 		cpu_ctrl: syscon@e00c0000 {
 			compatible = "microchip,lan966x-cpu-syscon", "syscon";
-			reg = <0xE00C0000 0x16>;
+			reg = <0xe00c0000 0x350>;
 		};
 
-		switch_ctrl: syscon@e201000c {
-			compatible = "microchip,lan966x-switch-syscon", "syscon";
-			reg = <0xe201000c 0x8>;
+		qspi0: spi@e0804000 {
+			compatible = "microchip,lan966x-qspi";
+			reg = <0xe0804000 0x00000100>,
+			      <0x20000000 0x08000000>;
+			reg-names = "qspi_base", "qspi_mmap";
+			interrupts = <GIC_SPI 43 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&fabric_clk>, <&clks GCK_ID_QSPI0>;
+			clock-names = "pclk", "gclk";
+			assigned-clocks = <&clks GCK_ID_QSPI0>;
+			assigned-clock-rates = <100000000>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
 		};
 
-		cpu_reset: cpu_reset@0 {
-			compatible = "microchip,lan966x-chip-reset";
+		can0: can@e081c000 {
+			compatible = "bosch,m_can";
+			reg = <0xe081c000 0xfc>, <0x00100000 0x4000>;
+			reg-names = "m_can", "message_ram";
+			interrupts = <GIC_SPI 70 IRQ_TYPE_LEVEL_HIGH>,
+				     <GIC_SPI 71 IRQ_TYPE_LEVEL_HIGH>;
+			interrupt-names = "int0", "int1";
+			clocks = <&clks GCK_ID_MCAN0>, <&clks GCK_ID_MCAN0>;
+			clock-names = "hclk", "cclk";
+			assigned-clocks = <&clks GCK_ID_MCAN0>;
+			assigned-clock-rates = <40000000>;
+			bosch,mram-cfg = <0x0 0 0 64 0 0 32 32>;
+			status = "disabled";
+		};
+
+		can1: can@e0820000 {
+			compatible = "bosch,m_can";
+			reg = <0xe0820000 0xfc>, <0x00100000 0x8000>;
+			reg-names = "m_can", "message_ram";
+			interrupts = <GIC_SPI 72 IRQ_TYPE_LEVEL_HIGH>,
+				     <GIC_SPI 73 IRQ_TYPE_LEVEL_HIGH>;
+			interrupt-names = "int0", "int1";
+			clocks = <&clks GCK_ID_MCAN1>, <&clks GCK_ID_MCAN1>;
+			clock-names = "hclk", "cclk";
+			assigned-clocks = <&clks GCK_ID_MCAN1>;
+			assigned-clock-rates = <40000000>;
+			bosch,mram-cfg = <0x4000 0 0 64 0 0 32 32>;
+			status = "disabled";
+		};
+
+		sdmmc0: sdhci-host@e0830000 {
+			compatible = "microchip,lan966x-sdhci";
+			reg = <0xe0830000 0x00000300>;
+			interrupts = <GIC_SPI 64 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&clks GCK_ID_SDMMC0>, <&clks GCK_ID_SDMMC0>;
+			clock-names = "hclock", "multclk";
+			assigned-clocks = <&clks GCK_ID_SDMMC0>;
+			assigned-clock-rates = <45000000>;
+			status = "disabled";
+		};
+
+		sdmmc1: sdhci-host@e0838000 {
+			compatible = "microchip,lan966x-sdhci";
+			reg = <0xe0838000 0x00000300>;
+			interrupts = <GIC_SPI 50 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&clks GCK_ID_SDMMC1>, <&clks GCK_ID_SDMMC1>;
+			clock-names = "hclock", "multclk";
+			assigned-clocks = <&clks GCK_ID_SDMMC1>;
+			assigned-clock-rates = <45000000>;
+			status = "disabled";
+		};
+
+		qspi2: spi@e0834000 {
+			compatible = "microchip,lan966x-qspi";
+			reg = <0xe0834000 0x00000100>,
+			      <0x30000000 0x04000000>;
+			reg-names = "qspi_base", "qspi_mmap";
+			interrupts = <GIC_SPI 66 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&fabric_clk>, <&clks GCK_ID_QSPI2>;
+			clock-names = "pclk", "gclk";
+			assigned-clocks = <&clks GCK_ID_QSPI2>;
+			assigned-clock-rates = <100000000>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+
+		reset: reset-controller@e201000c {
+			compatible = "microchip,lan966x-switch-reset";
+			reg = <0xe201000c 0x4>;
+			reg-names = "gcb";
 			#reset-cells = <1>;
+			cpu-syscon = <&cpu_ctrl>;
 		};
 
-		gic: interrupt-controller@e8c10000 {
+		gpio: pinctrl@e20100d4 {
+			compatible = "microchip,lan969x-pinctrl";
+			reg = <0xe20100d4 0xd4>,
+			      <0xe2010370 0xd4>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			gpio-ranges = <&gpio 0 0 66>;
+			interrupt-controller;
+			interrupts = <GIC_SPI 15 IRQ_TYPE_LEVEL_HIGH>;
+			#interrupt-cells = <2>;
+			#address-cells = <1>;
+		};
+
+		mdio0: mdio@e20101a8 {
+			compatible = "mscc,ocelot-miim";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0xe20101a8 0x24>;
+			clocks = <&fx100_clk>;
+			status = "disabled";
+		};
+
+		mdio1: mdio@e20101cc {
+			compatible = "mscc,ocelot-miim";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0xe20101cc 0x24>;
+			clocks = <&fx100_clk>;
+			status = "disabled";
+		};
+
+		sgpio: gpio@e2010230 {
+			compatible = "microchip,sparx5-sgpio";
+			reg = <0xe2010230 0x118>;
+			clocks = <&fx100_clk>;
+			resets = <&reset 0>;
+			reset-names = "switch";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+
+			sgpio_in: gpio@0 {
+				compatible = "microchip,sparx5-sgpio-bank";
+				reg = <0>;
+				gpio-controller;
+				#gpio-cells = <3>;
+				interrupts = <GIC_SPI 16 IRQ_TYPE_LEVEL_HIGH>;
+				interrupt-controller;
+				#interrupt-cells = <3>;
+				#adress-cells = <0>;
+			};
+
+			sgpio_out: gpio@1 {
+				compatible = "microchip,sparx5-sgpio-bank";
+				reg = <1>;
+				gpio-controller;
+				#gpio-cells = <3>;
+			};
+		};
+
+		hwmon: hwmon@e2020100 {
+			compatible = "microchip,lan969x-hwmon";
+			reg = <0xe2020100 0xc>,
+			      <0xe2010348 0xc>;
+			reg-names = "pvt", "fan";
+			clocks = <&fx100_clk>;
+			status = "disabled";
+		};
+
+		serdes: serdes@e3410000 {
+			compatible = "microchip,lan969x-serdes";
+			#phy-cells = <1>;
+			clocks = <&fabric_clk>;
+			reg = <0xe3410000 0x114000>;
+		};
+
+		gic: interrupt-controller@e8c11000 {
 			compatible = "arm,gic-400";
 			#interrupt-cells = <3>;
 			interrupt-controller;
@@ -93,101 +552,6 @@
 			      <0xe8c14000 0x2000>, /* Virt interface control */
 			      <0xe8c16000 0x2000>; /* Virt CPU interface */
 			interrupts = <GIC_PPI 9 IRQ_TYPE_LEVEL_HIGH>;
-		};
-
-		gpio: pinctrl@e20100d4 {
-			compatible = "microchip,lan969x-pinctrl";
-			reg = <0xe20100d4 0xd4>;
-			gpio-controller;
-			#gpio-cells = <2>;
-			gpio-ranges = <&gpio 0 0 66>;
-
-			fc0_pins: fc0_uart_pins {
-				pins = "GPIO_3", "GPIO_4";
-				function = "fc";
-			};
-
-			fc1_pins: fc1_uart_pins {
-				pins = "GPIO_28", "GPIO_29";
-				function = "fc";
-			};
-
-			fc2_pins: fc2_uart_pins {
-				pins = "GPIO_65", "GPIO_66";
-				function = "fc";
-			};
-
-			fc3_pins: fc3_uart_pins {
-				pins = "GPIO_55", "GPIO_56";
-				function = "fc";
-			};
-
-			emmc_sd_pins: emmc-sd-pins {
-				/* eMMC_SD - CMD, CLK, D0, D1, D2, D3, D4, D5, D6, D7, RSTN */
-				pins = "GPIO_14", "GPIO_15", "GPIO_16", "GPIO_17",
-					"GPIO_18", "GPIO_19", "GPIO_20", "GPIO_21",
-					"GPIO_22", "GPIO_23", "GPIO_24";
-				function = "emmc_sd";
-			};
-		};
-
-		flx0: flexcom@e0040000 {
-			compatible = "atmel,sama5d2-flexcom";
-			reg = <0xe0040000 0x100>;
-			clocks = <&fabric_clk>;
-			#address-cells = <1>;
-			#size-cells = <1>;
-			ranges = <0x0 0xe0040000 0x800>;
-			status = "disabled";
-		};
-
-		otp0: otp@e0021000 {
-			compatible = "microchip,lan969x-otp";
-			reg = <0xe0021000 0x300>;
-		};
-
-		sdmmc0: sdhci-host@e0830000 {
-			compatible = "microchip,lan966x-sdhci";
-			pinctrl-0 = <&emmc_sd_pins>;
-			pinctrl-names = "default";
-			reg = <0xe0830000 0x00000300>;
-			interrupts = <GIC_SPI 64 IRQ_TYPE_LEVEL_HIGH>;
-			clocks = <&dummy_clk>, <&dummy_clk>;
-			clock-names = "hclock", "multclk";
-			status = "disabled";
-		};
-
-		sdmmc1: sdhci-host@e0838000 {
-			compatible = "microchip,lan966x-sdhci";
-			reg = <0xe0838000 0x00000300>;
-			interrupts = <GIC_SPI 50 IRQ_TYPE_LEVEL_HIGH>;
-			clocks = <&dummy_clk>, <&dummy_clk>;
-			clock-names = "hclock", "multclk";
-			status = "disabled";
-		};
-
-		qspi0: spi@e0804000 {
-			compatible = "microchip,lan966x-qspi";
-			reg = <0xe0804000 0x00000100>, <0x20000000 0x08000000>;
-			reg-names = "qspi_base", "qspi_mmap";
-			interrupts = <GIC_SPI 43 IRQ_TYPE_LEVEL_HIGH>;
-			clocks =  <&dummy_clk>, <&dummy_clk>;
-			clock-names = "pclk", "gclk";
-			#address-cells = <1>;
-			#size-cells = <0>;
-			status = "disabled";
-		};
-
-		qspi2: spi@e0834000 {
-			compatible = "microchip,lan966x-qspi";
-			reg = <0xe0834000 0x00000100>, <0x30000000 0x04000000>;
-			reg-names = "qspi_base", "qspi_mmap";
-			interrupts = <GIC_SPI 66 IRQ_TYPE_LEVEL_HIGH>;
-			clocks = <&dummy_clk>, <&dummy_clk>;
-			clock-names = "pclk", "gclk";
-			#address-cells = <1>;
-			#size-cells = <0>;
-			status = "disabled";
 		};
 	};
 };
