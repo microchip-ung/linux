@@ -52,7 +52,7 @@ static struct vcap_rule *lan966x_ptp_add_l2_key(struct lan966x_port *port)
 
 	vrule = vcap_alloc_rule(port->dev, chain_id, VCAP_USER_PTP, prio, rule_id);
 	if (!vrule || IS_ERR(vrule))
-		return NULL;
+		return vrule;
 
 	err = vcap_rule_add_key_u32(vrule, VCAP_KF_ETYPE, ETH_P_1588, ~0);
 	if (err) {
@@ -74,7 +74,7 @@ static struct vcap_rule *lan966x_ptp_add_ipv4_event_key(struct lan966x_port *por
 
 	vrule = vcap_alloc_rule(port->dev, chain_id, VCAP_USER_PTP, prio, rule_id);
 	if (!vrule || IS_ERR(vrule))
-		return NULL;
+		return vrule;
 
 	err = vcap_rule_add_key_u32(vrule, VCAP_KF_L4_DPORT, 319, ~0);
 	if (err) {
@@ -96,7 +96,7 @@ static struct vcap_rule *lan966x_ptp_add_ipv4_general_key(struct lan966x_port *p
 
 	vrule = vcap_alloc_rule(port->dev, chain_id, VCAP_USER_PTP, prio, rule_id);
 	if (!vrule || IS_ERR(vrule))
-		return NULL;
+		return vrule;
 
 	err = vcap_rule_add_key_u32(vrule, VCAP_KF_L4_DPORT, 320, ~0);
 	if (err) {
@@ -118,7 +118,7 @@ static struct vcap_rule *lan966x_ptp_add_ipv6_event_key(struct lan966x_port *por
 
 	vrule = vcap_alloc_rule(port->dev, chain_id, VCAP_USER_PTP, prio, rule_id);
 	if (!vrule || IS_ERR(vrule))
-		return NULL;
+		return vrule;
 
 	err = vcap_rule_add_key_u32(vrule, VCAP_KF_L4_DPORT, 319, ~0);
 	if (err) {
@@ -140,7 +140,7 @@ static struct vcap_rule *lan966x_ptp_add_ipv6_general_key(struct lan966x_port *p
 
 	vrule = vcap_alloc_rule(port->dev, chain_id, VCAP_USER_PTP, prio, rule_id);
 	if (!vrule || IS_ERR(vrule))
-		return NULL;
+		return vrule;
 
 	err = vcap_rule_add_key_u32(vrule, VCAP_KF_L4_DPORT, 320, ~0);
 	if (err) {
@@ -159,8 +159,12 @@ static int lan966x_ptp_add_trap(struct lan966x_port *port,
 	int err;
 
 	vrule = lan966x_add_ptp_key(port);
-	if (!vrule)
+	if (!vrule || IS_ERR(vrule)) {
+		if (PTR_ERR(vrule) == -EEXIST)
+			return 0;
+
 		return -ENOMEM;
+	}
 
 	err = vcap_set_rule_set_actionset(vrule, VCAP_AFS_BASE_TYPE);
 	err |= vcap_rule_add_action_bit(vrule, VCAP_AF_CPU_COPY_ENA, VCAP_BIT_1);
