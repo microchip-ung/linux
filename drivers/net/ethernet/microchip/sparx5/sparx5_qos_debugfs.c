@@ -105,7 +105,7 @@ static u32 debugfs_se_idx;
 static int sparx5_layer_debugfs_show(struct seq_file *s, void *unused)
 {
 	struct sparx5 *sparx5 = s->private;
-	struct sparx5_leak_group *lg;
+	struct sparx5_lg *lg;
 	u32 itr, first, next, dwrr_count, dwrr_cost;
 	const char *status;
 	char buf[128];
@@ -132,11 +132,11 @@ static int sparx5_layer_debugfs_show(struct seq_file *s, void *unused)
 
 	seq_printf(s, "Leak groups:\n");
 
-	for (i = 0; i < HSCH_LEAK_GRP_CNT; i++) {
+	for (i = 0; i < SPX5_HSCH_LEAK_GRP_CNT; i++) {
 
-		lg = &sparx5->layers[debugfs_layer_idx].leak_groups[i];
+		lg = &sparx5_layers[debugfs_layer_idx].leak_groups[i];
 
-		if (leak_group_is_empty(sparx5, debugfs_layer_idx, i))
+		if (sparx5_lg_is_empty(sparx5, debugfs_layer_idx, i))
 			status = "Disabled";
 		else
 			status = "Enabled";
@@ -154,13 +154,13 @@ static int sparx5_layer_debugfs_show(struct seq_file *s, void *unused)
 			lg->max_ses);
 
 
-		first = leak_group_get_first(sparx5, debugfs_layer_idx, i);
+		first = sparx5_lg_get_first(sparx5, debugfs_layer_idx, i);
 		itr = first;
 
 		*buf = '\0';
 
 		for (;;) {
-			next = leak_group_get_next(sparx5, debugfs_layer_idx, i, itr);
+			next = sparx5_lg_get_next(sparx5, debugfs_layer_idx, i, itr);
 
 			snprintf(buf + strlen(buf), sizeof(buf) +
 				strlen(buf), "%d -> ", itr);

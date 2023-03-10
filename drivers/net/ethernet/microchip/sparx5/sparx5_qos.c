@@ -477,48 +477,56 @@ static int sparx5_policer_port_conf_set(struct sparx5 *sparx5,
 }
 
 /* Max rates for leak groups */
-static const u32 hsch_max_group_rate[SPX5_HSCH_LEAK_GRP_CNT] = {
-	1048568,  /*  1.049 Gbps */
-	2621420,  /*  2.621 Gbps */
+static const u32 spx5_hsch_max_group_rate[SPX5_HSCH_LEAK_GRP_CNT] = {
+	1048568, /*  1.049 Gbps */
+	2621420, /*  2.621 Gbps */
 	10485680, /* 10.486 Gbps */
-	26214200  /* 26.214 Gbps */
+	26214200 /* 26.214 Gbps */
 };
 
-static u32 leak_group_get_leak_time(struct sparx5 *sparx5, u32 layer,
-				     u32 group)
+struct sparx5_layer sparx5_layers[SPX5_HSCH_LAYER_CNT];
+
+static u32 sparx5_lg_get_leak_time(struct sparx5 *sparx5, u32 layer, u32 group)
 {
-	return HSCH_HSCH_TIMER_CFG_LEAK_TIME_GET(spx5_rd(sparx5,
-		HSCH_HSCH_TIMER_CFG(layer, group)));
+	u32 value;
+
+	value = spx5_rd(sparx5, HSCH_HSCH_TIMER_CFG(layer, group));
+	return HSCH_HSCH_TIMER_CFG_LEAK_TIME_GET(value);
 }
 
-static void leak_group_set_leak_time(struct sparx5 *sparx5, u32 layer,
-				     u32 group, u32 leak_time)
+static void sparx5_lg_set_leak_time(struct sparx5 *sparx5, u32 layer, u32 group,
+				    u32 leak_time)
 {
 	spx5_wr(HSCH_HSCH_TIMER_CFG_LEAK_TIME_SET(leak_time), sparx5,
 		HSCH_HSCH_TIMER_CFG(layer, group));
 }
 
-u32 leak_group_get_first(struct sparx5 *sparx5, u32 layer, u32 group)
+u32 sparx5_lg_get_first(struct sparx5 *sparx5, u32 layer, u32 group)
 {
-	return HSCH_HSCH_LEAK_CFG_LEAK_FIRST_GET(
-		spx5_rd(sparx5, HSCH_HSCH_LEAK_CFG(layer, group)));
+	u32 value;
+
+	value = spx5_rd(sparx5, HSCH_HSCH_LEAK_CFG(layer, group));
+	return HSCH_HSCH_LEAK_CFG_LEAK_FIRST_GET(value);
 }
 
-u32 leak_group_get_next(struct sparx5 *sparx5, u32 layer, u32 group, u32 idx)
+u32 sparx5_lg_get_next(struct sparx5 *sparx5, u32 layer, u32 group,
+			      u32 idx)
 
 {
-	return HSCH_SE_CONNECT_SE_LEAK_LINK_GET(
-		spx5_rd(sparx5, HSCH_SE_CONNECT(idx)));
+	u32 value;
+
+	value = spx5_rd(sparx5, HSCH_SE_CONNECT(idx));
+	return HSCH_SE_CONNECT_SE_LEAK_LINK_GET(value);
 }
 
-static u32 leak_group_get_last(struct sparx5 *sparx5, u32 layer, u32 group)
+static u32 sparx5_lg_get_last(struct sparx5 *sparx5, u32 layer, u32 group)
 {
 	u32 itr, next;
 
-	itr = leak_group_get_first(sparx5, layer, group);
+	itr = sparx5_lg_get_first(sparx5, layer, group);
 
 	for (;;) {
-		next = leak_group_get_next(sparx5, layer, group, itr);
+		next = sparx5_lg_get_next(sparx5, layer, group, itr);
 		if (itr == next)
 			return itr;
 
@@ -526,65 +534,57 @@ static u32 leak_group_get_last(struct sparx5 *sparx5, u32 layer, u32 group)
 	}
 }
 
-static bool leak_group_is_last(struct sparx5 *sparx5, u32 layer, u32 group,
+static bool sparx5_lg_is_last(struct sparx5 *sparx5, u32 layer, u32 group,
+			      u32 idx)
+{
+	return idx == sparx5_lg_get_next(sparx5, layer, group, idx);
+}
+
+static bool sparx5_lg_is_first(struct sparx5 *sparx5, u32 layer, u32 group,
 			       u32 idx)
 {
-	return idx == leak_group_get_next(sparx5, layer, group, idx);
+	return idx == sparx5_lg_get_first(sparx5, layer, group);
 }
 
-static bool leak_group_is_first(struct sparx5 *sparx5, u32 layer, u32 group,
-				u32 idx)
+bool sparx5_lg_is_empty(struct sparx5 *sparx5, u32 layer, u32 group)
 {
-	return idx == leak_group_get_first(sparx5, layer, group);
+	return sparx5_lg_get_leak_time(sparx5, layer, group) == 0;
 }
 
-bool leak_group_is_empty(struct sparx5 *sparx5, u32 layer, u32 group)
+static bool sparx5_lg_is_singular(struct sparx5 *sparx5, u32 layer, u32 group)
 {
-	return leak_group_get_leak_time(sparx5, layer, group) == 0;
-}
-
-static bool leak_group_is_singular(struct sparx5 *sparx5, u32 layer, u32 group)
-{
-	if (leak_group_is_empty(sparx5, layer, group))
+	if (sparx5_lg_is_empty(sparx5, layer, group))
 		return false;
 
-	return leak_group_get_first(sparx5, layer, group) ==
-	       leak_group_get_last(sparx5, layer, group);
+	return sparx5_lg_get_first(sparx5, layer, group) ==
+	       sparx5_lg_get_last(sparx5, layer, group);
 }
 
-static void leak_group_enable(struct sparx5 *sparx5, u32 layer, u32 group,
-			      u32 leak_time)
+static void sparx5_lg_enable(struct sparx5 *sparx5, u32 layer, u32 group,
+			     u32 leak_time)
 {
-	leak_group_set_leak_time(sparx5, layer, group, leak_time);
+	sparx5_lg_set_leak_time(sparx5, layer, group, leak_time);
 }
 
-static void leak_group_disable(struct sparx5 *sparx5, u32 layer, u32 group)
+static void sparx5_lg_disable(struct sparx5 *sparx5, u32 layer, u32 group)
 {
-	leak_group_set_leak_time(sparx5, layer, group, 0);
+	sparx5_lg_set_leak_time(sparx5, layer, group, 0);
 }
 
-/**
- * Get the index of the group that a scheduler element belongs to
- *
- * @param sparx5: sparx5 object
- * @param layer : layer index
- * @param idx   : scheduler element index
- * @return u32  : 0 if found, otherwise -1
- */
-static int leak_group_get_group_by_index(struct sparx5 *sparx5, u32 layer,
-					 u32 idx, u32 *group)
+static int sparx5_lg_get_group_by_index(struct sparx5 *sparx5, u32 layer,
+					u32 idx, u32 *group)
 {
 	u32 itr, next;
 	int i;
 
 	for (i = 0; i < SPX5_HSCH_LEAK_GRP_CNT; i++) {
-		if (leak_group_is_empty(sparx5, layer, i))
+		if (sparx5_lg_is_empty(sparx5, layer, i))
 			continue;
 
-		itr = leak_group_get_first(sparx5, layer, i);
+		itr = sparx5_lg_get_first(sparx5, layer, i);
 
 		for (;;) {
-			next = leak_group_get_next(sparx5, layer, i, itr);
+			next = sparx5_lg_get_next(sparx5, layer, i, itr);
 
 			if (itr == idx) {
 				*group = i;
@@ -600,18 +600,10 @@ static int leak_group_get_group_by_index(struct sparx5 *sparx5, u32 layer,
 	return -1;
 }
 
-/**
- * Get the index of the group that matches rate
- *
- * @param layer: layer index
- * @param group: group index
- * @return u32 : 0 if found, otherwise -1
- */
-static int leak_group_get_group_by_rate(struct sparx5 *sparx5,
-					u32 layer, u32 rate, u32 *group)
+static int sparx5_lg_get_group_by_rate(u32 layer, u32 rate, u32 *group)
 {
-	struct sparx5_layer *l = &sparx5->layers[layer];
-	struct sparx5_leak_group *lg;
+	struct sparx5_layer *l = &sparx5_layers[layer];
+	struct sparx5_lg *lg;
 	u32 i;
 
 	for (i = 0; i < SPX5_HSCH_LEAK_GRP_CNT; i++) {
@@ -625,31 +617,18 @@ static int leak_group_get_group_by_rate(struct sparx5 *sparx5,
 	return -1;
 }
 
-/**
- * Find adjacent scheduler elements
- *
- * @param sparx5: sparx5 object
- * @param layer : layer index
- * @param group : group index
- * @param se_idx: scheduler element index
- * @param prev  : previous scheduler element index
- * @param next  : next scheduler element index
- * @param first : first scheduler element index
- *
- * @return      : 0 if scheduler element was found, otherwise -1
- */
-static int leak_group_get_adjacents(struct sparx5 *sparx5, u32 layer, u32 group,
-				    u32 idx, u32 *prev, u32 *next, u32 *first)
+static int sparx5_lg_get_adjacent(struct sparx5 *sparx5, u32 layer, u32 group,
+				  u32 idx, u32 *prev, u32 *next, u32 *first)
 {
 	u32 itr;
 
-	*first = leak_group_get_first(sparx5, layer, group);
+	*first = sparx5_lg_get_first(sparx5, layer, group);
 	*prev = *first;
 	*next = *first;
 	itr = *first;
 
 	for (;;) {
-		*next = leak_group_get_next(sparx5, layer, group, itr);
+		*next = sparx5_lg_get_next(sparx5, layer, group, itr);
 
 		if (itr == idx)
 			return 0; /* Found it */
@@ -664,50 +643,32 @@ static int leak_group_get_adjacents(struct sparx5 *sparx5, u32 layer, u32 group,
 	return -1;
 }
 
-/**
- * Set leak list configuration for single scheduler element
- *
- * @sparx5      : sparx5 object
- * @layer       : layer index
- * @se_first    : first se in the leak list
- * @se_idx      : se index to configure
- * @se_idx_next : se index to be linked to
- * @empty       : whether list is empty or not
- * @return      : status
- */
-static int sparx5_leak_group_conf_set(struct sparx5 *sparx5, u32 layer,
-				      u32 group, u32 se_first, u32 idx,
-				      u32 idx_next, bool empty)
+static int sparx5_lg_conf_set(struct sparx5 *sparx5, u32 layer, u32 group,
+			      u32 se_first, u32 idx, u32 idx_next, bool empty)
 {
-	u32 leak_time = sparx5->layers[layer].leak_groups[group].leak_time;
-
-	pr_debug("%s:%d: layer: %d, group %d, idx: %d, \
-		next_idx: %d, first_idx: %d, empty: %d",
-		__func__, __LINE__, layer, group, idx, idx_next, se_first,
-		empty);
+	u32 leak_time = sparx5_layers[layer].leak_groups[group].leak_time;
 
 	/* Stop leaking */
-	leak_group_disable(sparx5, layer, group);
+	sparx5_lg_disable(sparx5, layer, group);
 
 	if (empty)
 		return 0;
 
 	/* Select layer */
 	spx5_rmw(HSCH_HSCH_CFG_CFG_HSCH_LAYER_SET(layer),
-		 HSCH_HSCH_CFG_CFG_HSCH_LAYER,
-		 sparx5, HSCH_HSCH_CFG_CFG);
+		 HSCH_HSCH_CFG_CFG_HSCH_LAYER, sparx5, HSCH_HSCH_CFG_CFG);
 
 	/* Link elements */
-	spx5_wr(HSCH_SE_CONNECT_SE_LEAK_LINK_SET(idx_next),
-		sparx5, HSCH_SE_CONNECT(idx));
+	spx5_wr(HSCH_SE_CONNECT_SE_LEAK_LINK_SET(idx_next), sparx5,
+		HSCH_SE_CONNECT(idx));
 
 	/* Set the first element. */
 	spx5_rmw(HSCH_HSCH_LEAK_CFG_LEAK_FIRST_SET(se_first),
-		 HSCH_HSCH_LEAK_CFG_LEAK_FIRST,
-		 sparx5, HSCH_HSCH_LEAK_CFG(layer, group));
+		 HSCH_HSCH_LEAK_CFG_LEAK_FIRST, sparx5,
+		 HSCH_HSCH_LEAK_CFG(layer, group));
 
 	/* Start leaking */
-	leak_group_enable(sparx5, layer, group, leak_time);
+	sparx5_lg_enable(sparx5, layer, group, leak_time);
 
 	return 0;
 }
@@ -1592,36 +1553,22 @@ void sparx5_tas_speed(struct sparx5_port *port, int speed)
 
 /*******************************************************************************/
 
-/**
- * Delete se from leak group
- *
- * @sparx5: sparx5 object
- * @layer : layer index
- * @group : group index
- * @idx   : se index
- * @return int
- */
-static int sparx5_leak_group_del(struct sparx5 *sparx5, u32 layer, u32 group,
-				 u32 idx)
+static int sparx5_lg_del(struct sparx5 *sparx5, u32 layer, u32 group, u32 idx)
 {
 	u32 first, next, prev;
 	bool empty = false;
 
 	/* idx *must* be present in the leak group */
-	BUG_ON(leak_group_get_adjacents(sparx5, layer, group, idx, &prev, &next,
-					&first) < 0);
+	WARN_ON(sparx5_lg_get_adjacent(sparx5, layer, group, idx, &prev, &next,
+				       &first) < 0);
 
-	pr_debug("DELETE: layer: %d, group: %d, idx: %d, prev: \
-		%d next: %d, first: %d\n",
-		layer, group, idx, prev, next, first);
-
-	if (leak_group_is_singular(sparx5, layer, group)) {
+	if (sparx5_lg_is_singular(sparx5, layer, group)) {
 		empty = true;
-	} else if (leak_group_is_last(sparx5, layer, group, idx)) {
+	} else if (sparx5_lg_is_last(sparx5, layer, group, idx)) {
 		/* idx is removed, prev is now last */
 		idx = prev;
 		next = prev;
-	} else if (leak_group_is_first(sparx5, layer, group, idx)) {
+	} else if (sparx5_lg_is_first(sparx5, layer, group, idx)) {
 		/* idx is removed and points to itself, first is next */
 		first = next;
 		next = idx;
@@ -1630,39 +1577,24 @@ static int sparx5_leak_group_del(struct sparx5 *sparx5, u32 layer, u32 group,
 		idx = prev;
 	}
 
-	return sparx5_leak_group_conf_set(
-		sparx5,
-		layer,
-		group,
-		first,
-		idx,
-		next,
-		empty
-	);
+	return sparx5_lg_conf_set(sparx5, layer, group, first, idx, next,
+				  empty);
 }
 
-/**
- * Add new scheduler element to leak group
- *
- * @spsarx5  : sparx5 object
- * @layer    : layer index
- * @new_group: leak group index
- * @idx      : se index
- * @return int
- */
-static int sparx5_leak_group_add(struct sparx5 *sparx5, u32 layer,
-				 u32 new_group, u32 idx)
+
+static int sparx5_lg_add(struct sparx5 *sparx5, u32 layer, u32 new_group,
+			 u32 idx)
 {
 	u32 first, next, old_group;
 
-	pr_debug("ADD: layer: %d, new_group: %d, idx: %d",
-		layer, new_group, idx);
+	pr_debug("ADD: layer: %d, new_group: %d, idx: %d", layer, new_group,
+		 idx);
 
 	/* Is this SE already shaping ? */
-	if (leak_group_get_group_by_index(sparx5, layer, idx, &old_group) >= 0) {
+	if (sparx5_lg_get_group_by_index(sparx5, layer, idx, &old_group) >= 0) {
 		if (old_group != new_group) {
 			/* Delete from old group */
-			sparx5_leak_group_del(sparx5, layer, old_group, idx);
+			sparx5_lg_del(sparx5, layer, old_group, idx);
 		} else {
 			/* Nothing to do here */
 			return 0;
@@ -1672,20 +1604,13 @@ static int sparx5_leak_group_add(struct sparx5 *sparx5, u32 layer,
 	/* We always add to head of the list */
 	first = idx;
 
-	if (leak_group_is_empty(sparx5, layer, new_group))
+	if (sparx5_lg_is_empty(sparx5, layer, new_group))
 		next = idx;
 	else
-		next = leak_group_get_first(sparx5, layer, new_group);
+		next = sparx5_lg_get_first(sparx5, layer, new_group);
 
-	return sparx5_leak_group_conf_set(
-		sparx5,
-		layer,
-		new_group,
-		first,
-		idx,
-		next,
-		false
-	);
+	return sparx5_lg_conf_set(sparx5, layer, new_group, first, idx, next,
+				  false);
 }
 
 static int sparx5_sdlb_clk_hz_get(struct sparx5 *sparx5)
@@ -2466,113 +2391,33 @@ void sparx5_isdx_conf_set(struct sparx5 *sparx5, u32 isdx, u32 sfid, u32 fmid)
 		 sparx5, ANA_L2_DLB_CFG(isdx));
 }
 
-/**
- * Configure the shaper of single scheduler element.
- *
- * @port   : sparx5 port object
- * @se     : scheduler element
- * @qu_idx : queue index
- * @root   : whether this scheduler element is the root of the hsch tree
- * @return : status
- */
 static int sparx5_shaper_conf_set(struct sparx5_port *port,
-				  struct sparx5_shaper *sh, u32 qu_idx,
-				  bool root)
+				  const struct sparx5_shaper *sh, u32 layer,
+				  u32 idx, u32 group)
 {
-	int (*leak_group_action)(struct sparx5 *, u32, u32, u32);
+	int (*sparx5_lg_action)(struct sparx5 *, u32, u32, u32);
 	struct sparx5 *sparx5 = port->sparx5;
-	struct sparx5_leak_group *lg;
-	u32 layer, group, idx;
 
-	pr_debug("%s:%d: qu_idx: %d root: %d mode: %d cir: \
-		%d cbs: %d\n", __func__, __LINE__, qu_idx, root, sh->mode,
-		sh->rate, sh->burst);
-
-	/* Check if this is a port- or priority shaper, and get the SE index */
-	if (root) { /* Port shaper */
-
-		/* Select L2 SE */
-		idx = port->portno;
-		layer = 2;
-
-	} else { /* Priority shaper */
-
-		if (qu_idx > SPX5_PRIOS) {
-			pr_debug("Invalid queue: %d for port: %d",
-			qu_idx, port->portno);
-			return -EINVAL;
-		}
-
-		/* Select L0 SE */
-		idx = SPX5_HSCH_L0_GET_IDX(port->portno, qu_idx);
-		layer = 0;
-	}
-
-	switch (sh->mode) {
-	case SPX5_RATE_MODE_LINE:
-	case SPX5_RATE_MODE_DATA:
-
-		if (sh->mode == SPX5_RATE_MODE_LINE)
-			sh->mode = SPX5_SE_MODE_LINERATE;
-		else
-			sh->mode = SPX5_SE_MODE_DATARATE;
-
-		/* Find the best group for this se */
-		if (leak_group_get_group_by_rate(sparx5, layer, sh->rate, &group) < 0) {
-			pr_debug("Could not find leak group for se \
-			with cir: %d", sh->rate);
-			return -EINVAL;
-		}
-
-		lg = &sparx5->layers[layer].leak_groups[group];
-
-		pr_debug("Found matching group (speed: %d)\n",
-			lg->max_rate);
-
-		if (sh->rate < SPX5_SE_CIR_MIN || sh->burst < SPX5_SE_CBS_MIN)
-			return -EINVAL;
-
-		/* Calculate committed rate and burst */
-		sh->rate = DIV_ROUND_UP(sh->rate, lg->resolution);
-		sh->burst = DIV_ROUND_UP(sh->burst, SPX5_SE_CBS_UNIT);
-
-		if (sh->rate > SPX5_SE_CIR_MAX || sh->burst > SPX5_SE_CBS_MAX)
-			return -EINVAL;
-
-		/* All set; add it to the leak list of the group */
-		leak_group_action = &sparx5_leak_group_add;
-
-		break;
-
-	case SPX5_RATE_MODE_DISABLED:
-
-		/* Delete se from the leak group */
-		leak_group_get_group_by_index(sparx5, layer, idx, &group);
-		leak_group_action = &sparx5_leak_group_del;
-
-		break;
-
-	default:
-		return -EINVAL;
-	}
+	if (!sh->rate && !sh->burst)
+		sparx5_lg_action = &sparx5_lg_del;
+	else
+		sparx5_lg_action = &sparx5_lg_add;
 
 	/* Select layer */
 	spx5_rmw(HSCH_HSCH_CFG_CFG_HSCH_LAYER_SET(layer),
-		 HSCH_HSCH_CFG_CFG_HSCH_LAYER,
-		 sparx5, HSCH_HSCH_CFG_CFG);
+		 HSCH_HSCH_CFG_CFG_HSCH_LAYER, sparx5, HSCH_HSCH_CFG_CFG);
 
 	/* Set frame mode */
-	spx5_rmw(HSCH_SE_CFG_SE_FRM_MODE_SET(sh->mode),
-		HSCH_SE_CFG_SE_FRM_MODE,
+	spx5_rmw(HSCH_SE_CFG_SE_FRM_MODE_SET(sh->mode), HSCH_SE_CFG_SE_FRM_MODE,
 		 sparx5, HSCH_SE_CFG(idx));
 
 	/* Set committed rate and burst */
 	spx5_wr(HSCH_CIR_CFG_CIR_RATE_SET(sh->rate) |
-		HSCH_CIR_CFG_CIR_BURST_SET(sh->burst),
+			HSCH_CIR_CFG_CIR_BURST_SET(sh->burst),
 		sparx5, HSCH_CIR_CFG(idx));
 
 	/* This has to be done after the shaper configuration has been set */
-	leak_group_action(sparx5, layer, group, idx);
+	sparx5_lg_action(sparx5, layer, group, idx);
 
 	return 0;
 }
@@ -2633,26 +2478,49 @@ int sparx5_tc_mqprio_del(struct net_device *ndev)
 }
 
 int sparx5_tc_tbf_add(struct sparx5_port *port,
-	struct tc_tbf_qopt_offload_replace_params *params, u32 qu_idx,
-	bool root)
+		      struct tc_tbf_qopt_offload_replace_params *params,
+		      u32 layer, u32 idx)
 {
 	struct sparx5_shaper sh = {
-		.mode = SPX5_RATE_MODE_DATA,
-		.rate = div_u64(params->rate.rate_bytes_ps, 1000) *
-			8,
+		.mode = SPX5_SE_MODE_DATARATE,
+		.rate = div_u64(params->rate.rate_bytes_ps, 1000) * 8,
 		.burst = params->max_size,
 	};
+	struct sparx5_lg *lg;
+	u32 group;
 
-	return sparx5_shaper_conf_set(port, &sh, qu_idx, root);
+	/* Find suitable group for this se */
+	if (sparx5_lg_get_group_by_rate(layer, sh.rate, &group) < 0) {
+		pr_debug("Could not find leak group for se with rate: %d",
+			 sh.rate);
+		return -EINVAL;
+	}
+
+	lg = &sparx5_layers[layer].leak_groups[group];
+
+	pr_debug("Found matching group (speed: %d)\n", lg->max_rate);
+
+	if (sh.rate < SPX5_SE_RATE_MIN || sh.burst < SPX5_SE_BURST_MIN)
+		return -EINVAL;
+
+	/* Calculate committed rate and burst */
+	sh.rate = DIV_ROUND_UP(sh.rate, lg->resolution);
+	sh.burst = DIV_ROUND_UP(sh.burst, SPX5_SE_BURST_UNIT);
+
+	if (sh.rate > SPX5_SE_RATE_MAX || sh.burst > SPX5_SE_BURST_MAX)
+		return -EINVAL;
+
+	return sparx5_shaper_conf_set(port, &sh, layer, idx, group);
 }
 
-int sparx5_tc_tbf_del(struct sparx5_port *port, u32 qu_idx, bool root)
+int sparx5_tc_tbf_del(struct sparx5_port *port, u32 layer, u32 idx)
 {
-	struct sparx5_shaper sh = {
-		.mode = SPX5_RATE_MODE_DISABLED
-	};
+	struct sparx5_shaper sh = {0};
+	u32 group;
 
-	return sparx5_shaper_conf_set(port, &sh, qu_idx, root);
+	sparx5_lg_get_group_by_index(port->sparx5, layer, idx, &group);
+
+	return sparx5_shaper_conf_set(port, &sh, layer, idx, group);
 }
 
 int sparx5_tc_ets_add(struct sparx5_port *port,
@@ -2698,32 +2566,26 @@ int sparx5_tc_ets_del(struct sparx5_port *port)
 	return sparx5_dwrr_conf_set(port, &dwrr);
 }
 
-/**
- * Initialize layers
- *
- * @sparx5
- */
 static int sparx5_leak_groups_init(struct sparx5 *sparx5)
 {
-	struct sparx5_leak_group *lg;
 	struct sparx5_layer *layer;
 	u32 sys_clk_per_100ps;
+	struct sparx5_lg *lg;
 	u32 leak_time_us;
 	int i, ii;
 
 	sys_clk_per_100ps = spx5_rd(sparx5, HSCH_SYS_CLK_PER);
 
 	for (i = 0; i < SPX5_HSCH_LAYER_CNT; i++) {
-		layer = &sparx5->layers[i];
-
+		layer = &sparx5_layers[i];
 		for (ii = 0; ii < SPX5_HSCH_LEAK_GRP_CNT; ii++) {
 			lg = &layer->leak_groups[ii];
-			lg->max_rate = hsch_max_group_rate[ii];
+			lg->max_rate = spx5_hsch_max_group_rate[ii];
 
 			/* Calculate the leak time in us, to serve a maximum
-			   rate of 'max_rate' for this group */
-			leak_time_us = (SPX5_SE_CIR_MAX * 1000) /
-				lg->max_rate;
+			 * rate of 'max_rate' for this group
+			 */
+			leak_time_us = (SPX5_SE_RATE_MAX * 1000) / lg->max_rate;
 
 			/* Hardware wants leak time in ns */
 			lg->leak_time = 1000 * leak_time_us;
@@ -2732,12 +2594,11 @@ static int sparx5_leak_groups_init(struct sparx5 *sparx5)
 			lg->resolution = 1000 / leak_time_us;
 
 			/* Maximum number of shapers that can be served by
-			   this leak group */
-			lg->max_ses =
-				(1000 * leak_time_us) / sys_clk_per_100ps;
+			 * this leak group
+			 */
+			lg->max_ses = (1000 * leak_time_us) / sys_clk_per_100ps;
 
-			/**
-			 * Example:
+			/* Example:
 			 * Wanted bandwidth is 100Mbit:
 			 *
 			 * 100 mbps can be served by leak group zero.
@@ -2750,11 +2611,10 @@ static int sparx5_leak_groups_init(struct sparx5 *sparx5)
 			 * bw           = 12500 * 8000 = 10^8 (100 Mbit)
 			 */
 
-			/*
-			 * Disable by default - this also indicates an empty
+			/* Disable by default - this also indicates an empty
 			 * leak group
 			 */
-			leak_group_disable(sparx5, i, ii);
+			sparx5_lg_disable(sparx5, i, ii);
 		}
 	}
 

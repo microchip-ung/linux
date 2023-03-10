@@ -204,30 +204,30 @@ enum sparx5_tas_state {
  ******************************************************************************/
 int sparx5_qos_init(struct sparx5 *sparx5);
 
-/* Layers */
+/* Number of Layers */
 #define SPX5_HSCH_LAYER_CNT 3
 
-/* Scheduling elements */
-#define SPX5_HSCH_L0_SE_CNT 576    /* Total SE count on layer 0 */
-#define SPX5_HSCH_L1_SE_CNT 64     /* Total SE count on layer 1 */
-#define SPX5_HSCH_L2_SE_CNT 64     /* Total SE count on layer 2 */
+/* Scheduling elements per layer */
+#define SPX5_HSCH_L0_SE_CNT 5040
+#define SPX5_HSCH_L1_SE_CNT 64
+#define SPX5_HSCH_L2_SE_CNT 64
 
 /* Calculate Layer 0 Scheduler Element when using normal hierarchy */
-#define SPX5_HSCH_L0_GET_IDX(port, queue) ((64 * port) + (8 * queue))
+#define SPX5_HSCH_L0_GET_IDX(port, queue) ((64 * (port)) + (8 * (queue)))
 
-/* Leaking groups */
-#define SPX5_HSCH_LEAK_GRP_CNT 4 /* Four leak groups (linked lists) per layer */
+/* Number of leak groups */
+#define SPX5_HSCH_LEAK_GRP_CNT 4
 
 /* Scheduler modes */
-#define SPX5_SE_MODE_LINERATE 0    /* Line rate. Incl IPG. Unit: 100 kbps, 4096 bytes */
-#define SPX5_SE_MODE_DATARATE 1    /* Data rate. Excl IPG. Unit: 100 kbps, 4096 bytes */
+#define SPX5_SE_MODE_LINERATE 0
+#define SPX5_SE_MODE_DATARATE 1
 
-/* Cir and cbs */
-#define SPX5_SE_CIR_MAX (1 << 17)
-#define SPX5_SE_CIR_MIN 1
-#define SPX5_SE_CBS_MAX (1 << 6)
-#define SPX5_SE_CBS_MIN 1
-#define SPX5_SE_CBS_UNIT (1 << 13)
+/* Rate and burst */
+#define SPX5_SE_RATE_MAX 262143
+#define SPX5_SE_BURST_MAX 127
+#define SPX5_SE_RATE_MIN 1
+#define SPX5_SE_BURST_MIN 1
+#define SPX5_SE_BURST_UNIT 4096
 
 /* Dwrr */
 #define SPX5_DWRR_COST_MAX (1 << 5)
@@ -251,29 +251,23 @@ struct sparx5_dwrr {
 };
 
 struct sparx5_shaper {
-	/* Scheduler mode */
 	u32 mode;
-
-	/* Comitted information rate */
 	u32 rate;
-
-	/* Commited burst size */
 	u32 burst;
 };
 
-struct sparx5_leak_group {
-	/* Maximum supported bitrate in kbps */
+struct sparx5_lg {
 	u32 max_rate;
-
-	/* Resolution in kbps */
 	u32 resolution;
-
-	/* Actual leaking time (this is written to hw) */
 	u32 leak_time;
-
-	/* Maximum number of scheduler elements for this group */
 	u32 max_ses;
 };
+
+struct sparx5_layer {
+	struct sparx5_lg leak_groups[SPX5_HSCH_LEAK_GRP_CNT];
+};
+
+int sparx5_qos_init(struct sparx5 *sparx5);
 
 void sparx5_qos_port_setup(struct sparx5 *sparx5, int portno);
 
@@ -285,11 +279,12 @@ int sparx5_tc_mqprio_add(struct net_device *ndev, u8 num_tc);
 int sparx5_tc_mqprio_del(struct net_device *ndev);
 
 /* Token Bucket Filter */
+extern struct sparx5_layer sparx5_layers[SPX5_HSCH_LAYER_CNT];
 struct tc_tbf_qopt_offload_replace_params;
 int sparx5_tc_tbf_add(struct sparx5_port *port,
-	struct tc_tbf_qopt_offload_replace_params *params, u32 qu_idx,
-	bool root);
-int sparx5_tc_tbf_del(struct sparx5_port *port, u32 qu_idx, bool root);
+		      struct tc_tbf_qopt_offload_replace_params *params,
+		      u32 layer, u32 idx);
+int sparx5_tc_tbf_del(struct sparx5_port *port, u32 layer, u32 idx);
 
 /* Enhanced Transmission Selection */
 struct tc_ets_qopt_offload_replace_params;
@@ -298,8 +293,9 @@ int sparx5_tc_ets_add(struct sparx5_port *port,
 int sparx5_tc_ets_del(struct sparx5_port *port);
 
 /* Hierarchical Scheduler */
-u32 leak_group_get_first(struct sparx5 *sparx5, u32 layer, u32 group);
-u32 leak_group_get_next(struct sparx5 *sparx5, u32 layer, u32 group, u32 idx);
-bool leak_group_is_empty(struct sparx5 *sparx5, u32 layer, u32 group);
+u32 sparx5_lg_get_first(struct sparx5 *sparx5, u32 layer, u32 group);
+u32 sparx5_lg_get_next(struct sparx5 *sparx5, u32 layer, u32 group,
+		       u32 idx);
+bool sparx5_lg_is_empty(struct sparx5 *sparx5, u32 layer, u32 group);
 
 #endif /* _SPARX5_QOS_H_ */

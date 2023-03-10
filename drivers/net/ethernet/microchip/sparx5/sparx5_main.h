@@ -105,9 +105,6 @@ enum sparx5_vlan_port_type {
 #define SPX5_MIRROR_PROBE_MAX 3
 #define SPX5_QFWD_MP_OFFSET 9
 
-/* Hierarchical Scheduler Leaking groups */
-#define HSCH_LEAK_GRP_CNT 4 /* Four leak groups (linked lists) per layer */
-
 struct sparx5;
 
 struct sparx5_db_hw {
@@ -274,12 +271,6 @@ struct sparx5_mirror_probe {
 	struct net_device *mdev;
 };
 
-struct sparx5_layer {
-	/* Leak groups */
-	struct sparx5_leak_group leak_groups[HSCH_LEAK_GRP_CNT];
-};
-
-
 #define SPARX5_PTP_TIMEOUT		msecs_to_jiffies(10)
 #define SPARX5_SKB_CB(skb) \
 	((struct sparx5_skb_cb *)((skb)->cb))
@@ -350,8 +341,6 @@ struct sparx5 {
 	/* PGID allocation map */
 	u8 pgid_map[PGID_TABLE_SIZE];
 	struct sparx5_mirror_probe mirror_probe[SPX5_MIRROR_PROBE_MAX];
-	/* Hierarchical Scheduler Layers */
-	struct sparx5_layer layers[SPX5_HSCH_LAYER_CNT];
 	/* Time Aware Shaper */
 	struct mutex tas_lock;
 };
