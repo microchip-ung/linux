@@ -193,9 +193,9 @@ static int sparx5_psfp_debugfs_show(struct seq_file *s, void *unused)
 	const char *status;
 	char buf[128];
 
-	for (i = 0; i < SPARX5_PSFP_SF_NUM; i++) {
+	for (i = 0; i < SPX5_PSFP_SF_CNT; i++) {
 		isdx = sparx5_pool_idx_to_id(i);
-		e = &sparx5_sf_pool[i];
+		e = &sparx5_psfp_sf_pool[i];
 
 		if (e->ref_cnt <= 0)
 		 	continue;

@@ -1262,22 +1262,31 @@ static void sparx5_tc_flower_set_port_mask(struct vcap_u72_action *ports,
 }
 
 static int sparx5_tc_flower_parse_act_gate(struct sparx5_psfp_sg *sg,
-					   struct flow_action_entry *act)
+					   struct flow_action_entry *act,
+					   struct netlink_ext_ack *extack)
 {
 	int i;
 
-	if (act->gate.prio < -1 || act->gate.prio > SPARX5_PSFP_SG_MAX_IPV)
+	if (act->gate.prio < -1 || act->gate.prio > SPX5_PSFP_SG_MAX_IPV) {
+		NL_SET_ERR_MSG_MOD(extack, "Invalid gate priority");
 		return -EINVAL;
+	}
 
-	if (act->gate.cycletime < SPARX5_PSFP_SG_MIN_CYCLE_TIME_NS ||
-	    act->gate.cycletime > SPARX5_PSFP_SG_MAX_CYCLE_TIME_NS)
+	if (act->gate.cycletime < SPX5_PSFP_SG_MIN_CYCLE_TIME_NS ||
+	    act->gate.cycletime > SPX5_PSFP_SG_MAX_CYCLE_TIME_NS) {
+		NL_SET_ERR_MSG_MOD(extack, "Invalid gate cycletime");
 		return -EINVAL;
+	}
 
-	if (act->gate.cycletimeext > SPARX5_PSFP_SG_MAX_CYCLE_TIME_NS)
+	if (act->gate.cycletimeext > SPX5_PSFP_SG_MAX_CYCLE_TIME_NS) {
+		NL_SET_ERR_MSG_MOD(extack, "Invalid gate cycletimeext");
 		return -EINVAL;
+	}
 
-	if (act->gate.num_entries >= SPARX5_PSFP_GCE_NUM)
+	if (act->gate.num_entries >= SPX5_PSFP_GCE_CNT) {
+		NL_SET_ERR_MSG_MOD(extack, "Invalid number of gate entries");
 		return -EINVAL;
+	}
 
 	sg->gate_state = true;
 	sg->ipv = act->gate.prio;
@@ -1296,12 +1305,30 @@ static int sparx5_tc_flower_parse_act_gate(struct sparx5_psfp_sg *sg,
 }
 
 static int sparx5_tc_flower_parse_act_police(struct sparx5_policer *pol,
-					     struct flow_action_entry *act)
+					     struct flow_action_entry *act,
+					     struct netlink_ext_ack *extack)
 {
 	pol->type = SPX5_POL_SERVICE;
 	pol->rate = div_u64(act->police.rate_bytes_ps, 1000) * 8;
 	pol->burst = act->police.burst;
 	pol->idx = act->hw_index;
+
+	/* rate is now in kbit */
+	if (pol->rate > DIV_ROUND_UP(SPX5_SDLB_GROUP_RATE_MAX, 1000)) {
+		NL_SET_ERR_MSG_MOD(extack, "Maximum rate exceeded");
+		return -EINVAL;
+	}
+
+	if (act->police.exceed.act_id != FLOW_ACTION_DROP) {
+		NL_SET_ERR_MSG_MOD(extack, "Offload not supported when exceed action is not drop");
+		return -EOPNOTSUPP;
+	}
+
+	if (act->police.notexceed.act_id != FLOW_ACTION_PIPE &&
+	    act->police.notexceed.act_id != FLOW_ACTION_ACCEPT) {
+		NL_SET_ERR_MSG_MOD(extack, "Offload not supported when conform action is not pipe or ok");
+		return -EOPNOTSUPP;
+	}
 
 	return 0;
 }
@@ -1315,13 +1342,21 @@ static int sparx5_tc_flower_psfp_setup(struct sparx5 *sparx5,
 	u32 psfp_sfid = 0, psfp_fmid = 0, psfp_sgid = 0;
 	int ret;
 
-	/* Must always have a stream gate - max sdu is evaluated after
-	 * frames have passed the gate, so in case of only a policer, we
+	/* Must always have a stream gate - max sdu (filter option) is evaluated
+	 * after frames have passed the gate, so in case of only a policer, we
 	 * allocate a stream gate that is always open.
 	 */
 	if (sg_idx < 0) {
-		sg_idx = sparx5_pool_idx_to_id(SPARX5_PSFP_SG_OPEN);
-		memcpy(sg, &sparx5_sg_open, sizeof(*sg));
+		sg_idx = sparx5_pool_idx_to_id(SPX5_PSFP_SG_OPEN);
+		sg->ipv = 0; /* Disabled */
+		sg->cycletime = SPX5_PSFP_SG_CYCLE_TIME_DEFAULT;
+		sg->num_entries = 1;
+		sg->gate_state = 1; /* Open */
+		sg->gate_enabled = 1;
+		sg->gce[0].gate_state = 1;
+		sg->gce[0].interval = SPX5_PSFP_SG_CYCLE_TIME_DEFAULT;
+		sg->gce[0].ipv = 0;
+		sg->gce[0].maxoctets = 0; /* Disabled */
 	}
 
 	ret = sparx5_psfp_sg_add(sparx5, sg_idx, sg, &psfp_sgid);
@@ -1343,9 +1378,7 @@ static int sparx5_tc_flower_psfp_setup(struct sparx5 *sparx5,
 	if (ret < 0)
 		return ret;
 
-	/* Streams are classified by ISDX.
-	 * Map ISDX 1:1 to sfid for now.
-	 */
+	/* Streams are classified by ISDX - map ISDX 1:1 to sfid for now. */
 	sparx5_isdx_conf_set(sparx5, psfp_sfid, psfp_sfid, psfp_fmid);
 
 	ret = vcap_rule_add_action_bit(vrule, VCAP_AF_ISDX_ADD_REPLACE_SEL,
@@ -1364,7 +1397,8 @@ static int sparx5_tc_flower_replace(struct net_device *ndev,
 				    struct flow_cls_offload *fco,
 				    struct vcap_admin *admin)
 {
-	struct sparx5_psfp_sf sf = { .max_sdu = GENMASK(14, 0) }; /* All ones */
+	struct sparx5_psfp_sf sf = { .max_sdu = SPX5_PSFP_SF_MAX_SDU };
+	struct netlink_ext_ack *extack = fco->common.extack;
 	int err, idx, tc_sg_idx = -1, tc_pol_idx = -1;
 	struct sparx5_port *port = netdev_priv(ndev);
 	struct sparx5_multiple_rules multi = {0};
@@ -1408,18 +1442,18 @@ static int sparx5_tc_flower_replace(struct net_device *ndev,
 	flow_action_for_each(idx, act, &frule->action) {
 		switch (act->id) {
 		case FLOW_ACTION_GATE: {
-			err = sparx5_tc_flower_parse_act_gate(&sg, act);
-			if (err)
+			err = sparx5_tc_flower_parse_act_gate(&sg, act, extack);
+			if (err < 0)
 				goto out;
 
 			tc_sg_idx = act->hw_index;
 
 			break;
 		}
-
 		case FLOW_ACTION_POLICE: {
-			err = sparx5_tc_flower_parse_act_police(&fm.pol, act);
-			if (err)
+			err = sparx5_tc_flower_parse_act_police(&fm.pol, act,
+								extack);
+			if (err < 0)
 				goto out;
 
 			tc_pol_idx = fm.pol.idx;
@@ -1564,14 +1598,50 @@ out:
 	return err;
 }
 
+static void sparx5_tc_free_psfp_resources(struct sparx5 *sparx5,
+					  struct vcap_rule *vrule)
+{
+	struct vcap_client_actionfield *afield;
+	u32 isdx, sfid, sgid, fmid;
+
+	/* Check if VCAP_AF_ISDX_VAL action is set for this rule - and if
+	 * it is used for stream and/or flow-meter classification.
+	 */
+	afield = vcap_find_actionfield(vrule, VCAP_AF_ISDX_VAL);
+	if (!afield)
+		return;
+
+	isdx = afield->data.u32.value;
+	sfid = sparx5_psfp_isdx_get_sf(sparx5, isdx);
+
+	if (!sfid)
+		return;
+
+	fmid = sparx5_psfp_isdx_get_fm(sparx5, isdx);
+	sgid = sparx5_psfp_sf_get_sg(sparx5, sfid);
+
+	if (fmid && sparx5_psfp_fm_del(sparx5, fmid) < 0)
+		pr_err("%s:%d Could not delete invalid fmid: %d", __func__,
+		       __LINE__, fmid);
+
+	if (sgid && sparx5_psfp_sg_del(sparx5, sgid) < 0)
+		pr_err("%s:%d Could not delete invalid sgid: %d", __func__,
+		       __LINE__, sgid);
+
+	if (sparx5_psfp_sf_del(sparx5, sfid) < 0)
+		pr_err("%s:%d Could not delete invalid sfid: %d", __func__,
+		       __LINE__, sfid);
+
+	sparx5_isdx_conf_set(sparx5, isdx, 0, 0);
+}
+
 static int sparx5_tc_free_rule_resources(struct net_device *ndev, int rule_id)
 {
 	struct sparx5_port *port = netdev_priv(ndev);
 	struct vcap_client_actionfield *afield;
 	struct sparx5 *sparx5 = port->sparx5;
-	u32 isdx, sfid, sgid, fmid;
 	struct vcap_rule *vrule;
-	int ret = 0, err;
+	int ret = 0;
 
 	vrule = vcap_get_rule(ndev, rule_id);
 	if (vrule == NULL || IS_ERR(vrule))
@@ -1592,44 +1662,7 @@ static int sparx5_tc_free_rule_resources(struct net_device *ndev, int rule_id)
 			 __func__, __LINE__, vrule->id);
 	}
 
-	/* Check if VCAP_AF_ISDX_VAL action is set for this rule - and if
-	 * it is used for stream and/or flow-meter classification.
-	 */
-	afield = vcap_find_actionfield(vrule, VCAP_AF_ISDX_VAL);
-	if (afield) {
-		isdx = afield->data.u32.value;
-		sfid = sparx5_psfp_isdx_get_sf(sparx5, isdx);
-
-		if (sfid) {
-			fmid = sparx5_psfp_isdx_get_fm(sparx5, isdx);
-			sgid = sparx5_psfp_sf_get_sg(sparx5, sfid);
-
-			pr_info("Deleting stream: isdx: %d sfid: %d, fmid: %d sgid: %d", isdx, sfid, fmid, sgid);
-
-			if (fmid) {
-				err = sparx5_psfp_fm_del(sparx5, fmid);
-				if (err) {
-					pr_err("%s:%d Could not delete invalid fmid: %d",
-					       __func__, __LINE__, fmid);
-				}
-			}
-
-			if (sgid) {
-				err = sparx5_psfp_sg_del(sparx5, sgid);
-				if (err) {
-					pr_err("%s:%d Could not delete invalid sgid: %d",
-					       __func__, __LINE__, sgid);
-				}
-			}
-
-			err = sparx5_psfp_sf_del(sparx5, sfid);
-			if (err) {
-				pr_err("%s:%d Could not delete invalid sfid: %d",
-				       __func__, __LINE__, sfid);
-			}
-			sparx5_isdx_conf_set(sparx5, isdx, 0, 0);
-		}
-	}
+	sparx5_tc_free_psfp_resources(sparx5, vrule);
 
 	vcap_free_rule(vrule);
 	return ret;
