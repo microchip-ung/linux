@@ -15,121 +15,6 @@
 struct sparx5;
 struct sparx5_port;
 
-#define SPARX5_PSFP_SG_MIN_CYCLE_TIME_NS (1 * NSEC_PER_USEC) /* 1 usec */
-#define SPARX5_PSFP_SG_MAX_CYCLE_TIME_NS ((1 * NSEC_PER_SEC) - 1) /* 999.999.999 nsec */
-#define SPARX5_PSFP_SG_MAX_IPV (SPX5_PRIOS - 1)
-#define SPARX5_PSFP_GCE_NUM 4 /* Number of stream gate control entries */
-#define SPARX5_PSFP_SG_NUM 1024 /* Number of stream gates */
-#define SPARX5_PSFP_SF_NUM 1024 /* Number of stream filters */
-
-#define SPARX5_POL_ACL_NUM 64 /* Number of acl policers */
-#define SPARX5_POL_SRV_NUM 4096
-
-#define SPARX5_PSFP_SG_OPEN (SPARX5_PSFP_SG_NUM - 1)
-
-/* Index of ACL discard policer */
-#define SPX5_POL_ACL_DISCARD (SPARX5_POL_ACL_NUM - 1)
-
-/* Bits for acl policer cnt statistics */
-#define SPX5_POL_ACL_STAT_CNT_UNMASKED_NO_ERR BIT(1)
-
-/* Bits for acl policer global event mask */
-#define SPX5_POL_ACL_STAT_CNT_CPU_DISCARDED BIT(2)
-#define SPX5_POL_ACL_STAT_CNT_FPORT_DISCADED BIT(3)
-
-/* Port Policer units */
-#define SPX5_POLICER_RATE_UNIT 25040 /* bits/sec */
-#define SPX5_POLICER_BYTE_BURST_UNIT 8192 /* bytes per burst */
-#define SPX5_POLICER_FRAME_BURST_UNIT 2504 /* frames per burst */
-
-enum {
-	SPX5_POL_STORM,
-	SPX5_POL_ACL,
-	SPX5_POL_PORT,
-	SPX5_POL_SERVICE
-};
-
-struct sparx5_policer {
-	u32 type;
-	u32 idx;
-	u64 rate;
-	u32 burst;
-	u32 group;
-	u8 event_mask;
-};
-
-struct sparx5_psfp_fm {
-	struct sparx5_policer pol;
-};
-
-struct sparx5_psfp_sf {
-	bool sblock_osize_ena;
-	bool sblock_osize;
-	u32 max_sdu;
-	u32 sgid; /* Gate id */
-	u32 fmid; /* Flow meter id */
-};
-
-struct sparx5_psfp_gce {
-	bool gate_state; /* StreamGateState */
-	u32 interval; /* TimeInterval */
-	u32 ipv; /* InternalPriorityValue */
-	u32 maxoctets; /* IntervalOctetMax */
-};
-
-struct sparx5_psfp_sg {
-	bool gate_state; /* PSFPAdminGateStates */
-	bool gate_enabled; /* PSFPGateEnabled */
-	u32 ipv; /* PSFPAdminIPV */
-	struct timespec64 basetime; /* PSFPAdminBaseTime */
-	u32 cycletime; /* PSFPAdminCycleTime */
-	u32 cycletimeext; /* PSFPAdminCycleTimeExtension */
-	u32 num_entries; /* PSFPAdminControlListLength */
-	struct sparx5_psfp_gce gce[SPARX5_PSFP_GCE_NUM];
-};
-
-struct sparx5_pool_entry {
-	u16 ref_cnt;
-	u32 idx; /* tc index */
-};
-
-u32 sparx5_pool_idx_to_id(u32 idx);
-
-/* Always open stream gate */
-extern const struct sparx5_psfp_sg sparx5_sg_open;
-/* Stream filter resource pool */
-extern struct sparx5_pool_entry sparx5_sf_pool[];
-/* Stream gate resource pool */
-extern struct sparx5_pool_entry sparx5_sg_pool[];
-/* Service policer resource pool*/
-extern struct sparx5_pool_entry sparx5_pol_srv_pool[];
-
-int sparx5_sdlb_group_get_first(struct sparx5 *sparx5, u32 group);
-int sparx5_sdlb_group_get_next(struct sparx5 *sparx5, u32 group, u32 sdlb);
-bool sparx5_sdlb_group_is_first(struct sparx5 *sparx5, u32 group, u32 sdlb);
-bool sparx5_sdlb_group_is_empty(struct sparx5 *sparx5, u32 group);
-
-/* PSFP stream filter */
-int sparx5_psfp_sf_add(struct sparx5 *sparx5, const struct sparx5_psfp_sf *sf,
-		       u32 *handle);
-int sparx5_psfp_sf_del(struct sparx5 *sparx5, u32 handle);
-
-/* PSFP stream gate */
-int sparx5_psfp_sg_del(struct sparx5 *sparx5, u32 handle);
-int sparx5_psfp_sg_add(struct sparx5 *sparx5, u32 uidx,
-		       struct sparx5_psfp_sg *sg, u32 *handle);
-
-/* PSFP flow-meter */
-int sparx5_psfp_fm_del(struct sparx5 *sparx5, u32 handle);
-int sparx5_psfp_fm_add(struct sparx5 *sparx5, u32 uidx,
-		       struct sparx5_psfp_fm *fm, u32 *handle);
-
-void sparx5_isdx_conf_set(struct sparx5 *sparx5, u32 isdx, u32 sfid, u32 fmid);
-
-u32 sparx5_psfp_isdx_get_sf(struct sparx5 *sparx5, u32 isdx);
-u32 sparx5_psfp_isdx_get_fm(struct sparx5 *sparx5, u32 isdx);
-u32 sparx5_psfp_sf_get_sg(struct sparx5 *sparx5, u32 sfid);
-
 /*******************************************************************************
  * QOS Port configuration
  ******************************************************************************/
@@ -162,14 +47,6 @@ int sparx5_fp_status(struct sparx5_port *port,
  * QoS port notification
  ******************************************************************************/
 int sparx5_qos_port_event(struct net_device *dev, unsigned long event);
-
-/*******************************************************************************
- * Policers
- ******************************************************************************/
-int sparx5_policer_conf_set(struct sparx5 *sparx5, struct sparx5_policer *pol);
-
-int sparx5_policer_stats_update(struct sparx5 *sparx5,
-				struct sparx5_policer *pol);
 
 /*******************************************************************************
  * TAS (Time Aware Shaper - 802.1Qbv)
@@ -270,9 +147,6 @@ struct sparx5_layer {
 int sparx5_qos_init(struct sparx5 *sparx5);
 
 void sparx5_qos_port_setup(struct sparx5 *sparx5, int portno);
-
-/* Port Policer */
-int sparx5_policer_port_stats_update(struct sparx5_port *port, int polidx);
 
 /* Multi-Queue Priority */
 int sparx5_tc_mqprio_add(struct net_device *ndev, u8 num_tc);

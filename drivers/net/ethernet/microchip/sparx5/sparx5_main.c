@@ -509,8 +509,8 @@ static int sparx5_init_coreclock(struct sparx5 *sparx5)
 
 	clk_period = sparx5_clk_period(freq);
 
-	spx5_rmw(HSCH_SYS_CLK_PER_SYS_CLK_PER_100PS_SET(clk_period / 100),
-		 HSCH_SYS_CLK_PER_SYS_CLK_PER_100PS,
+	spx5_rmw(HSCH_SYS_CLK_PER_100PS_SET(clk_period / 100),
+		 HSCH_SYS_CLK_PER_100PS,
 		 sparx5,
 		 HSCH_SYS_CLK_PER);
 

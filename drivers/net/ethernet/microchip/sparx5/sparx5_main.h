@@ -481,6 +481,160 @@ int sparx5_pgid_free(struct sparx5 *spx5, u16 idx);
 int sparx5_setup_tc(struct net_device *dev, enum tc_setup_type type,
 		    void *type_data);
 
+/* sparx5_pool.c */
+struct sparx5_pool_entry {
+	u16 ref_cnt;
+	u32 idx; /* tc index */
+};
+
+u32 sparx5_pool_idx_to_id(u32 idx);
+int sparx5_pool_put(struct sparx5_pool_entry *pool, int size, u32 id);
+int sparx5_pool_get(struct sparx5_pool_entry *pool, int size, u32 *id);
+int sparx5_pool_get_with_idx(struct sparx5_pool_entry *pool, int size, u32 idx,
+			     u32 *id);
+
+/* sparx5_sdlb.c */
+#define SPX5_SDLB_PUP_TOKEN_DISABLE 0x1FFF
+#define SPX5_SDLB_PUP_TOKEN_MAX (SPX5_SDLB_PUP_TOKEN_DISABLE - 1)
+#define SPX5_SDLB_GROUP_RATE_MAX 25000000000ULL
+#define SPX5_SDLB_2CYCLES_TYPE2_THRES_OFFSET 13
+#define SPX5_SDLB_CNT 4096
+#define SPX5_SDLB_GROUP_CNT 10
+#define SPX5_CLK_PER_100PS_DEFAULT 16
+
+struct sparx5_sdlb_group {
+	u64 max_rate;
+	u32 min_burst;
+	u32 frame_size;
+	u32 pup_interval;
+	u32 nsets;
+};
+
+extern struct sparx5_sdlb_group sdlb_groups[SPX5_SDLB_GROUP_CNT];
+int sparx5_sdlb_pup_token_get(struct sparx5 *sparx5, u32 pup_interval,
+			      u64 rate);
+
+int sparx5_sdlb_clk_hz_get(struct sparx5 *sparx5);
+int sparx5_sdlb_group_get_by_rate(struct sparx5 *sparx5, u32 rate, u32 burst);
+int sparx5_sdlb_group_get_by_index(struct sparx5 *sparx5, u32 idx, u32 *group);
+
+int sparx5_sdlb_group_add(struct sparx5 *sparx5, u32 group, u32 idx);
+int sparx5_sdlb_group_del(struct sparx5 *sparx5, u32 group, u32 idx);
+
+void sparx5_sdlb_group_init(struct sparx5 *sparx5, u64 max_rate, u32 min_burst,
+			    u32 frame_size, u32 idx);
+
+u32 sparx5_sdlb_group_get_first(struct sparx5 *sparx5, u32 group);
+u32 sparx5_sdlb_group_get_next(struct sparx5 *sparx5, u32 group, u32 sdlb);
+bool sparx5_sdlb_group_is_first(struct sparx5 *sparx5, u32 group, u32 sdlb);
+bool sparx5_sdlb_group_is_empty(struct sparx5 *sparx5, u32 group);
+
+enum {
+	SPX5_POL_STORM,
+	SPX5_POL_ACL,
+	SPX5_POL_PORT,
+	SPX5_POL_SERVICE
+};
+
+struct sparx5_policer {
+	u32 type;
+	u32 idx;
+	u64 rate;
+	u32 burst;
+	u32 group;
+	u8 event_mask;
+};
+
+#define SPARX5_POL_ACL_NUM 64 /* Number of acl policers */
+#define SPARX5_POL_SRV_NUM 4096
+/* Index of ACL discard policer */
+#define SPX5_POL_ACL_DISCARD (SPARX5_POL_ACL_NUM - 1)
+/* Bits for acl policer cnt statistics */
+#define SPX5_POL_ACL_STAT_CNT_UNMASKED_NO_ERR BIT(1)
+/* Bits for acl policer global event mask */
+#define SPX5_POL_ACL_STAT_CNT_CPU_DISCARDED BIT(2)
+#define SPX5_POL_ACL_STAT_CNT_FPORT_DISCADED BIT(3)
+
+/* Port Policer units */
+#define SPX5_POLICER_RATE_UNIT 25040 /* bits/sec */
+#define SPX5_POLICER_BYTE_BURST_UNIT 8192 /* bytes per burst */
+#define SPX5_POLICER_FRAME_BURST_UNIT 2504 /* frames per burst */
+
+int sparx5_policer_init(struct sparx5 *sparx5);
+int sparx5_policer_port_stats_update(struct sparx5_port *port, int polidx);
+int sparx5_policer_stats_update(struct sparx5 *sparx5,
+				struct sparx5_policer *pol);
+
+int sparx5_policer_conf_set(struct sparx5 *sparx5, struct sparx5_policer *pol);
+
+/* sparx5_psfp.c */
+#define SPX5_PSFP_SF_CNT 1024
+#define SPX5_PSFP_GCE_CNT 4
+#define SPX5_PSFP_SG_CNT 1024
+#define SPX5_PSFP_SG_MIN_CYCLE_TIME_NS (1 * NSEC_PER_USEC)
+#define SPX5_PSFP_SG_MAX_CYCLE_TIME_NS ((1 * NSEC_PER_SEC) - 1)
+#define SPX5_PSFP_SG_MAX_IPV (SPX5_PRIOS - 1)
+#define SPX5_PSFP_SG_OPEN (SPX5_PSFP_SG_CNT - 1)
+#define SPX5_PSFP_SG_CYCLE_TIME_DEFAULT 1000000
+#define SPX5_PSFP_SF_MAX_SDU 16383
+
+struct sparx5_psfp_fm {
+	struct sparx5_policer pol;
+};
+
+struct sparx5_psfp_gce {
+	bool gate_state;            /* StreamGateState */
+	u32 interval;               /* TimeInterval */
+	u32 ipv;                    /* InternalPriorityValue */
+	u32 maxoctets;              /* IntervalOctetMax */
+};
+
+struct sparx5_psfp_sg {
+	bool gate_state;            /* PSFPAdminGateStates */
+	bool gate_enabled;          /* PSFPGateEnabled */
+	u32 ipv;                    /* PSFPAdminIPV */
+	struct timespec64 basetime; /* PSFPAdminBaseTime */
+	u32 cycletime;              /* PSFPAdminCycleTime */
+	u32 cycletimeext;           /* PSFPAdminCycleTimeExtension */
+	u32 num_entries;            /* PSFPAdminControlListLength */
+	struct sparx5_psfp_gce gce[SPX5_PSFP_GCE_CNT];
+};
+
+struct sparx5_psfp_sf {
+	bool sblock_osize_ena;
+	bool sblock_osize;
+	u32 max_sdu;
+	u32 sgid; /* Gate id */
+	u32 fmid; /* Flow meter id */
+};
+
+int sparx5_psfp_fm_add(struct sparx5 *sparx5, u32 uidx,
+		       struct sparx5_psfp_fm *fm, u32 *id);
+int sparx5_psfp_fm_del(struct sparx5 *sparx5, u32 id);
+
+int sparx5_psfp_sg_add(struct sparx5 *sparx5, u32 uidx,
+		       struct sparx5_psfp_sg *sg, u32 *id);
+int sparx5_psfp_sg_del(struct sparx5 *sparx5, u32 id);
+
+int sparx5_psfp_sf_add(struct sparx5 *sparx5, const struct sparx5_psfp_sf *sf,
+		       u32 *id);
+int sparx5_psfp_sf_del(struct sparx5 *sparx5, u32 id);
+
+u32 sparx5_psfp_isdx_get_sf(struct sparx5 *sparx5, u32 isdx);
+u32 sparx5_psfp_isdx_get_fm(struct sparx5 *sparx5, u32 isdx);
+u32 sparx5_psfp_sf_get_sg(struct sparx5 *sparx5, u32 sfid);
+void sparx5_isdx_conf_set(struct sparx5 *sparx5, u32 isdx, u32 sfid, u32 fmid);
+
+void sparx5_psfp_init(struct sparx5 *sparx5);
+
+/* Needed for qos_debugfs */
+extern struct sparx5_pool_entry sparx5_psfp_sf_pool[SPX5_PSFP_SF_CNT];
+
+/* sparx5_qos.c */
+void sparx5_new_base_time(struct sparx5 *sparx5, const u32 cycle_time,
+			  const ktime_t org_base_time, ktime_t *new_base_time);
+void sparx5_update_u64_counter(u64 *cntr, u32 msb, u32 lsb);
+
 /* Clock period in picoseconds */
 static inline u32 sparx5_clk_period(enum sparx5_core_clockfreq cclock)
 {
@@ -496,7 +650,10 @@ static inline u32 sparx5_clk_period(enum sparx5_core_clockfreq cclock)
 }
 
 static inline bool sparx5_is_baser(phy_interface_t interface)
-{
+{int sparx5_policer_init(struct sparx5 *sparx5);
+int sparx5_policer_port_stats_update(struct sparx5_port *port, int polidx);
+int sparx5_policer_stats_update(struct sparx5 *sparx5,
+				struct sparx5_policer *pol);
 	return interface == PHY_INTERFACE_MODE_5GBASER ||
 		   interface == PHY_INTERFACE_MODE_10GBASER ||
 		   interface == PHY_INTERFACE_MODE_25GBASER;
