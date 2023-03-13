@@ -185,7 +185,8 @@ static int sparx5_psfp_debugfs_show(struct seq_file *s, void *unused)
 {
 	u32 group, xlb_next, xlb_start, xlb_itr, xlb_pup_token,
 		group_pup_interval, group_thres_shift, gate_max_octets, sfid,
-		fmid, sgid, gate_state, gate_ips, gate_interval, pending, isdx;
+		fmid, sgid, gate_state, gate_ips, gate_interval, pending, isdx,
+		enabled;
 	struct sparx5 *sparx5 = s->private;
 	struct sparx5_pool_entry *e;
 	int i, ii, gate_num_entries;
@@ -240,7 +241,7 @@ static int sparx5_psfp_debugfs_show(struct seq_file *s, void *unused)
 		pending = ANA_AC_SG_STATUS_REG_3_CONFIG_PENDING_GET(
 			spx5_rd(sparx5, ANA_AC_SG_STATUS_REG_3));
 
-		u32 enabled = ANA_AC_SG_CONFIG_REG_3_GATE_ENABLE_GET(
+		enabled = ANA_AC_SG_CONFIG_REG_3_GATE_ENABLE_GET(
 			spx5_rd(sparx5, ANA_AC_SG_CONFIG_REG_3));
 
 		seq_printf(s, "\nisdx: %d\n", isdx);
