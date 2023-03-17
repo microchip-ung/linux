@@ -343,12 +343,25 @@ static struct genl_ops vtss_dying_gasp_genl_ops[] = {
     },
 };
 
+/****************************************************************************/
+// Policies
+// Basically, this structure tells what kind of data comes with a given
+// attribute.
+/****************************************************************************/
+static const struct nla_policy vtss_dying_gasp_genl_policy[VTSS_DYING_GASP_ATTR_END] = {
+    [VTSS_DYING_GASP_ATTR_NONE]      = {.type = NLA_UNSPEC},
+    [VTSS_DYING_GASP_ATTR_ID]        = {.type = NLA_U32},
+    [VTSS_DYING_GASP_ATTR_INTERFACE] = {.type = NLA_STRING, .len =   16},
+    [VTSS_DYING_GASP_ATTR_MSG]       = {.type = NLA_BINARY, .len = 4096},
+};
+
 /* dying gasp genl_family */
 static struct genl_family vtss_dying_gasp_genl_family = {
     .hdrsize = 0,
     .name    = "vtss_dying_gasp",
     .version = 1,
     .maxattr = VTSS_DYING_GASP_ATTR_MAX,
+    .policy  = vtss_dying_gasp_genl_policy,
     .ops     = vtss_dying_gasp_genl_ops,
     .n_ops   = ARRAY_SIZE(vtss_dying_gasp_genl_ops),
 };
