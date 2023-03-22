@@ -17,7 +17,6 @@ dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls1043a-qds.dtb
 dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls1043a-rdb.dtb
 dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls1046a-frwy.dtb
 dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls1046a-miriac-sbc1046.dtb
-dtb-$(CONFIG_ARCH_LAYERSCAPE) += mchp-ls1046a-lan966x.dtb
 dtb-$(CONFIG_ARCH_LAYERSCAPE) += mchp-ls1046a-lan966x_vtss.dtb
 dtb-$(CONFIG_ARCH_LAYERSCAPE) += mchp-ls1046a-lan966x_mesa.dtb
 dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls1046a-qds.dtb
