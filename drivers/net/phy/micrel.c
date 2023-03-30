@@ -4649,10 +4649,10 @@ static void lan8841_ptp_update_target(struct kszphy_ptp_priv *ptp_priv,
 {
 	if (ptp_priv->event_a_pin >= 0)
 		lan8841_ptp_set_target(ptp_priv, LAN8841_EVENT_A,
-				       ts->tv_sec + LAN8841_BUFFER_TIME, ts->tv_nsec);
+				       ts->tv_sec + LAN8841_BUFFER_TIME, 0);
 	if (ptp_priv->event_b_pin >= 0)
 		lan8841_ptp_set_target(ptp_priv, LAN8841_EVENT_B,
-				       ts->tv_sec + LAN8841_BUFFER_TIME, ts->tv_nsec);
+				       ts->tv_sec + LAN8841_BUFFER_TIME, 0);
 }
 
 #define LAN8841_PTP_LTC_TARGET_RELOAD_SEC_HI(event)	((event) == LAN8841_EVENT_A ? 282 : 292)
