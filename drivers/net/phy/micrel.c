@@ -130,6 +130,8 @@
  */
 #define LAN8814_1PPM_FORMAT			17179
 
+#define LAN8841_1PPM_FORMAT			34360
+
 #define PTP_RX_MOD				0x024F
 #define PTP_RX_MOD_BAD_UDPV4_CHKSUM_FORCE_FCS_DIS_ BIT(3)
 #define PTP_RX_TIMESTAMP_EN			0x024D
@@ -4432,8 +4434,8 @@ static int lan8841_ptp_adjfine(struct ptp_clock_info *ptp, long scaled_ppm)
 		faster = false;
 	}
 
-	rate = LAN8814_1PPM_FORMAT * (upper_16_bits(scaled_ppm));
-	rate += (LAN8814_1PPM_FORMAT * (lower_16_bits(scaled_ppm))) >> 16;
+	rate = LAN8841_1PPM_FORMAT * (upper_16_bits(scaled_ppm));
+	rate += (LAN8841_1PPM_FORMAT * (lower_16_bits(scaled_ppm))) >> 16;
 
 	mutex_lock(&ptp_priv->ptp_lock);
 	phy_write_mmd(phydev, 2, LAN8841_PTP_LTC_RATE_ADJ_HI,
