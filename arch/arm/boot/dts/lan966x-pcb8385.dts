@@ -40,12 +40,6 @@
 		pins = "GPIO_52", "GPIO_53";
 		function = "fc3_b";
 	};
-
-	miim_a_pins: mdio-pins {
-		/* MDC, MDIO */
-		pins =  "GPIO_28", "GPIO_29";
-		function = "miim_a";
-	};
 };
 
 &flx3 {
@@ -57,58 +51,4 @@
 		pinctrl-names = "default";
 		status = "okay";
 	};
-};
-
-&mdio0 {
-	pinctrl-0 = <&miim_a_pins>;
-	pinctrl-names = "default";
-	status = "okay";
-
-	ext_phy6: ethernet-phy@6 {
-		reg = <3>;
-		interrupts = <24 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&gpio>;
-	};
-};
-
-&mdio1 {
-	status = "okay";
-};
-
-&phy0 {
-	status = "okay";
-};
-
-&phy1 {
-	status = "okay";
-};
-
-&port0 {
-	phy-handle = <&phy0>;
-	phy-mode = "gmii";
-	phys = <&serdes 0 CU(0)>;
-	status = "okay";
-};
-
-&port1 {
-	phy-handle = <&phy1>;
-	phy-mode = "gmii";
-	phys = <&serdes 1 CU(1)>;
-	status = "okay";
-};
-
-&port6 {
-	reg = <6>;
-	phy-handle = <&ext_phy6>;
-	phy-mode = "rgmii-id";
-	phys = <&serdes 6 RGMII(1)>;
-	status = "okay";
-};
-
-&serdes {
-	status = "okay";
-};
-
-&switch {
-	status = "okay";
 };
