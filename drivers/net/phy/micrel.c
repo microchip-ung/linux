@@ -3603,6 +3603,7 @@ static void lan8814_ptp_init(struct phy_device *phydev)
 static int lan8814_ptp_probe_once(struct phy_device *phydev)
 {
 	struct lan8814_shared_priv *shared = phydev->shared->priv;
+	int i;
 
 	if (!IS_ENABLED(CONFIG_PTP_1588_CLOCK) ||
 	    !IS_ENABLED(CONFIG_NETWORK_PHY_TIMESTAMPING))
@@ -3611,14 +3612,33 @@ static int lan8814_ptp_probe_once(struct phy_device *phydev)
 	/* Initialise shared lock for clock*/
 	mutex_init(&shared->shared_lock);
 
+	shared->pin_config = devm_kmalloc_array(&phydev->mdio.dev,
+						LAN8814_N_GPIO,
+						sizeof(*shared->pin_config),
+						GFP_KERNEL);
+	if (!shared->pin_config)
+		return -ENOMEM;
+
+	for (i = 0; i < LAN8814_N_GPIO; i++) {
+		struct ptp_pin_desc *ptp_pin = &shared->pin_config[i];
+
+		memset(ptp_pin, 0, sizeof(*ptp_pin));
+		snprintf(ptp_pin->name,
+			 sizeof(ptp_pin->name), "lan8814_ptp_pin_%02d", i);
+		ptp_pin->index = i;
+		ptp_pin->func =  PTP_PF_NONE;
+	}
+
+	shared->gpio_pin = -1;
 	shared->ptp_clock_info.owner = THIS_MODULE;
 	snprintf(shared->ptp_clock_info.name, 30, "%s", phydev->drv->name);
 	shared->ptp_clock_info.max_adj = 31249999;
 	shared->ptp_clock_info.n_alarm = 0;
 	shared->ptp_clock_info.n_ext_ts = 0;
-	shared->ptp_clock_info.n_pins = 0;
+	shared->ptp_clock_info.n_pins = LAN8814_N_GPIO;
 	shared->ptp_clock_info.pps = 0;
-	shared->ptp_clock_info.pin_config = NULL;
+	shared->ptp_clock_info.pin_config = shared->pin_config;
+	shared->ptp_clock_info.n_per_out = LAN8814_PTP_N_PEROUT;
 	shared->ptp_clock_info.adjfine = lan8814_ptpci_adjfine;
 	shared->ptp_clock_info.adjtime = lan8814_ptpci_adjtime;
 	shared->ptp_clock_info.gettime64 = lan8814_ptpci_gettime64;
