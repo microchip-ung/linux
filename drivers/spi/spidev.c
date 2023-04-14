@@ -731,7 +731,7 @@ static const struct of_device_id spidev_dt_ids[] = {
 	{ .compatible = "mchp,cpld", .data = &spidev_of_check },
 	{ .compatible = "mchp,cpld_fifo", .data = &spidev_of_check },
 	{ .compatible = "mchp,t1e1j1", .data = &spidev_of_check },
-	{ .compatible = "spidev", .data = &spidev_of_check },
+	{ .compatible = "spidev" },
 	{},
 };
 MODULE_DEVICE_TABLE(of, spidev_dt_ids);
