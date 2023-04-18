@@ -17,7 +17,7 @@
 #include <linux/delay.h>
 
 #include "lan966x_pci_irq.h"
-#include "lan966x_pci_regs_sr.h"
+#include "lan966x_pci_regs.h"
 
 #define CPU_TARGET_OFFSET		0xc0000
 #define CPU_TARGET_LENGTH		0x10000
