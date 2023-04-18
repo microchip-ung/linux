@@ -135,6 +135,12 @@
 	};
 };
 
+&gpio {
+	/delete-property/ interrupts;
+	/delete-property/ interrupt-controller;
+	/delete-property/ #interrupt-cells;
+};
+
 &qspi0 {
 	status = "okay";
 
@@ -176,4 +182,15 @@
 	gpio@1 {
 		ngpios = <128>;
 	};
+};
+
+&uio0 {
+	interrupts = <GIC_SPI 17 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI  8 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI  9 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI  7 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 16 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 15 IRQ_TYPE_LEVEL_HIGH>;
+	interrupt-names = "master", "ptp_sync", "ptp_rdy", "oam_vop",
+			  "sgpio", "gpio";
 };
