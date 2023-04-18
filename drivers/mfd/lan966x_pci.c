@@ -19,7 +19,7 @@
 #include <linux/pci.h>
 #include <linux/delay.h>
 
-#include "lan966x_pci_regs_sr.h"
+#include "lan966x_pci_regs.h"
 
 #define LAN_OFFSET_(id, tinst, tcnt,			\
 		    gbase, ginst, gcnt, gwidth,		\
