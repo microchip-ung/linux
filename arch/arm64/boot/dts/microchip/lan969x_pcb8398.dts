@@ -18,6 +18,12 @@
 		stdout-path = "serial0:115200n8";
 	};
 
+	gpio-restart {
+		compatible = "gpio-restart";
+		gpios = <&gpio 2 GPIO_ACTIVE_LOW>;
+		priority = <200>;
+	};
+
 	i2c-mux {
 		compatible = "i2c-mux-gpio";
 		#address-cells = <1>;
