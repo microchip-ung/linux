@@ -271,15 +271,15 @@
 };
 
 &genet {
-	phy-handle = <&phy1>;
+	phy-handle = <&phy0>;
 	phy-mode = "rgmii-rxid";
 	status = "okay";
 };
 
 &genet_mdio {
-	phy1: ethernet-phy@1 {
+	phy0: ethernet-phy@0 {
 		/* No PHY interrupt */
-		reg = <0x1>;
+		reg = <0x0>;
 	};
 };
 
