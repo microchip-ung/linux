@@ -475,5 +475,13 @@
 			resets = <&reset 0>;
 			reset-names = "switch";
 		};
+
+		/* Used by symreg tool, DO NOT upstream */
+		uio0: vcoreiii_switch@600000000 {
+			compatible = "microchip,uio_sparx5_irqmux";
+			reg = <0x6 0x00000000 0x12000000>;
+			reg-names = "origin1_2";
+			status = "disabled";
+		};
 	};
 };

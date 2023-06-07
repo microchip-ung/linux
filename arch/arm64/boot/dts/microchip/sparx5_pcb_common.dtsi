@@ -17,3 +17,8 @@
 &i2c0 {
 	status = "okay";
 };
+
+/* Used by symreg tool, DO NOT upstream */
+&uio0 {
+	status = "okay";
+};
