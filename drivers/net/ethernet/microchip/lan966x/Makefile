@@ -16,7 +16,8 @@ lan966x-switch-objs  := lan966x_main.o lan966x_phylink.o lan966x_port.o \
 lan966x-switch-objs +=  lan966x_afi.o lan966x_vcap_impl.o lan966x_vcap_ag_api.o \
 			lan966x_qos.o lan966x_tc_flower.o lan966x_netlink_fp.o \
 			lan966x_netlink_frer.o lan966x_netlink_qos.o \
-			lan966x_mrp.o lan966x_vcap_utils.o lan966x_cfm.o
+			lan966x_mrp.o lan966x_vcap_utils.o lan966x_cfm.o \
+			lan966x_netlink_pmac.o lan966x_pmac.o
 
 obj-$(CONFIG_LAN966X_SWITCH_APPL) += lan966x-appl.o
 lan966x-appl-y := lan966x_main_appl.o
