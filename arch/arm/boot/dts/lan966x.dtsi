@@ -71,6 +71,12 @@
 		status = "okay";
 	};
 
+	uio1: mscc_sram@100000 {
+		compatible = "microchip,uio_lan966x_irqmux";
+		reg = <0x00100000 0x20000>;
+		status = "okay";
+	};
+
 	clks: clock-controller@e00c00a8 {
 		compatible = "microchip,lan966x-gck";
 		#clock-cells = <1>;
