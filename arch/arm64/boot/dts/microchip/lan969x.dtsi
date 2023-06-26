@@ -56,7 +56,7 @@
 		fabric_clk: fabric-clk {
 			compatible = "fixed-clock";
 			#clock-cells = <0>;
-			clock-frequency = <200000000>;
+			clock-frequency = <250000000>;
 		};
 	};
 
