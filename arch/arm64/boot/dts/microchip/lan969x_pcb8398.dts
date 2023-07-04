@@ -447,6 +447,7 @@
 &mdio0 {
 	pinctrl-0 = <&mdio_pins>, <&mdio_irq_pins>;
 	pinctrl-names = "default";
+	reset-gpios = <&gpio 62 GPIO_ACTIVE_LOW>;
 	status = "okay";
 
 	phy3: phy@3 {
