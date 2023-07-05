@@ -21,6 +21,7 @@
 	gpio-restart {
 		compatible = "gpio-restart";
 		gpios = <&gpio 2 GPIO_ACTIVE_LOW>;
+		open-source;
 		priority = <200>;
 	};
 
