@@ -19,11 +19,14 @@
 #define CUPHY_CTRL_REG 0x7c
 #define CUPHY_CTRL_BIT BIT(14)
 
+struct mchp_reset_context;
+
 struct reset_props {
 	u32 protect_reg;
 	u32 protect_bit;
 	u32 reset_reg;
 	u32 reset_bit;
+	int (*reset)(struct mchp_reset_context*);
 };
 
 struct mchp_reset_context {
@@ -41,6 +44,11 @@ static struct regmap_config sparx5_reset_regmap_config = {
 	.val_bits	= 32,
 	.reg_stride	= 4,
 };
+
+static int lan969x_switch_reset(struct mchp_reset_context *ctx)
+{
+	return 0;
+}
 
 static int sparx5_switch_reset(struct mchp_reset_context *ctx)
 {
@@ -160,7 +168,7 @@ static int mchp_sparx5_reset_probe(struct platform_device *pdev)
 	ctx->props = device_get_match_data(&pdev->dev);
 
 	/* Issue the reset very early, our actual reset callback is a noop. */
-	err = sparx5_switch_reset(ctx);
+	err = ctx->props->reset(ctx);
 	if (err)
 		return err;
 
@@ -172,6 +180,7 @@ static const struct reset_props reset_props_sparx5 = {
 	.protect_bit    = BIT(10),
 	.reset_reg      = 0x0,
 	.reset_bit      = BIT(1),
+	.reset          = sparx5_switch_reset,
 };
 
 static const struct reset_props reset_props_lan966x = {
@@ -179,6 +188,15 @@ static const struct reset_props reset_props_lan966x = {
 	.protect_bit    = BIT(5),
 	.reset_reg      = 0x0,
 	.reset_bit      = BIT(1),
+	.reset          = sparx5_switch_reset,
+};
+
+static const struct reset_props reset_props_lan969x = {
+	.protect_reg    = 0x88,
+	.protect_bit    = BIT(5),
+	.reset_reg      = 0x0,
+	.reset_bit      = BIT(1),
+	.reset          = lan969x_switch_reset,
 };
 
 static const struct of_device_id mchp_sparx5_reset_of_match[] = {
@@ -188,6 +206,9 @@ static const struct of_device_id mchp_sparx5_reset_of_match[] = {
 	}, {
 		.compatible = "microchip,lan966x-switch-reset",
 		.data = &reset_props_lan966x,
+	}, {
+		.compatible = "microchip,lan969x-switch-reset",
+		.data = &reset_props_lan969x,
 	},
 	{ }
 };
