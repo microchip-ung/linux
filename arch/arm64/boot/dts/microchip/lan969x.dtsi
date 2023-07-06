@@ -341,7 +341,6 @@
 			#dma-cells = <1>;
 			clocks = <&fabric_clk>;
 			clock-names = "dma_clk";
-			status = "disabled";
 		};
 
 		sha: crypto@e006c000 {
