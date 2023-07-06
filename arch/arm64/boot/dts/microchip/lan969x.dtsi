@@ -459,6 +459,29 @@
 			status = "disabled";
 		};
 
+		usb0: usb@300000 {
+			compatible = "microchip,lan966x-dwc3";
+			clocks = <&clks GCK_GATE_USB_DRD>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges;
+			status = "disabled";
+
+			usb0_dwc3: usb_dwc3@300000 {
+				compatible = "snps,dwc3";
+				reg = <0x300000 0x80000>;
+				interrupts = <GIC_SPI 80 IRQ_TYPE_LEVEL_HIGH>;
+				dr_mode = "host";
+				clocks = <&clks GCK_ID_USB_REFCLK>;
+				clock-names = "ref";
+                                assigned-clocks = <&clks GCK_ID_USB_REFCLK>;
+                                assigned-clock-rates = <60000000>;
+				maximum-speed = "full-speed";
+				phy-names = "usb2-phy", "usb3-phy";
+				status = "okay";
+			};
+		};
+
 		reset: reset-controller@e201000c {
 			compatible = "microchip,lan966x-switch-reset";
 			reg = <0xe201000c 0x4>;
