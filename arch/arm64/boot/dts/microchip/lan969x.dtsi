@@ -473,8 +473,8 @@
 				dr_mode = "host";
 				clocks = <&clks GCK_ID_USB_REFCLK>;
 				clock-names = "ref";
-                                assigned-clocks = <&clks GCK_ID_USB_REFCLK>;
-                                assigned-clock-rates = <60000000>;
+				assigned-clocks = <&clks GCK_ID_USB_REFCLK>;
+				assigned-clock-rates = <60000000>;
 				maximum-speed = "full-speed";
 				phy-names = "usb2-phy", "usb3-phy";
 				status = "okay";
