@@ -88,6 +88,11 @@
 		mod-def0-gpios = <&sgpio_in 9 1 GPIO_ACTIVE_LOW>;
 		tx-fault-gpios = <&sgpio_in 9 2 GPIO_ACTIVE_HIGH>;
 	};
+
+	switch_ifmux {
+		compatible = "microchip,lan969x-ifmux";
+		status = "okay";
+	};
 };
 
 &flx0 {

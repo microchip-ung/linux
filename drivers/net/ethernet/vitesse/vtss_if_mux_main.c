@@ -118,6 +118,18 @@ static const u8 hdr_tmpl_vlan_lan966x[IFH_ENCAP_LEN(IFH_LEN_LAN966X)+4] = {
         _vlantag,
 };
 
+static const u8 hdr_tmpl_vlan_lan969x[IFH_ENCAP_LEN(IFH_LEN_LAN969X)+4] = {
+        _encap(IFH_ID_LAN969X),
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        /* v-rsv1 1 vq-ingr-drop-mode 1 */
+        0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+        /* f-update-fcs 1 f-src-port 65 m-pipeline-act 2 */
+        0x00, 0x00, 0x00, 0x08, 0x00, 0x10, 0x48, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        _vlantag,
+};
+
 static const u8 hdr_tmpl_port_luton[IFH_ENCAP_LEN(IFH_LEN_LUTON)] = {
         _encap(IFH_ID_LUTON),
         0x80, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00, 0x00, /* BYPASS=1, POP_CNT=3 */
@@ -176,6 +188,17 @@ static const u8 hdr_tmpl_port_lan966x[IFH_ENCAP_LEN(IFH_LEN_LAN966X)] = {
         0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00
+};
+
+static const u8 hdr_tmpl_port_lan969x[IFH_ENCAP_LEN(IFH_LEN_LAN969X)] = {
+        _encap(IFH_ID_LAN969X),
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        /* v-rsv1 1 vq-ingr-drop-mode 1 */
+        0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+        /* f-update-fcs 1 f-src-port 65 f-do-not-rew m-pipeline-act 1 m-pipeline-pt 16 */
+        0x00, 0x00, 0x00, 0x08, 0x00, 0x10, 0x66, 0x00,
         0x00, 0x00, 0x00, 0x00
 };
 
@@ -349,6 +372,9 @@ rx_handler_result_t vtss_if_mux_rx_handler(struct sk_buff **pskb)
     } else if (vtss_if_mux_chip->soc == SOC_LAN966X) {
             chip_port = lan966x_ifh_extract(&skb->data[IFH_OFF], 141, 4);
             vid = lan966x_ifh_extract(&skb->data[IFH_OFF], 103, 17) & 0xfff;
+    } else if (vtss_if_mux_chip->soc == SOC_LAN969X) {
+            chip_port = lan966x_ifh_extract(&skb->data[IFH_OFF], 124, 12);
+            vid = lan966x_ifh_extract(&skb->data[IFH_OFF], 108, 16);
     } else {
             if (printk_ratelimit())
                     printk("Invalid architecture type\n");
@@ -799,6 +825,21 @@ static const struct ifmux_chip lan966x_chip = {
         .set_vlan_value     = set_vlan_id,
 };
 
+static const struct ifmux_chip lan969x_chip = {
+        .soc                    = SOC_LAN969X,
+        .ifh_id             = IFH_ID_LAN969X,
+        .ifh_len            = IFH_LEN_LAN969X,
+        .ifh_encap_len      = IFH_LEN_LAN969X + 2*ETH_ALEN + VLAN_HLEN,
+        .ifh_offs_port_mask = IFH_OFFS_PORT_MASK_LAN969X,
+        .cpu_port            = 30, /* CPU port 0 == chip port 30 on lan969x */
+        .hdr_tmpl_vlan            = hdr_tmpl_vlan_lan969x,
+        .hdr_tmpl_port            = hdr_tmpl_port_lan969x,
+        .ifh_encap_vlan_len = sizeof(hdr_tmpl_vlan_lan969x),
+        .ifh_encap_port_len = sizeof(hdr_tmpl_port_lan969x),
+        .set_port_value     = set_bitmapped_port,
+        .set_vlan_value     = set_vlan_id,
+};
+
 static const struct of_device_id mscc_ifmux_id_table[] = {
         {
                 .compatible = "mscc,luton-ifmux",
@@ -827,6 +868,10 @@ static const struct of_device_id mscc_ifmux_id_table[] = {
         {
                 .compatible = "microchip,lan966x-ifmux",
                 .data = &lan966x_chip,
+        },
+        {
+                .compatible = "microchip,lan969x-ifmux",
+                .data = &lan969x_chip,
         },
         {}
 };
