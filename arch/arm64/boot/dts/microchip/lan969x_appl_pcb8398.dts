@@ -89,6 +89,15 @@
 		tx-fault-gpios = <&sgpio_in 9 2 GPIO_ACTIVE_HIGH>;
 	};
 
+	switch_vtss {
+		compatible = "mchp,lan969x-switch-appl";
+		reg = <0xe2030000 0x20000>;
+		reg-names = "qs";
+
+		interrupts = <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "xtr";
+	};
+
 	switch_ifmux {
 		compatible = "microchip,lan969x-ifmux";
 		status = "okay";
