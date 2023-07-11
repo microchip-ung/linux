@@ -124,8 +124,8 @@ static const u8 hdr_tmpl_vlan_lan969x[IFH_ENCAP_LEN(IFH_LEN_LAN969X)+4] = {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         /* v-rsv1 1 vq-ingr-drop-mode 1 */
         0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
-        /* f-update-fcs 1 f-src-port 65 m-pipeline-act 2 */
-        0x00, 0x00, 0x00, 0x08, 0x00, 0x10, 0x48, 0x00,
+        /* f-update-fcs 1 f-src-port 30 m-pipeline-act 2 */
+        0x00, 0x00, 0x00, 0x04, 0x00, 0x7, 0xaa, 0x20,
         0x00, 0x00, 0x00, 0x00,
         _vlantag,
 };
@@ -197,8 +197,8 @@ static const u8 hdr_tmpl_port_lan969x[IFH_ENCAP_LEN(IFH_LEN_LAN969X)] = {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         /* v-rsv1 1 vq-ingr-drop-mode 1 */
         0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
-        /* f-update-fcs 1 f-src-port 65 f-do-not-rew m-pipeline-act 1 m-pipeline-pt 16 */
-        0x00, 0x00, 0x00, 0x08, 0x00, 0x10, 0x66, 0x00,
+        /* f-update-fcs 1 f-src-port 30 f-do-not-rew m-pipeline-act 1 m-pipeline-pt 17 */
+        0x00, 0x00, 0x00, 0x04, 0x00, 0x07, 0x86, 0x20,
         0x00, 0x00, 0x00, 0x00
 };
 
@@ -373,8 +373,8 @@ rx_handler_result_t vtss_if_mux_rx_handler(struct sk_buff **pskb)
             chip_port = lan966x_ifh_extract(&skb->data[IFH_OFF], 141, 4);
             vid = lan966x_ifh_extract(&skb->data[IFH_OFF], 103, 17) & 0xfff;
     } else if (vtss_if_mux_chip->soc == SOC_LAN969X) {
-            chip_port = lan966x_ifh_extract(&skb->data[IFH_OFF], 124, 12);
-            vid = lan966x_ifh_extract(&skb->data[IFH_OFF], 108, 16);
+            chip_port = (skb->data[IFH_OFF + 25] & 0x3f) >> 1;
+            vid = (skb->data[IFH_OFF + 19] | skb->data[IFH_OFF + 20]) & 0xfff;
     } else {
             if (printk_ratelimit())
                     printk("Invalid architecture type\n");
@@ -646,8 +646,8 @@ static void set_numbered_port(struct ifmux_chip *cfg, u8 *hdr, u16 port)
     // The source port value is hardcoded in the template
     // Set the destination port value: the port mask offset is LSB
     offset = cfg->ifh_offs_port_mask / 8;
-    hdr[offset] = (port << 5) & 0xe0;
-    hdr[offset-1] = (port >>  3) & 0x1f;
+    hdr[offset] = hdr[offset] | ((port << 5) & 0xe0);
+    hdr[offset-1] = hdr[offset-1] | ((port >>  3) & 0x1f);
 
 }
 
@@ -836,8 +836,8 @@ static const struct ifmux_chip lan969x_chip = {
         .hdr_tmpl_port            = hdr_tmpl_port_lan969x,
         .ifh_encap_vlan_len = sizeof(hdr_tmpl_vlan_lan969x),
         .ifh_encap_port_len = sizeof(hdr_tmpl_port_lan969x),
-        .set_port_value     = set_bitmapped_port,
-        .set_vlan_value     = set_vlan_id,
+        .set_port_value     = set_numbered_port,
+        .set_vlan_value     = set_vlan_id_sparx5,
 };
 
 static const struct of_device_id mscc_ifmux_id_table[] = {
