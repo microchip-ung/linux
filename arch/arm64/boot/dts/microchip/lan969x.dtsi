@@ -550,12 +550,9 @@
 		};
 
 		hwmon: hwmon@e2020100 {
-			compatible = "microchip,lan969x-hwmon";
-			reg = <0xe2020100 0xc>,
-			      <0xe2010348 0xc>;
-			reg-names = "pvt", "fan";
+			compatible = "microchip,sparx5-temp";
+			reg = <0xe2020100 0xc>;
 			clocks = <&fx100_clk>;
-			status = "disabled";
 		};
 
 		serdes: serdes@e3410000 {
