@@ -418,6 +418,11 @@
 		function = "emmc_sd";
 	};
 
+	fan_pins: fan-pins {
+		pins = "GPIO_25", "GPIO_26";
+		function = "fan";
+	};
+
 	fc0_pins: fc0-pins {
 		pins = "GPIO_3", "GPIO_4";
 		function = "fc";
@@ -465,6 +470,11 @@
 		pins = "GPIO_1";
 		function = "usb_power";
 	};
+};
+
+&hwmon {
+	pinctrl-0 = <&fan_pins>;
+	pinctrl-names = "default";
 };
 
 &mdio0 {
