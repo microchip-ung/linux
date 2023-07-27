@@ -482,7 +482,7 @@
 		};
 
 		reset: reset-controller@e201000c {
-			compatible = "microchip,lan969x-switch-reset";
+			compatible = "microchip,lan966x-switch-reset";
 			reg = <0xe201000c 0x4>;
 			reg-names = "gcb";
 			#reset-cells = <1>;
