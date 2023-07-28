@@ -493,7 +493,7 @@
 		gpio: pinctrl@e20100d4 {
 			compatible = "microchip,lan969x-pinctrl";
 			reg = <0xe20100d4 0xd4>,
-			      <0xe2010370 0xd4>;
+			      <0xe2010370 0xa8>;
 			gpio-controller;
 			#gpio-cells = <2>;
 			gpio-ranges = <&gpio 0 0 66>;
