@@ -12,6 +12,10 @@
 	model = "lan969x_appl_pcb8398";
 	aliases {
 		serial0 = &usart0;
+		i2c100 = &i2c_sfp0;
+		i2c101 = &i2c_sfp1;
+		i2c102 = &i2c_sfp2;
+		i2c103 = &i2c_sfp3;
 	};
 
 	chosen {
