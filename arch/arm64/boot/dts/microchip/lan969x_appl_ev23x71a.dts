@@ -9,7 +9,7 @@
 #include "lan969x.dtsi"
 
 / {
-	model = "lan969x_appl_pcb8398";
+	model = "lan969x appl ev23x71a (pcb8398)";
 	aliases {
 		serial0 = &usart0;
 		i2c100 = &i2c_sfp0;

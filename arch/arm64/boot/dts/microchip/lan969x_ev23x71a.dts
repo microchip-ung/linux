@@ -9,7 +9,7 @@
 #include "lan969x.dtsi"
 
 / {
-	model = "lan969x_pcb8398";
+	model = "lan969x ev23x71a (pcb8398)";
 	aliases {
 		serial0 = &usart0;
 	};
