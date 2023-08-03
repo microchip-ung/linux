@@ -368,7 +368,6 @@
 			reg = <0xe0090000 0x1000>;
 			interrupts = <GIC_SPI 36 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&fabric_clk>;
-			status = "disabled";
 		};
 
 		cpu_ctrl: syscon@e00c0000 {
