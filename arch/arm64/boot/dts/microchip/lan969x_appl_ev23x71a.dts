@@ -59,8 +59,9 @@
 
 	switch_vtss {
 		compatible = "mchp,lan969x-switch-appl";
-		reg = <0xe2030000 0x20000>;
-		reg-names = "qs";
+		reg = <0xe2030000 0x20000>,
+		      <0xe3200000 0x10000>;
+		reg-names = "qs", "asm";
 
 		interrupts = <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>;
 		interrupt-names = "xtr";
