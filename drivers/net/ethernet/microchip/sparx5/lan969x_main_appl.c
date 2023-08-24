@@ -124,6 +124,21 @@
 #define QS_INJ_STATUS_INJ_IN_PROGRESS_GET(x)\
 	FIELD_GET(QS_INJ_STATUS_INJ_IN_PROGRESS, x)
 
+/*      ASM:CFG:PORT_CFG */
+#define ASM_PORT_CFG(r)           __REG(TARGET_ASM, 0, 1, 18304, 0, 1, 1092, 540, r, 32, 4)
+
+#define ASM_PORT_CFG_FRM_AGING                   GENMASK(7, 7)
+#define ASM_PORT_CFG_FRM_AGING_DIS_SET(x)\
+	FIELD_PREP(ASM_PORT_CFG_FRM_AGING, x)
+#define ASM_PORT_CFG_FRM_AGING_DIS_GET(x)\
+	FIELD_GET(ASM_PORT_CFG_FRM_AGING, x)
+
+#define ASM_PORT_CFG_INJ_FORMAT_CFG              GENMASK(3, 2)
+#define ASM_PORT_CFG_INJ_FORMAT_CFG_SET(x)\
+	FIELD_PREP(ASM_PORT_CFG_INJ_FORMAT_CFG, x)
+#define ASM_PORT_CFG_INJ_FORMAT_CFG_GET(x)\
+	FIELD_GET(ASM_PORT_CFG_INJ_FORMAT_CFG, x)
+
 /* IFH ENCAP LEN is form of DMAC, SMAC, ETH_TYPE and ID */
 #define IFH_ENCAP_LEN	16
 static const u8 ifh_dmac[] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
@@ -152,9 +167,12 @@ static const u8 ifh_smac[] = { 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff };
 #define LAN969X_BUFFER_MIN_SZ		60
 #define LAN969X_BUFFER_CELL_SZ		64
 
+#define CPU_PORT			30
+
 enum lan969x_target {
 	TARGET_QS = 0,
-	NUM_TARGETS = 1,
+	TARGET_ASM = 1,
+	NUM_TARGETS = 2,
 };
 
 struct lan969x;
@@ -211,6 +229,20 @@ static inline void lan_wr(u32 val, struct lan969x *lan969x,
 	writel(val, lan_addr(lan969x->regs, id, tinst, tcnt,
 			     gbase, ginst, gcnt, gwidth,
 			     raddr, rinst, rcnt, rwidth));
+}
+
+static inline void lan_rmw(u32 val, u32 mask, struct lan969x *lan969x,
+			   int id, int tinst, int tcnt,
+			   int gbase, int ginst, int gcnt, int gwidth,
+			   int raddr, int rinst, int rcnt, int rwidth)
+{
+	u32 nval;
+
+	nval = readl(lan_addr(lan969x->regs, id, tinst, tcnt, gbase, ginst,
+			      gcnt, gwidth, raddr, rinst, rcnt, rwidth));
+	nval = (nval & ~mask) | (val & mask);
+	writel(nval, lan_addr(lan969x->regs, id, tinst, tcnt, gbase, ginst,
+			      gcnt, gwidth, raddr, rinst, rcnt, rwidth));
 }
 
 static int lan969x_rx_frame_word(struct lan969x *lan969x, u8 grp,
@@ -430,6 +462,17 @@ static int lan969x_change_mtu(struct net_device *dev, int new_mtu)
 	return 0;
 }
 
+static void lan969x_init(struct lan969x *lan969x)
+{
+	lan_rmw(QS_INJ_GRP_CFG_MODE_SET(1),
+		QS_INJ_GRP_CFG_MODE,
+		lan969x, QS_INJ_GRP_CFG(0));
+
+	lan_wr(ASM_PORT_CFG_INJ_FORMAT_CFG_SET(1) |
+	       ASM_PORT_CFG_FRM_AGING_DIS_SET(1),
+	       lan969x, ASM_PORT_CFG(CPU_PORT));
+}
+
 static const struct net_device_ops lan969x_port_netdev_ops = {
 	.ndo_open			= lan969x_port_open,
 	.ndo_stop			= lan969x_port_stop,
@@ -480,6 +523,8 @@ static int lan969x_appl_ifh(struct platform_device *pdev,
 		return -1;
 	}
 
+	lan969x_init(lan969x);
+
 	return 0;
 }
 
@@ -492,6 +537,7 @@ static int mchp_lan969x_probe(struct platform_device *pdev)
 		char *name;
 	} res[] = {
 		{ TARGET_QS, "qs" },
+		{ TARGET_ASM, "asm" },
 	};
 
 	lan969x = devm_kzalloc(&pdev->dev, sizeof(*lan969x), GFP_KERNEL);
