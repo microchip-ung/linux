@@ -468,6 +468,10 @@ static void lan969x_init(struct lan969x *lan969x)
 		QS_INJ_GRP_CFG_MODE,
 		lan969x, QS_INJ_GRP_CFG(0));
 
+	lan_rmw(QS_XTR_GRP_CFG_MODE_SET(1),
+		QS_XTR_GRP_CFG_MODE,
+		lan969x, QS_XTR_GRP_CFG(0));
+
 	lan_wr(ASM_PORT_CFG_INJ_FORMAT_CFG_SET(1) |
 	       ASM_PORT_CFG_FRM_AGING_DIS_SET(1),
 	       lan969x, ASM_PORT_CFG(CPU_PORT));
