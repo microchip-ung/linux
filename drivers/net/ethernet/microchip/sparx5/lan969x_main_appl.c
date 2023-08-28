@@ -348,7 +348,7 @@ static irqreturn_t lan969x_xtr_irq_handler(int irq, void *args)
 		 */
 		buf = (u32 *)skb_put(skb, IFH_LEN);
 		for (i = 0; i < IFH_LEN_WORDS; ++i)
-			*buf++ = htonl(ifh[i]);
+			*buf++ = ifh[i];
 
 		buf = (u32*)skb_tail_pointer(skb);
 

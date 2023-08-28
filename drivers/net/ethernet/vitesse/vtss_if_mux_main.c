@@ -373,8 +373,8 @@ rx_handler_result_t vtss_if_mux_rx_handler(struct sk_buff **pskb)
             chip_port = lan966x_ifh_extract(&skb->data[IFH_OFF], 141, 4);
             vid = lan966x_ifh_extract(&skb->data[IFH_OFF], 103, 17) & 0xfff;
     } else if (vtss_if_mux_chip->soc == SOC_LAN969X) {
-            chip_port = (skb->data[IFH_OFF + 25] & 0x3f) >> 1;
-            vid = (skb->data[IFH_OFF + 19] | skb->data[IFH_OFF + 20]) & 0xfff;
+            chip_port = (skb->data[IFH_OFF + 26] & 0x3f) >> 1;
+            vid = (skb->data[IFH_OFF + 18] | skb->data[IFH_OFF + 19]) & 0xfff;
     } else {
             if (printk_ratelimit())
                     printk("Invalid architecture type\n");
