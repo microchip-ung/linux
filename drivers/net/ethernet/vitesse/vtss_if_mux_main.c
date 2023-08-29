@@ -125,7 +125,7 @@ static const u8 hdr_tmpl_vlan_lan969x[IFH_ENCAP_LEN(IFH_LEN_LAN969X)+4] = {
         /* v-rsv1 1 vq-ingr-drop-mode 1 */
         0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
         /* f-update-fcs 1 f-src-port 30 m-pipeline-act 2 */
-        0x00, 0x00, 0x00, 0x04, 0x00, 0x7, 0xaa, 0x20,
+        0x00, 0x00, 0x00, 0x04, 0x7c, 0x07, 0x88, 0x00,
         0x00, 0x00, 0x00, 0x00,
         _vlantag,
 };
@@ -374,7 +374,7 @@ rx_handler_result_t vtss_if_mux_rx_handler(struct sk_buff **pskb)
             vid = lan966x_ifh_extract(&skb->data[IFH_OFF], 103, 17) & 0xfff;
     } else if (vtss_if_mux_chip->soc == SOC_LAN969X) {
             chip_port = (skb->data[IFH_OFF + 26] & 0x3f) >> 1;
-            vid = (skb->data[IFH_OFF + 18] | skb->data[IFH_OFF + 19]) & 0xfff;
+            vid = (((u16)(skb->data[IFH_OFF + 23]) << 8 | skb->data[IFH_OFF + 24]) >> 1) & 0xfff;
     } else {
             if (printk_ratelimit())
                     printk("Invalid architecture type\n");
