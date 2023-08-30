@@ -149,15 +149,16 @@ static const u8 ifh_smac[] = { 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff };
 #define IFH_LEN		36
 #define IFH_LEN_WORDS	9
 
-#define XTR_EOF_0			0x00000080U
-#define XTR_EOF_1			0x01000080U
-#define XTR_EOF_2			0x02000080U
-#define XTR_EOF_3			0x03000080U
-#define XTR_PRUNED			0x04000080U
-#define XTR_ABORT			0x05000080U
-#define XTR_ESCAPE			0x06000080U
-#define XTR_NOT_READY			0x07000080U
-#define XTR_VALID_BYTES(x)		(((x) >> 24) & 3)
+#define XTR_EOF_0     ntohl((__force __be32)0x80000000u)
+#define XTR_EOF_1     ntohl((__force __be32)0x80000001u)
+#define XTR_EOF_2     ntohl((__force __be32)0x80000002u)
+#define XTR_EOF_3     ntohl((__force __be32)0x80000003u)
+#define XTR_PRUNED    ntohl((__force __be32)0x80000004u)
+#define XTR_ABORT     ntohl((__force __be32)0x80000005u)
+#define XTR_ESCAPE    ntohl((__force __be32)0x80000006u)
+#define XTR_NOT_READY ntohl((__force __be32)0x80000007u)
+
+#define XTR_VALID_BYTES(x)      (4 - ((x) & 3))
 
 #define IFH_POS_SRCPORT			124
 #define IFH_WID_SRCPORT			12
@@ -297,13 +298,13 @@ static irqreturn_t lan969x_xtr_irq_handler(int irq, void *args)
 		return IRQ_NONE;
 
 	do {
+		bool eof_flag = false, pruned_flag = false, abort_flag = false;
 		u32 ifh[IFH_LEN_WORDS] = { 0 };
 		struct net_device *dev;
 		struct sk_buff *skb;
+		u32 byte_cnt = 0;
 		bool eof = false;
-		int sz, len;
 		u32 *buf;
-		u32 val;
 
 		for (i = 0; i < IFH_LEN_WORDS; i++) {
 			err = lan969x_rx_frame_word(lan969x, grp, &ifh[i], &eof);
@@ -352,33 +353,58 @@ static irqreturn_t lan969x_xtr_irq_handler(int irq, void *args)
 
 		buf = (u32*)skb_tail_pointer(skb);
 
-		len = 0;
-		eof = false;
-		do {
-			sz = lan969x_rx_frame_word(lan969x, grp, &val, &eof);
-			if (sz < 0) {
-				kfree_skb(skb);
-				goto recover;
-			}
+		/* Now, pull frame data */
+		while (!eof_flag) {
+			u32 val = lan_rd(lan969x, QS_XTR_RD(grp));
+			u32 cmp = val;
 
-			if (sz > 0) {
-				*buf++ = val;
-				len += sz;
+			switch (cmp) {
+			case XTR_NOT_READY:
+				break;
+			case XTR_ABORT:
+				/* No accompanying data */
+				abort_flag = true;
+				eof_flag = true;
+				break;
+			case XTR_EOF_0:
+			case XTR_EOF_1:
+			case XTR_EOF_2:
+			case XTR_EOF_3:
+				/* This assumes STATUS_WORD_POS == 1, Status
+				 * just after last data
+				 */
+				byte_cnt -= (4 - XTR_VALID_BYTES(val));
+				eof_flag = true;
+				break;
+			case XTR_PRUNED:
+				/* But get the last 4 bytes as well */
+				eof_flag = true;
+				pruned_flag = true;
+				fallthrough;
+			case XTR_ESCAPE:
+				*buf = lan_rd(lan969x, QS_XTR_RD(grp));
+				byte_cnt += 4;
+				buf++;
+				break;
+			default:
+				*buf = val;
+				byte_cnt += 4;
+				buf++;
 			}
-		} while (!eof);
+		}
 
-		if (sz < 0) {
+		if (abort_flag || pruned_flag || !eof_flag) {
 			kfree_skb(skb);
 			goto recover;
 		}
 
-		skb_put(skb, len);
+		skb_put(skb, byte_cnt);
 		skb->protocol = eth_type_trans(skb, skb->dev);
 
 		netif_rx(skb);
 
 recover:
-		if (sz < 0 || err)
+		if (err)
 			lan_rd(lan969x, QS_XTR_RD(grp));
 
 	} while (lan_rd(lan969x, QS_XTR_DATA_PRESENT) & BIT(grp));
