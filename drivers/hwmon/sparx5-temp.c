@@ -191,6 +191,18 @@ static const struct hwmon_chip_info s5_chip_info = {
 	.info = s5_info,
 };
 
+void __iomem *s5_get_opt_io_res(struct platform_device *pdev,
+				     unsigned int index)
+{
+	struct resource *res;
+
+	res = platform_get_resource(pdev, IORESOURCE_MEM, index);
+	if (!res)
+		return NULL;
+
+	return devm_ioremap_resource(&pdev->dev, res);
+}
+
 static int s5_temp_probe(struct platform_device *pdev)
 {
 	struct device *hwmon_dev;
@@ -204,9 +216,8 @@ static int s5_temp_probe(struct platform_device *pdev)
 	if (IS_ERR(hwmon->base))
 		return PTR_ERR(hwmon->base);
 
-	hwmon->fan = devm_platform_ioremap_resource(pdev, 1);
-	if (IS_ERR(hwmon->fan))
-		hwmon->fan = NULL;
+	/* Get optional fan resource */
+	hwmon->fan = s5_get_opt_io_res(pdev, 1);
 
 	hwmon->clk = devm_clk_get_enabled(&pdev->dev, NULL);
 	if (IS_ERR(hwmon->clk))
