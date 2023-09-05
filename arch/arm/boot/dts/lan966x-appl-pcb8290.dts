@@ -10,7 +10,6 @@
 	compatible = "microchip,lan966x-sunrise", "microchip,lan966x";
 
 	aliases {
-		serial1 = &usart0;
 		spi0 = &qspi0;
 		spi1 = &spi;
 	};
@@ -24,17 +23,6 @@
 
 &aes {
 	status = "disabled"; /* Reserved by secure OS */
-};
-
-&flx0 {
-	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_USART>;
-	status = "okay";
-
-	usart0: serial@200 {
-		pinctrl-0 = <&fc0_b_pins>;
-		pinctrl-names = "default";
-		status = "okay";
-	};
 };
 
 &flx3 {
