@@ -29,13 +29,6 @@
 /* Optimal power settings from GUC */
 #define SPX5_SERDES_QUIET_MODE_VAL 0x1EF4E0C
 
-enum sparx5_10g28cmu_mode {
-	SPX5_SD10G28_CMU_MAIN = 0,
-	SPX5_SD10G28_CMU_AUX1 = 1,
-	SPX5_SD10G28_CMU_AUX2 = 3,
-	SPX5_SD10G28_CMU_NONE = 4,
-};
-
 enum sparx5_sd25g28_mode_preset_type {
 	SPX5_SD25G28_MODE_PRESET_25000,
 	SPX5_SD25G28_MODE_PRESET_10000,
@@ -51,11 +44,6 @@ enum sparx5_sd10g28_mode_preset_type {
 	SPX5_SD10G28_MODE_PRESET_QSGMII,
 	SPX5_SD10G28_MODE_PRESET_SD_2G5,
 	SPX5_SD10G28_MODE_PRESET_1000BASEX,
-};
-
-struct sparx5_serdes_io_resource {
-	enum sparx5_serdes_target id;
-	phys_addr_t offset;
 };
 
 struct sparx5_sd25g28_mode_preset {
