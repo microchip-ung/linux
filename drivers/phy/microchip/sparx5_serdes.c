@@ -1087,7 +1087,7 @@ static void sparx5_serdes_cmu_power_off(struct sparx5_serdes_private *priv)
 	int i;
 
 	/* Power down each CMU */
-	for (i = 0; i < SPX5_CMU_MAX; i++) {
+	for (i = 0; i < priv->data->consts.cmu_max; i++) {
 		cmu_inst = sdx5_inst_get(priv, TARGET_SD_CMU, i);
 		cmu_cfg_inst = sdx5_inst_get(priv, TARGET_SD_CMU_CFG, i);
 
@@ -1632,7 +1632,7 @@ static int sparx5_sd10g28_apply_params(struct sparx5_serdes_macro *macro,
 	u32 value, cmu_idx;
 	int err;
 
-	cmu_idx = sparx5_serdes_cmu_get(params->cmu_sel, macro->sidx);
+	cmu_idx = priv->data->ops.serdes_cmu_get(params->cmu_sel, macro->sidx);
 	err = sparx5_cmu_cfg(priv, cmu_idx);
 	if (err)
 		return err;
@@ -2372,16 +2372,8 @@ static int sparx5_phy_create(struct sparx5_serdes_private *priv,
 	macro->sidx = idx;
 	macro->priv = priv;
 	macro->speed = SPEED_UNKNOWN;
-	if (idx < SPX5_SERDES_10G_START) {
-		macro->serdestype = SPX5_SDT_6G;
-		macro->stpidx = macro->sidx;
-	} else if (idx < SPX5_SERDES_25G_START) {
-		macro->serdestype = SPX5_SDT_10G;
-		macro->stpidx = macro->sidx - SPX5_SERDES_10G_START;
-	} else {
-		macro->serdestype = SPX5_SDT_25G;
-		macro->stpidx = macro->sidx - SPX5_SERDES_25G_START;
-	}
+
+	priv->data->ops.serdes_type_set(macro, idx);
 
 	phy_set_drvdata(*phy, macro);
 
@@ -2516,7 +2508,7 @@ static struct phy *sparx5_serdes_xlate(struct device *dev,
 	sidx = args->args[0];
 
 	/* Check validity: ERR_PTR(-ENODEV) if not valid */
-	for (idx = 0; idx < SPX5_SERDES_MAX; idx++) {
+	for (idx = 0; idx < priv->data->consts.sd_max; idx++) {
 		struct sparx5_serdes_macro *macro =
 			phy_get_drvdata(priv->phys[idx]);
 
@@ -2578,12 +2570,13 @@ static int sparx5_serdes_probe(struct platform_device *pdev)
 			iores->name);
 		return -ENOMEM;
 	}
-	for (idx = 0; idx < ARRAY_SIZE(sparx5_serdes_iomap); idx++) {
-		struct sparx5_serdes_io_resource *iomap = &sparx5_serdes_iomap[idx];
+	for (idx = 0; idx < priv->data->iomap_size; idx++) {
+		const struct sparx5_serdes_io_resource *iomap =
+			&priv->data->iomap[idx];
 
 		priv->regs[iomap->id] = iomem + iomap->offset;
 	}
-	for (idx = 0; idx < SPX5_SERDES_MAX; idx++) {
+	for (idx = 0; idx < priv->data->consts.sd_max; idx++) {
 		err = sparx5_phy_create(priv, idx, &priv->phys[idx]);
 		if (err)
 			return err;
