@@ -13,6 +13,7 @@
 
 enum sparx5_target {
 	SPX5_TARGET_SPARX5,
+	SPX5_TARGET_LAN969X,
 };
 
 enum sparx5_serdes_type {
