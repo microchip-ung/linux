@@ -559,7 +559,7 @@
 			compatible = "microchip,lan969x-serdes";
 			#phy-cells = <1>;
 			clocks = <&fabric_clk>;
-			reg = <0xe3410000 0x114000>;
+			reg = <0xe3410000 0x150000>;
 		};
 
 		gic: interrupt-controller@e8c11000 {
