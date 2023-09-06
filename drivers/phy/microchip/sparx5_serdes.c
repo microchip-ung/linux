@@ -1048,45 +1048,37 @@ static int sparx5_cmu_cfg(struct sparx5_serdes_private *priv, u32 cmu_idx)
 	return sparx5_cmu_apply_cfg(priv, cmu_idx, cmu_tgt, cmu_cfg_tgt, spd10g);
 }
 
-/* Get the index of the CMU which provides the clock for the specified serdes
- * index and CMU mode. CMU indexes are derived from the GUC macro connections
- * document for Sparx5.
+/* Map of 6G/10G serdes mode and index to CMU index. */
+static const int
+sparx5_serdes_cmu_map[SPX5_SD10G28_CMU_MAX][SPX5_SERDES_25G_START] = {
+	[SPX5_SD10G28_CMU_MAIN] = { 2,   2,  2,  2,  2,
+				    2,   2,  2,  5,  5,
+				    5,   5,  5,  5,  5,
+				    5,   8, 11, 11, 11,
+				   11,  11, 11, 11, 11 },
+	[SPX5_SD10G28_CMU_AUX1] = { 0,  0,  3,  3,  3,
+				    3,  3,  3,  3,  3,
+				    6,  6,  6,  6,  6,
+				    6,  6,  9,  9, 12,
+				   12, 12, 12, 12, 12  },
+	[SPX5_SD10G28_CMU_AUX2] = { 1,  1,  1,  1,  4,
+				    4,  4,  4,  4,  4,
+				    4,  4,  7,  7,  7,
+				    7,  7, 10, 10, 10,
+				   10, 13, 13, 13, 13  },
+	[SPX5_SD10G28_CMU_NONE] = { 1,  1,  1,  1,  4,
+				    4,  4,  4,  4,  4,
+				    4,  4,  7,  7,  7,
+				    7,  7, 10, 10, 10,
+				   10, 13, 13, 13, 13  },
+};
+
+/* Sparx5 - Get the index of the CMU which provides the clock for the specified
+ * serdes mode and index.
  */
 static int sparx5_serdes_cmu_get(enum sparx5_10g28cmu_mode mode, int sd_index)
 {
-	if (mode == SPX5_SD10G28_CMU_MAIN) {
-		if (sd_index < 8)
-			return 2;
-		else if (sd_index < 16)
-			return 5;
-		else if (sd_index == 16)
-			return 8;
-		else
-			return 11;
-	} else if (mode == SPX5_SD10G28_CMU_AUX1) {
-		if (sd_index < 2)
-			return 0;
-		else if (sd_index < 10)
-			return 3;
-		else if (sd_index < 17)
-			return 6;
-		else if (sd_index < 19)
-			return 9;
-		else
-			return 12;
-	} else {
-		/* AUX2 */
-		if (sd_index < 4)
-			return 1;
-		else if (sd_index < 12)
-			return 4;
-		else if (sd_index < 17)
-			return 7;
-		else if (sd_index < 21)
-			return 10;
-		else
-			return 13;
-	}
+	return sparx5_serdes_cmu_map[mode][sd_index];
 }
 
 static void sparx5_serdes_cmu_power_off(struct sparx5_serdes_private *priv)
@@ -2350,6 +2342,20 @@ static const struct phy_ops sparx5_serdes_ops = {
 	.owner		= THIS_MODULE,
 };
 
+static void sparx5_serdes_type_set(struct sparx5_serdes_macro *macro, int sidx)
+{
+	if (sidx < SPX5_SERDES_10G_START) {
+		macro->serdestype = SPX5_SDT_6G;
+		macro->stpidx = macro->sidx;
+	} else if (sidx < SPX5_SERDES_25G_START) {
+		macro->serdestype = SPX5_SDT_10G;
+		macro->stpidx = macro->sidx - SPX5_SERDES_10G_START;
+	} else {
+		macro->serdestype = SPX5_SDT_25G;
+		macro->stpidx = macro->sidx - SPX5_SERDES_25G_START;
+	}
+}
+
 static int sparx5_phy_create(struct sparx5_serdes_private *priv,
 			   int idx, struct phy **phy)
 {
@@ -2482,6 +2488,20 @@ static struct sparx5_serdes_io_resource sparx5_serdes_iomap[] =  {
 	{ TARGET_SD_LANE_25G + 7, 0x5c8000 }, /* 0x610dd0000: sd_lane_25g_32 */
 };
 
+static const struct sparx5_serdes_match_data sparx5_desc = {
+	.type = SPX5_TARGET_SPARX5,
+	.iomap = sparx5_serdes_iomap,
+	.iomap_size = ARRAY_SIZE(sparx5_serdes_iomap),
+	.consts = {
+		.sd_max       = 33,
+		.cmu_max      = 10,
+	},
+	.ops = {
+		.serdes_type_set      = &sparx5_serdes_type_set,
+		.serdes_cmu_get       = &sparx5_serdes_cmu_get,
+	},
+};
+
 /* Client lookup function, uses serdes index */
 static struct phy *sparx5_serdes_xlate(struct device *dev,
 				     struct of_phandle_args *args)
@@ -2530,6 +2550,10 @@ static int sparx5_serdes_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, priv);
 	priv->dev = &pdev->dev;
 
+	priv->data = device_get_match_data(priv->dev);
+	if (!priv->data)
+		return -EINVAL;
+
 	/* Get coreclock */
 	clk = devm_clk_get(priv->dev, NULL);
 	if (IS_ERR(clk)) {
@@ -2574,7 +2598,7 @@ static int sparx5_serdes_probe(struct platform_device *pdev)
 }
 
 static const struct of_device_id sparx5_serdes_match[] = {
-	{ .compatible = "microchip,sparx5-serdes" },
+	{ .compatible = "microchip,sparx5-serdes", .data = &sparx5_desc },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, sparx5_serdes_match);
