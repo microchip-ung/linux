@@ -345,6 +345,18 @@ struct sparx5 {
 	struct mutex tas_lock;
 };
 
+struct sparx5_regs {
+	const unsigned int *gaddr;
+	const unsigned int *gcnt;
+	const unsigned int *gsize;
+	const unsigned int *raddr;
+	const unsigned int *rcnt;
+	const unsigned int *fpos;
+};
+
+/* sparx5_main.c */
+extern const struct sparx5_regs *regs;
+
 /* sparx5_switchdev.c */
 int sparx5_register_notifier_blocks(struct sparx5 *sparx5);
 void sparx5_unregister_notifier_blocks(struct sparx5 *sparx5);

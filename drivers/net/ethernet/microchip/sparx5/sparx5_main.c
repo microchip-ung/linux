@@ -31,6 +31,8 @@
 #include "sparx5_debugfs.h"
 #include "sparx5_qos.h"
 
+const struct sparx5_regs *regs;
+
 #define QLIM_WM(fraction) \
 	((SPX5_BUFFER_MEMORY / SPX5_BUFFER_CELL_SZ - 100) * (fraction) / 100)
 #define IO_RANGES 3
