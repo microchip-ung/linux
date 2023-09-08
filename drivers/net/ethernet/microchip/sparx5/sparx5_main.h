@@ -350,6 +350,9 @@ struct sparx5_consts {
 	int chip_ports;
 	int chip_ports_all;
 	int buffer_memory;
+	int res_cfg_max_port_idx;
+	int res_cfg_max_prio_idx;
+	int res_cfg_max_colour_idx;
 };
 
 struct sparx5_regs {

@@ -565,16 +565,19 @@ static int sparx5_init_coreclock(struct sparx5 *sparx5)
 
 static int sparx5_qlim_set(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
+	u32 prio_idx = consts->res_cfg_max_prio_idx;
+	u32 dp_idx = consts->res_cfg_max_colour_idx;
 	u32 res, dp, prio;
 
 	for (res = 0; res < 2; res++) {
 		for (prio = 0; prio < 8; prio++)
 			spx5_wr(0xFFF, sparx5,
-				QRES_RES_CFG(prio + 630 + res * 1024));
+				QRES_RES_CFG(prio + prio_idx + res * 1024));
 
 		for (dp = 0; dp < 4; dp++)
 			spx5_wr(0xFFF, sparx5,
-				QRES_RES_CFG(dp + 638 + res * 1024));
+				QRES_RES_CFG(dp + dp_idx + res * 1024));
 	}
 
 	/* Set 80,90,95,100% of memory size for top watermarks */
@@ -984,6 +987,9 @@ static const struct sparx5_match_data sparx5_desc = {
 		.chip_ports = 65,
 		.chip_ports_all = 70,
 		.buffer_memory = 4194280,
+		.res_cfg_max_port_idx = 560,
+		.res_cfg_max_prio_idx = 630,
+		.res_cfg_max_colour_idx = 638,
 	},
 };
 
