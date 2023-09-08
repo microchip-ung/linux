@@ -280,6 +280,7 @@ struct sparx5 {
 	struct device *dev;
 	u32 chip_id;
 	enum spx5_target_chiptype target_ct;
+	const struct sparx5_match_data *data;
 	void __iomem *regs[NUM_TARGETS];
 	int port_count;
 	struct mutex lock; /* MAC reg lock */
@@ -352,6 +353,14 @@ struct sparx5_regs {
 	const unsigned int *raddr;
 	const unsigned int *rcnt;
 	const unsigned int *fpos;
+};
+
+struct sparx5_match_data {
+	const struct sparx5_main_io_resource *iomap;
+	void __iomem *iomem[NUM_TARGETS];
+	const struct sparx5_regs regs;
+	int ioranges;
+	int iomap_size;
 };
 
 /* sparx5_main.c */

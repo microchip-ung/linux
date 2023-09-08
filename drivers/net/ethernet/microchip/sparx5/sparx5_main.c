@@ -220,21 +220,26 @@ static const struct sparx5_main_io_resource sparx5_main_iomap[] =  {
 
 static int sparx5_create_targets(struct sparx5 *sparx5)
 {
+	const struct sparx5_main_io_resource *iomap;
+	int iomap_size = sparx5->data->iomap_size;
+	int ioranges = sparx5->data->ioranges;
 	struct resource *iores[IO_RANGES];
 	void __iomem *iomem[IO_RANGES];
 	void __iomem *begin[IO_RANGES];
 	int range_id[IO_RANGES];
 	int idx, jdx;
 
-	for (idx = 0, jdx = 0; jdx < ARRAY_SIZE(sparx5_main_iomap); jdx++) {
-		const struct sparx5_main_io_resource *iomap = &sparx5_main_iomap[jdx];
+	iomap = sparx5->data->iomap;
 
-		if (idx == iomap->range) {
+	for (idx = 0, jdx = 0; jdx < iomap_size; jdx++) {
+		const struct sparx5_main_io_resource *io = &iomap[jdx];
+
+		if (idx == io->range) {
 			range_id[idx] = jdx;
 			idx++;
 		}
 	}
-	for (idx = 0; idx < IO_RANGES; idx++) {
+	for (idx = 0; idx < ioranges; idx++) {
 		iores[idx] = platform_get_resource(sparx5->pdev, IORESOURCE_MEM,
 						   idx);
 		if (!iores[idx]) {
@@ -249,12 +254,13 @@ static int sparx5_create_targets(struct sparx5 *sparx5)
 				iores[idx]->name);
 			return -ENOMEM;
 		}
-		begin[idx] = iomem[idx] - sparx5_main_iomap[range_id[idx]].offset;
+		begin[idx] = iomem[idx] - iomap[range_id[idx]].offset;
 	}
-	for (jdx = 0; jdx < ARRAY_SIZE(sparx5_main_iomap); jdx++) {
-		const struct sparx5_main_io_resource *iomap = &sparx5_main_iomap[jdx];
 
-		sparx5->regs[iomap->id] = begin[iomap->range] + iomap->offset;
+	for (jdx = 0; jdx < iomap_size; jdx++) {
+		const struct sparx5_main_io_resource *io = &iomap[jdx];
+
+		sparx5->regs[io->id] = begin[io->range] + io->offset;
 	}
 	return 0;
 }
@@ -751,6 +757,7 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 {
 	struct initial_port_config *configs, *config;
 	struct device_node *np = pdev->dev.of_node;
+	const struct sparx5_match_data *data;
 	struct device_node *ports, *portnp;
 	struct reset_control *reset;
 	struct sparx5 *sparx5;
@@ -766,6 +773,13 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, sparx5);
 	sparx5->pdev = pdev;
 	sparx5->dev = &pdev->dev;
+
+	data = device_get_match_data(sparx5->dev);
+	if (!data)
+		return -EINVAL;
+
+	sparx5->data = data;
+	regs = &data->regs;
 
 	/* Do switch core reset if available */
 	reset = devm_reset_control_get_optional_shared(&pdev->dev, "switch");
@@ -946,8 +960,22 @@ static int mchp_sparx5_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static const struct sparx5_match_data sparx5_desc = {
+	.iomap = sparx5_main_iomap,
+	.iomap_size = ARRAY_SIZE(sparx5_main_iomap),
+	.ioranges = 3,
+	.regs = {
+		.gaddr = sparx5_gaddr,
+		.gcnt = sparx5_gcnt,
+		.gsize = sparx5_gsize,
+		.raddr = sparx5_raddr,
+		.rcnt = sparx5_rcnt,
+		.fpos = sparx5_fpos,
+	},
+};
+
 static const struct of_device_id mchp_sparx5_match[] = {
-	{ .compatible = "microchip,sparx5-switch" },
+	{ .compatible = "microchip,sparx5-switch", .data = &sparx5_desc },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, mchp_sparx5_match);
