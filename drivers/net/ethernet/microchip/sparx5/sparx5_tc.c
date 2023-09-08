@@ -106,8 +106,8 @@ static int sparx5_tc_setup_qdisc_mqprio(struct net_device *ndev,
 		return sparx5_tc_mqprio_add(ndev, m->qopt.num_tc);
 }
 
-static void sparx5_tc_get_layer_and_idx(u32 parent, u32 portno, u32 *layer,
-					u32 *idx)
+static void sparx5_tc_get_layer_and_idx(struct sparx5 *sparx5, u32 parent,
+					u32 portno, u32 *layer, u32 *idx)
 {
 	if (parent == TC_H_ROOT) {
 		*layer = 2;
@@ -115,7 +115,7 @@ static void sparx5_tc_get_layer_and_idx(u32 parent, u32 portno, u32 *layer,
 	} else {
 		u32 queue = TC_H_MIN(parent) - 1;
 		*layer = 0;
-		*idx = SPX5_HSCH_L0_GET_IDX(portno, queue);
+		*idx = sparx5_hsch_l0_get_idx(sparx5, portno, queue);
 	}
 }
 
@@ -125,8 +125,8 @@ static int sparx5_tc_setup_qdisc_tbf(struct net_device *ndev,
 	struct sparx5_port *port = netdev_priv(ndev);
 	u32 layer, se_idx;
 
-	sparx5_tc_get_layer_and_idx(qopt->parent, port->portno, &layer,
-				    &se_idx);
+	sparx5_tc_get_layer_and_idx(port->sparx5, qopt->parent, port->portno,
+				    &layer, &se_idx);
 
 	switch (qopt->command) {
 	case TC_TBF_REPLACE:

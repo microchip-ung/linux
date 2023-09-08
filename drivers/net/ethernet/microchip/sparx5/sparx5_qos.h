@@ -90,7 +90,7 @@ int sparx5_qos_init(struct sparx5 *sparx5);
 #define SPX5_HSCH_L2_SE_CNT 64
 
 /* Calculate Layer 0 Scheduler Element when using normal hierarchy */
-#define SPX5_HSCH_L0_GET_IDX(port, queue) ((64 * (port)) + (8 * (queue)))
+int sparx5_hsch_l0_get_idx(struct sparx5 *sparx5, int port, int queue);
 
 /* Number of leak groups */
 #define SPX5_HSCH_LEAK_GRP_CNT 4

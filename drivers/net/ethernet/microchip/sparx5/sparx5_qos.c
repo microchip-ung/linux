@@ -162,19 +162,19 @@ static void sparx5_fp_enable(struct sparx5_port *port, struct sparx5_fp_port_con
 			DSM_IPG_SHRINK_CFG(port->portno));
 
 	for (i = 0; i < 8; i++) {
+		int idx = sparx5_hsch_l0_get_idx(port->sparx5, port->portno, i);
 		/* Set queue to be express (0) or preemtable (1) */
 		val = (enable_tx && (c->admin_status & BIT(i))) ? 0xff : 0;
 		spx5_rmw(HSCH_HSCH_L0_CFG_P_QUEUES_SET(val),
-				 HSCH_HSCH_L0_CFG_P_QUEUES,
-				 port->sparx5,
-				 HSCH_HSCH_L0_CFG(SPX5_HSCH_L0_GET_IDX(port->portno, i)));
+			HSCH_HSCH_L0_CFG_P_QUEUES,
+			port->sparx5,
+			HSCH_HSCH_L0_CFG(idx));
 
 		/* Force update of an element  */
 		spx5_wr(HSCH_HSCH_FORCE_CTRL_HFORCE_LAYER_SET(0) |
-				HSCH_HSCH_FORCE_CTRL_HFORCE_SE_IDX_SET(SPX5_HSCH_L0_GET_IDX(port->portno, i)) |
-				HSCH_HSCH_FORCE_CTRL_HFORCE_1SHOT_SET(1),
-				port->sparx5,
-				HSCH_HSCH_FORCE_CTRL);
+			HSCH_HSCH_FORCE_CTRL_HFORCE_SE_IDX_SET(idx) |
+			HSCH_HSCH_FORCE_CTRL_HFORCE_1SHOT_SET(1), port->sparx5,
+			HSCH_HSCH_FORCE_CTRL);
 	}
 }
 
@@ -1328,6 +1328,13 @@ void sparx5_tas_speed(struct sparx5_port *port, int speed)
 }
 
 /*******************************************************************************/
+int sparx5_hsch_l0_get_idx(struct sparx5 *sparx5, int port, int queue)
+{
+	const struct sparx5_consts *consts = &sparx5->data->consts;
+
+	return (consts->hsch_l1_se_cnt * port) +
+	       (consts->hsch_queue_cnt * queue);
+}
 
 static int sparx5_lg_del(struct sparx5 *sparx5, u32 layer, u32 group, u32 idx)
 {
