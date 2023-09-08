@@ -33,8 +33,6 @@
 
 const struct sparx5_regs *regs;
 
-#define QLIM_WM(fraction) \
-	((SPX5_BUFFER_MEMORY / SPX5_BUFFER_CELL_SZ - 100) * (fraction) / 100)
 #define IO_RANGES 3
 
 struct initial_port_config {
@@ -217,6 +215,14 @@ static const struct sparx5_main_io_resource sparx5_main_iomap[] =  {
 	{ TARGET_ANA_AC,             0x11900000, 2 }, /* 0x611900000 */
 	{ TARGET_VOP,                0x11a00000, 2 }, /* 0x611a00000 */
 };
+
+static int qlim_wm(struct sparx5 *sparx5, int fraction)
+{
+	const struct sparx5_consts *consts = &sparx5->data->consts;
+	int buf_mem = consts->buffer_memory;
+
+	return (buf_mem / SPX5_BUFFER_CELL_SZ - 100) * fraction / 100;
+}
 
 static int sparx5_create_targets(struct sparx5 *sparx5)
 {
@@ -572,10 +578,10 @@ static int sparx5_qlim_set(struct sparx5 *sparx5)
 	}
 
 	/* Set 80,90,95,100% of memory size for top watermarks */
-	spx5_wr(QLIM_WM(80), sparx5, XQS_QLIMIT_SHR_QLIM_CFG(0));
-	spx5_wr(QLIM_WM(90), sparx5, XQS_QLIMIT_SHR_CTOP_CFG(0));
-	spx5_wr(QLIM_WM(95), sparx5, XQS_QLIMIT_SHR_ATOP_CFG(0));
-	spx5_wr(QLIM_WM(100), sparx5, XQS_QLIMIT_SHR_TOP_CFG(0));
+	spx5_wr(qlim_wm(sparx5, 80), sparx5, XQS_QLIMIT_SHR_QLIM_CFG(0));
+	spx5_wr(qlim_wm(sparx5, 90), sparx5, XQS_QLIMIT_SHR_CTOP_CFG(0));
+	spx5_wr(qlim_wm(sparx5, 95), sparx5, XQS_QLIMIT_SHR_ATOP_CFG(0));
+	spx5_wr(qlim_wm(sparx5, 100), sparx5, XQS_QLIMIT_SHR_TOP_CFG(0));
 
 	return 0;
 }
@@ -977,6 +983,7 @@ static const struct sparx5_match_data sparx5_desc = {
 	.consts = {
 		.chip_ports = 65,
 		.chip_ports_all = 70,
+		.buffer_memory = 4194280,
 	},
 };
 

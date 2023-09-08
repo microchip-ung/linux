@@ -349,6 +349,7 @@ struct sparx5 {
 struct sparx5_consts {
 	int chip_ports;
 	int chip_ports_all;
+	int buffer_memory;
 };
 
 struct sparx5_regs {
