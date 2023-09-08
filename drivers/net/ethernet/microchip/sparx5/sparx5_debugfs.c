@@ -20,13 +20,16 @@
 static void sparx5_mirror_probe_debugfs_show_probe(struct seq_file *m, int idx)
 {
 	struct sparx5 *sparx5 = m->private;
+	const struct sparx5_consts *consts;
 	int portno;
+
+	consts = &sparx5->data->consts;
 
 	seq_printf(m, "%d: monitor: %s, %s, sources: ",
 		   idx,
 		   netdev_name(sparx5->mirror_probe[idx].mdev),
 		   sparx5->mirror_probe[idx].ingress ? "ingress" : "egress");
-	for (portno = 0; portno < SPX5_PORTS; ++portno)
+	for (portno = 0; portno < consts->chip_ports; ++portno)
 		if (test_bit(portno, sparx5->mirror_probe[idx].srcports))
 			seq_printf(m, "%s ",
 				   netdev_name(sparx5->ports[portno]->ndev));
@@ -228,8 +231,11 @@ static void sparx5_show_portstate(struct seq_file *m,
 static int sparx5_portstates_debugfs_show(struct seq_file *m, void *v)
 {
 	struct sparx5 *sparx5 = m->private;
+	const struct sparx5_consts *consts;
 	struct ethtool_eeprom *sfp_eeprom;
 	int idx;
+
+	consts = &sparx5->data->consts;
 
 	sfp_eeprom = kzalloc(sizeof(*sfp_eeprom) +
 			     ETH_MODULE_SFF_8472_LEN, GFP_KERNEL);
@@ -237,7 +243,7 @@ static int sparx5_portstates_debugfs_show(struct seq_file *m, void *v)
 		return 0;
 	seq_puts(m, "Port Mode            Speed        ");
 	seq_puts(m, "PLink   PhyLink ANegEn ANegCp SFP/PHY\n");
-	for (idx = 0; idx < SPX5_PORTS; idx++)
+	for (idx = 0; idx < consts->chip_ports; idx++)
 		if (sparx5->ports[idx])
 			sparx5_show_portstate(m, sparx5->ports[idx], sfp_eeprom);
 	kfree(sfp_eeprom);
@@ -247,6 +253,7 @@ DEFINE_SHOW_ATTRIBUTE(sparx5_portstates_debugfs); /* sparx5_portstates_debugfs_f
 
 void sparx5_debugfs(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	struct dentry *dir;
 	char portname[32];
 	int portno;
@@ -260,7 +267,7 @@ void sparx5_debugfs(struct sparx5 *sparx5)
 		return;
 	debugfs_create_file("cpuport0", 0444, dir, sparx5, &sparx5_cpuport0_debugfs_fops);
 	debugfs_create_file("cpuport1", 0444, dir, sparx5, &sparx5_cpuport1_debugfs_fops);
-	for (portno = 0; portno < SPX5_PORTS; portno++)
+	for (portno = 0; portno < consts->chip_ports; portno++)
 		if (sparx5->ports[portno]) {
 			snprintf(portname, sizeof(portname), "port%02d", portno);
 			debugfs_create_file(portname, 0444, dir,

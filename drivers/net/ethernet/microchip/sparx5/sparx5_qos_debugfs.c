@@ -80,10 +80,13 @@ static void sparx5_port_policer_show(struct seq_file *s,
 static int sparx5_port_policers_debugfs_show(struct seq_file *s, void *unused)
 {
 	struct sparx5 *sparx5 = s->private;
+	const struct sparx5_consts *consts;
 	int portno;
 
+	consts = &sparx5->data->consts;
+
 	seq_printf(s, "Port Policers\n");
-	for (portno = 0; portno < SPX5_PORTS; ++portno) {
+	for (portno = 0; portno < consts->chip_ports; ++portno) {
 		if (sparx5->ports[portno])
 			sparx5_port_policer_show(s, sparx5->ports[portno]);
 
@@ -338,6 +341,7 @@ DEFINE_SHOW_ATTRIBUTE(sparx5_psfp_debugfs);
 static int sparx5_tas_show(struct seq_file *m, void *unused)
 {
 	u32 sec, nsec, val, base, time, ctrl, gcl, length;
+	const struct sparx5_consts *consts;
 	int pidx, entry, list, state;
 	struct sparx5_port *port;
 	struct sparx5 *sparx5;
@@ -349,6 +353,7 @@ static int sparx5_tas_show(struct seq_file *m, void *unused)
 	port = sparx5->ports[0];
 	num_ports = sparx5->port_count;
 	num_tas_lists = num_ports * SPX5_TAS_ENTRIES_PER_PORT;
+	consts = &sparx5->data->consts;
 
 	P("num_ports", num_ports);
 	P("num_tas_lists", num_tas_lists);
@@ -357,7 +362,7 @@ static int sparx5_tas_show(struct seq_file *m, void *unused)
 	P_TIME("current time", ts.tv_sec, ts.tv_nsec);
 
 	mutex_lock(&sparx5->tas_lock);
-	for (pidx = 0; pidx < SPX5_PORTS; pidx++) {
+	for (pidx = 0; pidx < consts->chip_ports; pidx++) {
 		port = sparx5->ports[pidx];
 		if (!port)
 			continue;

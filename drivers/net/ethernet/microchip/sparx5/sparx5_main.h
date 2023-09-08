@@ -346,6 +346,11 @@ struct sparx5 {
 	struct mutex tas_lock;
 };
 
+struct sparx5_consts {
+	int chip_ports;
+	int chip_ports_all;
+};
+
 struct sparx5_regs {
 	const unsigned int *gaddr;
 	const unsigned int *gcnt;
@@ -356,6 +361,7 @@ struct sparx5_regs {
 };
 
 struct sparx5_match_data {
+	const struct sparx5_consts consts;
 	const struct sparx5_main_io_resource *iomap;
 	void __iomem *iomem[NUM_TARGETS];
 	const struct sparx5_regs regs;

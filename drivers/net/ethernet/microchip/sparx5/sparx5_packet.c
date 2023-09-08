@@ -55,6 +55,7 @@ void sparx5_ifh_parse(u32 *ifh, struct frame_info *info)
 static void sparx5_xtr_grp(struct sparx5 *sparx5, u8 grp, bool byte_swap)
 {
 	bool eof_flag = false, pruned_flag = false, abort_flag = false;
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	struct net_device *netdev;
 	struct sparx5_port *port;
 	struct frame_info fi;
@@ -71,7 +72,7 @@ static void sparx5_xtr_grp(struct sparx5 *sparx5, u8 grp, bool byte_swap)
 	sparx5_ifh_parse(ifh, &fi);
 
 	/* Map to port netdev */
-	port = fi.src_port < SPX5_PORTS ?
+	port = fi.src_port < consts->chip_ports ?
 		sparx5->ports[fi.src_port] : NULL;
 	if (!port || !port->ndev) {
 		dev_err(sparx5->dev, "Data on inactive port %d\n", fi.src_port);

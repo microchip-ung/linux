@@ -204,6 +204,7 @@ static struct sk_buff *sparx5_fdma_rx_alloc_skb(struct sparx5_rx *rx)
 
 static bool sparx5_fdma_rx_get_frame(struct sparx5 *sparx5, struct sparx5_rx *rx)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	struct sparx5_db_hw *db_hw;
 	unsigned int packet_size;
 	struct sparx5_port *port;
@@ -230,7 +231,8 @@ static bool sparx5_fdma_rx_get_frame(struct sparx5 *sparx5, struct sparx5_rx *rx
 	/* Now do the normal processing of the skb */
 	sparx5_ifh_parse((u32 *)skb->data, &fi);
 	/* Map to port netdev */
-	port = fi.src_port < SPX5_PORTS ?  sparx5->ports[fi.src_port] : NULL;
+	port = fi.src_port < consts->chip_ports ? sparx5->ports[fi.src_port] :
+						  NULL;
 	if (!port || !port->ndev) {
 		dev_err(sparx5->dev, "Data on inactive port %d\n", fi.src_port);
 		sparx5_xtr_flush(sparx5, XTR_QUEUE);
@@ -439,11 +441,12 @@ static int sparx5_fdma_tx_alloc(struct sparx5 *sparx5)
 static void sparx5_fdma_rx_init(struct sparx5 *sparx5,
 				struct sparx5_rx *rx, int channel)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	int idx;
 
 	rx->channel_id = channel;
 	/* Fetch a netdev for SKB and NAPI use, any will do */
-	for (idx = 0; idx < SPX5_PORTS; ++idx) {
+	for (idx = 0; idx < consts->chip_ports; ++idx) {
 		struct sparx5_port *port = sparx5->ports[idx];
 
 		if (port && port->ndev) {

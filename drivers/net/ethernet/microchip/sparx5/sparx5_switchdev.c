@@ -518,10 +518,13 @@ static int sparx5_handle_port_mdb_add(struct net_device *dev,
 {
 	struct sparx5_port *port = netdev_priv(dev);
 	struct sparx5 *spx5 = port->sparx5;
+	const struct sparx5_consts *consts;
 	struct sparx5_mdb_entry *entry;
 	bool is_host, is_new;
 	int err, i;
 	u16 vid;
+
+	consts = &spx5->data->consts;
 
 	if (!sparx5_netdevice_check(dev))
 		return -EOPNOTSUPP;
@@ -549,7 +552,7 @@ static int sparx5_handle_port_mdb_add(struct net_device *dev,
 
 	/* Add any mrouter ports to the new entry */
 	if (is_new && ether_addr_is_ip_mcast(v->addr))
-		for (i = 0; i < SPX5_PORTS; i++)
+		for (i = 0; i < consts->chip_ports; i++)
 			if (spx5->ports[i] && spx5->ports[i]->is_mrouter)
 				sparx5_pgid_update_mask(spx5->ports[i],
 							entry->pgid_idx,

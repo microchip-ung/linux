@@ -585,6 +585,7 @@ static int sparx5_qlim_set(struct sparx5 *sparx5)
  */
 static void sparx5_board_init(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	int idx;
 
 	if (!sparx5->sd_sgpio_remapping)
@@ -597,7 +598,7 @@ static void sparx5_board_init(struct sparx5 *sparx5)
 		 GCB_HW_SGPIO_SD_CFG);
 
 	/* Refer to LOS SGPIO */
-	for (idx = 0; idx < SPX5_PORTS; idx++)
+	for (idx = 0; idx < consts->chip_ports; idx++)
 		if (sparx5->ports[idx])
 			if (sparx5->ports[idx]->conf.sd_sgpio != ~0)
 				spx5_wr(sparx5->ports[idx]->conf.sd_sgpio,
@@ -608,6 +609,7 @@ static void sparx5_board_init(struct sparx5 *sparx5)
 static int sparx5_start(struct sparx5 *sparx5)
 {
 	u8 broadcast[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	char queue_name[32];
 	u32 idx;
 	int err;
@@ -621,7 +623,7 @@ static int sparx5_start(struct sparx5 *sparx5)
 	}
 
 	/* Enable CPU ports */
-	for (idx = SPX5_PORTS; idx < SPX5_PORTS_ALL; idx++)
+	for (idx = consts->chip_ports; idx < consts->chip_ports_all; idx++)
 		spx5_rmw(QFWD_SWITCH_PORT_MODE_PORT_ENA_SET(1),
 			 QFWD_SWITCH_PORT_MODE_PORT_ENA,
 			 sparx5,
@@ -971,6 +973,10 @@ static const struct sparx5_match_data sparx5_desc = {
 		.raddr = sparx5_raddr,
 		.rcnt = sparx5_rcnt,
 		.fpos = sparx5_fpos,
+	},
+	.consts = {
+		.chip_ports = 65,
+		.chip_ports_all = 70,
 	},
 };
 

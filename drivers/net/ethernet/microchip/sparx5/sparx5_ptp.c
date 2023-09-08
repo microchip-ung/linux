@@ -891,6 +891,7 @@ static int sparx5_ptp_phc_init(struct sparx5 *sparx5,
 
 int sparx5_ptp_init(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	u64 tod_adj = sparx5_ptp_get_nominal_value(sparx5);
 	struct sparx5_port *port;
 	int err, i;
@@ -930,7 +931,7 @@ int sparx5_ptp_init(struct sparx5 *sparx5)
 	/* Enable master counters */
 	spx5_wr(PTP_PTP_DOM_CFG_PTP_ENA_SET(0x7), sparx5, PTP_PTP_DOM_CFG);
 
-	for (i = 0; i < SPX5_PORTS; i++) {
+	for (i = 0; i < consts->chip_ports; i++) {
 		port = sparx5->ports[i];
 		if (!port)
 			continue;
@@ -943,10 +944,11 @@ int sparx5_ptp_init(struct sparx5 *sparx5)
 
 void sparx5_ptp_deinit(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	struct sparx5_port *port;
 	int i;
 
-	for (i = 0; i < SPX5_PORTS; i++) {
+	for (i = 0; i < consts->chip_ports; i++) {
 		port = sparx5->ports[i];
 		if (!port)
 			continue;

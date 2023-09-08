@@ -279,13 +279,14 @@ int sparx5_fp_status(struct sparx5_port *port,
 
 static void sparx5_fp_init(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	struct sparx5_port *port;
 	void __iomem *devinst;
 	u32 val, pix, dev;
 	int p;
 
 	/* Initialize frame-preemption and sync config with defaults */
-	for (p = 0; p < SPX5_PORTS; p++) {
+	for (p = 0; p < consts->chip_ports; p++) {
 		port = sparx5->ports[p];
 		if (!port)
 			continue;
@@ -750,10 +751,11 @@ enum sparx5_tas_link_speed {
 
 int sparx5_tas_list_index(struct sparx5_port *port, u8 tas_entry)
 {
+	const struct sparx5_consts *consts = &port->sparx5->data->consts;
 	int portno, pidx = 0;
 
 	/* Limit the index to available ports */
-	for (portno = 0; portno < SPX5_PORTS; ++portno) {
+	for (portno = 0; portno < consts->chip_ports; ++portno) {
 		if (port->sparx5->ports[portno])
 			pidx++;
 		if (portno == port->portno)
@@ -1252,10 +1254,11 @@ out:
 
 static int sparx5_tas_init(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	int i, num_ports, num_tas_lists;
 
 	/* There are only 128 TAS lists, not enough for the whole port range */
-	num_ports = SPX5_PORTS;
+	num_ports = consts->chip_ports;
 	num_tas_lists = sparx5->port_count * SPX5_TAS_ENTRIES_PER_PORT;
 
 	mutex_init(&sparx5->tas_lock);

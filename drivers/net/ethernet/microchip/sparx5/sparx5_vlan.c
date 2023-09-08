@@ -154,6 +154,7 @@ void sparx5_pgid_read_mask(struct sparx5 *spx5, int pgid, u32 portmask[3])
 
 void sparx5_update_fwd(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	DECLARE_BITMAP(workmask, SPX5_PORTS);
 	u32 mask[3];
 	int port;
@@ -169,7 +170,7 @@ void sparx5_update_fwd(struct sparx5 *sparx5)
 	}
 
 	/* Update SRC masks */
-	for (port = 0; port < SPX5_PORTS; port++) {
+	for (port = 0; port < consts->chip_ports; port++) {
 		if (test_bit(port, sparx5->bridge_fwd_mask)) {
 			/* Allow to send to all bridged but self */
 			bitmap_copy(workmask, sparx5->bridge_fwd_mask, SPX5_PORTS);

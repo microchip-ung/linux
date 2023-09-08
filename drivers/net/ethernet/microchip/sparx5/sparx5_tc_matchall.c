@@ -162,11 +162,14 @@ static int sparx5_mirror_port_delete(struct net_device *ndev,
 	struct sparx5_port *sport = netdev_priv(ndev);
 	struct sparx5_port *dport = netdev_priv(mdev);
 	struct sparx5 *sparx5 = sport->sparx5;
+	const struct sparx5_consts *consts;
 	struct sparx5_mirror_probe *probe;
 	int srcreg = sport->portno;
 	int defport = 65;
 	int pidx;
 	int val;
+
+	consts = &sparx5->data->consts;
 
 	pidx = sparx5_free_mirror_probe(ndev, ingress, mdev);
 	pr_debug("%s:%d: sport: %d, dport: %d, probe: %d\n",
@@ -184,7 +187,8 @@ static int sparx5_mirror_port_delete(struct net_device *ndev,
 		spx5_rmw(0, val, sparx5, ANA_AC_PROBE_PORT_CFG1(pidx));
 	else if (srcreg == 2)
 		spx5_rmw(0, val, sparx5, ANA_AC_PROBE_PORT_CFG2(pidx));
-	if (bitmap_empty(sparx5->mirror_probe[pidx].srcports, SPX5_PORTS)) {
+	if (bitmap_empty(sparx5->mirror_probe[pidx].srcports,
+			 consts->chip_ports)) {
 		/* Remove the monitor probe */
 		spx5_rmw(ANA_AC_PROBE_CFG_PROBE_DIRECTION_SET(SPX5_MP_DISABLED),
 			 ANA_AC_PROBE_CFG_PROBE_DIRECTION,

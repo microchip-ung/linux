@@ -287,10 +287,11 @@ struct net_device *sparx5_create_netdev(struct sparx5 *sparx5, u32 portno)
 
 int sparx5_register_netdevs(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	int portno;
 	int err;
 
-	for (portno = 0; portno < SPX5_PORTS; portno++)
+	for (portno = 0; portno < consts->chip_ports; portno++)
 		if (sparx5->ports[portno]) {
 			err = register_netdev(sparx5->ports[portno]->ndev);
 			if (err) {
@@ -306,10 +307,11 @@ int sparx5_register_netdevs(struct sparx5 *sparx5)
 
 void sparx5_destroy_netdevs(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	struct sparx5_port *port;
 	int portno;
 
-	for (portno = 0; portno < SPX5_PORTS; portno++) {
+	for (portno = 0; portno < consts->chip_ports; portno++) {
 		port = sparx5->ports[portno];
 		if (port && port->phylink) {
 			/* Disconnect the phy */
@@ -325,10 +327,10 @@ void sparx5_destroy_netdevs(struct sparx5 *sparx5)
 
 void sparx5_unregister_netdevs(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	int portno;
 
-	for (portno = 0; portno < SPX5_PORTS; portno++)
+	for (portno = 0; portno < consts->chip_ports; portno++)
 		if (sparx5->ports[portno])
 			unregister_netdev(sparx5->ports[portno]->ndev);
 }
-

@@ -129,9 +129,10 @@ static u32 sparx5_bandwidth_to_calendar(u32 bw)
 static enum sparx5_cal_bw sparx5_get_port_cal_speed(struct sparx5 *sparx5,
 						    u32 portno)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	struct sparx5_port *port;
 
-	if (portno >= SPX5_PORTS) {
+	if (portno >= consts->chip_ports) {
 		/* Internal ports */
 		if (portno == SPX5_PORT_CPU_0 || portno == SPX5_PORT_CPU_1) {
 			/* Equals 1.25G */
@@ -159,6 +160,7 @@ static enum sparx5_cal_bw sparx5_get_port_cal_speed(struct sparx5 *sparx5,
 /* Auto configure the QSYS calendar based on port configuration */
 int sparx5_config_auto_calendar(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	u32 cal[7], value, idx, portno;
 	u32 max_core_bw;
 	u32 total_bw = 0, used_port_bw = 0;
@@ -174,7 +176,7 @@ int sparx5_config_auto_calendar(struct sparx5 *sparx5)
 	}
 
 	/* Setup the calendar with the bandwidth to each port */
-	for (portno = 0; portno < SPX5_PORTS_ALL; portno++) {
+	for (portno = 0; portno < consts->chip_ports_all; portno++) {
 		u64 reg, offset, this_bw;
 
 		spd = sparx5_get_port_cal_speed(sparx5, portno);
@@ -182,7 +184,7 @@ int sparx5_config_auto_calendar(struct sparx5 *sparx5)
 			continue;
 
 		this_bw = sparx5_cal_speed_to_value(spd);
-		if (portno < SPX5_PORTS)
+		if (portno < consts->chip_ports)
 			used_port_bw += this_bw;
 		else
 			/* Internal ports are granted half the value */
@@ -281,6 +283,7 @@ static u32 sparx5_dsm_cp_cal(u32 *sched)
 static int sparx5_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
 				    struct sparx5_calendar_data *data)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	bool slow_mode;
 	u32 gcd, idx, sum, min, factor;
 	u32 num_of_slots, slot_spd, empty_slots;
@@ -304,7 +307,7 @@ static int sparx5_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
 	for (idx = 0; idx < SPX5_DSM_CAL_MAX_DEVS_PER_TAXI; idx++) {
 		u32 portno = data->taxi_ports[idx];
 
-		if (portno < SPX5_TAXI_PORT_MAX) {
+		if (portno < consts->chip_ports_all) {
 			data->taxi_speeds[idx] = sparx5_cal_speed_to_value
 				(sparx5_get_port_cal_speed(sparx5, portno));
 		} else {
