@@ -304,8 +304,8 @@ static void sparx5_fp_init(struct sparx5 *sparx5)
 					 DEV_PFRAME_CFG);
 
 		if (sparx5_is_baser(port->conf.portmode)) {
-			pix = sparx5_port_dev_index(port->portno);
-			dev = sparx5_to_high_dev(port->portno);
+			pix = sparx5_port_dev_index(sparx5, port->portno);
+			dev = sparx5_to_high_dev(sparx5, port->portno);
 			devinst = spx5_inst_get(port->sparx5, dev, pix);
 			spx5_inst_rmw(DEV10G_MAC_ADV_CHK_CFG_SFD_CHK_ENA_SET(0),
 						  DEV10G_MAC_ADV_CHK_CFG_SFD_CHK_ENA,

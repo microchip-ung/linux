@@ -347,6 +347,12 @@ struct sparx5 {
 	struct mutex tas_lock;
 };
 
+struct sparx5_ops {
+	bool (*port_is_2g5)(int portno);
+	bool (*port_is_5g)(int portno);
+	bool (*port_is_10g)(int portno);
+};
+
 struct sparx5_consts {
 	int chip_ports;
 	int chip_ports_all;
@@ -383,6 +389,7 @@ struct sparx5_regs {
 };
 
 struct sparx5_match_data {
+	const struct sparx5_ops ops;
 	const struct sparx5_consts consts;
 	const struct sparx5_main_io_resource *iomap;
 	void __iomem *iomem[NUM_TARGETS];
