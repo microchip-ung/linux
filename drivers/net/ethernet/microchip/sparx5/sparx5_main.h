@@ -366,6 +366,7 @@ struct sparx5_consts {
 	int filter_cnt;
 	int gate_cnt;
 	int lb_cnt;
+	int tod_pin;
 };
 
 struct sparx5_regs {

@@ -1004,6 +1004,7 @@ static const struct sparx5_match_data sparx5_desc = {
 		.filter_cnt = 1024,
 		.gate_cnt = 1024,
 		.lb_cnt = 4616,
+		.tod_pin = 4,
 	},
 };
 
