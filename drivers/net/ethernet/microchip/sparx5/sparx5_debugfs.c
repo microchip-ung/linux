@@ -139,14 +139,20 @@ static void sparx5_debugfs_cpuportstats(struct seq_file *m, int portno)
 
 static int sparx5_cpuport0_debugfs_show(struct seq_file *m, void *unused)
 {
-	sparx5_debugfs_cpuportstats(m, SPX5_PORT_CPU_0);
+	struct sparx5 *sparx5 = m->private;
+
+	sparx5_debugfs_cpuportstats(m, sparx5_get_internal_port(sparx5,
+								PORT_CPU_0));
 	return 0;
 }
 DEFINE_SHOW_ATTRIBUTE(sparx5_cpuport0_debugfs); /* sparx5_cpuport0_debugfs_fops */
 
 static int sparx5_cpuport1_debugfs_show(struct seq_file *m, void *unused)
 {
-	sparx5_debugfs_cpuportstats(m, SPX5_PORT_CPU_1);
+	struct sparx5 *sparx5 = m->private;
+
+	sparx5_debugfs_cpuportstats(m, sparx5_get_internal_port(sparx5,
+								PORT_CPU_1));
 	return 0;
 }
 DEFINE_SHOW_ATTRIBUTE(sparx5_cpuport1_debugfs); /* sparx5_cpuport1_debugfs_fops */

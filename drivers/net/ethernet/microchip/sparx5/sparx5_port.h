@@ -90,6 +90,7 @@ int sparx5_get_port_status(struct sparx5 *sparx5,
 void sparx5_port_enable(struct sparx5_port *port, bool enable);
 int sparx5_port_fwd_urg(struct sparx5 *sparx5, u32 speed);
 u32 sparx5_port_dev_mapping(struct sparx5 *sparx5, int port);
+int sparx5_get_internal_port(struct sparx5 *sparx5, int port);
 
 /* Macros to read/write to both 2G5 and 5G/10G/25G device  */
 #define SPX5_DEV_RD(value, port, name)									\

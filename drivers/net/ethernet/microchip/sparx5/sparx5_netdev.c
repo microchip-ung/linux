@@ -60,6 +60,7 @@ void sparx5_set_port_ifh(struct sparx5 *sparx5, void *ifh_hdr, u16 portno)
 	const struct sparx5_ops *ops = &sparx5->data->ops;
 	u32 pipeline_pt =
 		ops->get_pipeline_pt(SPX5_PACKET_PIPELINE_PT_ANA_DONE);
+	int cpu_port0 = sparx5_get_internal_port(sparx5, PORT_CPU_0);
 
 	/* VSTAX.RSV = 1. MSBit must be 1 */
 	__ifh_encode_bitfield(ifh_hdr, 1,
@@ -82,7 +83,7 @@ void sparx5_set_port_ifh(struct sparx5 *sparx5, void *ifh_hdr, u16 portno)
 			      ops->get_ifh_field_pos(IFH_MISC_PIPELINE_ACT),
 			      ops->get_ifh_field_width(IFH_MISC_PIPELINE_ACT));
 	/* FWD.SRC_PORT = CPU */
-	__ifh_encode_bitfield(ifh_hdr, SPX5_PORT_CPU,
+	__ifh_encode_bitfield(ifh_hdr, cpu_port0,
 			      ops->get_ifh_field_pos(IFH_FWD_SRC_PORT),
 			      ops->get_ifh_field_width(IFH_FWD_SRC_PORT));
 	/* FWD.SFLOW_ID (disable SFlow sampling) */

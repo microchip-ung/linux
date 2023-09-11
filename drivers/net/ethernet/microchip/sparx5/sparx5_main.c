@@ -649,7 +649,8 @@ static int sparx5_start(struct sparx5 *sparx5)
 		sparx5, ANA_AC_PGID_MISC_CFG(sparx5_get_pgid_index(sparx5, PGID_BCAST)));
 
 	/* Recalc injected frame FCS */
-	for (idx = SPX5_PORT_CPU_0; idx <= SPX5_PORT_CPU_1; idx++)
+	for (idx = sparx5_get_internal_port(sparx5, PORT_CPU_0);
+	     idx <= sparx5_get_internal_port(sparx5, PORT_CPU_1); idx++)
 		spx5_rmw(ANA_CL_FILTER_CTRL_FORCE_FCS_UPDATE_ENA_SET(1),
 			 ANA_CL_FILTER_CTRL_FORCE_FCS_UPDATE_ENA,
 			 sparx5, ANA_CL_FILTER_CTRL(idx));

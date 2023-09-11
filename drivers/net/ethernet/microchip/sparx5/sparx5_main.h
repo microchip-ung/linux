@@ -50,14 +50,14 @@ enum sparx5_vlan_port_type {
 	SPX5_VLAN_PORT_TYPE_S_CUSTOM /* S-port using custom type */
 };
 
-#define SPX5_PORTS             65
-#define SPX5_PORT_CPU          (SPX5_PORTS)  /* Next port is CPU port */
-#define SPX5_PORT_CPU_0        (SPX5_PORT_CPU + 0) /* CPU Port 65 */
-#define SPX5_PORT_CPU_1        (SPX5_PORT_CPU + 1) /* CPU Port 66 */
-#define SPX5_PORT_VD0          (SPX5_PORT_CPU + 2) /* VD0/Port 67 used for IPMC */
-#define SPX5_PORT_VD1          (SPX5_PORT_CPU + 3) /* VD1/Port 68 used for AFI/OAM */
-#define SPX5_PORT_VD2          (SPX5_PORT_CPU + 4) /* VD2/Port 69 used for IPinIP*/
-#define SPX5_PORTS_ALL         (SPX5_PORT_CPU + 5) /* Total number of ports */
+#define SPX5_PORTS       65
+#define SPX5_PORTS_ALL   70
+/* Internals ports relative to last physical port */
+#define PORT_CPU_0        0 /* CPU Port */
+#define PORT_CPU_1        1 /* CPU Port */
+#define PORT_VD0          2 /* VD0/Port used for IPMC */
+#define PORT_VD1          3 /* VD1/Port used for AFI/OAM */
+#define PORT_VD2          4 /* VD2/Port used for IPinIP*/
 
 /* PGID Flood and general purpose (multicast), relative to last physical port */
 #define PGID_UC_FLOOD     0
@@ -610,6 +610,11 @@ static inline u32 sparx5_get_pgid_index(struct sparx5 *sparx5, int pgid)
 /* sparx5_port.c */
 int sparx5_port_mux_set(struct sparx5 *sparx5, struct sparx5_port *port,
 			struct sparx5_port_config *conf);
+
+static inline int sparx5_get_internal_port(struct sparx5 *sparx5, int port)
+{
+	return sparx5->data->consts.chip_ports + port;
+}
 
 void sparx5_pgid_init(struct sparx5 *spx5);
 int sparx5_pgid_alloc_glag(struct sparx5 *spx5, u16 *idx);
