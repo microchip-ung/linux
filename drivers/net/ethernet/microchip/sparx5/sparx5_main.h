@@ -410,6 +410,7 @@ struct sparx5_ops {
 	u32* (*get_taxi)(int idx);
 	int (*port_mux_set)(struct sparx5 *sparx5, struct sparx5_port *port,
 			    struct sparx5_port_config *conf);
+	struct sparx5_sdlb_group* (*get_sdlb_group)(int idx);
 };
 
 struct sparx5_consts {
@@ -643,7 +644,7 @@ struct sparx5_sdlb_group {
 	u32 nsets;
 };
 
-extern struct sparx5_sdlb_group sdlb_groups[SPX5_SDLB_GROUP_CNT];
+struct sparx5_sdlb_group *sparx5_get_sdlb_group(int idx);
 int sparx5_sdlb_pup_token_get(struct sparx5 *sparx5, u32 pup_interval,
 			      u64 rate);
 

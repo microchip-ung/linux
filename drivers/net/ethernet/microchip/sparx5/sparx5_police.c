@@ -56,11 +56,12 @@ int sparx5_policer_stats_update(struct sparx5 *sparx5,
 static int sparx5_policer_service_conf_set(struct sparx5 *sparx5,
 					   struct sparx5_policer *pol)
 {
+	const struct sparx5_ops *ops = &sparx5->data->ops;
 	u32 idx, pup_tokens, max_pup_tokens, burst, thres;
 	struct sparx5_sdlb_group *g;
 	u64 rate;
 
-	g = &sdlb_groups[pol->group];
+	g = ops->get_sdlb_group(pol->group);
 	idx = pol->idx;
 
 	rate = pol->rate * 1000;
