@@ -284,6 +284,7 @@ static int sparx5_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
 				    struct sparx5_calendar_data *data)
 {
 	const struct sparx5_consts *consts = &sparx5->data->consts;
+	int devs_per_taxi = consts->dsm_cal_max_devs_per_taxi;
 	bool slow_mode;
 	u32 gcd, idx, sum, min, factor;
 	u32 num_of_slots, slot_spd, empty_slots;
@@ -301,10 +302,10 @@ static int sparx5_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
 		data->temp_sched[idx] = SPX5_DSM_CAL_EMPTY;
 	}
 	/* Default empty calendar */
-	data->schedule[0] = SPX5_DSM_CAL_MAX_DEVS_PER_TAXI;
+	data->schedule[0] = devs_per_taxi;
 
 	/* Map ports to taxi positions */
-	for (idx = 0; idx < SPX5_DSM_CAL_MAX_DEVS_PER_TAXI; idx++) {
+	for (idx = 0; idx < devs_per_taxi; idx++) {
 		u32 portno = data->taxi_ports[idx];
 
 		if (portno < consts->chip_ports_all) {
@@ -390,7 +391,7 @@ static int sparx5_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
 	empty_slots = num_of_slots - sum;
 
 	for (idx = 0; idx < empty_slots; idx++)
-		data->schedule[idx] = SPX5_DSM_CAL_MAX_DEVS_PER_TAXI;
+		data->schedule[idx] = devs_per_taxi;
 
 	for (idx = 1; idx < num_of_slots; idx++) {
 		u32 indices_len = 0;
@@ -480,12 +481,14 @@ static int sparx5_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
 static int sparx5_dsm_calendar_check(struct sparx5 *sparx5,
 				     struct sparx5_calendar_data *data)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
+	int devs_per_taxi = consts->dsm_cal_max_devs_per_taxi;
 	u32 num_of_slots, idx, port;
 	int cnt, max_dist;
 	u32 slot_indices[SPX5_DSM_CAL_LEN], distances[SPX5_DSM_CAL_LEN];
 	u32 cal_length = sparx5_dsm_cal_len(data->schedule);
 
-	for (port = 0; port < SPX5_DSM_CAL_MAX_DEVS_PER_TAXI; port++) {
+	for (port = 0; port < devs_per_taxi; port++) {
 		num_of_slots = 0;
 		max_dist = data->avg_dist[port];
 		for (idx = 0; idx < SPX5_DSM_CAL_LEN; idx++) {
@@ -568,7 +571,8 @@ update_err:
 /* Configure the DSM calendar based on port configuration */
 int sparx5_config_dsm_calendar(struct sparx5 *sparx5)
 {
-	int taxi;
+	const struct sparx5_consts *consts = &sparx5->data->consts;
+	int taxi, cal_taxis = consts->dsm_cal_taxis;
 	struct sparx5_calendar_data *data;
 	int err = 0;
 
@@ -576,7 +580,7 @@ int sparx5_config_dsm_calendar(struct sparx5 *sparx5)
 	if (!data)
 		return -ENOMEM;
 
-	for (taxi = 0; taxi < SPX5_DSM_CAL_TAXIS; ++taxi) {
+	for (taxi = 0; taxi < cal_taxis; ++taxi) {
 		err = sparx5_dsm_calendar_calc(sparx5, taxi, data);
 		if (err) {
 			dev_err(sparx5->dev, "DSM calendar calculation failed\n");

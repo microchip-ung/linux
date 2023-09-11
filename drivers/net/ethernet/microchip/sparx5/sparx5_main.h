@@ -357,6 +357,8 @@ struct sparx5_consts {
 	int hsch_queue_cnt;
 	int lb_group_cnt;
 	int pgid_cnt;
+	int dsm_cal_max_devs_per_taxi;
+	int dsm_cal_taxis;
 };
 
 struct sparx5_regs {
