@@ -360,6 +360,7 @@ struct sparx5_consts {
 	int dsm_cal_max_devs_per_taxi;
 	int dsm_cal_taxis;
 	int sio_clk_cnt;
+	int own_upsid_cnt;
 };
 
 struct sparx5_regs {

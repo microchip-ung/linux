@@ -625,7 +625,7 @@ static int sparx5_start(struct sparx5 *sparx5)
 	int err;
 
 	/* Setup own UPSIDs */
-	for (idx = 0; idx < 3; idx++) {
+	for (idx = 0; idx < consts->own_upsid_cnt; idx++) {
 		spx5_wr(idx, sparx5, ANA_AC_OWN_UPSID(idx));
 		spx5_wr(idx, sparx5, ANA_CL_OWN_UPSID(idx));
 		spx5_wr(idx, sparx5, ANA_L2_OWN_UPSID(idx));
@@ -998,6 +998,7 @@ static const struct sparx5_match_data sparx5_desc = {
 		.dsm_cal_max_devs_per_taxi = 13,
 		.dsm_cal_taxis = 8,
 		.sio_clk_cnt = 3,
+		.own_upsid_cnt = 3,
 	},
 };
 
