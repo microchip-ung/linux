@@ -436,6 +436,7 @@ static int sparx5_init_switchcore(struct sparx5 *sparx5)
 
 static int sparx5_init_coreclock(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	enum sparx5_core_clockfreq freq = sparx5->coreclock;
 	u32 clk_div, clk_period, pol_upd_int, idx;
 
@@ -543,7 +544,7 @@ static int sparx5_init_coreclock(struct sparx5 *sparx5)
 		 sparx5,
 		 LRN_AUTOAGE_CFG_1);
 
-	for (idx = 0; idx < 3; idx++)
+	for (idx = 0; idx < consts->sio_clk_cnt; idx++)
 		spx5_rmw(GCB_SIO_CLOCK_SYS_CLK_PERIOD_SET(clk_period / 100),
 			 GCB_SIO_CLOCK_SYS_CLK_PERIOD,
 			 sparx5,
@@ -996,6 +997,7 @@ static const struct sparx5_match_data sparx5_desc = {
 		.pgid_cnt = (2048 + 65),
 		.dsm_cal_max_devs_per_taxi = 13,
 		.dsm_cal_taxis = 8,
+		.sio_clk_cnt = 3,
 	},
 };
 
