@@ -215,7 +215,7 @@ int sparx5_config_auto_calendar(struct sparx5 *sparx5)
 		 sparx5, QSYS_CAL_CTRL);
 
 	/* Assign port bandwidth to auto calendar */
-	for (idx = 0; idx < ARRAY_SIZE(cal); idx++)
+	for (idx = 0; idx < consts->auto_cal_cnt; idx++)
 		spx5_wr(cal[idx], sparx5, QSYS_CAL_AUTO(idx));
 
 	/* Increase grant rate of all ports to account for

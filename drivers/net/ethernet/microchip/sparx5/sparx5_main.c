@@ -999,6 +999,7 @@ static const struct sparx5_match_data sparx5_desc = {
 		.dsm_cal_taxis = 8,
 		.sio_clk_cnt = 3,
 		.own_upsid_cnt = 3,
+		.auto_cal_cnt = 7,
 	},
 };
 
