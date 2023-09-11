@@ -988,6 +988,7 @@ static const struct sparx5_match_data sparx5_desc = {
 		.port_is_2g5 = &sparx5_port_is_2g5,
 		.port_is_5g = &sparx5_port_is_5g,
 		.port_is_10g = &sparx5_port_is_10g,
+		.port_get_dev_index = &sparx5_port_dev_mapping,
 	},
 	.consts = {
 		.chip_ports = 65,

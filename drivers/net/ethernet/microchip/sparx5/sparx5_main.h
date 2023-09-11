@@ -351,6 +351,7 @@ struct sparx5_ops {
 	bool (*port_is_2g5)(int portno);
 	bool (*port_is_5g)(int portno);
 	bool (*port_is_10g)(int portno);
+	u32 (*port_get_dev_index)(struct sparx5 *sparx5, int port);
 };
 
 struct sparx5_consts {

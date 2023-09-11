@@ -1153,3 +1153,17 @@ void sparx5_port_enable(struct sparx5_port *port, bool enable)
 		 sparx5,
 		 QFWD_SWITCH_PORT_MODE(port->portno));
 }
+
+u32 sparx5_port_dev_mapping(struct sparx5 *sparx5, int port)
+{
+	const struct sparx5_ops *ops = &sparx5->data->ops;
+
+	if (ops->port_is_2g5(port))
+		return port;
+	if (ops->port_is_5g(port))
+		return (port <= 11 ? port : 12);
+	if (ops->port_is_10g(port))
+		return (port >= 12 && port <= 15) ?
+			port - 12 : port - 44;
+	return (port - 56);
+}

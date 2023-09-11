@@ -51,18 +51,11 @@ static inline u32 sparx5_to_pcs_dev(struct sparx5 *sparx5, int port)
 	return TARGET_PCS25G_BR;
 }
 
-static inline int sparx5_port_dev_index(struct sparx5 *sparx5, int port)
+static inline u32 sparx5_port_dev_index(struct sparx5 *sparx5, int port)
 {
 	const struct sparx5_ops *ops = &sparx5->data->ops;
 
-	if (ops->port_is_2g5(port))
-		return port;
-	if (ops->port_is_5g(port))
-		return (port <= 11 ? port : 12);
-	if (ops->port_is_10g(port))
-		return (port >= 12 && port <= 15) ?
-			port - 12 : port - 44;
-	return (port - 56);
+	return ops->port_get_dev_index(sparx5, port);
 }
 
 int sparx5_port_init(struct sparx5 *sparx5,
@@ -96,6 +89,7 @@ int sparx5_get_port_status(struct sparx5 *sparx5,
 
 void sparx5_port_enable(struct sparx5_port *port, bool enable);
 int sparx5_port_fwd_urg(struct sparx5 *sparx5, u32 speed);
+u32 sparx5_port_dev_mapping(struct sparx5 *sparx5, int port);
 
 /* Macros to read/write to both 2G5 and 5G/10G/25G device  */
 #define SPX5_DEV_RD(value, port, name)									\
