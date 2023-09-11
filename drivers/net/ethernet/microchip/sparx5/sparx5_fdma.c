@@ -229,7 +229,7 @@ static bool sparx5_fdma_rx_get_frame(struct sparx5 *sparx5, struct sparx5_rx *rx
 	packet_size = FDMA_DCB_STATUS_BLOCKL(db_hw->status);
 	skb_put(skb, packet_size);
 	/* Now do the normal processing of the skb */
-	sparx5_ifh_parse((u32 *)skb->data, &fi);
+	sparx5_ifh_parse(sparx5, (u32 *)skb->data, &fi);
 	/* Map to port netdev */
 	port = fi.src_port < consts->chip_ports ? sparx5->ports[fi.src_port] :
 						  NULL;

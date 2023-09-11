@@ -59,6 +59,7 @@ enum sparx5_target {
 	NUM_TARGETS = 517
 };
 
+#define spx5_field_get(_mask, _reg) (((_reg) & (_mask)) >> (ffs(_mask) - 1))
 #define spx5_field_prep(_mask, _val) (((_val) << (ffs(_mask) - 1)) & (_mask))
 
 #define GADDR(o)  regs->gaddr[o]
