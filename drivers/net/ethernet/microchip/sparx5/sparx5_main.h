@@ -106,6 +106,9 @@ enum sparx5_vlan_port_type {
 #define SPX5_MIRROR_PROBE_MAX 3
 #define SPX5_QFWD_MP_OFFSET 9
 
+#define SPX5_DSM_CAL_MAX_DEVS_PER_TAXI 13
+#define SPX5_DSM_CAL_TAXIS             8
+
 struct sparx5;
 
 struct sparx5_db_hw {
@@ -402,6 +405,7 @@ struct sparx5_ops {
 	u32 (*get_ifh_field_pos)(enum sparx5_ifh_enum idx);
 	u32 (*get_ifh_field_width)(enum sparx5_ifh_enum idx);
 	u32 (*get_pipeline_pt)(enum sparx5_packet_pipeline_pt);
+	u32* (*get_taxi)(int idx);
 	int (*port_mux_set)(struct sparx5 *sparx5, struct sparx5_port *port,
 			    struct sparx5_port_config *conf);
 };
@@ -516,6 +520,7 @@ void sparx5_vlan_port_apply(struct sparx5 *sparx5, struct sparx5_port *port);
 /* sparx5_calendar.c */
 int sparx5_config_auto_calendar(struct sparx5 *sparx5);
 int sparx5_config_dsm_calendar(struct sparx5 *sparx5);
+u32 *sparx5_get_taxi(int idx);
 
 /* sparx5_ethtool.c */
 struct sparx5_port_stats {

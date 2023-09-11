@@ -17,8 +17,6 @@
 /* DSM calendar information */
 #define SPX5_DSM_CAL_LEN               64
 #define SPX5_DSM_CAL_EMPTY             0xFFFF
-#define SPX5_DSM_CAL_MAX_DEVS_PER_TAXI 13
-#define SPX5_DSM_CAL_TAXIS             8
 #define SPX5_DSM_CAL_BW_LOSS           553
 
 #define SPX5_TAXI_PORT_MAX             70
@@ -27,15 +25,20 @@
 
 /* Maps from taxis to port numbers */
 static u32 sparx5_taxi_ports[SPX5_DSM_CAL_TAXIS][SPX5_DSM_CAL_MAX_DEVS_PER_TAXI] = {
-	{57, 12, 0, 1, 2, 16, 17, 18, 19, 20, 21, 22, 23},
-	{58, 13, 3, 4, 5, 24, 25, 26, 27, 28, 29, 30, 31},
-	{59, 14, 6, 7, 8, 32, 33, 34, 35, 36, 37, 38, 39},
-	{60, 15, 9, 10, 11, 40, 41, 42, 43, 44, 45, 46, 47},
+	{57, 12,  0,  1,  2, 16, 17, 18, 19, 20, 21, 22, 23},
+	{58, 13,  3,  4,  5, 24, 25, 26, 27, 28, 29, 30, 31},
+	{59, 14,  6,  7,  8, 32, 33, 34, 35, 36, 37, 38, 39},
+	{60, 15,  9, 10, 11, 40, 41, 42, 43, 44, 45, 46, 47},
 	{61, 48, 49, 50, 99, 99, 99, 99, 99, 99, 99, 99, 99},
 	{62, 51, 52, 53, 99, 99, 99, 99, 99, 99, 99, 99, 99},
 	{56, 63, 54, 55, 99, 99, 99, 99, 99, 99, 99, 99, 99},
 	{64, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99},
 };
+
+u32 *sparx5_get_taxi(int idx)
+{
+	return sparx5_taxi_ports[idx];
+}
 
 struct sparx5_calendar_data {
 	u32 schedule[SPX5_DSM_CAL_LEN];
@@ -285,6 +288,7 @@ static int sparx5_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
 {
 	const struct sparx5_consts *consts = &sparx5->data->consts;
 	int devs_per_taxi = consts->dsm_cal_max_devs_per_taxi;
+	const struct sparx5_ops *ops = &sparx5->data->ops;
 	bool slow_mode;
 	u32 gcd, idx, sum, min, factor;
 	u32 num_of_slots, slot_spd, empty_slots;
@@ -293,8 +297,8 @@ static int sparx5_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
 	clk_period_ps = sparx5_clk_period(sparx5->coreclock);
 	taxi_bw = 128 * 1000000 / clk_period_ps;
 	slow_mode = !!(clk_period_ps > 2000);
-	memcpy(data->taxi_ports, &sparx5_taxi_ports[taxi],
-	       sizeof(data->taxi_ports));
+	memcpy(data->taxi_ports, ops->get_taxi(taxi),
+	       devs_per_taxi * sizeof(u32));
 
 	for (idx = 0; idx < SPX5_DSM_CAL_LEN; idx++) {
 		data->new_slots[idx] = SPX5_DSM_CAL_EMPTY;
