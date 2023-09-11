@@ -230,7 +230,8 @@ static int sparx5_set_mac_address(struct net_device *dev, void *p)
 	sparx5_mact_forget(sparx5, dev->dev_addr,  port->pvid);
 
 	/* Add new */
-	sparx5_mact_learn(sparx5, PGID_CPU, addr->sa_data, port->pvid);
+	sparx5_mact_learn(sparx5, sparx5_get_pgid_index(sparx5, PGID_CPU),
+			  addr->sa_data, port->pvid);
 
 	/* Record the address */
 	eth_hw_addr_set(dev, addr->sa_data);

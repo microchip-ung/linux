@@ -59,16 +59,16 @@ enum sparx5_vlan_port_type {
 #define SPX5_PORT_VD2          (SPX5_PORT_CPU + 4) /* VD2/Port 69 used for IPinIP*/
 #define SPX5_PORTS_ALL         (SPX5_PORT_CPU + 5) /* Total number of ports */
 
-#define PGID_BASE              SPX5_PORTS /* Starts after port PGIDs */
-#define PGID_UC_FLOOD          (PGID_BASE + 0)
-#define PGID_MC_FLOOD          (PGID_BASE + 1)
-#define PGID_IPV4_MC_DATA      (PGID_BASE + 2)
-#define PGID_IPV4_MC_CTRL      (PGID_BASE + 3)
-#define PGID_IPV6_MC_DATA      (PGID_BASE + 4)
-#define PGID_IPV6_MC_CTRL      (PGID_BASE + 5)
-#define PGID_BCAST	       (PGID_BASE + 6)
-#define PGID_CPU	       (PGID_BASE + 7)
-#define PGID_MCAST_START       (PGID_BASE + 8)
+/* PGID Flood and general purpose (multicast), relative to last physical port */
+#define PGID_UC_FLOOD     0
+#define PGID_MC_FLOOD     1
+#define PGID_IPV4_MC_DATA 2
+#define PGID_IPV4_MC_CTRL 3
+#define PGID_IPV6_MC_DATA 4
+#define PGID_IPV6_MC_CTRL 5
+#define PGID_BCAST        6
+#define PGID_CPU          7
+#define PGID_MCAST_START  8
 
 #define PGID_TABLE_SIZE	       3290
 
@@ -601,6 +601,11 @@ enum sparx5_pgid_type {
 	SPX5_PGID_RESERVED,
 	SPX5_PGID_MULTICAST,
 };
+
+static inline u32 sparx5_get_pgid_index(struct sparx5 *sparx5, int pgid)
+{
+	return sparx5->data->consts.chip_ports + pgid;
+}
 
 /* sparx5_port.c */
 int sparx5_port_mux_set(struct sparx5 *sparx5, struct sparx5_port *port,
