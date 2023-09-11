@@ -992,6 +992,7 @@ static const struct sparx5_match_data sparx5_desc = {
 		.port_get_dev_index = &sparx5_port_dev_mapping,
 		.get_ifh_field_pos = &sparx5_get_ifh_field_pos,
 		.get_ifh_field_width = &sparx5_get_ifh_field_width,
+		.get_pipeline_pt = &sparx5_get_packet_pipeline_pt,
 	},
 	.consts = {
 		.chip_ports = 65,

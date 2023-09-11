@@ -45,6 +45,17 @@ u32 sparx5_get_ifh_field_width(enum sparx5_ifh_enum idx)
 	return sparx5_ifh[idx][1];
 }
 
+u32 sparx5_get_packet_pipeline_pt(enum sparx5_packet_pipeline_pt pt)
+{
+	u32 pipeline_pts[SPX5_PACKET_PIPELINE_PT_MAX] = {
+		 0,  0,  0,  2,  3,  4,  0,  6,  7,
+		 0,  9,  0, 11,  0, 13, 14,  0, 16,
+		17, 18, 19, 20, 21, 22,  0, 24,  0
+	};
+
+	return pipeline_pts[pt];
+}
+
 void sparx5_xtr_flush(struct sparx5 *sparx5, u8 grp)
 {
 	/* Start flush */

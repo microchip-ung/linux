@@ -58,6 +58,8 @@ static void __ifh_encode_bitfield(void *ifh, u64 value, u32 pos, u32 width)
 void sparx5_set_port_ifh(struct sparx5 *sparx5, void *ifh_hdr, u16 portno)
 {
 	const struct sparx5_ops *ops = &sparx5->data->ops;
+	u32 pipeline_pt =
+		ops->get_pipeline_pt(SPX5_PACKET_PIPELINE_PT_ANA_DONE);
 
 	/* VSTAX.RSV = 1. MSBit must be 1 */
 	__ifh_encode_bitfield(ifh_hdr, 1,
@@ -72,7 +74,7 @@ void sparx5_set_port_ifh(struct sparx5 *sparx5, void *ifh_hdr, u16 portno)
 			      ops->get_ifh_field_pos(IFH_MISC_CPU_MASK_DPORT),
 			      ops->get_ifh_field_width(IFH_MISC_CPU_MASK_DPORT));
 	/* MISC.PIPELINE_PT */
-	__ifh_encode_bitfield(ifh_hdr, 16,
+	__ifh_encode_bitfield(ifh_hdr, pipeline_pt,
 			      ops->get_ifh_field_pos(IFH_MISC_PIPELINE_PT),
 			      ops->get_ifh_field_width(IFH_MISC_PIPELINE_PT));
 	/* MISC.PIPELINE_ACT */

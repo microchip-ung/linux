@@ -363,6 +363,37 @@ enum sparx5_ifh_enum {
 	IFH_MAX,
 };
 
+enum sparx5_packet_pipeline_pt {
+	SPX5_PACKET_PIPELINE_PT_NONE,
+	SPX5_PACKET_PIPELINE_PT_ANA_RB,
+	SPX5_PACKET_PIPELINE_PT_ANA_VRAP,
+	SPX5_PACKET_PIPELINE_PT_ANA_PORT_VOE,
+	SPX5_PACKET_PIPELINE_PT_ANA_CL,
+	SPX5_PACKET_PIPELINE_PT_ANA_CLM,
+	SPX5_PACKET_PIPELINE_PT_ANA_IPT_PROT,
+	SPX5_PACKET_PIPELINE_PT_ANA_OU_VOI,
+	SPX5_PACKET_PIPELINE_PT_ANA_OU_SW,
+	SPX5_PACKET_PIPELINE_PT_ANA_OU_PROT,
+	SPX5_PACKET_PIPELINE_PT_ANA_OU_VOE,
+	SPX5_PACKET_PIPELINE_PT_ANA_MID_PROT,
+	SPX5_PACKET_PIPELINE_PT_ANA_IN_VOE,
+	SPX5_PACKET_PIPELINE_PT_ANA_IN_PROT,
+	SPX5_PACKET_PIPELINE_PT_ANA_IN_SW,
+	SPX5_PACKET_PIPELINE_PT_ANA_IN_VOI,
+	SPX5_PACKET_PIPELINE_PT_ANA_VLAN,
+	SPX5_PACKET_PIPELINE_PT_ANA_DONE,
+	SPX5_PACKET_PIPELINE_PT_REW_IN_VOI,
+	SPX5_PACKET_PIPELINE_PT_REW_IN_SW,
+	SPX5_PACKET_PIPELINE_PT_REW_IN_VOE,
+	SPX5_PACKET_PIPELINE_PT_REW_OU_VOE,
+	SPX5_PACKET_PIPELINE_PT_REW_OU_SW,
+	SPX5_PACKET_PIPELINE_PT_REW_OU_VOI,
+	SPX5_PACKET_PIPELINE_PT_REW_OU_SAT,
+	SPX5_PACKET_PIPELINE_PT_REW_PORT_VOE,
+	SPX5_PACKET_PIPELINE_PT_REW_VCAP,
+	SPX5_PACKET_PIPELINE_PT_MAX,
+};
+
 struct sparx5_ops {
 	bool (*port_is_2g5)(int portno);
 	bool (*port_is_5g)(int portno);
@@ -370,6 +401,7 @@ struct sparx5_ops {
 	u32 (*port_get_dev_index)(struct sparx5 *sparx5, int port);
 	u32 (*get_ifh_field_pos)(enum sparx5_ifh_enum idx);
 	u32 (*get_ifh_field_width)(enum sparx5_ifh_enum idx);
+	u32 (*get_pipeline_pt)(enum sparx5_packet_pipeline_pt);
 	int (*port_mux_set)(struct sparx5 *sparx5, struct sparx5_port *port,
 			    struct sparx5_port_config *conf);
 };
@@ -727,6 +759,9 @@ extern struct sparx5_pool_entry sparx5_psfp_sf_pool[SPX5_PSFP_SF_CNT];
 void sparx5_new_base_time(struct sparx5 *sparx5, const u32 cycle_time,
 			  const ktime_t org_base_time, ktime_t *new_base_time);
 void sparx5_update_u64_counter(u64 *cntr, u32 msb, u32 lsb);
+
+/* sparx5_packet.c */
+u32 sparx5_get_packet_pipeline_pt(enum sparx5_packet_pipeline_pt pt);
 
 /* Clock period in picoseconds */
 static inline u32 sparx5_clk_period(enum sparx5_core_clockfreq cclock)
