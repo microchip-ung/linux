@@ -846,7 +846,7 @@ static int sparx5_port_pcs_high_set(struct sparx5 *sparx5,
 static void sparx5_dev_switch(struct sparx5 *sparx5, int port, bool hsd)
 {
 	const struct sparx5_ops *ops = &sparx5->data->ops;
-	int bt_indx = BIT(sparx5_port_dev_index(sparx5, port));
+	int bt_indx = BIT(ops->get_dev_mode_bit(sparx5, port));
 
 	if (ops->port_is_5g(port)) {
 		spx5_rmw(hsd ? 0 : bt_indx,
