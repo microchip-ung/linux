@@ -360,14 +360,6 @@ void sparx5_update_u64_counter(u64 *cntr, u32 msb, u32 lsb)
 	*cntr |= (u64)msb << 32;
 }
 
-/* Max rates for leak groups */
-static const u32 spx5_hsch_max_group_rate[SPX5_HSCH_LEAK_GRP_CNT] = {
-	1048568, /*  1.049 Gbps */
-	2621420, /*  2.621 Gbps */
-	10485680, /* 10.486 Gbps */
-	26214200 /* 26.214 Gbps */
-};
-
 struct sparx5_layer sparx5_layers[SPX5_HSCH_LAYER_CNT];
 
 static u32 sparx5_lg_get_leak_time(struct sparx5 *sparx5, u32 layer, u32 group)
@@ -1571,15 +1563,31 @@ int sparx5_tc_ets_del(struct sparx5_port *port)
 	return sparx5_dwrr_conf_set(port, &dwrr);
 }
 
+/* Max rates for leak groups */
+static const u32 sparx5_hsch_max_group_rate[SPX5_HSCH_LEAK_GRP_CNT] = {
+	1048568, 2621420, 10485680, 26214200
+};
+
+u32 sparx5_get_hsch_max_group_rate(int grp)
+{
+	return sparx5_hsch_max_group_rate[grp];
+}
+
 static int sparx5_leak_groups_init(struct sparx5 *sparx5)
 {
+	const struct sparx5_ops *ops = &sparx5->data->ops;
+	u32 spx5_hsch_max_group_rate[SPX5_HSCH_LEAK_GRP_CNT];
 	struct sparx5_layer *layer;
 	u32 sys_clk_per_100ps;
 	struct sparx5_lg *lg;
 	u32 leak_time_us;
 	int i, ii;
 
-	sys_clk_per_100ps = spx5_rd(sparx5, HSCH_SYS_CLK_PER);
+	/* Max rates for leak groups */
+	for (i = 0; i < SPX5_HSCH_LEAK_GRP_CNT; i++)
+		spx5_hsch_max_group_rate[i] = ops->get_hsch_max_group_rate(i);
+
+	sys_clk_per_100ps = sparx5_clk_period(sparx5->coreclock) / 100;
 
 	for (i = 0; i < SPX5_HSCH_LAYER_CNT; i++) {
 		layer = &sparx5_layers[i];

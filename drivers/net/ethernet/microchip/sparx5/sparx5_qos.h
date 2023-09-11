@@ -171,5 +171,5 @@ u32 sparx5_lg_get_first(struct sparx5 *sparx5, u32 layer, u32 group);
 u32 sparx5_lg_get_next(struct sparx5 *sparx5, u32 layer, u32 group,
 		       u32 idx);
 bool sparx5_lg_is_empty(struct sparx5 *sparx5, u32 layer, u32 group);
-
+const u32 sparx5_get_hsch_max_group_rate(int grp);
 #endif /* _SPARX5_QOS_H_ */

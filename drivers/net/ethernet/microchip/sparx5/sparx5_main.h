@@ -406,6 +406,7 @@ struct sparx5_ops {
 	u32 (*get_ifh_field_width)(enum sparx5_ifh_enum idx);
 	u32 (*get_pipeline_pt)(enum sparx5_packet_pipeline_pt);
 	u32 (*get_dev_mode_bit)(struct sparx5 *sparx5, int port);
+	u32 (*get_hsch_max_group_rate)(int grp);
 	u32* (*get_taxi)(int idx);
 	int (*port_mux_set)(struct sparx5 *sparx5, struct sparx5_port *port,
 			    struct sparx5_port_config *conf);

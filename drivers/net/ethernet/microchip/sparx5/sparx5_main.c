@@ -995,6 +995,7 @@ static const struct sparx5_match_data sparx5_desc = {
 		.get_pipeline_pt = &sparx5_get_packet_pipeline_pt,
 		.get_taxi = &sparx5_get_taxi,
 		.get_dev_mode_bit = &sparx5_port_dev_mapping,
+		.get_hsch_max_group_rate = &sparx5_get_hsch_max_group_rate,
 	},
 	.consts = {
 		.chip_ports = 65,
