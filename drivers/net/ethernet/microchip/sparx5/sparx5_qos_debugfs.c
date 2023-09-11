@@ -191,13 +191,16 @@ static int sparx5_psfp_debugfs_show(struct seq_file *s, void *unused)
 		fmid, sgid, gate_state, gate_ips, gate_interval, pending, isdx,
 		enabled;
 	struct sparx5 *sparx5 = s->private;
+	const struct sparx5_consts *consts;
 	struct sparx5_pool_entry *e;
 	int i, ii, gate_num_entries;
 	struct timespec64 ts;
 	const char *status;
 	char buf[128];
 
-	for (i = 0; i < SPX5_PSFP_SF_CNT; i++) {
+	consts = &sparx5->data->consts;
+
+	for (i = 0; i < consts->filter_cnt; i++) {
 		isdx = sparx5_pool_idx_to_id(i);
 		e = &sparx5_psfp_sf_pool[i];
 
