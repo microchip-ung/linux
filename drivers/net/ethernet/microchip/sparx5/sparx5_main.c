@@ -1005,6 +1005,9 @@ static const struct sparx5_match_data sparx5_desc = {
 		.gate_cnt = 1024,
 		.lb_cnt = 4616,
 		.tod_pin = 4,
+		.vcaps = sparx5_vcaps,
+		.vcaps_cfg = sparx5_vcap_inst_cfg,
+		.vcap_stats = &sparx5_vcap_stats,
 	},
 };
 

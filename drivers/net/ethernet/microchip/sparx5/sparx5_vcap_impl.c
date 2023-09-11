@@ -192,18 +192,7 @@ enum vcap_es2_port_sel_arp {
 	VCAP_ES2_PS_ARP_ARP,
 };
 
-static struct sparx5_vcap_inst {
-	enum vcap_type vtype; /* type of vcap */
-	int vinst; /* instance number within the same type */
-	int lookups; /* number of lookups in this vcap type */
-	int lookups_per_instance; /* number of lookups in this instance */
-	int first_cid; /* first chain id in this vcap */
-	int last_cid; /* last chain id in this vcap */
-	int count; /* number of available addresses, if not mapped in super vcap */
-	int map_id; /* id in the super vcap block mapping (if applicable) */
-	int blockno; /* starting block in super vcap (if applicable) */
-	int blocks; /* number of blocks in super vcap (if applicable) */
-} sparx5_vcap_inst_cfg[] = {
+const struct sparx5_vcap_inst sparx5_vcap_inst_cfg[] = {
 	{
 		.vtype = VCAP_TYPE_ES0,
 		.lookups = SPARX5_ES0_LOOKUPS,
@@ -2640,7 +2629,7 @@ int sparx5_vcap_init(struct sparx5 *sparx5)
 		INIT_LIST_HEAD(&ctrl->list);
 		/* Do VCAP instance initialization */
 		for (idx = 0; idx < ARRAY_SIZE(sparx5_vcap_inst_cfg); ++idx) {
-			cfg = &sparx5_vcap_inst_cfg[idx];
+			cfg = &consts->vcaps_cfg[idx];
 			admin = sparx5_vcap_admin_alloc(sparx5, ctrl, cfg);
 			if (IS_ERR(admin)) {
 				err = PTR_ERR(admin);
@@ -2668,8 +2657,8 @@ int sparx5_vcap_init(struct sparx5 *sparx5)
 			}
 		}
 		/* let the api know the vcap model and client */
-		ctrl->vcaps = sparx5_vcaps;
-		ctrl->stats = &sparx5_vcap_stats;
+		ctrl->vcaps = consts->vcaps;
+		ctrl->stats = consts->vcap_stats;
 		vcap_api_set_client(ctrl);
 		sparx5_create_vcap_debugfs(sparx5, ctrl);
 	}

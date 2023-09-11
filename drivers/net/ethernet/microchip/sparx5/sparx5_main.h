@@ -21,6 +21,7 @@
 #include <linux/debugfs.h>
 
 #include "sparx5_main_regs.h"
+#include "sparx5_vcap_impl.h"
 
 /* Target chip type */
 enum spx5_target_chiptype {
@@ -367,6 +368,9 @@ struct sparx5_consts {
 	int gate_cnt;
 	int lb_cnt;
 	int tod_pin;
+	const struct sparx5_vcap_inst *vcaps_cfg;
+	const struct vcap_info *vcaps;
+	const struct vcap_statistics *vcap_stats;
 };
 
 struct sparx5_regs {
@@ -509,6 +513,13 @@ void sparx5_netlink_fp_uninit(void);
 int sparx5_vcap_init(struct sparx5 *sparx5);
 int sparx5_vcap_client(struct net_device *ndev);
 void sparx5_vcap_destroy(struct sparx5 *sparx5);
+
+/* sparx5_vcap_ag_api.c  */
+extern const struct vcap_info sparx5_vcaps[];
+extern const struct vcap_statistics sparx5_vcap_stats;
+
+/* sparx5_vcap_impl.c */
+extern const struct sparx5_vcap_inst sparx5_vcap_inst_cfg[];
 
 /* sparx5_pgid.c */
 enum sparx5_pgid_type {

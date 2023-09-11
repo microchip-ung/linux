@@ -12,12 +12,27 @@
 
 #include <linux/types.h>
 
+#include "vcap_api.h"
+
 struct sparx5;
 struct vcap_admin;
 struct net_device;
 struct vcap_keyset_list;
 enum vcap_keyfield_set;
 enum vcap_key_field;
+
+struct sparx5_vcap_inst {
+	enum vcap_type vtype; /* type of vcap */
+	int vinst; /* instance number within the same type */
+	int lookups; /* number of lookups in this vcap type */
+	int lookups_per_instance; /* number of lookups in this instance */
+	int first_cid; /* first chain id in this vcap */
+	int last_cid; /* last chain id in this vcap */
+	int count; /* number of available addresses, if not mapped in super vcap */
+	int map_id; /* id in the super vcap block mapping (if applicable) */
+	int blockno; /* starting block in super vcap (if applicable) */
+	int blocks; /* number of blocks in super vcap (if applicable) */
+};
 
 #define SPARX5_VCAP_CID_IS0_L0 VCAP_CID_INGRESS_L0 /* IS0/CLM lookup 0 */
 #define SPARX5_VCAP_CID_IS0_L1 VCAP_CID_INGRESS_L1 /* IS0/CLM lookup 1 */
