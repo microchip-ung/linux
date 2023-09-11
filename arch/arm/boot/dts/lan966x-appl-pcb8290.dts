@@ -63,12 +63,6 @@
 		function = "usb_slave_b";
 	};
 
-	fc0_b_pins: usart-pins {
-		/* SCK, RXD, TXD */
-		pins = "GPIO_24", "GPIO_25", "GPIO_26";
-		function = "fc0_b";
-	};
-
 	fc3_a_pins: fca3_spi-pins {
 		/* SCK, RXD, TXD */
 		pins = "GPIO_17", "GPIO_18", "GPIO_19";
