@@ -992,6 +992,7 @@ static const struct sparx5_match_data sparx5_desc = {
 		.res_cfg_max_colour_idx = 638,
 		.hsch_l1_se_cnt = 64,
 		.hsch_queue_cnt = 8,
+		.lb_group_cnt = 10,
 	},
 };
 

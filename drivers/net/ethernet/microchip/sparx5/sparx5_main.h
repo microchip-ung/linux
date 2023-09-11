@@ -355,6 +355,7 @@ struct sparx5_consts {
 	int res_cfg_max_colour_idx;
 	int hsch_l1_se_cnt;
 	int hsch_queue_cnt;
+	int lb_group_cnt;
 };
 
 struct sparx5_regs {

@@ -178,13 +178,14 @@ static int sparx5_sdlb_group_get_count(struct sparx5 *sparx5, u32 group)
 
 int sparx5_sdlb_group_get_by_rate(struct sparx5 *sparx5, u32 rate, u32 burst)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	const struct sparx5_sdlb_group *group;
 	u64 rate_bps;
 	int i, count;
 
 	rate_bps = rate * 1000;
 
-	for (i = SPX5_SDLB_GROUP_CNT - 1; i >= 0; i--) {
+	for (i = consts->lb_group_cnt - 1; i >= 0; i--) {
 		group = &sdlb_groups[i];
 
 		count = sparx5_sdlb_group_get_count(sparx5, i);
