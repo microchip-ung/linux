@@ -1000,6 +1000,7 @@ static const struct sparx5_match_data sparx5_desc = {
 		.sio_clk_cnt = 3,
 		.own_upsid_cnt = 3,
 		.auto_cal_cnt = 7,
+		.pol_acl_cnt = 64,
 	},
 };
 

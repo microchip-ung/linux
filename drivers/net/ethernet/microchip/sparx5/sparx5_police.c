@@ -186,6 +186,8 @@ int sparx5_policer_conf_set(struct sparx5 *sparx5,
 
 int sparx5_policer_init(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
+
 	/* Setup global count events for acl policers.
 	 * Count all discarded frames with unmasked event and no errors.
 	 */
@@ -196,7 +198,7 @@ int sparx5_policer_init(struct sparx5 *sparx5)
 	/* Configure discard policer (zero rate and burst; closed) */
 	struct sparx5_policer pol = {
 		.type = SPX5_POL_ACL,
-		.idx =  SPX5_POL_ACL_DISCARD,
+		.idx =  consts->pol_acl_cnt - 1, /* last ACL policer */
 	};
 	u8 counter = 0;
 	u32 value;

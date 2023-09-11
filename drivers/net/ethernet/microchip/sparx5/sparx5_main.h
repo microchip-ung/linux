@@ -362,6 +362,7 @@ struct sparx5_consts {
 	int sio_clk_cnt;
 	int own_upsid_cnt;
 	int auto_cal_cnt;
+	int pol_acl_cnt;
 };
 
 struct sparx5_regs {
