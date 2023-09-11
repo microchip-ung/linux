@@ -356,6 +356,7 @@ struct sparx5_consts {
 	int hsch_l1_se_cnt;
 	int hsch_queue_cnt;
 	int lb_group_cnt;
+	int pgid_cnt;
 };
 
 struct sparx5_regs {

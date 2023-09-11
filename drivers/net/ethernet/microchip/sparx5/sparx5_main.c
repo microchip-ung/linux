@@ -993,6 +993,7 @@ static const struct sparx5_match_data sparx5_desc = {
 		.hsch_l1_se_cnt = 64,
 		.hsch_queue_cnt = 8,
 		.lb_group_cnt = 10,
+		.pgid_cnt = (2048 + 65),
 	},
 };
 
