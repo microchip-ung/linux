@@ -352,6 +352,8 @@ struct sparx5_ops {
 	bool (*port_is_5g)(int portno);
 	bool (*port_is_10g)(int portno);
 	u32 (*port_get_dev_index)(struct sparx5 *sparx5, int port);
+	int (*port_mux_set)(struct sparx5 *sparx5, struct sparx5_port *port,
+			    struct sparx5_port_config *conf);
 };
 
 struct sparx5_consts {
@@ -535,6 +537,10 @@ enum sparx5_pgid_type {
 	SPX5_PGID_RESERVED,
 	SPX5_PGID_MULTICAST,
 };
+
+/* sparx5_port.c */
+int sparx5_port_mux_set(struct sparx5 *sparx5, struct sparx5_port *port,
+			struct sparx5_port_config *conf);
 
 void sparx5_pgid_init(struct sparx5 *spx5);
 int sparx5_pgid_alloc_glag(struct sparx5 *spx5, u16 *idx);

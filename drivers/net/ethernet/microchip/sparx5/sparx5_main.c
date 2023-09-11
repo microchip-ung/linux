@@ -985,6 +985,7 @@ static const struct sparx5_match_data sparx5_desc = {
 		.fpos = sparx5_fpos,
 	},
 	.ops = {
+		.port_mux_set = &sparx5_port_mux_set,
 		.port_is_2g5 = &sparx5_port_is_2g5,
 		.port_is_5g = &sparx5_port_is_5g,
 		.port_is_10g = &sparx5_port_is_10g,
