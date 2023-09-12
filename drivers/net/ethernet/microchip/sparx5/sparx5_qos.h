@@ -100,7 +100,7 @@ int sparx5_hsch_l0_get_idx(struct sparx5 *sparx5, int port, int queue);
 #define SPX5_SE_MODE_DATARATE 1
 
 /* Rate and burst */
-#define SPX5_SE_RATE_MAX 262143
+#define SPX5_SE_RATE_MAX 131071
 #define SPX5_SE_BURST_MAX 127
 #define SPX5_SE_RATE_MIN 1
 #define SPX5_SE_BURST_MIN 1

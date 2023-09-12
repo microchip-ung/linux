@@ -1422,9 +1422,10 @@ static int sparx5_shaper_conf_set(struct sparx5_port *port,
 static int sparx5_dwrr_conf_set(struct sparx5_port *port,
 				  struct sparx5_dwrr *dwrr)
 {
+	u32 layer = is_sparx5(port->sparx5) ? 2 : 1;
 	int i;
 
-	spx5_rmw(HSCH_HSCH_CFG_CFG_HSCH_LAYER_SET(2) |
+	spx5_rmw(HSCH_HSCH_CFG_CFG_HSCH_LAYER_SET(layer) |
 		HSCH_HSCH_CFG_CFG_CFG_SE_IDX_SET(port->portno),
 		HSCH_HSCH_CFG_CFG_HSCH_LAYER |
 		HSCH_HSCH_CFG_CFG_CFG_SE_IDX,
@@ -1690,9 +1691,11 @@ int sparx5_qos_init(struct sparx5 *sparx5)
 	if (err)
 		return err;
 
-	err = sparx5_tas_init(sparx5);
-	if (err)
-		return err;
+	if (is_sparx5(sparx5)) {
+		err = sparx5_tas_init(sparx5);
+		if (err)
+			return err;
+	}
 
 	sparx5_psfp_init(sparx5);
 
