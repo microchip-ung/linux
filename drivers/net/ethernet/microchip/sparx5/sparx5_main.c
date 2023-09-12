@@ -24,6 +24,8 @@
 #include <linux/types.h>
 #include <linux/reset.h>
 
+#include "lan969x/lan969x.h"
+
 #include "sparx5_main_regs.h"
 #include "sparx5_main.h"
 #include "sparx5_port.h"
@@ -45,12 +47,6 @@ struct initial_port_config {
 struct sparx5_ram_config {
 	void __iomem *init_reg;
 	u32 init_val;
-};
-
-struct sparx5_main_io_resource {
-	enum sparx5_target id;
-	phys_addr_t offset;
-	int range;
 };
 
 static const struct sparx5_main_io_resource sparx5_main_iomap[] =  {
@@ -1050,6 +1046,9 @@ static const struct sparx5_match_data sparx5_desc = {
 
 static const struct of_device_id mchp_sparx5_match[] = {
 	{ .compatible = "microchip,sparx5-switch", .data = &sparx5_desc },
+#ifdef CONFIG_LAN969X_SWITCH
+	{ .compatible = "microchip,lan969x-switch", .data = &lan969x_desc },
+#endif
 	{ }
 };
 MODULE_DEVICE_TABLE(of, mchp_sparx5_match);

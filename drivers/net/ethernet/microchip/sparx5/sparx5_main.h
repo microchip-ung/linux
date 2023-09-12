@@ -397,6 +397,12 @@ enum sparx5_packet_pipeline_pt {
 	SPX5_PACKET_PIPELINE_PT_MAX,
 };
 
+struct sparx5_main_io_resource {
+	enum sparx5_target id;
+	phys_addr_t offset;
+	int range;
+};
+
 struct sparx5_ops {
 	bool (*port_is_2g5)(int portno);
 	bool (*port_is_5g)(int portno);
