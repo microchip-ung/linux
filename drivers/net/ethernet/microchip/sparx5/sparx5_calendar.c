@@ -379,14 +379,16 @@ static int sparx5_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
 			data->avg_dist[idx] = -1;
 		}
 		data->dev_slots[idx] = ((spd * factor / slot_spd) + 999) / 1000;
-		if (spd != 25000 && (spd != 10000 || !slow_mode)) {
-			if (num_of_slots < (5 * data->dev_slots[idx])) {
-				dev_err(sparx5->dev,
-					"Taxi %u, speed %u, Low slot sep.\n",
-					taxi, spd);
-				return -EINVAL;
+		if (is_sparx5(sparx5))
+			/* Improved and allowed on lan969x, i.e. this check can be skipped  */
+			if (spd != 25000 && (spd != 10000 || !slow_mode)) {
+				if (num_of_slots < (5 * data->dev_slots[idx])) {
+					dev_err(sparx5->dev,
+						"Taxi %u, speed %u, Low slot sep.\n",
+						taxi, spd);
+					return -EINVAL;
+				}
 			}
-		}
 		sum += data->dev_slots[idx];
 		if (sum > num_of_slots) {
 			dev_err(sparx5->dev,
