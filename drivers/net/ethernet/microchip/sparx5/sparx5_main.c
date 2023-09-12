@@ -705,6 +705,10 @@ static int sparx5_start(struct sparx5 *sparx5)
 	if (err)
 		return err;
 
+	/* Fix me! */
+	if (!is_sparx5(sparx5))
+		sparx5_calendar_fix(sparx5);
+
 	/* Init stats */
 	err = sparx_stats_init(sparx5);
 	if (err)

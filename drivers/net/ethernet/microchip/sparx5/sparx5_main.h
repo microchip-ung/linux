@@ -544,6 +544,7 @@ void sparx5_vlan_port_apply(struct sparx5 *sparx5, struct sparx5_port *port);
 int sparx5_config_auto_calendar(struct sparx5 *sparx5);
 int sparx5_config_dsm_calendar(struct sparx5 *sparx5);
 u32 *sparx5_get_taxi(int idx);
+void sparx5_calendar_fix(struct sparx5 *sparx5);
 
 /* sparx5_ethtool.c */
 struct sparx5_port_stats {
