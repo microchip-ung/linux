@@ -94,9 +94,9 @@
 
 		switch: switch@e0000000 {
 			compatible = "microchip,lan969x-switch";
-			reg = <0xe0000000 0x0020000>,
-			      <0xe2000000 0x0800000>;
-			reg-names = "cpu", "gcb";
+			reg = <0xe00c0000 0x0010000>,
+			      <0xe2010000 0x13f0000>;
+			reg-names = "cpu", "dev";
 			interrupt-names = "xtr", "fdma", "ptp";
 			interrupts = <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>,
 				     <GIC_SPI 88 IRQ_TYPE_LEVEL_HIGH>,
@@ -104,11 +104,6 @@
 			resets = <&reset 0>;
 			reset-names = "switch";
 			status = "disabled";
-
-			ethernet_ports: ethernet-ports {
-				#address-cells = <1>;
-				#size-cells = <0>;
-			};
 		};
 
 		flx0: flexcom@e0040000 {
