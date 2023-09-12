@@ -493,6 +493,20 @@ static int sparx5_init_coreclock(struct sparx5 *sparx5)
 		else if (sparx5->coreclock == SPX5_CORE_CLOCK_250MHZ)
 			freq = 0; /* Not supported */
 		break;
+	case SPX5_TARGET_CT_LAN9694:
+	case SPX5_TARGET_CT_LAN9691VAO:
+	case SPX5_TARGET_CT_LAN9694TSN:
+	case SPX5_TARGET_CT_LAN9694RED:
+	case SPX5_TARGET_CT_LAN9696:
+	case SPX5_TARGET_CT_LAN9692VAO:
+	case SPX5_TARGET_CT_LAN9696TSN:
+	case SPX5_TARGET_CT_LAN9696RED:
+	case SPX5_TARGET_CT_LAN9698:
+	case SPX5_TARGET_CT_LAN9693VAO:
+	case SPX5_TARGET_CT_LAN9698TSN:
+	case SPX5_TARGET_CT_LAN9698RED:
+		freq = SPX5_CORE_CLOCK_328MHZ;
+		break;
 	default:
 		dev_err(sparx5->dev, "Target (%#04x) not supported\n",
 			sparx5->target_ct);
@@ -540,11 +554,6 @@ static int sparx5_init_coreclock(struct sparx5 *sparx5)
 	sparx5->coreclock = freq;
 
 	clk_period = sparx5_clk_period(freq);
-
-	spx5_rmw(HSCH_SYS_CLK_PER_100PS_SET(clk_period / 100),
-		 HSCH_SYS_CLK_PER_100PS,
-		 sparx5,
-		 HSCH_SYS_CLK_PER);
 
 	spx5_rmw(ANA_AC_POL_BDLB_DLB_CTRL_CLK_PERIOD_01NS_SET(clk_period / 100),
 		 ANA_AC_POL_BDLB_DLB_CTRL_CLK_PERIOD_01NS,
