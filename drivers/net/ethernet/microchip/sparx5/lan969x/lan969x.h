@@ -54,4 +54,8 @@ static inline bool lan969x_port_is_rgmii(int portno)
 	return portno == 28 || portno == 29;
 }
 
+int lan969x_fdma_stop(struct sparx5 *sparx5);
+int lan969x_fdma_start(struct sparx5 *sparx5);
+int lan969x_fdma_xmit(struct sparx5 *sparx5, u32 *ifh, struct sk_buff *skb);
+
 #endif

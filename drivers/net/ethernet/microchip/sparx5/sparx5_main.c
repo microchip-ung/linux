@@ -646,6 +646,7 @@ static int sparx5_start(struct sparx5 *sparx5)
 {
 	u8 broadcast[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 	const struct sparx5_consts *consts = &sparx5->data->consts;
+	const struct sparx5_ops *ops = &sparx5->data->ops;
 	char queue_name[32];
 	u32 idx;
 	int err;
@@ -756,7 +757,7 @@ static int sparx5_start(struct sparx5 *sparx5)
 							IRQF_SHARED,
 							"sparx5-fdma", sparx5);
 		if (!err)
-			err = sparx5_fdma_start(sparx5);
+			err = ops->fdma_start(sparx5);
 		if (err)
 			sparx5->fdma_irq = -ENXIO;
 	} else {
@@ -983,6 +984,7 @@ cleanup_pnode:
 static int mchp_sparx5_remove(struct platform_device *pdev)
 {
 	struct sparx5 *sparx5 = platform_get_drvdata(pdev);
+	const struct sparx5_ops *ops = &sparx5->data->ops;
 
 	debugfs_remove_recursive(sparx5->debugfs_root);
 	if (sparx5->xtr_irq) {
@@ -994,7 +996,7 @@ static int mchp_sparx5_remove(struct platform_device *pdev)
 		sparx5->fdma_irq = -ENXIO;
 	}
 	sparx5_ptp_deinit(sparx5);
-	sparx5_fdma_stop(sparx5);
+	ops->fdma_stop(sparx5);
 	sparx5_cleanup_ports(sparx5);
 	sparx5_vcap_destroy(sparx5);
 	/* Unregister netdevs */
@@ -1029,6 +1031,9 @@ static const struct sparx5_match_data sparx5_desc = {
 		.get_dev_mode_bit = &sparx5_port_dev_mapping,
 		.get_hsch_max_group_rate = &sparx5_get_hsch_max_group_rate,
 		.get_sdlb_group = &sparx5_get_sdlb_group,
+		.fdma_stop = &sparx5_fdma_stop,
+		.fdma_start = &sparx5_fdma_start,
+		.fdma_xmit = &sparx5_fdma_xmit,
 	},
 	.consts = {
 		.chip_ports = 65,
@@ -1051,6 +1056,7 @@ static const struct sparx5_match_data sparx5_desc = {
 		.gate_cnt = 1024,
 		.lb_cnt = 4616,
 		.tod_pin = 4,
+		.fdma_db_cnt = 15,
 		.vcaps = sparx5_vcaps,
 		.vcaps_cfg = sparx5_vcap_inst_cfg,
 		.vcap_stats = &sparx5_vcap_stats,

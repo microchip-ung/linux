@@ -7,6 +7,8 @@
 #include "sparx5_main_regs.h"
 #include "sparx5_main.h"
 
+#include "lan969x/lan969x.h"
+
 #define XTR_EOF_0     ntohl((__force __be32)0x80000000u)
 #define XTR_EOF_1     ntohl((__force __be32)0x80000001u)
 #define XTR_EOF_2     ntohl((__force __be32)0x80000002u)
@@ -267,8 +269,11 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 	struct net_device_stats *stats = &dev->stats;
 	struct sparx5_port *port = netdev_priv(dev);
 	struct sparx5 *sparx5 = port->sparx5;
+	const struct sparx5_ops *ops;
 	u32 ifh[IFH_LEN];
 	netdev_tx_t ret;
+
+	ops = &sparx5->data->ops;
 
 	memset(ifh, 0, IFH_LEN * 4);
 	sparx5_set_port_ifh(sparx5, ifh, port->portno);
@@ -289,7 +294,7 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 
 	skb_tx_timestamp(skb);
 	if (sparx5->fdma_irq > 0)
-		ret = sparx5_fdma_xmit(sparx5, ifh, skb);
+		ret = ops->fdma_xmit(sparx5, ifh, skb);
 	else
 		ret = sparx5_inject(sparx5, ifh, skb, dev);
 

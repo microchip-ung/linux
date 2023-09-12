@@ -98,6 +98,24 @@ enum sparx5_vlan_port_type {
 #define FDMA_DCB_MAX			64
 #define FDMA_RX_DCB_MAX_DBS		15
 #define FDMA_TX_DCB_MAX_DBS		1
+#define FDMA_XTR_CHANNEL		6
+#define FDMA_INJ_CHANNEL		0
+
+#define FDMA_DCB_INFO_DATAL(x)		((x) & GENMASK(15, 0))
+#define FDMA_DCB_INFO_TOKEN		BIT(17)
+#define FDMA_DCB_INFO_INTR		BIT(18)
+#define FDMA_DCB_INFO_SW(x)		(((x) << 24) & GENMASK(31, 24))
+
+#define FDMA_DCB_STATUS_BLOCKL(x)	((x) & GENMASK(15, 0))
+#define FDMA_DCB_STATUS_SOF		BIT(16)
+#define FDMA_DCB_STATUS_EOF		BIT(17)
+#define FDMA_DCB_STATUS_INTR		BIT(18)
+#define FDMA_DCB_STATUS_DONE		BIT(19)
+#define FDMA_DCB_STATUS_BLOCKO(x)	(((x) << 20) & GENMASK(31, 20))
+#define FDMA_DCB_INVALID_DATA		0x1
+
+#define FDMA_XTR_BUFFER_SIZE		2048
+#define FDMA_WEIGHT			4
 
 #define SPARX5_PHC_COUNT		3
 #define SPARX5_PHC_PORT			0
@@ -122,6 +140,14 @@ enum sparx5_vlan_port_type {
 #define SPX5_DSM_CAL_TAXIS             8
 
 struct sparx5;
+
+/* For each hardware DB there is an entry in this list and when the HW DB
+ * entry is used, this SW DB entry is moved to the back of the list
+ */
+struct sparx5_db {
+	struct list_head list;
+	void *cpu_addr;
+};
 
 struct sparx5_db_hw {
 	u64 dataptr;
@@ -157,6 +183,14 @@ struct sparx5_rx {
 	u32 channel_id;
 	struct net_device *ndev;
 	u64 packets;
+#ifdef CONFIG_LAN969X_SWITCH
+	/* For each DB, there is a page */
+	struct page *page[FDMA_DCB_MAX][FDMA_RX_DCB_MAX_DBS];
+	/* Represents the page order that is used to allocate the pages for the
+	 * RX buffers. This value is calculated based on max MTU of the devices.
+	 */
+	u8 page_order;
+#endif
 };
 
 /* Frame DMA transmit state:
@@ -430,6 +464,9 @@ struct sparx5_ops {
 	int (*port_mux_set)(struct sparx5 *sparx5, struct sparx5_port *port,
 			    struct sparx5_port_config *conf);
 	struct sparx5_sdlb_group* (*get_sdlb_group)(int idx);
+	int (*fdma_stop)(struct sparx5 *sparx5);
+	int (*fdma_start)(struct sparx5 *sparx5);
+	int (*fdma_xmit)(struct sparx5 *sparx5, u32 *ifh, struct sk_buff *skb);
 };
 
 struct sparx5_consts {
@@ -453,6 +490,7 @@ struct sparx5_consts {
 	int gate_cnt;
 	int lb_cnt;
 	int tod_pin;
+	int fdma_db_cnt;
 	const struct sparx5_vcap_inst *vcaps_cfg;
 	const struct vcap_info *vcaps;
 	const struct vcap_statistics *vcap_stats;
@@ -505,6 +543,20 @@ int sparx5_fdma_start(struct sparx5 *sparx5);
 int sparx5_fdma_stop(struct sparx5 *sparx5);
 int sparx5_fdma_xmit(struct sparx5 *sparx5, u32 *ifh, struct sk_buff *skb);
 irqreturn_t sparx5_fdma_handler(int irq, void *args);
+u32 sparx5_fdma_port_ctrl(struct sparx5 *sparx5);
+void sparx5_fdma_rx_activate(struct sparx5 *sparx5, struct sparx5_rx *rx);
+void sparx5_fdma_rx_deactivate(struct sparx5 *sparx5, struct sparx5_rx *rx);
+void sparx5_fdma_rx_reload(struct sparx5 *sparx5, struct sparx5_rx *rx);
+void sparx5_fdma_tx_activate(struct sparx5 *sparx5, struct sparx5_tx *tx);
+void sparx5_fdma_tx_deactivate(struct sparx5 *sparx5, struct sparx5_tx *tx);
+void sparx5_fdma_tx_reload(struct sparx5 *sparx5, struct sparx5_tx *tx);
+struct sparx5_tx_dcb_hw *sparx5_fdma_next_dcb(struct sparx5_tx *tx,
+					      struct sparx5_tx_dcb_hw *dcb);
+void sparx5_fdma_injection_mode(struct sparx5 *sparx5);
+void sparx5_fdma_rx_init(struct sparx5 *sparx5, struct sparx5_rx *rx,
+			 int channel);
+void sparx5_fdma_tx_init(struct sparx5 *sparx5, struct sparx5_tx *tx,
+			 int channel);
 
 /* sparx5_mactable.c */
 void sparx5_mact_pull_work(struct work_struct *work);

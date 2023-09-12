@@ -25,7 +25,8 @@ lan969x-appl-y := lan969x_main_appl.o
 obj-$(CONFIG_LAN969X_SWITCH) += lan969x-switch.o
 
 lan969x-switch-y := lan969x/lan969x_regs.o lan969x/lan969x.o \
- lan969x/lan969x_vcap_impl.o lan969x/lan969x_vcap_ag_api.o
+ lan969x/lan969x_vcap_impl.o lan969x/lan969x_vcap_ag_api.o \
+ lan969x/lan969x_fdma.o
 
 # Provide include files
 ccflags-y += -I$(srctree)/drivers/net/ethernet/microchip/vcap

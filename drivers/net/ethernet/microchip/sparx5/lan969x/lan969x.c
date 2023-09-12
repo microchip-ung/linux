@@ -272,6 +272,9 @@ const struct sparx5_match_data lan969x_desc = {
 		.get_pipeline_pt = &lan969x_get_packet_pipeline_pt,
 		.get_taxi = &lan969x_get_taxi,
 		.get_hsch_max_group_rate = &lan969x_get_hsch_max_group_rate,
+		.fdma_stop = lan969x_fdma_stop,
+		.fdma_start = lan969x_fdma_start,
+		.fdma_xmit = lan969x_fdma_xmit,
 	},
 	.consts = {
 		.chip_ports = 30,
