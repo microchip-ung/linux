@@ -294,5 +294,8 @@ const struct sparx5_match_data lan969x_desc = {
 		.gate_cnt = 256,
 		.lb_cnt = 496,
 		.tod_pin = 7,
+		.vcaps = lan969x_vcaps,
+		.vcaps_cfg = lan969x_vcap_inst_cfg,
+		.vcap_stats = &lan969x_vcap_stats,
 	},
 };

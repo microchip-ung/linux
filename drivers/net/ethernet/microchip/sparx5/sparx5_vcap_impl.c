@@ -27,11 +27,6 @@ extern const struct vcap_statistics sparx5_vcap_stats;
 
 #define STREAMSIZE (64 * 4)
 
-#define SPARX5_ES0_LOOKUPS 1
-#define SPARX5_ES2_LOOKUPS 2
-#define SPARX5_IS0_LOOKUPS 6
-#define SPARX5_IS2_LOOKUPS 4
-
 #define SPARX5_STAT_ESDX_GRN_PKTS  0x300
 #define SPARX5_STAT_ESDX_YEL_PKTS  0x301
 

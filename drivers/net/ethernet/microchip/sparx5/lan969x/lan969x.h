@@ -9,6 +9,13 @@
 
 #include "../sparx5_main.h"
 
+/* lan969x_vcap_impl.c */
+extern const struct sparx5_vcap_inst lan969x_vcap_inst_cfg[];
+
+/* lan969x_vcap_ag_api.c */
+extern const struct vcap_info lan969x_vcaps[];
+extern const struct vcap_statistics lan969x_vcap_stats;
+
 /* lan969x.c */
 extern const struct sparx5_match_data lan969x_desc;
 

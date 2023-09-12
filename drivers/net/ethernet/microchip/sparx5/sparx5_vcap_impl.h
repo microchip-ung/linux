@@ -34,6 +34,11 @@ struct sparx5_vcap_inst {
 	int blocks; /* number of blocks in super vcap (if applicable) */
 };
 
+#define SPARX5_ES0_LOOKUPS 1
+#define SPARX5_ES2_LOOKUPS 2
+#define SPARX5_IS0_LOOKUPS 6
+#define SPARX5_IS2_LOOKUPS 4
+
 #define SPARX5_VCAP_CID_IS0_L0 VCAP_CID_INGRESS_L0 /* IS0/CLM lookup 0 */
 #define SPARX5_VCAP_CID_IS0_L1 VCAP_CID_INGRESS_L1 /* IS0/CLM lookup 1 */
 #define SPARX5_VCAP_CID_IS0_L2 VCAP_CID_INGRESS_L2 /* IS0/CLM lookup 2 */
