@@ -910,7 +910,10 @@ int sparx5_ptp_init(struct sparx5 *sparx5)
 	struct sparx5_port *port;
 	int err, i;
 
-	if (!sparx5->ptp)
+	/* We need PTP TOD on lan969x for QoS and TSN features - for now
+	 * always initialize on lan969x.
+	 */
+	if (!sparx5->ptp && is_sparx5(sparx5))
 		return 0;
 
 	for (i = 0; i < SPARX5_PHC_COUNT; ++i) {
