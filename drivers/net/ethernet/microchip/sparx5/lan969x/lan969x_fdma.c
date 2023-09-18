@@ -14,9 +14,9 @@
 #include <linux/ip.h>
 #include <linux/dma-mapping.h>
 
-#include "sparx5_main_regs.h"
-#include "sparx5_main.h"
-#include "sparx5_port.h"
+#include "../sparx5_main_regs.h"
+#include "../sparx5_main.h"
+#include "../sparx5_port.h"
 
 static struct page *lan969x_fdma_rx_alloc_page(struct sparx5 *sparx5,
 					       struct sparx5_rx *rx,
