@@ -90,7 +90,7 @@ int sparx5_qos_init(struct sparx5 *sparx5);
 #define SPX5_HSCH_L2_SE_CNT 64
 
 /* Calculate Layer 0 Scheduler Element when using normal hierarchy */
-#define SPX5_HSCH_L0_GET_IDX(port, queue) ((64 * (port)) + (8 * (queue)))
+int sparx5_hsch_l0_get_idx(struct sparx5 *sparx5, int port, int queue);
 
 /* Number of leak groups */
 #define SPX5_HSCH_LEAK_GRP_CNT 4
@@ -100,7 +100,7 @@ int sparx5_qos_init(struct sparx5 *sparx5);
 #define SPX5_SE_MODE_DATARATE 1
 
 /* Rate and burst */
-#define SPX5_SE_RATE_MAX 262143
+#define SPX5_SE_RATE_MAX 131071
 #define SPX5_SE_BURST_MAX 127
 #define SPX5_SE_RATE_MIN 1
 #define SPX5_SE_BURST_MIN 1
@@ -171,5 +171,5 @@ u32 sparx5_lg_get_first(struct sparx5 *sparx5, u32 layer, u32 group);
 u32 sparx5_lg_get_next(struct sparx5 *sparx5, u32 layer, u32 group,
 		       u32 idx);
 bool sparx5_lg_is_empty(struct sparx5 *sparx5, u32 layer, u32 group);
-
+const u32 sparx5_get_hsch_max_group_rate(int grp);
 #endif /* _SPARX5_QOS_H_ */

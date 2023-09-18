@@ -1339,15 +1339,16 @@ static int sparx5_tc_flower_psfp_setup(struct sparx5 *sparx5,
 				       struct sparx5_psfp_fm *fm,
 				       struct sparx5_psfp_sf *sf)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	u32 psfp_sfid = 0, psfp_fmid = 0, psfp_sgid = 0;
 	int ret;
 
 	/* Must always have a stream gate - max sdu (filter option) is evaluated
 	 * after frames have passed the gate, so in case of only a policer, we
-	 * allocate a stream gate that is always open.
+	 * allocate a stream gate that is always open (last gate).
 	 */
 	if (sg_idx < 0) {
-		sg_idx = sparx5_pool_idx_to_id(SPX5_PSFP_SG_OPEN);
+		sg_idx = sparx5_pool_idx_to_id(consts->gate_cnt - 1);
 		sg->ipv = 0; /* Disabled */
 		sg->cycletime = SPX5_PSFP_SG_CYCLE_TIME_DEFAULT;
 		sg->num_entries = 1;
