@@ -999,3 +999,4 @@ void sparx5_ptp_rxtstamp(struct sparx5 *sparx5, struct sk_buff *skb,
 	shhwtstamps = skb_hwtstamps(skb);
 	shhwtstamps->hwtstamp = full_ts_in_ns;
 }
+EXPORT_SYMBOL_GPL(sparx5_ptp_rxtstamp);

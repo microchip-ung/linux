@@ -175,7 +175,6 @@ struct sparx5_tx_dcb_hw {
 struct sparx5_rx {
 	struct sparx5_rx_dcb_hw *dcb_entries;
 	struct sparx5_rx_dcb_hw *last_entry;
-	struct sk_buff *skb[FDMA_DCB_MAX][FDMA_RX_DCB_MAX_DBS];
 	int db_index;
 	int dcb_index;
 	dma_addr_t dma;
@@ -183,14 +182,15 @@ struct sparx5_rx {
 	u32 channel_id;
 	struct net_device *ndev;
 	u64 packets;
-#ifdef CONFIG_LAN969X_SWITCH
 	/* For each DB, there is a page */
-	struct page *page[FDMA_DCB_MAX][FDMA_RX_DCB_MAX_DBS];
+	union {
+		struct sk_buff *skb[FDMA_DCB_MAX][FDMA_RX_DCB_MAX_DBS];
+		struct page *page[FDMA_DCB_MAX][FDMA_RX_DCB_MAX_DBS];
+	};
 	/* Represents the page order that is used to allocate the pages for the
 	 * RX buffers. This value is calculated based on max MTU of the devices.
 	 */
 	u8 page_order;
-#endif
 };
 
 /* Frame DMA transmit state:

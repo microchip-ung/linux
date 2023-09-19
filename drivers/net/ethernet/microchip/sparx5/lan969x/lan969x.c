@@ -302,3 +302,4 @@ const struct sparx5_match_data lan969x_desc = {
 		.vcap_stats = &lan969x_vcap_stats,
 	},
 };
+MODULE_LICENSE("Dual MIT/GPL");
