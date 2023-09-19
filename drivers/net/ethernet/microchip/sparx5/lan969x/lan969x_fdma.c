@@ -393,7 +393,7 @@ int lan969x_fdma_start(struct sparx5 *sparx5)
 		dev_err(sparx5->dev, "Could not allocate RX buffers: %d\n", err);
 		return err;
 	}
-	pr_info("%s:%u", __func__, __LINE__);
+
 	err = lan969x_fdma_tx_alloc(sparx5);
 	if (err) {
 		pr_info("%s:%u", __func__, __LINE__);
