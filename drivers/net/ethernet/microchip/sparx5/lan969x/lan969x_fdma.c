@@ -106,12 +106,12 @@ static void lan969x_fdma_rx_reload(struct sparx5 *sparx5, struct sparx5_rx *rx)
 static struct sk_buff *lan969x_fdma_rx_get_frame(struct sparx5 *sparx5,
 						 struct sparx5_rx *rx)
 {
-	u64 src_port, timestamp;
 	struct sparx5_db_hw *db;
 	struct sk_buff *skb;
 	struct page *page;
 	struct frame_info fi;
 	struct sparx5_port *port;
+	u64 timestamp;
 
 	/* Get the received frame and unmap it */
 	db = &rx->dcb_entries[rx->dcb_index].db[rx->db_index];
@@ -131,14 +131,14 @@ static struct sk_buff *lan969x_fdma_rx_get_frame(struct sparx5 *sparx5,
 	port = fi.src_port < sparx5->data->consts.chip_ports ? sparx5->ports[fi.src_port] :
 						  NULL;
 
-	if (WARN_ON(src_port >= sparx5->data->consts.chip_ports))
+	if (WARN_ON(fi.src_port >= sparx5->data->consts.chip_ports))
 		goto free_skb;
 
 	dma_unmap_single_attrs(sparx5->dev, (dma_addr_t)db->dataptr,
 			       PAGE_SIZE << rx->page_order, DMA_FROM_DEVICE,
 			       DMA_ATTR_SKIP_CPU_SYNC);
 
-	skb->dev = sparx5->ports[src_port]->ndev;
+	skb->dev = sparx5->ports[fi.src_port]->ndev;
 	skb_pull(skb, IFH_LEN * sizeof(u32));
 
 	if (likely(!(skb->dev->features & NETIF_F_RXFCS)))
