@@ -548,6 +548,8 @@ static int sparx5_init_coreclock(struct sparx5 *sparx5)
 			 CLKGEN_LCPLL1_CORE_CLK_CFG_CORE_CLK_ENA,
 			 sparx5,
 			 CLKGEN_LCPLL1_CORE_CLK_CFG);
+	} else {
+		pol_upd_int = 820; // lan969x default
 	}
 
 	/* Update state with chosen frequency */
