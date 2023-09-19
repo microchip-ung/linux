@@ -115,6 +115,7 @@ void sparx5_fdma_rx_activate(struct sparx5 *sparx5, struct sparx5_rx *rx)
 	/* Activate the RX channel */
 	spx5_wr(BIT(rx->channel_id), sparx5, FDMA_CH_ACTIVATE);
 }
+EXPORT_SYMBOL_GPL(sparx5_fdma_rx_activate);
 
 void sparx5_fdma_rx_deactivate(struct sparx5 *sparx5, struct sparx5_rx *rx)
 {
@@ -130,6 +131,7 @@ void sparx5_fdma_rx_deactivate(struct sparx5 *sparx5, struct sparx5_rx *rx)
 	spx5_rmw(FDMA_PORT_CTRL_XTR_STOP_SET(1), FDMA_PORT_CTRL_XTR_STOP,
 		 sparx5, FDMA_PORT_CTRL(0));
 }
+EXPORT_SYMBOL_GPL(sparx5_fdma_rx_deactivate);
 
 void sparx5_fdma_tx_activate(struct sparx5 *sparx5, struct sparx5_tx *tx)
 {
@@ -151,6 +153,7 @@ void sparx5_fdma_tx_activate(struct sparx5 *sparx5, struct sparx5_tx *tx)
 	/* Activate the channel */
 	spx5_wr(BIT(tx->channel_id), sparx5, FDMA_CH_ACTIVATE);
 }
+EXPORT_SYMBOL_GPL(sparx5_fdma_tx_activate);
 
 void sparx5_fdma_tx_deactivate(struct sparx5 *sparx5, struct sparx5_tx *tx)
 {
@@ -158,6 +161,7 @@ void sparx5_fdma_tx_deactivate(struct sparx5 *sparx5, struct sparx5_tx *tx)
 	spx5_rmw(0, BIT(tx->channel_id) & FDMA_CH_ACTIVATE_CH_ACTIVATE,
 		 sparx5, FDMA_CH_ACTIVATE);
 }
+EXPORT_SYMBOL_GPL(sparx5_fdma_tx_deactivate);
 
 void sparx5_fdma_rx_reload(struct sparx5 *sparx5, struct sparx5_rx *rx)
 {
@@ -170,6 +174,7 @@ void sparx5_fdma_tx_reload(struct sparx5 *sparx5, struct sparx5_tx *tx)
 	/* Reload the TX channel */
 	spx5_wr(BIT(tx->channel_id), sparx5, FDMA_CH_RELOAD);
 }
+EXPORT_SYMBOL_GPL(sparx5_fdma_tx_reload);
 
 static struct sk_buff *sparx5_fdma_rx_alloc_skb(struct sparx5_rx *rx)
 {
@@ -282,6 +287,7 @@ struct sparx5_tx_dcb_hw *sparx5_fdma_next_dcb(struct sparx5_tx *tx,
 		next_dcb = tx->first_entry;
 	return next_dcb;
 }
+EXPORT_SYMBOL_GPL(sparx5_fdma_next_dcb);
 
 int sparx5_fdma_xmit(struct sparx5 *sparx5, u32 *ifh, struct sk_buff *skb)
 {
@@ -432,12 +438,14 @@ void sparx5_fdma_rx_init(struct sparx5 *sparx5, struct sparx5_rx *rx,
 		}
 	}
 }
+EXPORT_SYMBOL_GPL(sparx5_fdma_rx_init);
 
 void sparx5_fdma_tx_init(struct sparx5 *sparx5, struct sparx5_tx *tx,
 			 int channel)
 {
 	tx->channel_id = channel;
 }
+EXPORT_SYMBOL_GPL(sparx5_fdma_tx_init);
 
 irqreturn_t sparx5_fdma_handler(int irq, void *args)
 {
@@ -524,6 +532,7 @@ void sparx5_fdma_injection_mode(struct sparx5 *sparx5)
 			 HSCH_PORT_MODE(portno));
 	}
 }
+EXPORT_SYMBOL_GPL(sparx5_fdma_injection_mode);
 
 int sparx5_fdma_start(struct sparx5 *sparx5)
 {
@@ -562,6 +571,7 @@ u32 sparx5_fdma_port_ctrl(struct sparx5 *sparx5)
 {
 	return spx5_rd(sparx5, FDMA_PORT_CTRL(0));
 }
+EXPORT_SYMBOL_GPL(sparx5_fdma_port_ctrl);
 
 int sparx5_fdma_stop(struct sparx5 *sparx5)
 {

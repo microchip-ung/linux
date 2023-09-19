@@ -92,6 +92,7 @@ void sparx5_ifh_parse(struct sparx5 *sparx5, u32 *ifh, struct frame_info *info)
 		((u64)xtr_hdr[4] <<  8) |
 		((u64)xtr_hdr[5] <<  0);
 }
+EXPORT_SYMBOL_GPL(sparx5_ifh_parse);
 
 static void sparx5_xtr_grp(struct sparx5 *sparx5, u8 grp, bool byte_swap)
 {
