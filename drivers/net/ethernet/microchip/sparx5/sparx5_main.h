@@ -871,10 +871,7 @@ static inline u32 sparx5_clk_period(enum sparx5_core_clockfreq cclock)
 }
 
 static inline bool sparx5_is_baser(phy_interface_t interface)
-{int sparx5_policer_init(struct sparx5 *sparx5);
-int sparx5_policer_port_stats_update(struct sparx5_port *port, int polidx);
-int sparx5_policer_stats_update(struct sparx5 *sparx5,
-				struct sparx5_policer *pol);
+{
 	return interface == PHY_INTERFACE_MODE_5GBASER ||
 		   interface == PHY_INTERFACE_MODE_10GBASER ||
 		   interface == PHY_INTERFACE_MODE_25GBASER;
