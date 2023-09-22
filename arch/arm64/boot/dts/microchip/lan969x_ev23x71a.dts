@@ -675,6 +675,12 @@
 			microchip,sd-sgpio = <377>;
 			managed = "in-band-status";
 		};
+		port29: port@29 {
+			reg = <29>;
+			microchip,bandwidth = <1000>;
+			phy-handle = <&phy3>;
+			phy-mode = "rgmii";
+		};
 	};
 };
 

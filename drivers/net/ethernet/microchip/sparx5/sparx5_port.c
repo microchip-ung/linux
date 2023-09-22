@@ -18,6 +18,14 @@
 #define SPX5_WAIT_US         1000
 #define SPX5_WAIT_MAX_US     2000
 
+#define SPX5_RGMII_TX_CLK_DISABLE 0  /* Disable TX clock generation*/
+#define SPX5_RGMII_TX_CLK_125MHZ 1   /* 1000Mbps */
+#define SPX5_RGMII_TX_CLK_25MHZ  2   /* 100Mbps */
+#define SPX5_RGMII_TX_CLK_2M5MHZ 3   /* 10Mbps */
+#define SPX5_RGMII_PORT_START_IDX 28
+#define SPX5_RGMII_PORT_RATE 2       /* 1000Mbps  */
+#define SPX5_RGMII_DLL_SHIFT_90DEG 3 /* DLL phase shift 90deg. (2 ns @ 125MHz) */
+
 enum port_error {
 	SPX5_PERR_SPEED,
 	SPX5_PERR_IFTYPE,
@@ -257,6 +265,15 @@ static int sparx5_port_verify_speed(struct sparx5 *sparx5,
 		     conf->speed != SPEED_25000))
 			return sparx5_port_error(port, conf, SPX5_PERR_SPEED);
 		break;
+	case PHY_INTERFACE_MODE_RGMII:
+	case PHY_INTERFACE_MODE_RGMII_ID:
+	case PHY_INTERFACE_MODE_RGMII_TXID:
+	case PHY_INTERFACE_MODE_RGMII_RXID:
+		if (conf->speed != SPEED_1000 &&
+		    conf->speed != SPEED_100 &&
+		    conf->speed != SPEED_10)
+			return sparx5_port_error(port, conf, SPX5_PERR_SPEED);
+		break;
 	default:
 		return sparx5_port_error(port, conf, SPX5_PERR_IFTYPE);
 	}
@@ -474,6 +491,9 @@ static int sparx5_port_fifo_sz(struct sparx5 *sparx5,
 	u32 fifo_width = 16;
 	u32 mac_width  = 8;
 	u32 addition   = 0;
+
+	if (!is_sparx5(sparx5))
+		return 0;
 
 	switch (speed) {
 	case SPEED_25000:
@@ -970,10 +990,82 @@ int sparx5_port_pcs_set(struct sparx5 *sparx5,
 	return 0;
 }
 
+int sparx5_port_rgmii_config(struct sparx5 *sparx5, struct sparx5_port *port,
+			     struct sparx5_port_config *conf)
+{
+	int tx_clk_freq, rgmii_index = port->portno - SPX5_RGMII_PORT_START_IDX;
+	bool tx_delay = false;
+	bool rx_delay = false;
+
+	tx_clk_freq = (conf->speed == SPEED_10	? SPX5_RGMII_TX_CLK_2M5MHZ :
+		       conf->speed == SPEED_100 ? SPX5_RGMII_TX_CLK_25MHZ :
+						  SPX5_RGMII_TX_CLK_125MHZ);
+
+	if (conf->phy_mode == PHY_INTERFACE_MODE_RGMII ||
+	    conf->phy_mode == PHY_INTERFACE_MODE_RGMII_TXID)
+		tx_delay = true;
+
+	if (conf->phy_mode == PHY_INTERFACE_MODE_RGMII ||
+	    conf->phy_mode == PHY_INTERFACE_MODE_RGMII_RXID)
+		rx_delay = true;
+
+	/* Take the RGMII out of reset and set speed to 1G */
+	spx5_rmw(HSIO_WRAP_RGMII_CFG_TX_CLK_CFG_SET(tx_clk_freq) |
+		HSIO_WRAP_RGMII_CFG_RGMII_TX_RST_SET(0) |
+		HSIO_WRAP_RGMII_CFG_RGMII_RX_RST_SET(0),
+		HSIO_WRAP_RGMII_CFG_TX_CLK_CFG |
+		HSIO_WRAP_RGMII_CFG_RGMII_TX_RST |
+		HSIO_WRAP_RGMII_CFG_RGMII_RX_RST,
+		sparx5, HSIO_WRAP_RGMII_CFG(rgmii_index));
+
+	/* Enable the RGMII0 on the GPIOs */
+	spx5_wr(HSIO_WRAP_XMII_CFG_GPIO_XMII_CFG_SET(1),
+		sparx5, HSIO_WRAP_XMII_CFG(!rgmii_index));
+
+	/* Enable the RGMII delays on the MAC both on the RX and TX.
+	 * The signal is shifted by 90 degress.
+	 */
+	spx5_rmw(HSIO_WRAP_DLL_CFG_DLL_RST_SET(0) |
+		 HSIO_WRAP_DLL_CFG_DLL_ENA_SET(1) |
+		 HSIO_WRAP_DLL_CFG_DLL_CLK_ENA_SET(rx_delay) |
+		 HSIO_WRAP_DLL_CFG_DLL_CLK_SEL_SET(SPX5_RGMII_DLL_SHIFT_90DEG),
+		 HSIO_WRAP_DLL_CFG_DLL_RST |
+		 HSIO_WRAP_DLL_CFG_DLL_ENA |
+		 HSIO_WRAP_DLL_CFG_DLL_CLK_ENA |
+		 HSIO_WRAP_DLL_CFG_DLL_CLK_SEL,
+		 sparx5, HSIO_WRAP_DLL_CFG(rgmii_index, 0));
+
+	spx5_rmw(HSIO_WRAP_DLL_CFG_DLL_RST_SET(0) |
+		 HSIO_WRAP_DLL_CFG_DLL_ENA_SET(1) |
+		 HSIO_WRAP_DLL_CFG_DLL_CLK_ENA_SET(tx_delay) |
+		 HSIO_WRAP_DLL_CFG_DLL_CLK_SEL_SET(SPX5_RGMII_DLL_SHIFT_90DEG),
+		 HSIO_WRAP_DLL_CFG_DLL_RST |
+		 HSIO_WRAP_DLL_CFG_DLL_ENA |
+		 HSIO_WRAP_DLL_CFG_DLL_CLK_ENA |
+		 HSIO_WRAP_DLL_CFG_DLL_CLK_SEL,
+		 sparx5, HSIO_WRAP_DLL_CFG(rgmii_index, 1));
+
+	/* Configure the port now */
+	spx5_wr(DEVRGMII_MAC_ENA_CFG_RX_ENA_SET(1) |
+		DEVRGMII_MAC_ENA_CFG_TX_ENA_SET(1),
+		sparx5, DEVRGMII_MAC_ENA_CFG(rgmii_index));
+
+	spx5_wr(DEVRGMII_MAC_IFG_CFG_TX_IFG_SET(4) |
+		DEVRGMII_MAC_IFG_CFG_RX_IFG1_SET(5) |
+		DEVRGMII_MAC_IFG_CFG_RX_IFG2_SET(1),
+		sparx5, DEVRGMII_MAC_IFG_CFG(rgmii_index));
+
+	spx5_wr(DEVRGMII_DEV_RST_CTRL_SPEED_SEL_SET(SPX5_RGMII_PORT_RATE),
+		sparx5, DEVRGMII_DEV_RST_CTRL(rgmii_index));
+
+	return 0;
+}
+
 int sparx5_port_config(struct sparx5 *sparx5,
 		       struct sparx5_port *port,
 		       struct sparx5_port_config *conf)
 {
+	bool rgmii = phy_interface_mode_is_rgmii(conf->phy_mode);
 	bool high_speed_dev = sparx5_is_baser(conf->portmode);
 	int err, urgency, stop_wm;
 
@@ -981,8 +1073,11 @@ int sparx5_port_config(struct sparx5 *sparx5,
 	if (err)
 		return err;
 
+	if (rgmii)
+		sparx5_port_rgmii_config(sparx5, port, conf);
+
 	/* high speed device is already configured */
-	if (!high_speed_dev)
+	if (!rgmii && !high_speed_dev)
 		sparx5_port_config_low_set(sparx5, port, conf);
 
 	/* Configure flow control */
@@ -1041,6 +1136,9 @@ int sparx5_port_init(struct sparx5 *sparx5,
 	err = ops->port_mux_set(sparx5, port, conf);
 	if (err)
 		return err;
+
+	if (ops->port_is_rgmii(port->portno))
+		return sparx5_port_rgmii_config(sparx5, port, conf);
 
 	/* Configure MAC vlan awareness */
 	err = sparx5_port_max_tags_set(sparx5, port);

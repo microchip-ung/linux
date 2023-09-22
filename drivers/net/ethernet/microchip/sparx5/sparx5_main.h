@@ -454,6 +454,7 @@ struct sparx5_ops {
 	bool (*port_is_2g5)(int portno);
 	bool (*port_is_5g)(int portno);
 	bool (*port_is_10g)(int portno);
+	bool (*port_is_rgmii)(int portno);
 	u32 (*port_get_dev_index)(struct sparx5 *sparx5, int port);
 	u32 (*get_ifh_field_pos)(enum sparx5_ifh_enum idx);
 	u32 (*get_ifh_field_width)(enum sparx5_ifh_enum idx);
