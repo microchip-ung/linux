@@ -180,6 +180,11 @@ static void sparx5_fp_enable(struct sparx5_port *port, struct sparx5_fp_port_con
 
 static void sparx5_fp_update(struct sparx5_port *port, struct sparx5_fp_port_conf *c)
 {
+	const struct sparx5_ops *ops = &port->sparx5->data->ops;
+
+	if (ops->port_is_rgmii(port->portno))
+		return;
+
 	if (c->enable_tx &&
 		netif_carrier_ok(port->ndev) &&
 		(port->conf.speed >= SPEED_100) &&
@@ -280,6 +285,7 @@ int sparx5_fp_status(struct sparx5_port *port,
 static void sparx5_fp_init(struct sparx5 *sparx5)
 {
 	const struct sparx5_consts *consts = &sparx5->data->consts;
+	const struct sparx5_ops *ops = &sparx5->data->ops;
 	struct sparx5_port *port;
 	void __iomem *devinst;
 	u32 val, pix, dev;
@@ -288,7 +294,7 @@ static void sparx5_fp_init(struct sparx5 *sparx5)
 	/* Initialize frame-preemption and sync config with defaults */
 	for (p = 0; p < consts->chip_ports; p++) {
 		port = sparx5->ports[p];
-		if (!port)
+		if (!port || (port && ops->port_is_rgmii(port->portno)))
 			continue;
 
 		/* Always enable MAC-MERGE Layer block, queue controls FP */

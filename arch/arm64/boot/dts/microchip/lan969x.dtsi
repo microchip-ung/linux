@@ -95,7 +95,7 @@
 		switch: switch@e0000000 {
 			compatible = "microchip,lan969x-switch";
 			reg = <0xe00c0000 0x0010000>,
-			      <0xe2010000 0x13f0000>;
+			      <0xe2010000 0x1410000>;
 			reg-names = "cpu", "dev";
 			interrupt-names = "xtr", "fdma", "ptp";
 			interrupts = <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>,

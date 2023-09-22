@@ -336,6 +336,7 @@ static int sparx5_create_port(struct sparx5 *sparx5,
 		MAC_SYM_PAUSE | MAC_10 | MAC_100 | MAC_1000FD |
 		MAC_2500FD | MAC_5000FD | MAC_10000FD | MAC_25000FD;
 
+	phy_interface_set_rgmii(spx5_port->phylink_config.supported_interfaces);
 	__set_bit(PHY_INTERFACE_MODE_SGMII,
 		  spx5_port->phylink_config.supported_interfaces);
 	__set_bit(PHY_INTERFACE_MODE_QSGMII,
@@ -887,7 +888,8 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		else
 			sparx5->sd_sgpio_remapping = true;
 		serdes = devm_of_phy_get(sparx5->dev, portnp, NULL);
-		if (IS_ERR(serdes)) {
+		if (IS_ERR(serdes) &&
+		    !phy_interface_mode_is_rgmii(conf->phy_mode)) {
 			err = dev_err_probe(sparx5->dev, PTR_ERR(serdes),
 					    "port %u: missing serdes\n",
 					    portno);
@@ -1025,6 +1027,7 @@ static const struct sparx5_match_data sparx5_desc = {
 		.port_is_2g5 = &sparx5_port_is_2g5,
 		.port_is_5g = &sparx5_port_is_5g,
 		.port_is_10g = &sparx5_port_is_10g,
+		.port_is_rgmii = &sparx5_port_is_rgmii,
 		.port_get_dev_index = &sparx5_port_dev_mapping,
 		.get_ifh_field_pos = &sparx5_get_ifh_field_pos,
 		.get_ifh_field_width = &sparx5_get_ifh_field_width,
