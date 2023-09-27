@@ -371,6 +371,7 @@ static const struct of_device_id uio_of_sparx5_irqmux_match[] = {
 	{ .compatible = "mscc,uio_ocelot_irqmux" },
 	{ .compatible = "mscc,uio_luton_irqmux" },
 	{ .compatible = "microchip,uio_lan966x_irqmux" },
+	{ .compatible = "microchip,uio_lan969x_irqmux" },
 	{},
 };
 

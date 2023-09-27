@@ -248,6 +248,13 @@
 			default-state = "off";
 		};
 	};
+
+	spi_mux: spi-mux-controller {
+		compatible = "microchip,sparx5-spi-mux";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		#mux-control-cells = <0>;
+	};
 };
 
 &sgpio0 {
@@ -269,15 +276,6 @@
 	};
 	gpio@1 {
 		ngpios = <64>;
-	};
-};
-
-&spi0 {
-	status = "okay";
-	flash@0 {
-		compatible = "jedec,spi-nor";
-		spi-max-frequency = <8000000>;
-		reg = <0>;
 	};
 };
 

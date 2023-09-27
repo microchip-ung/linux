@@ -162,24 +162,29 @@ static void sparx5_fp_enable(struct sparx5_port *port, struct sparx5_fp_port_con
 			DSM_IPG_SHRINK_CFG(port->portno));
 
 	for (i = 0; i < 8; i++) {
+		int idx = sparx5_hsch_l0_get_idx(port->sparx5, port->portno, i);
 		/* Set queue to be express (0) or preemtable (1) */
 		val = (enable_tx && (c->admin_status & BIT(i))) ? 0xff : 0;
 		spx5_rmw(HSCH_HSCH_L0_CFG_P_QUEUES_SET(val),
-				 HSCH_HSCH_L0_CFG_P_QUEUES,
-				 port->sparx5,
-				 HSCH_HSCH_L0_CFG(SPX5_HSCH_L0_GET_IDX(port->portno, i)));
+			HSCH_HSCH_L0_CFG_P_QUEUES,
+			port->sparx5,
+			HSCH_HSCH_L0_CFG(idx));
 
 		/* Force update of an element  */
 		spx5_wr(HSCH_HSCH_FORCE_CTRL_HFORCE_LAYER_SET(0) |
-				HSCH_HSCH_FORCE_CTRL_HFORCE_SE_IDX_SET(SPX5_HSCH_L0_GET_IDX(port->portno, i)) |
-				HSCH_HSCH_FORCE_CTRL_HFORCE_1SHOT_SET(1),
-				port->sparx5,
-				HSCH_HSCH_FORCE_CTRL);
+			HSCH_HSCH_FORCE_CTRL_HFORCE_SE_IDX_SET(idx) |
+			HSCH_HSCH_FORCE_CTRL_HFORCE_1SHOT_SET(1), port->sparx5,
+			HSCH_HSCH_FORCE_CTRL);
 	}
 }
 
 static void sparx5_fp_update(struct sparx5_port *port, struct sparx5_fp_port_conf *c)
 {
+	const struct sparx5_ops *ops = &port->sparx5->data->ops;
+
+	if (ops->port_is_rgmii(port->portno))
+		return;
+
 	if (c->enable_tx &&
 		netif_carrier_ok(port->ndev) &&
 		(port->conf.speed >= SPEED_100) &&
@@ -279,15 +284,17 @@ int sparx5_fp_status(struct sparx5_port *port,
 
 static void sparx5_fp_init(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
+	const struct sparx5_ops *ops = &sparx5->data->ops;
 	struct sparx5_port *port;
 	void __iomem *devinst;
 	u32 val, pix, dev;
 	int p;
 
 	/* Initialize frame-preemption and sync config with defaults */
-	for (p = 0; p < SPX5_PORTS; p++) {
+	for (p = 0; p < consts->chip_ports; p++) {
 		port = sparx5->ports[p];
-		if (!port)
+		if (!port || (port && ops->port_is_rgmii(port->portno)))
 			continue;
 
 		/* Always enable MAC-MERGE Layer block, queue controls FP */
@@ -303,8 +310,8 @@ static void sparx5_fp_init(struct sparx5 *sparx5)
 					 DEV_PFRAME_CFG);
 
 		if (sparx5_is_baser(port->conf.portmode)) {
-			pix = sparx5_port_dev_index(port->portno);
-			dev = sparx5_to_high_dev(port->portno);
+			pix = sparx5_port_dev_index(sparx5, port->portno);
+			dev = sparx5_to_high_dev(sparx5, port->portno);
 			devinst = spx5_inst_get(port->sparx5, dev, pix);
 			spx5_inst_rmw(DEV10G_MAC_ADV_CHK_CFG_SFD_CHK_ENA_SET(0),
 						  DEV10G_MAC_ADV_CHK_CFG_SFD_CHK_ENA,
@@ -358,14 +365,6 @@ void sparx5_update_u64_counter(u64 *cntr, u32 msb, u32 lsb)
 	*cntr = (u64)lsb;
 	*cntr |= (u64)msb << 32;
 }
-
-/* Max rates for leak groups */
-static const u32 spx5_hsch_max_group_rate[SPX5_HSCH_LEAK_GRP_CNT] = {
-	1048568, /*  1.049 Gbps */
-	2621420, /*  2.621 Gbps */
-	10485680, /* 10.486 Gbps */
-	26214200 /* 26.214 Gbps */
-};
 
 struct sparx5_layer sparx5_layers[SPX5_HSCH_LAYER_CNT];
 
@@ -750,10 +749,11 @@ enum sparx5_tas_link_speed {
 
 int sparx5_tas_list_index(struct sparx5_port *port, u8 tas_entry)
 {
+	const struct sparx5_consts *consts = &port->sparx5->data->consts;
 	int portno, pidx = 0;
 
 	/* Limit the index to available ports */
-	for (portno = 0; portno < SPX5_PORTS; ++portno) {
+	for (portno = 0; portno < consts->chip_ports; ++portno) {
 		if (port->sparx5->ports[portno])
 			pidx++;
 		if (portno == port->portno)
@@ -1252,10 +1252,11 @@ out:
 
 static int sparx5_tas_init(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	int i, num_ports, num_tas_lists;
 
 	/* There are only 128 TAS lists, not enough for the whole port range */
-	num_ports = SPX5_PORTS;
+	num_ports = consts->chip_ports;
 	num_tas_lists = sparx5->port_count * SPX5_TAS_ENTRIES_PER_PORT;
 
 	mutex_init(&sparx5->tas_lock);
@@ -1325,6 +1326,13 @@ void sparx5_tas_speed(struct sparx5_port *port, int speed)
 }
 
 /*******************************************************************************/
+int sparx5_hsch_l0_get_idx(struct sparx5 *sparx5, int port, int queue)
+{
+	const struct sparx5_consts *consts = &sparx5->data->consts;
+
+	return (consts->hsch_l1_se_cnt * port) +
+	       (consts->hsch_queue_cnt * queue);
+}
 
 static int sparx5_lg_del(struct sparx5 *sparx5, u32 layer, u32 group, u32 idx)
 {
@@ -1420,9 +1428,10 @@ static int sparx5_shaper_conf_set(struct sparx5_port *port,
 static int sparx5_dwrr_conf_set(struct sparx5_port *port,
 				  struct sparx5_dwrr *dwrr)
 {
+	u32 layer = is_sparx5(port->sparx5) ? 2 : 1;
 	int i;
 
-	spx5_rmw(HSCH_HSCH_CFG_CFG_HSCH_LAYER_SET(2) |
+	spx5_rmw(HSCH_HSCH_CFG_CFG_HSCH_LAYER_SET(layer) |
 		HSCH_HSCH_CFG_CFG_CFG_SE_IDX_SET(port->portno),
 		HSCH_HSCH_CFG_CFG_HSCH_LAYER |
 		HSCH_HSCH_CFG_CFG_CFG_SE_IDX,
@@ -1561,15 +1570,31 @@ int sparx5_tc_ets_del(struct sparx5_port *port)
 	return sparx5_dwrr_conf_set(port, &dwrr);
 }
 
+/* Max rates for leak groups */
+static const u32 sparx5_hsch_max_group_rate[SPX5_HSCH_LEAK_GRP_CNT] = {
+	1048568, 2621420, 10485680, 26214200
+};
+
+u32 sparx5_get_hsch_max_group_rate(int grp)
+{
+	return sparx5_hsch_max_group_rate[grp];
+}
+
 static int sparx5_leak_groups_init(struct sparx5 *sparx5)
 {
+	const struct sparx5_ops *ops = &sparx5->data->ops;
+	u32 spx5_hsch_max_group_rate[SPX5_HSCH_LEAK_GRP_CNT];
 	struct sparx5_layer *layer;
 	u32 sys_clk_per_100ps;
 	struct sparx5_lg *lg;
 	u32 leak_time_us;
 	int i, ii;
 
-	sys_clk_per_100ps = spx5_rd(sparx5, HSCH_SYS_CLK_PER);
+	/* Max rates for leak groups */
+	for (i = 0; i < SPX5_HSCH_LEAK_GRP_CNT; i++)
+		spx5_hsch_max_group_rate[i] = ops->get_hsch_max_group_rate(i);
+
+	sys_clk_per_100ps = sparx5_clk_period(sparx5->coreclock) / 100;
 
 	for (i = 0; i < SPX5_HSCH_LAYER_CNT; i++) {
 		layer = &sparx5_layers[i];
@@ -1672,9 +1697,11 @@ int sparx5_qos_init(struct sparx5 *sparx5)
 	if (err)
 		return err;
 
-	err = sparx5_tas_init(sparx5);
-	if (err)
-		return err;
+	if (is_sparx5(sparx5)) {
+		err = sparx5_tas_init(sparx5);
+		if (err)
+			return err;
+	}
 
 	sparx5_psfp_init(sparx5);
 

@@ -8,7 +8,7 @@ config SPARX5_SWITCH
 	depends on NET_SWITCHDEV
 	depends on HAS_IOMEM
 	depends on OF
-	depends on ARCH_SPARX5 || COMPILE_TEST
+	depends on ARCH_SPARX5 || ARCH_LAN969X || COMPILE_TEST
 	depends on PTP_1588_CLOCK_OPTIONAL
 	depends on BRIDGE || BRIDGE=n
 	select PHYLINK
@@ -27,3 +27,14 @@ config SPARX5_DEBUG
 	  This adds VCAP and TC command debugging to the runtime.
 
 	  Do not enable this, unless you are debugging the driver.
+
+config LAN969X_SWITCH_APPL
+	tristate "Lan969x switch driver used by APPL"
+	help
+	  This driver supports the Lan969x network switch device for APPL.
+
+config LAN969X_SWITCH
+	tristate "Lan969x switch driver"
+	select SPARX5_SWITCH
+	help
+	  This driver supports the lan969x network switch device.

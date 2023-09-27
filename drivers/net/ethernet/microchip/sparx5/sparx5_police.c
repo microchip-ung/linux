@@ -56,11 +56,12 @@ int sparx5_policer_stats_update(struct sparx5 *sparx5,
 static int sparx5_policer_service_conf_set(struct sparx5 *sparx5,
 					   struct sparx5_policer *pol)
 {
+	const struct sparx5_ops *ops = &sparx5->data->ops;
 	u32 idx, pup_tokens, max_pup_tokens, burst, thres;
 	struct sparx5_sdlb_group *g;
 	u64 rate;
 
-	g = &sdlb_groups[pol->group];
+	g = ops->get_sdlb_group(pol->group);
 	idx = pol->idx;
 
 	rate = pol->rate * 1000;
@@ -186,6 +187,8 @@ int sparx5_policer_conf_set(struct sparx5 *sparx5,
 
 int sparx5_policer_init(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
+
 	/* Setup global count events for acl policers.
 	 * Count all discarded frames with unmasked event and no errors.
 	 */
@@ -196,7 +199,7 @@ int sparx5_policer_init(struct sparx5 *sparx5)
 	/* Configure discard policer (zero rate and burst; closed) */
 	struct sparx5_policer pol = {
 		.type = SPX5_POL_ACL,
-		.idx =  SPX5_POL_ACL_DISCARD,
+		.idx =  consts->pol_acl_cnt - 1, /* last ACL policer */
 	};
 	u8 counter = 0;
 	u32 value;

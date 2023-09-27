@@ -1078,6 +1078,14 @@ config MFD_LAN966X_PCI
 	  This enables the pci for multifunction driver. This is used
 	  when an external CPU is connected to LAN966X.
 
+config MFD_LAN969X_PCI
+	tristate "Microchip LAN969X Support"
+	depends on PCI
+	select GENERIC_IRQ_CHIP
+	help
+	  This enables the pci for multifunction driver. This is used
+	  when an external CPU is connected to LAN969X.
+
 config MFD_VIPERBOARD
 	tristate "Nano River Technologies Viperboard"
 	select MFD_CORE

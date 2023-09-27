@@ -27,6 +27,7 @@ enum {
 	SOC_SERVALT,
 	SOC_SPARX5,
 	SOC_LAN966X,
+	SOC_LAN969X,
 };
 
 enum {
@@ -37,6 +38,7 @@ enum {
 	IFH_ID_SERVALT = 0x09,
 	IFH_ID_SPARX5 = 0x0b,
 	IFH_ID_LAN966X = 0xd,
+	IFH_ID_LAN969X = 0xe,
 };
 
 #define IFH_LEN_LUTON			8
@@ -56,3 +58,6 @@ enum {
 
 #define IFH_LEN_LAN966X			28
 #define IFH_OFFS_PORT_MASK_LAN966X	62
+
+#define IFH_LEN_LAN969X			36
+#define IFH_OFFS_PORT_MASK_LAN969X	386

@@ -27,11 +27,6 @@ extern const struct vcap_statistics sparx5_vcap_stats;
 
 #define STREAMSIZE (64 * 4)
 
-#define SPARX5_ES0_LOOKUPS 1
-#define SPARX5_ES2_LOOKUPS 2
-#define SPARX5_IS0_LOOKUPS 6
-#define SPARX5_IS2_LOOKUPS 4
-
 #define SPARX5_STAT_ESDX_GRN_PKTS  0x300
 #define SPARX5_STAT_ESDX_YEL_PKTS  0x301
 
@@ -192,18 +187,7 @@ enum vcap_es2_port_sel_arp {
 	VCAP_ES2_PS_ARP_ARP,
 };
 
-static struct sparx5_vcap_inst {
-	enum vcap_type vtype; /* type of vcap */
-	int vinst; /* instance number within the same type */
-	int lookups; /* number of lookups in this vcap type */
-	int lookups_per_instance; /* number of lookups in this instance */
-	int first_cid; /* first chain id in this vcap */
-	int last_cid; /* last chain id in this vcap */
-	int count; /* number of available addresses, if not mapped in super vcap */
-	int map_id; /* id in the super vcap block mapping (if applicable) */
-	int blockno; /* starting block in super vcap (if applicable) */
-	int blocks; /* number of blocks in super vcap (if applicable) */
-} sparx5_vcap_inst_cfg[] = {
+const struct sparx5_vcap_inst sparx5_vcap_inst_cfg[] = {
 	{
 		.vtype = VCAP_TYPE_ES0,
 		.lookups = SPARX5_ES0_LOOKUPS,
@@ -623,6 +607,7 @@ static void sparx5_vcap_port_keys(int (*pf)(void *out, int arg, const char *f, .
 				  struct sparx5 *sparx5,
 				  struct vcap_admin *admin)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	u32 value, last_value = 0;
 	int lookup, portno;
 
@@ -634,7 +619,7 @@ static void sparx5_vcap_port_keys(int (*pf)(void *out, int arg, const char *f, .
 				pf(out, arg, "enabled");
 			else
 				pf(out, arg, "disabled");
-		for (portno = 0; portno < SPX5_PORTS; ++portno) {
+		for (portno = 0; portno < consts->chip_ports; ++portno) {
 			if (!sparx5->ports[portno])
 				continue;
 			value = spx5_rd(sparx5, REW_RTAG_ETAG_CTRL(portno));
@@ -654,7 +639,7 @@ static void sparx5_vcap_port_keys(int (*pf)(void *out, int arg, const char *f, .
 		break;
 	case VCAP_TYPE_ES2:
 		for (lookup = 0; lookup < admin->lookups; ++lookup) {
-			for (portno = 0; portno < SPX5_PORTS; ++portno) {
+			for (portno = 0; portno < consts->chip_ports; ++portno) {
 				if (!sparx5->ports[portno])
 					continue;
 				value = spx5_rd(sparx5, EACL_VCAP_ES2_KEY_SEL(portno, lookup));
@@ -698,7 +683,7 @@ static void sparx5_vcap_port_keys(int (*pf)(void *out, int arg, const char *f, .
 		break;
 	case VCAP_TYPE_IS0:
 		for (lookup = 0; lookup < admin->lookups; ++lookup) {
-			for (portno = 0; portno < SPX5_PORTS; ++portno) {
+			for (portno = 0; portno < consts->chip_ports; ++portno) {
 				if (!sparx5->ports[portno])
 					continue;
 				value = spx5_rd(sparx5, ANA_CL_ADV_CL_CFG(portno, lookup));
@@ -730,7 +715,7 @@ static void sparx5_vcap_port_keys(int (*pf)(void *out, int arg, const char *f, .
 		break;
 	case VCAP_TYPE_IS2:
 		for (lookup = 0; lookup < admin->lookups; ++lookup) {
-			for (portno = 0; portno < SPX5_PORTS; ++portno) {
+			for (portno = 0; portno < consts->chip_ports; ++portno) {
 				if (!sparx5->ports[portno])
 					continue;
 				value = spx5_rd(sparx5, ANA_ACL_VCAP_S2_KEY_SEL(portno, lookup));
@@ -2241,6 +2226,7 @@ static u32 sparx5_vcap_es2_port_key_selection(int lookup)
 /* Enable lookups per port and set the keyset generation */
 static void sparx5_vcap_port_key_selection(struct sparx5 *sparx5, struct vcap_admin *admin)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	int portno;
 	int lookup;
 	u32 value;
@@ -2249,7 +2235,7 @@ static void sparx5_vcap_port_key_selection(struct sparx5 *sparx5, struct vcap_ad
 	case VCAP_TYPE_ES0:
 		spx5_rmw(REW_ES0_CTRL_ES0_LU_ENA_SET(1), REW_ES0_CTRL_ES0_LU_ENA,
 			 sparx5, REW_ES0_CTRL);
-		for (portno = 0; portno < SPX5_PORTS; ++portno) {
+		for (portno = 0; portno < consts->chip_ports; ++portno) {
 			spx5_rmw(REW_RTAG_ETAG_CTRL_ES0_ISDX_KEY_ENA_SET(VCAP_ES0_PS_FORCE_ISDX_LOOKUPS),
 				 REW_RTAG_ETAG_CTRL_ES0_ISDX_KEY_ENA,
 				 sparx5, REW_RTAG_ETAG_CTRL(portno));
@@ -2259,7 +2245,7 @@ static void sparx5_vcap_port_key_selection(struct sparx5 *sparx5, struct vcap_ad
 		for (lookup = 0; lookup < admin->lookups; ++lookup) {
 			value = sparx5_vcap_es2_port_key_selection(lookup);
 			pr_debug("%s:%d: ES2 portsel: %#08x\n", __func__, __LINE__, value);
-			for (portno = 0; portno < SPX5_PORTS; ++portno) {
+			for (portno = 0; portno < consts->chip_ports; ++portno) {
 				spx5_wr(value, sparx5,
 					EACL_VCAP_ES2_KEY_SEL(portno, lookup));
 			}
@@ -2269,20 +2255,20 @@ static void sparx5_vcap_port_key_selection(struct sparx5 *sparx5, struct vcap_ad
 		for (lookup = 0; lookup < admin->lookups; ++lookup) {
 			value = sparx5_vcap_is0_port_key_selection(lookup);
 			pr_debug("%s:%d: IS0 portsel: %#08x\n", __func__, __LINE__, value);
-			for (portno = 0; portno < SPX5_PORTS; ++portno) {
+			for (portno = 0; portno < consts->chip_ports; ++portno) {
 				spx5_wr(value, sparx5,
 					ANA_CL_ADV_CL_CFG(portno, lookup));
 			}
 		}
 		break;
 	case VCAP_TYPE_IS2:
-		for (portno = 0; portno < SPX5_PORTS; ++portno)
+		for (portno = 0; portno < consts->chip_ports; ++portno)
 			spx5_wr(ANA_ACL_VCAP_S2_CFG_SEC_ENA_SET(0xf), sparx5,
 				ANA_ACL_VCAP_S2_CFG(portno));
 		for (lookup = 0; lookup < admin->lookups; ++lookup) {
 			value = sparx5_vcap_is2_port_key_selection(lookup);
 			pr_debug("%s:%d: IS2 portsel: %#08x\n", __func__, __LINE__, value);
-			for (portno = 0; portno < SPX5_PORTS; ++portno) {
+			for (portno = 0; portno < consts->chip_ports; ++portno) {
 				spx5_wr(value, sparx5,
 					ANA_ACL_VCAP_S2_KEY_SEL(portno, lookup));
 			}
@@ -2302,13 +2288,14 @@ static void sparx5_vcap_port_key_selection(struct sparx5 *sparx5, struct vcap_ad
 
 static void sparx5_vcap_port_key_deselection(struct sparx5 *sparx5, struct vcap_admin *admin)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	int portno, lookup;
 
 	switch (admin->vtype) {
 	case VCAP_TYPE_ES0:
 		spx5_rmw(REW_ES0_CTRL_ES0_LU_ENA_SET(0), REW_ES0_CTRL_ES0_LU_ENA,
 			 sparx5, REW_ES0_CTRL);
-		for (portno = 0; portno < SPX5_PORTS; ++portno) {
+		for (portno = 0; portno < consts->chip_ports; ++portno) {
 			spx5_rmw(REW_RTAG_ETAG_CTRL_ES0_ISDX_KEY_ENA_SET(VCAP_ES0_PS_NORMAL_SELECTION),
 				 REW_RTAG_ETAG_CTRL_ES0_ISDX_KEY_ENA,
 				 sparx5, REW_RTAG_ETAG_CTRL(portno));
@@ -2316,7 +2303,7 @@ static void sparx5_vcap_port_key_deselection(struct sparx5 *sparx5, struct vcap_
 		break;
 	case VCAP_TYPE_ES2:
 		for (lookup = 0; lookup < admin->lookups; ++lookup) {
-			for (portno = 0; portno < SPX5_PORTS; ++portno) {
+			for (portno = 0; portno < consts->chip_ports; ++portno) {
 				spx5_rmw(EACL_VCAP_ES2_KEY_SEL_KEY_ENA_SET(0),
 					 EACL_VCAP_ES2_KEY_SEL_KEY_ENA,
 					 sparx5,
@@ -2326,14 +2313,14 @@ static void sparx5_vcap_port_key_deselection(struct sparx5 *sparx5, struct vcap_
 		break;
 	case VCAP_TYPE_IS0:
 		for (lookup = 0; lookup < admin->lookups; ++lookup)
-			for (portno = 0; portno < SPX5_PORTS; ++portno)
+			for (portno = 0; portno < consts->chip_ports; ++portno)
 				spx5_rmw(ANA_CL_ADV_CL_CFG_LOOKUP_ENA_SET(0),
 					 ANA_CL_ADV_CL_CFG_LOOKUP_ENA,
 					 sparx5,
 					 ANA_CL_ADV_CL_CFG(portno, lookup));
 		break;
 	case VCAP_TYPE_IS2:
-		for (portno = 0; portno < SPX5_PORTS; ++portno)
+		for (portno = 0; portno < consts->chip_ports; ++portno)
 			spx5_rmw(ANA_ACL_VCAP_S2_CFG_SEC_ENA_SET(0),
 				 ANA_ACL_VCAP_S2_CFG_SEC_ENA,
 				 sparx5,
@@ -2617,6 +2604,7 @@ sparx5_vcap_admin_free(struct sparx5 *sparx5, struct vcap_admin *admin)
 /* Allocate a vcap control and vcap instances and configure the system */
 int sparx5_vcap_init(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	struct vcap_control *ctrl =
 		devm_kzalloc(sparx5->dev, sizeof(*ctrl), GFP_KERNEL);
 	const struct sparx5_vcap_inst *cfg;
@@ -2636,7 +2624,7 @@ int sparx5_vcap_init(struct sparx5 *sparx5)
 		INIT_LIST_HEAD(&ctrl->list);
 		/* Do VCAP instance initialization */
 		for (idx = 0; idx < ARRAY_SIZE(sparx5_vcap_inst_cfg); ++idx) {
-			cfg = &sparx5_vcap_inst_cfg[idx];
+			cfg = &consts->vcaps_cfg[idx];
 			admin = sparx5_vcap_admin_alloc(sparx5, ctrl, cfg);
 			if (IS_ERR(admin)) {
 				err = PTR_ERR(admin);
@@ -2657,15 +2645,15 @@ int sparx5_vcap_init(struct sparx5 *sparx5)
 			list_add_tail(&admin->list, &ctrl->list);
 		}
 		/* Start the netlink service with any available port */
-		for (idx = 0; idx < SPX5_PORTS; idx++) {
+		for (idx = 0; idx < consts->chip_ports; idx++) {
 			if (sparx5->ports[idx] && sparx5->ports[idx]->ndev) {
 				vcap_netlink_init(ctrl, sparx5->ports[idx]->ndev);
 				break;
 			}
 		}
 		/* let the api know the vcap model and client */
-		ctrl->vcaps = sparx5_vcaps;
-		ctrl->stats = &sparx5_vcap_stats;
+		ctrl->vcaps = consts->vcaps;
+		ctrl->stats = consts->vcap_stats;
 		vcap_api_set_client(ctrl);
 		sparx5_create_vcap_debugfs(sparx5, ctrl);
 	}

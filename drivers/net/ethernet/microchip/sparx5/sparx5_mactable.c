@@ -80,15 +80,16 @@ static void sparx5_mact_select(struct sparx5 *sparx5,
 int sparx5_mact_learn(struct sparx5 *sparx5, int pgid,
 		      const unsigned char mac[ETH_ALEN], u16 vid)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	int addr, type, ret;
 
-	if (pgid < SPX5_PORTS) {
+	if (pgid < consts->chip_ports) {
 		type = MAC_ENTRY_ADDR_TYPE_UPSID_PN;
 		addr = pgid % 32;
 		addr += (pgid / 32) << 5; /* Add upsid */
 	} else {
 		type = MAC_ENTRY_ADDR_TYPE_MC_IDX;
-		addr = pgid - SPX5_PORTS;
+		addr = pgid - consts->chip_ports;
 	}
 
 	mutex_lock(&sparx5->lock);
@@ -128,7 +129,9 @@ int sparx5_mc_sync(struct net_device *dev, const unsigned char *addr)
 	struct sparx5_port *port = netdev_priv(dev);
 	struct sparx5 *sparx5 = port->sparx5;
 
-	return sparx5_mact_learn(sparx5, PGID_CPU, addr, port->pvid);
+	return sparx5_mact_learn(sparx5,
+				 sparx5_get_pgid_index(sparx5, PGID_CPU), addr,
+				 port->pvid);
 }
 
 static int sparx5_mact_get(struct sparx5 *sparx5,
@@ -362,6 +365,7 @@ static void sparx5_mact_handle_entry(struct sparx5 *sparx5,
 				     unsigned char mac[ETH_ALEN],
 				     u16 vid, u32 cfg2)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	struct sparx5_mact_entry *mact_entry;
 	bool found = false;
 	u16 port;
@@ -371,7 +375,7 @@ static void sparx5_mact_handle_entry(struct sparx5 *sparx5,
 		return;
 
 	port = LRN_MAC_ACCESS_CFG_2_MAC_ENTRY_ADDR_GET(cfg2);
-	if (port >= SPX5_PORTS)
+	if (port >= consts->chip_ports)
 		return;
 
 	if (!test_bit(port, sparx5->bridge_mask))

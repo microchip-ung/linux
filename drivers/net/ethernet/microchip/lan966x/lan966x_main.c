@@ -1274,10 +1274,12 @@ static int lan966x_probe(struct platform_device *pdev)
 	/* Init vcap */
 	lan966x_vcap_init(lan966x);
 	lan966x_qos_init(lan966x);
+	lan966x_pmac_init(lan966x);
 
 	lan966x_netlink_fp_init();
 	lan966x_netlink_frer_init(lan966x);
 	lan966x_netlink_qos_init(lan966x);
+	lan966x_netlink_pmac_init(lan966x);
 
 	lan966x_mrp_init(lan966x);
 
@@ -1316,6 +1318,7 @@ static int lan966x_remove(struct platform_device *pdev)
 	lan966x_netlink_fp_uninit();
 	lan966x_netlink_qos_uninit();
 
+	lan966x_pmac_deinit(lan966x);
 	lan966x_vcap_uninit(lan966x);
 
 	lan966x_taprio_deinit(lan966x);

@@ -118,6 +118,18 @@ static const u8 hdr_tmpl_vlan_lan966x[IFH_ENCAP_LEN(IFH_LEN_LAN966X)+4] = {
         _vlantag,
 };
 
+static const u8 hdr_tmpl_vlan_lan969x[IFH_ENCAP_LEN(IFH_LEN_LAN969X)+4] = {
+        _encap(IFH_ID_LAN969X),
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        /* v-rsv1 1 vq-ingr-drop-mode 1 */
+        0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+        /* f-update-fcs 1 f-src-port 30 m-pipeline-act 2 */
+        0x00, 0x00, 0x00, 0x04, 0x7c, 0x07, 0x88, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        _vlantag,
+};
+
 static const u8 hdr_tmpl_port_luton[IFH_ENCAP_LEN(IFH_LEN_LUTON)] = {
         _encap(IFH_ID_LUTON),
         0x80, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00, 0x00, /* BYPASS=1, POP_CNT=3 */
@@ -176,6 +188,17 @@ static const u8 hdr_tmpl_port_lan966x[IFH_ENCAP_LEN(IFH_LEN_LAN966X)] = {
         0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00
+};
+
+static const u8 hdr_tmpl_port_lan969x[IFH_ENCAP_LEN(IFH_LEN_LAN969X)] = {
+        _encap(IFH_ID_LAN969X),
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        /* v-rsv1 1 vq-ingr-drop-mode 1 */
+        0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+        /* f-update-fcs 1 f-src-port 30 f-do-not-rew m-pipeline-act 1 m-pipeline-pt 17 */
+        0x00, 0x00, 0x00, 0x04, 0x00, 0x07, 0x86, 0x20,
         0x00, 0x00, 0x00, 0x00
 };
 
@@ -349,6 +372,9 @@ rx_handler_result_t vtss_if_mux_rx_handler(struct sk_buff **pskb)
     } else if (vtss_if_mux_chip->soc == SOC_LAN966X) {
             chip_port = lan966x_ifh_extract(&skb->data[IFH_OFF], 141, 4);
             vid = lan966x_ifh_extract(&skb->data[IFH_OFF], 103, 17) & 0xfff;
+    } else if (vtss_if_mux_chip->soc == SOC_LAN969X) {
+            chip_port = (skb->data[IFH_OFF + 26] & 0x3f) >> 1;
+            vid = (((u16)(skb->data[IFH_OFF + 23]) << 8 | skb->data[IFH_OFF + 24]) >> 1) & 0xfff;
     } else {
             if (printk_ratelimit())
                     printk("Invalid architecture type\n");
@@ -620,8 +646,8 @@ static void set_numbered_port(struct ifmux_chip *cfg, u8 *hdr, u16 port)
     // The source port value is hardcoded in the template
     // Set the destination port value: the port mask offset is LSB
     offset = cfg->ifh_offs_port_mask / 8;
-    hdr[offset] = (port << 5) & 0xe0;
-    hdr[offset-1] = (port >>  3) & 0x1f;
+    hdr[offset] = hdr[offset] | ((port << 5) & 0xe0);
+    hdr[offset-1] = hdr[offset-1] | ((port >>  3) & 0x1f);
 
 }
 
@@ -799,6 +825,21 @@ static const struct ifmux_chip lan966x_chip = {
         .set_vlan_value     = set_vlan_id,
 };
 
+static const struct ifmux_chip lan969x_chip = {
+        .soc                    = SOC_LAN969X,
+        .ifh_id             = IFH_ID_LAN969X,
+        .ifh_len            = IFH_LEN_LAN969X,
+        .ifh_encap_len      = IFH_LEN_LAN969X + 2*ETH_ALEN + VLAN_HLEN,
+        .ifh_offs_port_mask = IFH_OFFS_PORT_MASK_LAN969X,
+        .cpu_port            = 30, /* CPU port 0 == chip port 30 on lan969x */
+        .hdr_tmpl_vlan            = hdr_tmpl_vlan_lan969x,
+        .hdr_tmpl_port            = hdr_tmpl_port_lan969x,
+        .ifh_encap_vlan_len = sizeof(hdr_tmpl_vlan_lan969x),
+        .ifh_encap_port_len = sizeof(hdr_tmpl_port_lan969x),
+        .set_port_value     = set_numbered_port,
+        .set_vlan_value     = set_vlan_id_sparx5,
+};
+
 static const struct of_device_id mscc_ifmux_id_table[] = {
         {
                 .compatible = "mscc,luton-ifmux",
@@ -827,6 +868,10 @@ static const struct of_device_id mscc_ifmux_id_table[] = {
         {
                 .compatible = "microchip,lan966x-ifmux",
                 .data = &lan966x_chip,
+        },
+        {
+                .compatible = "microchip,lan969x-ifmux",
+                .data = &lan969x_chip,
         },
         {}
 };

@@ -55,8 +55,11 @@
 #define PGID_MCIPV4			(PGID_AGGR - 2)
 #define PGID_MCIPV6			(PGID_AGGR - 1)
 
+#define PGID_PMAC_START			(CPU_PORT + 1)
+#define PGID_PMAC_END			(50)
+
 /* Non-reserved PGIDs, used for general purpose */
-#define PGID_GP_START			(CPU_PORT + 1)
+#define PGID_GP_START			(PGID_PMAC_END + 1)
 #define PGID_GP_END			PGID_CPU
 
 #define LAN966X_SPEED_NONE		0
@@ -279,6 +282,45 @@ struct lan966x_mip {
 	struct lan966x_port *port;
 };
 
+#define LAN966X_PMAC_VLAN_ENTRIES		4
+#define LAN966X_PMAC_ENTRIES_PER_VLAN		2048
+
+#define PMACACCESS_CMD_IDLE			0
+#define PMACACCESS_CMD_READ			1
+#define PMACACCESS_CMD_WRITE			2
+#define PMACACCESS_CMD_INIT			3
+
+struct lan966x_pmac_pgid_entry {
+	refcount_t refcount;
+	struct list_head list;
+	int index;
+	u16 ports;
+};
+
+struct lan966x_pmac_vlan_entry {
+	refcount_t refcount;
+	u16 vlan;
+	u8 index;
+	bool enabled;
+};
+
+struct lan966x_pmac_entry {
+	struct lan966x_pmac_pgid_entry *pgid;
+	struct lan966x_pmac_vlan_entry *vlan;
+	struct list_head list;
+	u16 index;
+	u16 ports;
+};
+
+struct lan966x_pmac {
+	/* a negative value means that nothing is set */
+	int oui;
+
+	struct list_head pgid_entries;
+	struct list_head pmac_entries;
+	struct lan966x_pmac_vlan_entry vlan_entries[LAN966X_PMAC_VLAN_ENTRIES];
+};
+
 struct lan966x {
 	struct device *dev;
 
@@ -365,6 +407,9 @@ struct lan966x {
 
 	/* FRER configuration and state */
 	struct lan966x_frer_conf frer;
+
+	/* PMAC configuration */
+	struct lan966x_pmac pmac;
 
 	struct list_head mrp_list;
 	u8 loc_period_mask;
@@ -689,6 +734,8 @@ int lan966x_netlink_frer_init(struct lan966x *lan966x);
 void lan966x_netlink_frer_uninit(void);
 int lan966x_netlink_qos_init(struct lan966x *lan966x);
 void lan966x_netlink_qos_uninit(void);
+int lan966x_netlink_pmac_init(struct lan966x *lan966x);
+void lan966x_netlink_pmac_uninit(void);
 
 netdev_tx_t lan966x_xmit(struct lan966x_port *port,
 			 struct sk_buff *skb,
@@ -702,6 +749,12 @@ void lan966x_ifh_set_afi(void *ifh, u64 afi);
 void lan966x_ifh_set_rew_oam(void *ifh, u64 rew_oam);
 void lan966x_ifh_set_oam_type(void *ifh, u64 oam_type);
 void lan966x_ifh_set_seq_num(void *ifh, u64 seq_num);
+
+int lan966x_pmac_add(struct lan966x_port *port, u8 *mac, u16 vlan);
+int lan966x_pmac_del(struct lan966x_port *port, u8 *mac, u16 vlan);
+int lan966x_pmac_purge(struct lan966x *lan966x);
+void lan966x_pmac_init(struct lan966x *lan966x);
+void lan966x_pmac_deinit(struct lan966x *lan966x);
 
 static inline void __iomem *lan_addr(void __iomem *base[],
 				     int id, int tinst, int tcnt,

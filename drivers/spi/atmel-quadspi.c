@@ -235,6 +235,10 @@
 #define QSPI_DLLCFG_THRESHOLD_FREQ	90000000U
 #define QSPI_CALIB_TIME			2000	/* 2 us */
 
+#define QSPI_DLYBS			0x2
+#define QSPI_DLYCS			0x7
+#define QSPI_WPKEY			0x515350
+
 /**
  * struct atmel_qspi_pcal - Pad Calibration Clock Division
  * @pclk_rate: peripheral clock rate.
@@ -265,6 +269,7 @@ struct atmel_qspi_caps {
 	bool has_ricr;
 	bool octal;
 	bool fpga;
+	bool has_lan966x;
 };
 
 struct atmel_qspi_ops;
@@ -992,6 +997,108 @@ static int atmel_qspi_sama7g5_init(struct atmel_qspi *aq)
 	return ret;
 }
 
+static int atmel_qspi_poll_sr2_clear(struct atmel_qspi *aq, u32 mask)
+{
+	u32 val;
+
+	return readl_poll_timeout(aq->regs + QSPI_SR2, val,
+				  !(val & mask), 40,
+				  ATMEL_QSPI_TIMEOUT);
+}
+
+static int atmel_qspi_poll_sr2_set(struct atmel_qspi *aq, u32 mask)
+{
+	u32 val;
+
+	return readl_poll_timeout(aq->regs + QSPI_SR2, val,
+				  (val & mask), 40,
+				  ATMEL_QSPI_TIMEOUT);
+}
+
+static int lan966x_qspi_init(struct atmel_qspi *aq)
+{
+	u32 wpkey = QSPI_WPKEY;
+	int ret;
+
+	atmel_qspi_write(QSPI_CR_DLLOFF, aq, QSPI_CR);
+
+	if (!aq->caps->fpga &&
+	    (ret = atmel_qspi_poll_sr2_clear(aq, QSPI_SR2_DLOCK))) {
+		dev_err(&aq->pdev->dev, "QSPI_SR2_DLOCK not cleared\n");
+		return ret;
+	}
+
+	ret = clk_set_rate(aq->gclk, aq->slave_max_speed_hz);
+	if (ret) {
+		dev_err(&aq->pdev->dev, "Failed to set generic clock rate.\n");
+		return ret;
+	}
+
+	/* Enable the QSPI generic clock */
+	ret = clk_prepare_enable(aq->gclk);
+	if (ret)
+		dev_err(&aq->pdev->dev, "Failed to enable generic clock.\n");
+
+	/* Set DLLON and STPCAL register */
+	atmel_qspi_write(QSPI_CR_DLLON | QSPI_CR_STPCAL, aq, QSPI_CR);
+
+	if (!aq->caps->fpga &&
+	    (ret = atmel_qspi_poll_sr2_set(aq, QSPI_SR2_DLOCK))) {
+		dev_err(&aq->pdev->dev, "QSPI_SR2_DLOCK not set\n");
+		return ret;
+	}
+
+	/* Disable QSPI controller */
+	atmel_qspi_write(QSPI_CR_QSPIDIS, aq, QSPI_CR);
+
+	/* Synchronize configuration */
+	ret = atmel_qspi_reg_sync(aq);
+	if (ret)
+		return ret;
+
+	/* Reset the QSPI controller */
+	atmel_qspi_write(QSPI_CR_SWRST, aq, QSPI_CR);
+
+	/* Synchronize configuration */
+	ret = atmel_qspi_reg_sync(aq);
+	if (ret)
+		return ret;
+
+	/* Disable write protection */
+	atmel_qspi_write(QSPI_WPMR_WPKEY(wpkey), aq, QSPI_WPMR);
+
+	/* Set DLLON and STPCAL register */
+	atmel_qspi_write(QSPI_CR_DLLON | QSPI_CR_STPCAL, aq, QSPI_CR);
+
+	if (!aq->caps->fpga &&
+	    (ret = atmel_qspi_poll_sr2_set(aq, QSPI_SR2_DLOCK))) {
+		dev_err(&aq->pdev->dev, "QSPI_SR2_DLOCK not set\n");
+		return ret;
+	}
+
+	/* Set the QSPI controller by default in Serial Memory Mode */
+	atmel_qspi_write(QSPI_MR_SMM | QSPI_MR_DLYCS(QSPI_DLYCS), aq, QSPI_MR);
+	aq->mr = QSPI_MR_SMM;
+
+	/* Set DLYBS */
+	atmel_qspi_write(QSPI_SCR_DLYBS(QSPI_DLYBS), aq, QSPI_SCR);
+
+	/* Synchronize configuration */
+	ret = atmel_qspi_update_config(aq);
+
+	/* Enable the QSPI controller */
+	atmel_qspi_write(QSPI_CR_QSPIEN, aq, QSPI_CR);
+
+	/* Wait effective enable */
+	ret = atmel_qspi_poll_sr2_set(aq, QSPI_SR2_QSPIENS);
+	if (ret) {
+		dev_err(&aq->pdev->dev, "SR2_QSPIENS not set\n");
+		return ret;
+	}
+
+	return 0;
+}
+
 static int atmel_qspi_sama7g5_setup(struct spi_device *spi)
 {
 	struct atmel_qspi *aq = spi_controller_get_devdata(spi->controller);
@@ -999,7 +1106,10 @@ static int atmel_qspi_sama7g5_setup(struct spi_device *spi)
 	/* The controller can communicate with a single slave. */
 	aq->slave_max_speed_hz = spi->max_speed_hz;
 
-	return atmel_qspi_sama7g5_init(aq);
+	if (aq->caps->has_lan966x)
+		return lan966x_qspi_init(aq);
+	else
+		return atmel_qspi_sama7g5_init(aq);
 }
 
 static int atmel_qspi_setup(struct spi_device *spi)
@@ -1283,22 +1393,31 @@ static int atmel_qspi_remove(struct platform_device *pdev)
 	struct atmel_qspi *aq = spi_controller_get_devdata(ctrl);
 	int ret;
 
-	ret = pm_runtime_resume_and_get(&pdev->dev);
-	if (ret < 0)
-		return ret;
-
 	spi_unregister_controller(ctrl);
 
 	if (aq->caps->has_gclk)
 		return atmel_qspi_sama7g5_suspend(aq);
 
-	atmel_qspi_write(QSPI_CR_QSPIDIS, aq, QSPI_CR);
+	ret = pm_runtime_get_sync(&pdev->dev);
+	if (ret >= 0) {
+		atmel_qspi_write(QSPI_CR_QSPIDIS, aq, QSPI_CR);
+		clk_disable(aq->qspick);
+		clk_disable(aq->pclk);
+	} else {
+		/*
+		 * atmel_qspi_runtime_{suspend,resume} just disable and enable
+		 * the two clks respectively. So after resume failed these are
+		 * off, and we skip hardware access and disabling these clks again.
+		 */
+		dev_warn(&pdev->dev, "Failed to resume device on remove\n");
+	}
+
+	clk_unprepare(aq->qspick);
+	clk_unprepare(aq->pclk);
 
 	pm_runtime_disable(&pdev->dev);
 	pm_runtime_put_noidle(&pdev->dev);
 
-	clk_disable_unprepare(aq->qspick);
-	clk_disable_unprepare(aq->pclk);
 	return 0;
 }
 
@@ -1373,7 +1492,11 @@ static int __maybe_unused atmel_qspi_runtime_resume(struct device *dev)
 	if (ret)
 		return ret;
 
-	return clk_enable(aq->qspick);
+	ret = clk_enable(aq->qspick);
+	if (ret)
+		clk_disable(aq->pclk);
+
+	return ret;
 }
 
 static const struct dev_pm_ops __maybe_unused atmel_qspi_pm_ops = {
@@ -1403,11 +1526,13 @@ static const struct atmel_qspi_caps atmel_sama7g5_qspi_caps = {
 static const struct atmel_qspi_caps atmel_lan966x_qspi_caps = {
 	.max_speed_hz = LAN966x_QSPI0_MAX_SPEED_HZ,
 	.has_gclk = true,
+	.has_lan966x = true,
 };
 
 static const struct atmel_qspi_caps atmel_sunrise_qspi_caps = {
 	.max_speed_hz = LAN966x_QSPI0_MAX_SPEED_HZ,
 	.has_gclk = true,
+	.has_lan966x = true,
 	.fpga = true,
 };
 
