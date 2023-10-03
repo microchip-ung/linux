@@ -229,6 +229,16 @@
 		pins = "GPIO_1";
 		function = "usb_power";
 	};
+
+	ptp_out_pins: ptp-out-pins {
+		pins = "GPIO_58";
+		function = "ptpsync_4";
+	};
+
+	ptp_ext_pins: ptp-ext-pins {
+		pins = "GPIO_59";
+		function = "ptpsync_5";
+	};
 };
 
 &hwmon {
@@ -439,6 +449,9 @@
 };
 
 &switch {
+	pinctrl-0 = <&ptp_out_pins>, <&ptp_ext_pins>;
+	pinctrl-names = "default";
+
 	status = "okay";
 	ethernet-ports {
 		#address-cells = <1>;
