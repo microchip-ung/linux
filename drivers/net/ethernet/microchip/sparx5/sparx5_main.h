@@ -650,6 +650,8 @@ void sparx5_ptp_txtstamp_release(struct sparx5_port *port,
 irqreturn_t sparx5_ptp_irq_handler(int irq, void *args);
 int sparx5_ptp_gettime64(struct ptp_clock_info *ptp,
 			 struct timespec64 *ts);
+int sparx5_ptp_del_traps(struct sparx5_port *port);
+int sparx5_ptp_setup_traps(struct sparx5_port *port, struct ifreq *ifr);
 
 /* netlink */
 int sparx5_netlink_qos_init(struct sparx5 *sparx5);

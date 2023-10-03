@@ -332,78 +332,64 @@ static int sparx5_ptp_del_ipv6_rules(struct sparx5_port *port)
 	return err;
 }
 
-static int sparx5_setup_ptp_traps(struct sparx5_port *port, bool l2, bool l4)
+static int sparx5_ptp_add_traps(struct sparx5_port *port)
 {
 	int err;
 
-	if (l2)
-		err = sparx5_ptp_add_l2_rule(port);
-	else
-		err = sparx5_ptp_del_l2_rule(port);
+	err = sparx5_ptp_add_l2_rule(port);
 	if (err)
-		return err;
+		goto err_l2;
 
-	if (l4) {
-		err = sparx5_ptp_add_ipv4_rules(port);
-		if (err)
-			goto err_ipv4;
+	err = sparx5_ptp_add_ipv4_rules(port);
+	if (err)
+		goto err_ipv4;
 
-		err = sparx5_ptp_add_ipv6_rules(port);
-		if (err)
-			goto err_ipv6;
-	} else {
-		err = sparx5_ptp_del_ipv4_rules(port);
-		err |= sparx5_ptp_del_ipv6_rules(port);
-	}
+	err = sparx5_ptp_add_ipv6_rules(port);
+	if (err)
+		goto err_ipv6;
 
 	return err;
 
 err_ipv6:
 	sparx5_ptp_del_ipv4_rules(port);
-
 err_ipv4:
-	if (l2)
-		sparx5_ptp_del_l2_rule(port);
-	return 0;
+	sparx5_ptp_del_l2_rule(port);
+err_l2:
+	return err;
+}
+
+int sparx5_ptp_del_traps(struct sparx5_port *port)
+{
+	int err;
+
+	err = sparx5_ptp_del_l2_rule(port);
+	err |= sparx5_ptp_del_ipv4_rules(port);
+	err |= sparx5_ptp_del_ipv6_rules(port);
+
+	return err;
+}
+
+int sparx5_ptp_setup_traps(struct sparx5_port *port, struct ifreq *ifr)
+{
+	struct hwtstamp_config cfg;
+
+	if (copy_from_user(&cfg, ifr->ifr_data, sizeof(cfg)))
+		return -EFAULT;
+
+	if (cfg.rx_filter == HWTSTAMP_FILTER_NONE)
+		return sparx5_ptp_del_traps(port);
+	else
+		return sparx5_ptp_add_traps(port);
 }
 
 int sparx5_ptp_hwtstamp_set(struct sparx5_port *port, struct ifreq *ifr)
 {
 	struct sparx5 *sparx5 = port->sparx5;
-	bool l2 = false, l4 = false;
 	struct hwtstamp_config cfg;
 	struct sparx5_phc *phc;
 
 	if (copy_from_user(&cfg, ifr->ifr_data, sizeof(cfg)))
 		return -EFAULT;
-
-	switch (cfg.rx_filter) {
-	case HWTSTAMP_FILTER_NONE:
-		break;
-	case HWTSTAMP_FILTER_PTP_V2_L4_EVENT:
-	case HWTSTAMP_FILTER_PTP_V2_L4_SYNC:
-	case HWTSTAMP_FILTER_PTP_V2_L4_DELAY_REQ:
-		l4 = true;
-		break;
-	case HWTSTAMP_FILTER_PTP_V2_L2_EVENT:
-	case HWTSTAMP_FILTER_PTP_V2_L2_SYNC:
-	case HWTSTAMP_FILTER_PTP_V2_L2_DELAY_REQ:
-		l2 = true;
-		break;
-	case HWTSTAMP_FILTER_PTP_V2_EVENT:
-	case HWTSTAMP_FILTER_PTP_V2_SYNC:
-	case HWTSTAMP_FILTER_PTP_V2_DELAY_REQ:
-		l2 = true;
-		l4 = true;
-		break;
-	default:
-		return -ERANGE;
-	}
-
-	sparx5_setup_ptp_traps(port, l2, l4);
-
-	if (phy_has_hwtstamp(port->ndev->phydev))
-		return 0;
 
 	switch (cfg.tx_type) {
 	case HWTSTAMP_TX_ON:
@@ -416,18 +402,31 @@ int sparx5_ptp_hwtstamp_set(struct sparx5_port *port, struct ifreq *ifr)
 		port->ptp_cmd = IFH_REW_OP_NOOP;
 		break;
 	default:
-		sparx5_setup_ptp_traps(port, false, false);
 		return -ERANGE;
 	}
 
-	if (l2 && l4)
-		cfg.rx_filter = HWTSTAMP_FILTER_PTP_V2_EVENT;
-	else if (l2)
-		cfg.rx_filter = HWTSTAMP_FILTER_PTP_V2_L2_EVENT;
-	else if (l4)
-		cfg.rx_filter = HWTSTAMP_FILTER_PTP_V2_L4_EVENT;
-	else
-		cfg.rx_filter = HWTSTAMP_FILTER_NONE;
+	switch (cfg.rx_filter) {
+	case HWTSTAMP_FILTER_NONE:
+		break;
+	case HWTSTAMP_FILTER_ALL:
+	case HWTSTAMP_FILTER_PTP_V1_L4_EVENT:
+	case HWTSTAMP_FILTER_PTP_V1_L4_SYNC:
+	case HWTSTAMP_FILTER_PTP_V1_L4_DELAY_REQ:
+	case HWTSTAMP_FILTER_PTP_V2_L4_EVENT:
+	case HWTSTAMP_FILTER_PTP_V2_L4_SYNC:
+	case HWTSTAMP_FILTER_PTP_V2_L4_DELAY_REQ:
+	case HWTSTAMP_FILTER_PTP_V2_L2_EVENT:
+	case HWTSTAMP_FILTER_PTP_V2_L2_SYNC:
+	case HWTSTAMP_FILTER_PTP_V2_L2_DELAY_REQ:
+	case HWTSTAMP_FILTER_PTP_V2_EVENT:
+	case HWTSTAMP_FILTER_PTP_V2_SYNC:
+	case HWTSTAMP_FILTER_PTP_V2_DELAY_REQ:
+	case HWTSTAMP_FILTER_NTP_ALL:
+		cfg.rx_filter = HWTSTAMP_FILTER_ALL;
+		break;
+	default:
+		return -ERANGE;
+	}
 
 	/* Commit back the result & save it */
 	mutex_lock(&sparx5->ptp_lock);

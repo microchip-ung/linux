@@ -257,27 +257,35 @@ static int sparx5_port_ioctl(struct net_device *dev, struct ifreq *ifr,
 {
 	struct sparx5_port *sparx5_port = netdev_priv(dev);
 	struct sparx5 *sparx5 = sparx5_port->sparx5;
-	int ret = 0;
+	int err;
 
-	if (phy_has_hwtstamp(dev->phydev)) {
-		/* Don't return here immediately, because it might be required
-		 * for the MAC to configure to copy all the PTP frames to CPU
-		 */
-		ret = phy_mii_ioctl(dev->phydev, ifr, cmd);
-		if (ret)
-			return ret;
+	if (cmd == SIOCSHWTSTAMP) {
+		err = sparx5_ptp_setup_traps(sparx5_port, ifr);
+		if (err)
+			return err;
 	}
 
-	if (sparx5->ptp) {
+	if (!phy_has_hwtstamp(dev->phydev) && sparx5->ptp) {
 		switch (cmd) {
 		case SIOCSHWTSTAMP:
-			return sparx5_ptp_hwtstamp_set(sparx5_port, ifr);
+			err = sparx5_ptp_hwtstamp_set(sparx5_port, ifr);
+			if (err)
+				sparx5_ptp_del_traps(sparx5_port);
+
+			return err;
 		case SIOCGHWTSTAMP:
 			return sparx5_ptp_hwtstamp_get(sparx5_port, ifr);
 		}
 	}
 
-	return 0;
+	if (!dev->phydev)
+		return -ENODEV;
+
+	err = phy_mii_ioctl(dev->phydev, ifr, cmd);
+	if (err && cmd == SIOCSHWTSTAMP)
+		sparx5_ptp_del_traps(sparx5_port);
+
+	return err;
 }
 
 static const struct net_device_ops sparx5_port_netdev_ops = {
