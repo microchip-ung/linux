@@ -100,7 +100,7 @@
 			interrupt-names = "xtr", "fdma", "ptp";
 			interrupts = <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>,
 				     <GIC_SPI 88 IRQ_TYPE_LEVEL_HIGH>,
-				     <GIC_SPI  8 IRQ_TYPE_LEVEL_HIGH>;
+				     <GIC_SPI  9 IRQ_TYPE_LEVEL_HIGH>;
 			resets = <&reset 0>;
 			reset-names = "switch";
 			status = "disabled";
