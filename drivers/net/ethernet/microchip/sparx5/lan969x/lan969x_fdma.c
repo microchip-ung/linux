@@ -111,7 +111,6 @@ static struct sk_buff *lan969x_fdma_rx_get_frame(struct sparx5 *sparx5,
 	struct page *page;
 	struct frame_info fi;
 	struct sparx5_port *port;
-	u64 timestamp;
 
 	/* Get the received frame and unmap it */
 	db = &rx->dcb_entries[rx->dcb_index].db[rx->db_index];
@@ -144,7 +143,7 @@ static struct sk_buff *lan969x_fdma_rx_get_frame(struct sparx5 *sparx5,
 	if (likely(!(skb->dev->features & NETIF_F_RXFCS)))
 		skb_trim(skb, skb->len - ETH_FCS_LEN);
 
-	sparx5_ptp_rxtstamp(sparx5, skb, timestamp);
+	sparx5_ptp_rxtstamp(sparx5, skb, fi.timestamp);
 	skb->protocol = eth_type_trans(skb, skb->dev);
 
 	if (test_bit(port->portno, sparx5->bridge_mask)) {
