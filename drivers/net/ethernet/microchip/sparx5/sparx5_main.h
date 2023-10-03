@@ -139,6 +139,8 @@ enum sparx5_vlan_port_type {
 #define SPX5_DSM_CAL_MAX_DEVS_PER_TAXI 13
 #define SPX5_DSM_CAL_TAXIS             8
 
+#define SPARX5_MAX_PTP_ID		512
+
 struct sparx5;
 
 /* For each hardware DB there is an entry in this list and when the HW DB
@@ -468,6 +470,7 @@ struct sparx5_ops {
 	int (*fdma_stop)(struct sparx5 *sparx5);
 	int (*fdma_start)(struct sparx5 *sparx5);
 	int (*fdma_xmit)(struct sparx5 *sparx5, u32 *ifh, struct sk_buff *skb);
+	irqreturn_t (*ptp_irq_handler)(int irq, void *args);
 };
 
 struct sparx5_consts {
@@ -652,6 +655,9 @@ int sparx5_ptp_gettime64(struct ptp_clock_info *ptp,
 			 struct timespec64 *ts);
 int sparx5_ptp_del_traps(struct sparx5_port *port);
 int sparx5_ptp_setup_traps(struct sparx5_port *port, struct ifreq *ifr);
+void sparx5_ptp_get_hwtimestamp(struct sparx5 *sparx5,
+				struct timespec64 *ts,
+				u32 nsec);
 
 /* netlink */
 int sparx5_netlink_qos_init(struct sparx5 *sparx5);

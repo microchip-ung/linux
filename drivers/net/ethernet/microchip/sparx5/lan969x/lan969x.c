@@ -249,6 +249,95 @@ struct sparx5_sdlb_group *lan969x_get_sdlb_group(int idx)
 	return &lan969x_sdlb_groups[idx];
 }
 
+irqreturn_t lan969x_ptp_irq_handler(int irq, void *args)
+{
+	int budget = SPARX5_MAX_PTP_ID;
+	struct sparx5 *sparx5 = args;
+
+	while (budget--) {
+		struct sk_buff *skb, *skb_tmp, *skb_match = NULL;
+		struct skb_shared_hwtstamps shhwtstamps;
+		struct sparx5_port *port;
+		struct timespec64 ts;
+		unsigned long flags;
+		u32 val, id, txport;
+		u32 delay;
+
+		val = spx5_rd(sparx5, PTP_PTP_TWOSTEP_CTRL);
+
+		/* Check if a timestamp can be retrieved */
+		if (!(val & PTP_PTP_TWOSTEP_CTRL_PTP_VLD))
+			break;
+
+		WARN_ON(val & PTP_PTP_TWOSTEP_CTRL_PTP_OVFL);
+
+		if (!(val & PTP_PTP_TWOSTEP_CTRL_STAMP_TX))
+			continue;
+
+		/* Retrieve the ts Tx port */
+		txport = PTP_PTP_TWOSTEP_CTRL_STAMP_PORT_GET(val);
+
+		/* Retrieve its associated skb */
+		port = sparx5->ports[txport];
+
+		/* Retrieve the delay */
+		delay = spx5_rd(sparx5, PTP_PTP_TWOSTEP_STAMP_NSEC);
+		delay = PTP_PTP_TWOSTEP_STAMP_NSEC_STAMP_NSEC_GET(delay);
+
+		/* Get next timestamp from fifo, which needs to be the
+		 * rx timestamp which represents the id of the frame
+		 */
+		spx5_rmw(PTP_PTP_TWOSTEP_CTRL_PTP_NXT_SET(1),
+			 PTP_PTP_TWOSTEP_CTRL_PTP_NXT,
+			 sparx5, PTP_PTP_TWOSTEP_CTRL);
+
+		val = spx5_rd(sparx5, PTP_PTP_TWOSTEP_CTRL);
+
+		/* Check if a timestamp can be retried */
+		if (!(val & PTP_PTP_TWOSTEP_CTRL_PTP_VLD))
+			break;
+
+		/* Read RX timestamping to get the ID */
+		id = spx5_rd(sparx5, PTP_PTP_TWOSTEP_STAMP_NSEC);
+		id <<= 8;
+		id |= spx5_rd(sparx5, PTP_PTP_TWOSTEP_STAMP_SUBNS);
+
+		spin_lock_irqsave(&port->tx_skbs.lock, flags);
+		skb_queue_walk_safe(&port->tx_skbs, skb, skb_tmp) {
+			if (SPARX5_SKB_CB(skb)->ts_id != id)
+				continue;
+
+			__skb_unlink(skb, &port->tx_skbs);
+			skb_match = skb;
+			break;
+		}
+		spin_unlock_irqrestore(&port->tx_skbs.lock, flags);
+
+		/* Next ts */
+		spx5_rmw(PTP_PTP_TWOSTEP_CTRL_PTP_NXT_SET(1),
+			 PTP_PTP_TWOSTEP_CTRL_PTP_NXT,
+			 sparx5, PTP_PTP_TWOSTEP_CTRL);
+
+		if (WARN_ON(!skb_match))
+			continue;
+
+		spin_lock(&sparx5->ptp_ts_id_lock);
+		sparx5->ptp_skbs--;
+		spin_unlock(&sparx5->ptp_ts_id_lock);
+
+		/* Get the h/w timestamp */
+		sparx5_ptp_get_hwtimestamp(sparx5, &ts, delay);
+
+		/* Set the timestamp into the skb */
+		shhwtstamps.hwtstamp = ktime_set(ts.tv_sec, ts.tv_nsec);
+		skb_tstamp_tx(skb_match, &shhwtstamps);
+
+		dev_kfree_skb_any(skb_match);
+	}
+
+	return IRQ_HANDLED;
+}
+
 const struct sparx5_match_data lan969x_desc = {
 	.iomap = lan969x_main_iomap,
 	.iomap_size = ARRAY_SIZE(lan969x_main_iomap),
@@ -278,6 +367,7 @@ const struct sparx5_match_data lan969x_desc = {
 		.fdma_stop = lan969x_fdma_stop,
 		.fdma_start = lan969x_fdma_start,
 		.fdma_xmit = lan969x_fdma_xmit,
+		.ptp_irq_handler = lan969x_ptp_irq_handler,
 	},
 	.consts = {
 		.chip_ports = 30,

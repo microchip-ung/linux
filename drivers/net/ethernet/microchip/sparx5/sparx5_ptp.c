@@ -13,8 +13,6 @@
 #include "sparx5_vcap_impl.h"
 #include "vcap_api_client.h"
 
-#define SPARX5_MAX_PTP_ID	512
-
 #define SPARX5_PTP_RULE_ID_OFFSET 2048
 
 enum {
@@ -571,9 +569,9 @@ void sparx5_ptp_txtstamp_release(struct sparx5_port *port,
 	spin_unlock_irqrestore(&sparx5->ptp_ts_id_lock, flags);
 }
 
-static void sparx5_get_hwtimestamp(struct sparx5 *sparx5,
-				   struct timespec64 *ts,
-				   u32 nsec)
+void sparx5_ptp_get_hwtimestamp(struct sparx5 *sparx5,
+				struct timespec64 *ts,
+				u32 nsec)
 {
 	const struct sparx5_consts *consts = &sparx5->data->consts;
 	/* Read current PTP time to get seconds */
@@ -679,7 +677,7 @@ irqreturn_t sparx5_ptp_irq_handler(int irq, void *args)
 		spin_unlock(&sparx5->ptp_ts_id_lock);
 
 		/* Get the h/w timestamp */
-		sparx5_get_hwtimestamp(sparx5, &ts, delay);
+		sparx5_ptp_get_hwtimestamp(sparx5, &ts, delay);
 
 		/* Set the timestamp into the skb */
 		shhwtstamps.hwtstamp = ktime_set(ts.tv_sec, ts.tv_nsec);
