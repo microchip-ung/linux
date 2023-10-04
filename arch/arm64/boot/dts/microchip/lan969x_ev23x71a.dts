@@ -105,6 +105,14 @@
 		};
 	};
 
+	mux-controller {
+		compatible = "gpio-mux";
+		#mux-control-cells = <0>;
+
+		mux-gpios = <&sgpio_out 1 2 GPIO_ACTIVE_LOW>,
+			    <&sgpio_out 1 3 GPIO_ACTIVE_LOW>;
+	};
+
 	sfp0: sfp0 {
 		compatible = "sff,sfp";
 		i2c-bus = <&i2c_sfp0>;
