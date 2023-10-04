@@ -870,6 +870,159 @@ static int sparx5_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
 	return 0;
 }
 
+static int sparx5_ptp_verify(struct ptp_clock_info *ptp, unsigned int pin,
+			     enum ptp_pin_function func, unsigned int chan)
+{
+	struct sparx5_phc *phc = container_of(ptp, struct sparx5_phc, info);
+	struct sparx5 *sparx5 = phc->sparx5;
+	struct ptp_clock_info *info;
+	int i;
+
+	/* Currently support only 1 channel */
+	if (chan != 0)
+		return -1;
+
+	switch (func) {
+	case PTP_PF_NONE:
+	case PTP_PF_PEROUT:
+		break;
+	default:
+		return -1;
+	}
+
+	/* The PTP pins are shared by all the PHC. So it is required to see if
+	 * the pin is connected to another PHC. The pin is connected to another
+	 * PHC if that pin already has a function on that PHC.
+	 */
+	for (i = 0; i < SPARX5_PHC_COUNT; ++i) {
+		info = &sparx5->phc[i].info;
+
+		/* Ignore the check with ourself */
+		if (ptp == info)
+			continue;
+
+		if (info->pin_config[pin].func == PTP_PF_PEROUT)
+			return -1;
+	}
+
+	return 0;
+}
+
+static int sparx5_ptp_perout(struct ptp_clock_info *ptp,
+			     struct ptp_clock_request *rq, int on)
+{
+	struct sparx5_phc *phc = container_of(ptp, struct sparx5_phc, info);
+	struct sparx5 *sparx5 = phc->sparx5;
+	const struct sparx5_consts *consts = &sparx5->data->consts;
+	struct timespec64 ts_phase, ts_period;
+	unsigned long flags;
+	s64 wf_high, wf_low;
+	bool pps = false;
+	int pin;
+
+	if (rq->perout.flags & ~(PTP_PEROUT_DUTY_CYCLE |
+				 PTP_PEROUT_PHASE))
+		return -EOPNOTSUPP;
+
+	pin = ptp_find_pin(phc->clock, PTP_PF_PEROUT, rq->perout.index);
+	if (pin == -1 || pin >= consts->ptp_pins)
+		return -EINVAL;
+
+	if (!on) {
+		spin_lock_irqsave(&sparx5->ptp_clock_lock, flags);
+		spx5_rmw(PTP_PTP_PIN_CFG_PTP_PIN_ACTION_SET(PTP_PIN_ACTION_IDLE) |
+			 PTP_PTP_PIN_CFG_PTP_PIN_DOM_SET(phc->index) |
+			 PTP_PTP_PIN_CFG_PTP_PIN_SYNC_SET(0),
+			 PTP_PTP_PIN_CFG_PTP_PIN_ACTION |
+			 PTP_PTP_PIN_CFG_PTP_PIN_DOM |
+			 PTP_PTP_PIN_CFG_PTP_PIN_SYNC,
+			 sparx5, PTP_PTP_PIN_CFG(pin));
+		spin_unlock_irqrestore(&sparx5->ptp_clock_lock, flags);
+		return 0;
+	}
+
+	if (rq->perout.period.sec == 1 &&
+	    rq->perout.period.nsec == 0)
+		pps = true;
+
+	if (rq->perout.flags & PTP_PEROUT_PHASE) {
+		ts_phase.tv_sec = rq->perout.phase.sec;
+		ts_phase.tv_nsec = rq->perout.phase.nsec;
+	} else {
+		ts_phase.tv_sec = rq->perout.start.sec;
+		ts_phase.tv_nsec = rq->perout.start.nsec;
+	}
+
+	if (ts_phase.tv_sec || (ts_phase.tv_nsec && !pps)) {
+		dev_warn(sparx5->dev,
+			 "Absolute time not supported!\n");
+		return -EINVAL;
+	}
+
+	if (rq->perout.flags & PTP_PEROUT_DUTY_CYCLE) {
+		struct timespec64 ts_on;
+
+		ts_on.tv_sec = rq->perout.on.sec;
+		ts_on.tv_nsec = rq->perout.on.nsec;
+
+		wf_high = timespec64_to_ns(&ts_on);
+	} else {
+		wf_high = 5000;
+	}
+
+	if (pps) {
+		spin_lock_irqsave(&sparx5->ptp_clock_lock, flags);
+		spx5_wr(PTP_PIN_WF_LOW_PERIOD_PIN_WFL_SET(ts_phase.tv_nsec),
+			sparx5, PTP_PIN_WF_LOW_PERIOD(pin));
+		spx5_wr(PTP_PIN_WF_HIGH_PERIOD_PIN_WFH_SET(wf_high),
+			sparx5, PTP_PIN_WF_HIGH_PERIOD(pin));
+		spx5_rmw(PTP_PTP_PIN_CFG_PTP_PIN_ACTION_SET(PTP_PIN_ACTION_CLOCK) |
+			 PTP_PTP_PIN_CFG_PTP_PIN_DOM_SET(phc->index) |
+			 PTP_PTP_PIN_CFG_PTP_PIN_SYNC_SET(3),
+			 PTP_PTP_PIN_CFG_PTP_PIN_ACTION |
+			 PTP_PTP_PIN_CFG_PTP_PIN_DOM |
+			 PTP_PTP_PIN_CFG_PTP_PIN_SYNC,
+			 sparx5, PTP_PTP_PIN_CFG(pin));
+		spin_unlock_irqrestore(&sparx5->ptp_clock_lock, flags);
+		return 0;
+	}
+
+	ts_period.tv_sec = rq->perout.period.sec;
+	ts_period.tv_nsec = rq->perout.period.nsec;
+
+	wf_low = timespec64_to_ns(&ts_period);
+	wf_low -= wf_high;
+
+	spin_lock_irqsave(&sparx5->ptp_clock_lock, flags);
+	spx5_wr(PTP_PIN_WF_LOW_PERIOD_PIN_WFL_SET(wf_low),
+		sparx5, PTP_PIN_WF_LOW_PERIOD(pin));
+	spx5_wr(PTP_PIN_WF_HIGH_PERIOD_PIN_WFH_SET(wf_high),
+		sparx5, PTP_PIN_WF_HIGH_PERIOD(pin));
+	spx5_rmw(PTP_PTP_PIN_CFG_PTP_PIN_ACTION_SET(PTP_PIN_ACTION_CLOCK) |
+		 PTP_PTP_PIN_CFG_PTP_PIN_DOM_SET(phc->index) |
+		 PTP_PTP_PIN_CFG_PTP_PIN_SYNC_SET(0),
+		 PTP_PTP_PIN_CFG_PTP_PIN_ACTION |
+		 PTP_PTP_PIN_CFG_PTP_PIN_DOM |
+		 PTP_PTP_PIN_CFG_PTP_PIN_SYNC,
+		 sparx5, PTP_PTP_PIN_CFG(pin));
+	spin_unlock_irqrestore(&sparx5->ptp_clock_lock, flags);
+
+	return 0;
+}
+
+static int sparx5_ptp_enable(struct ptp_clock_info *ptp,
+			     struct ptp_clock_request *rq, int on)
+{
+	switch (rq->type) {
+	case PTP_CLK_REQ_PEROUT:
+		return sparx5_ptp_perout(ptp, rq, on);
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	return 0;
+}
+
 static struct ptp_clock_info sparx5_ptp_clock_info = {
 	.owner		= THIS_MODULE,
 	.name		= "sparx5 ptp",
@@ -878,15 +1031,32 @@ static struct ptp_clock_info sparx5_ptp_clock_info = {
 	.settime64	= sparx5_ptp_settime64,
 	.adjtime	= sparx5_ptp_adjtime,
 	.adjfine	= sparx5_ptp_adjfine,
+	.verify		= sparx5_ptp_verify,
+	.enable		= sparx5_ptp_enable,
 };
 
 static int sparx5_ptp_phc_init(struct sparx5 *sparx5,
 			       int index,
 			       struct ptp_clock_info *clock_info)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	struct sparx5_phc *phc = &sparx5->phc[index];
+	struct ptp_pin_desc *p;
+	int i;
+
+	clock_info->n_per_out = consts->ptp_pins;
+	clock_info->n_pins = consts->ptp_pins;
+
+	for (i = 0; i < consts->ptp_pins; i++) {
+		p = &phc->pins[i];
+
+		snprintf(p->name, sizeof(p->name), "pin%d", i);
+		p->index = i;
+		p->func = PTP_PF_NONE;
+	}
 
 	phc->info = *clock_info;
+	phc->info.pin_config = &phc->pins[0];
 	phc->clock = ptp_clock_register(&phc->info, sparx5->dev);
 	if (IS_ERR(phc->clock))
 		return PTR_ERR(phc->clock);

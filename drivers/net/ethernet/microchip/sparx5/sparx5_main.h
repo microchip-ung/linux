@@ -119,6 +119,7 @@ enum sparx5_vlan_port_type {
 
 #define SPARX5_PHC_COUNT		3
 #define SPARX5_PHC_PORT			0
+#define SPARX5_MAX_PHC_PINS_NUM		7
 
 #define IFH_REW_OP_NOOP			0x0
 #define IFH_REW_OP_ONE_STEP_PTP		0x3
@@ -289,6 +290,7 @@ enum sparx5_core_clockfreq {
 struct sparx5_phc {
 	struct ptp_clock *clock;
 	struct ptp_clock_info info;
+	struct ptp_pin_desc pins[SPARX5_MAX_PHC_PINS_NUM];
 	struct hwtstamp_config hwtstamp_config;
 	struct sparx5 *sparx5;
 	u8 index;
@@ -498,6 +500,7 @@ struct sparx5_consts {
 	const struct sparx5_vcap_inst *vcaps_cfg;
 	const struct vcap_info *vcaps;
 	const struct vcap_statistics *vcap_stats;
+	u8 ptp_pins;
 };
 
 struct sparx5_regs {

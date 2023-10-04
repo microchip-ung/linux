@@ -394,6 +394,7 @@ const struct sparx5_match_data lan969x_desc = {
 		.vcaps = lan969x_vcaps,
 		.vcaps_cfg = lan969x_vcap_inst_cfg,
 		.vcap_stats = &lan969x_vcap_stats,
+		.ptp_pins = 7,
 	},
 };
 MODULE_LICENSE("Dual MIT/GPL");
