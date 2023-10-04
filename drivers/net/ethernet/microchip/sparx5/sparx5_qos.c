@@ -747,6 +747,14 @@ enum sparx5_tas_link_speed {
  *
  */
 
+int sparx5_tas_scheduler_get(struct sparx5 *sparx5, int portno)
+{
+	if (is_sparx5(sparx5))
+		return 5040 + 64 + portno;
+	else
+		return 1120 + portno;
+}
+
 int sparx5_tas_list_index(struct sparx5_port *port, u8 tas_entry)
 {
 	const struct sparx5_consts *consts = &port->sparx5->data->consts;
@@ -835,7 +843,9 @@ static int sparx5_tas_shutdown_operating(struct sparx5_port *port)
 	struct sparx5 *sparx5 = port->sparx5;
 	int i, list, state;
 	unsigned long end;
-	u32 val;
+	u32 val, sched;
+
+	sched = sparx5_tas_scheduler_get(sparx5, port->portno);
 
 	netdev_dbg(port->ndev, "portno %u\n", port->portno);
 	for (i = 0; i < SPX5_TAS_ENTRIES_PER_PORT; i++) {
@@ -898,7 +908,7 @@ static int sparx5_tas_shutdown_operating(struct sparx5_port *port)
 
 		/* Restore gate state to "all-queues-open" */
 		/* Select port n on layer 2 of Hierarchical Scheduler */
-		spx5_wr(HSCH_TAS_GATE_STATE_CTRL_HSCH_POS_SET(5040 + 64 + port->portno),
+		spx5_wr(HSCH_TAS_GATE_STATE_CTRL_HSCH_POS_SET(sched),
 			sparx5,
 			HSCH_TAS_GATE_STATE_CTRL);
 		/* Set gate state to "all-queues-open" */
@@ -1065,6 +1075,9 @@ static int sparx5_tas_gcl_setup(struct sparx5_port *port, int list,
 	DECLARE_BITMAP(free_list, TAS_NUM_GCL);
 	struct sparx5 *sparx5 = port->sparx5;
 	int i, num_free, base;
+	u32 sched;
+
+	sched = sparx5_tas_scheduler_get(sparx5, port->portno);
 
 	num_free = sparx5_tas_gcl_free_get(port, free_list);
 	if (num_free < (int)qopt->num_entries) {
@@ -1093,13 +1106,27 @@ static int sparx5_tas_gcl_setup(struct sparx5_port *port, int list,
 			 sparx5,
 			 HSCH_TAS_LIST_CFG);
 
-		spx5_rmw(HSCH_TAS_LIST_CFG_LIST_LENGTH_SET(qopt->num_entries),
-			 HSCH_TAS_LIST_CFG_LIST_LENGTH,
-			 sparx5,
-			 HSCH_TAS_LIST_CFG);
+		if (is_sparx5(sparx5)) {
+			spx5_rmw(HSCH_TAS_LIST_CFG_LIST_LENGTH_SET(qopt->num_entries),
+				 HSCH_TAS_LIST_CFG_LIST_LENGTH,
+				 sparx5,
+				 HSCH_TAS_LIST_CFG);
+		} else {
+			/* Associate TAS list with physical port number and
+			 * scheduler element.
+			 */
+			spx5_rmw(HSCH_TAS_LIST_CFG_LIST_PORT_NUM_SET(port->portno),
+				 HSCH_TAS_LIST_CFG_LIST_PORT_NUM, sparx5,
+				 HSCH_TAS_LIST_CFG);
+			spx5_rmw(HSCH_TAS_LIST_CFG_LIST_HSCH_POS_SET(sched),
+				 HSCH_TAS_LIST_CFG_LIST_HSCH_POS, sparx5,
+				 HSCH_TAS_LIST_CFG);
+		}
 	}
 
 	for (i = 0; i < qopt->num_entries; i++) {
+		u32 gcl_next = (i >= qopt->num_entries - 1) ? base :
+							      base + i + 1;
 		/* GCL index is relative to BASE_ADDR */
 		spx5_rmw(HSCH_TAS_CFG_CTRL_GCL_ENTRY_NUM_SET(i),
 			 HSCH_TAS_CFG_CTRL_GCL_ENTRY_NUM,
@@ -1124,12 +1151,22 @@ static int sparx5_tas_gcl_setup(struct sparx5_port *port, int list,
 			return -1;
 		}
 
-		/* Set HSCH_POS to layer 2, port n */
-		spx5_wr(HSCH_TAS_GCL_CTRL_CFG_GATE_STATE_SET(qopt->entries[i].gate_mask) |
-			HSCH_TAS_GCL_CTRL_CFG_HSCH_POS_SET(5040 + 64 + port->portno) |
-			HSCH_TAS_GCL_CTRL_CFG_PORT_PROFILE_SET(port->portno),
-			sparx5,
-			HSCH_TAS_GCL_CTRL_CFG);
+		/* Set gate states for this GCL */
+		spx5_rmw(HSCH_TAS_GCL_CTRL_CFG_GATE_STATE_SET(qopt->entries[i].gate_mask),
+			 HSCH_TAS_GCL_CTRL_CFG_GATE_STATE, sparx5,
+			 HSCH_TAS_GCL_CTRL_CFG);
+
+		if (is_sparx5(sparx5)) {
+			spx5_rmw(HSCH_TAS_GCL_CTRL_CFG_HSCH_POS_SET(sched) |
+				HSCH_TAS_GCL_CTRL_CFG_PORT_PROFILE_SET(port->portno),
+				HSCH_TAS_GCL_CTRL_CFG_HSCH_POS |
+				HSCH_TAS_GCL_CTRL_CFG_PORT_PROFILE, sparx5,
+				HSCH_TAS_GCL_CTRL_CFG);
+		} else {
+			/* The GCL list is a linked list on lan969x */
+			spx5_wr(HSCH_TAS_GCL_CTRL_CFG2_NEXT_GCL_SET(gcl_next),
+				sparx5, HSCH_TAS_GCL_CTRL_CFG2);
+		}
 
 		spx5_wr(qopt->entries[i].interval,
 			sparx5,
@@ -1273,13 +1310,18 @@ static int sparx5_tas_init(struct sparx5 *sparx5)
 		 sparx5,
 		 HSCH_TAS_CFG_CTRL);
 
-	/* Associate profile with port */
-	for (i = 0; i < num_ports; i++)
-		if (sparx5->ports[i])
+	/* Associate profile with port (profile idx = port on lan969x)*/
+	if (is_sparx5(sparx5)) {
+		for (i = 0; i < num_ports; i++) {
+			if (!sparx5->ports[i])
+				continue;
 			spx5_rmw(HSCH_TAS_PROFILE_CONFIG_PORT_NUM_SET(i),
 				 HSCH_TAS_PROFILE_CONFIG_PORT_NUM,
 				 sparx5,
 				 HSCH_TAS_PROFILE_CONFIG(i));
+		}
+	}
+
 
 	return 0;
 }
@@ -1697,11 +1739,9 @@ int sparx5_qos_init(struct sparx5 *sparx5)
 	if (err)
 		return err;
 
-	if (is_sparx5(sparx5)) {
-		err = sparx5_tas_init(sparx5);
-		if (err)
-			return err;
-	}
+	err = sparx5_tas_init(sparx5);
+	if (err)
+		return err;
 
 	sparx5_psfp_init(sparx5);
 

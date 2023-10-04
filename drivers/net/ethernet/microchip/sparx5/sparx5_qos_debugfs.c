@@ -392,7 +392,22 @@ static int sparx5_tas_show(struct seq_file *m, void *unused)
 			P_TIME(" cycle_time", 0, ctrl);
 			val = spx5_rd(sparx5, HSCH_TAS_LIST_CFG);
 			base = HSCH_TAS_LIST_CFG_LIST_BASE_ADDR_GET(val);
-			length = HSCH_TAS_LIST_CFG_LIST_LENGTH_GET(val);
+			if (is_sparx5(sparx5)) {
+				length = HSCH_TAS_LIST_CFG_LIST_LENGTH_GET(val);
+			} else {
+				/* The GCL list is a linked list on lan969x. */
+				length = 0;
+				for (;;) {
+					spx5_rmw(HSCH_TAS_CFG_CTRL_GCL_ENTRY_NUM_SET(length),
+						 HSCH_TAS_CFG_CTRL_GCL_ENTRY_NUM,
+						 sparx5, HSCH_TAS_CFG_CTRL);
+
+					if (spx5_rd(sparx5, HSCH_TAS_GCL_CTRL_CFG2) == base)
+						break;
+
+					length++;
+				}
+			}
 			P(" gcl base", base);
 			P(" gcl length", length);
 			for (gcl = 0; gcl < length; gcl++) {
