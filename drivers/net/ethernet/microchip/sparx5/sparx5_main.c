@@ -999,6 +999,11 @@ static int mchp_sparx5_remove(struct platform_device *pdev)
 		disable_irq(sparx5->fdma_irq);
 		sparx5->fdma_irq = -ENXIO;
 	}
+	if (sparx5->ptp_irq) {
+		disable_irq(sparx5->ptp_irq);
+		sparx5->ptp_irq = -ENXIO;
+	}
+
 	sparx5_ptp_deinit(sparx5);
 	ops->fdma_stop(sparx5);
 	sparx5_cleanup_ports(sparx5);
