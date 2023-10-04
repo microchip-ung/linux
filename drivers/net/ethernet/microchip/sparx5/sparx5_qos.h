@@ -166,6 +166,10 @@ int sparx5_tc_ets_add(struct sparx5_port *port,
 	struct tc_ets_qopt_offload_replace_params *params);
 int sparx5_tc_ets_del(struct sparx5_port *port);
 
+/* Credit-Based Shaper */
+int sparx5_cbs_add(struct sparx5_port *port, struct tc_cbs_qopt_offload *qopt);
+int sparx5_cbs_del(struct sparx5_port *port, struct tc_cbs_qopt_offload *qopt);
+
 /* Hierarchical Scheduler */
 u32 sparx5_lg_get_first(struct sparx5 *sparx5, u32 layer, u32 group);
 u32 sparx5_lg_get_next(struct sparx5 *sparx5, u32 layer, u32 group,

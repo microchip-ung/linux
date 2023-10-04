@@ -1453,12 +1453,13 @@ static int sparx5_shaper_conf_set(struct sparx5_port *port,
 		 HSCH_HSCH_CFG_CFG_HSCH_LAYER, sparx5, HSCH_HSCH_CFG_CFG);
 
 	/* Set frame mode */
-	spx5_rmw(HSCH_SE_CFG_SE_FRM_MODE_SET(sh->mode), HSCH_SE_CFG_SE_FRM_MODE,
+	spx5_rmw(HSCH_SE_CFG_SE_FRM_MODE_SET(sh->mode),
+		 HSCH_SE_CFG_SE_FRM_MODE,
 		 sparx5, HSCH_SE_CFG(idx));
 
 	/* Set committed rate and burst */
 	spx5_wr(HSCH_CIR_CFG_CIR_RATE_SET(sh->rate) |
-			HSCH_CIR_CFG_CIR_BURST_SET(sh->burst),
+		HSCH_CIR_CFG_CIR_BURST_SET(sh->burst),
 		sparx5, HSCH_CIR_CFG(idx));
 
 	/* This has to be done after the shaper configuration has been set */
@@ -1567,6 +1568,60 @@ int sparx5_tc_tbf_del(struct sparx5_port *port, u32 layer, u32 idx)
 	sparx5_lg_get_group_by_index(port->sparx5, layer, idx, &group);
 
 	return sparx5_shaper_conf_set(port, &sh, layer, idx, group);
+}
+
+int sparx5_cbs_add(struct sparx5_port *port, struct tc_cbs_qopt_offload *qopt)
+{
+	struct sparx5_shaper sh;
+	struct sparx5_lg *lg;
+	u32 group, se_idx;
+
+	se_idx = sparx5_hsch_l0_get_idx(port->sparx5, port->portno,
+					qopt->queue);
+
+	/* Check for invalid values */
+	if (qopt->idleslope <= 0 ||
+	    qopt->sendslope >= 0 ||
+	    qopt->locredit >= qopt->hicredit)
+		return -EINVAL;
+
+	sh.mode = SPX5_SE_MODE_DATARATE;
+	sh.rate = qopt->idleslope;
+	sh.burst = (qopt->idleslope - qopt->sendslope) *
+		   (qopt->hicredit - qopt->locredit) / -qopt->sendslope;
+
+	/* Find suitable group for this se */
+	if (sparx5_lg_get_group_by_rate(0, sh.rate, &group) < 0) {
+		pr_debug("Could not find leak group for se with rate: %d",
+			 sh.rate);
+		return -EINVAL;
+	}
+
+	lg = &sparx5_layers[0].leak_groups[group];
+
+	/* Calculate committed rate and burst */
+	sh.rate = DIV_ROUND_UP(sh.rate, lg->resolution);
+	sh.burst = DIV_ROUND_UP(sh.burst, SPX5_SE_BURST_UNIT);
+
+	/* Check that actually the result can be written */
+	if (sh.rate > GENMASK(15, 0) ||
+	    sh.burst > GENMASK(6, 0))
+		return -EINVAL;
+
+	return sparx5_shaper_conf_set(port, &sh, 0, se_idx, group);
+}
+
+int sparx5_cbs_del(struct sparx5_port *port, struct tc_cbs_qopt_offload *qopt)
+{
+	struct sparx5_shaper sh = {0};
+	u32 group, se_idx;
+
+	se_idx = sparx5_hsch_l0_get_idx(port->sparx5, port->portno,
+					qopt->queue);
+
+	sparx5_lg_get_group_by_index(port->sparx5, 0, se_idx, &group);
+
+	return sparx5_shaper_conf_set(port, &sh, 0, se_idx, group);
 }
 
 int sparx5_tc_ets_add(struct sparx5_port *port,
