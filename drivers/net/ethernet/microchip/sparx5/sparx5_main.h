@@ -511,6 +511,7 @@ struct sparx5_regs {
 	const unsigned int *raddr;
 	const unsigned int *rcnt;
 	const unsigned int *fpos;
+	const unsigned int *fsize;
 };
 
 struct sparx5_match_data {

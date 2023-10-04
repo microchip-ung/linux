@@ -349,6 +349,7 @@ const struct sparx5_match_data lan969x_desc = {
 		.raddr = lan969x_raddr,
 		.rcnt = lan969x_rcnt,
 		.fpos = lan969x_fpos,
+		.fsize = lan969x_fsize,
 	},
 	.ops = {
 		.port_mux_set = &lan969x_port_mux_set,

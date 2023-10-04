@@ -25,6 +25,7 @@ extern const unsigned int lan969x_gaddr[GADDR_LAST];
 extern const unsigned int lan969x_gcnt[GCNT_LAST];
 extern const unsigned int lan969x_gsize[GSIZE_LAST];
 extern const unsigned int lan969x_fpos[FPOS_LAST];
+extern const unsigned int lan969x_fsize[FSIZE_LAST];
 
 static inline bool lan969x_port_is_2g5(int portno)
 {
