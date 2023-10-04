@@ -789,6 +789,19 @@ static int sparx5_start(struct sparx5 *sparx5)
 		sparx5->ptp = 1;
 	}
 
+	if (sparx5->ptp) {
+		if (sparx5->ptp_ext_irq > 0) {
+			err = devm_request_threaded_irq(sparx5->dev,
+							sparx5->ptp_ext_irq, NULL,
+							sparx5_ptp_ext_irq_handler,
+							IRQF_ONESHOT,
+							"sparx5-ptp-ext", sparx5);
+			if (err)
+				return dev_err_probe(sparx5->dev, err,
+						     "Unable to use ptp-ext irq");
+		}
+	}
+
 	sparx5_netlink_fp_init();
 	sparx5_netlink_qos_init(sparx5);
 
@@ -920,6 +933,7 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 	sparx5->fdma_irq = platform_get_irq_byname(sparx5->pdev, "fdma");
 	sparx5->xtr_irq = platform_get_irq_byname(sparx5->pdev, "xtr");
 	sparx5->ptp_irq = platform_get_irq_byname(sparx5->pdev, "ptp");
+	sparx5->ptp_ext_irq = platform_get_irq_byname(sparx5->pdev, "ptp-ext");
 
 	/* Read chip ID to check CPU interface */
 	sparx5->chip_id = spx5_rd(sparx5, GCB_CHIP_ID);
@@ -1002,6 +1016,10 @@ static int mchp_sparx5_remove(struct platform_device *pdev)
 	if (sparx5->ptp_irq) {
 		disable_irq(sparx5->ptp_irq);
 		sparx5->ptp_irq = -ENXIO;
+	}
+	if (sparx5->ptp_ext_irq) {
+		disable_irq(sparx5->ptp_ext_irq);
+		sparx5->ptp_ext_irq = -ENXIO;
 	}
 
 	sparx5_ptp_deinit(sparx5);

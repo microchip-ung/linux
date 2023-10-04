@@ -885,6 +885,7 @@ static int sparx5_ptp_verify(struct ptp_clock_info *ptp, unsigned int pin,
 	switch (func) {
 	case PTP_PF_NONE:
 	case PTP_PF_PEROUT:
+	case PTP_PF_EXTTS:
 		break;
 	default:
 		return -1;
@@ -901,7 +902,8 @@ static int sparx5_ptp_verify(struct ptp_clock_info *ptp, unsigned int pin,
 		if (ptp == info)
 			continue;
 
-		if (info->pin_config[pin].func == PTP_PF_PEROUT)
+		if (info->pin_config[pin].func == PTP_PF_PEROUT ||
+		    info->pin_config[pin].func == PTP_PF_EXTTS)
 			return -1;
 	}
 
@@ -1010,12 +1012,117 @@ static int sparx5_ptp_perout(struct ptp_clock_info *ptp,
 	return 0;
 }
 
+irqreturn_t sparx5_ptp_ext_irq_handler(int irq, void *args)
+{
+	struct sparx5 *sparx5 = args;
+	struct sparx5_phc *phc;
+	unsigned long flags;
+	u64 time = 0;
+	time64_t s;
+	int pin, i;
+	s64 ns;
+
+	if (!(spx5_rd(sparx5, PTP_PTP_PIN_INTR)))
+		return IRQ_NONE;
+
+	/* Go through all domains and see which pin generated the interrupt */
+	for (i = 0; i < SPARX5_PHC_COUNT; ++i) {
+		struct ptp_clock_event ptp_event = {0};
+
+		phc = &sparx5->phc[i];
+		pin = ptp_find_pin_unlocked(phc->clock, PTP_PF_EXTTS, 0);
+		if (pin == -1)
+			continue;
+
+		if (!(spx5_rd(sparx5, PTP_PTP_PIN_INTR) & BIT(pin)))
+			continue;
+
+		spin_lock_irqsave(&sparx5->ptp_clock_lock, flags);
+
+		/* Enable to get the new interrupt.
+		 * By writing 1 it clears the bit
+		 */
+		spx5_wr(BIT(pin), sparx5, PTP_PTP_PIN_INTR);
+
+		/* Get current time */
+		s = spx5_rd(sparx5, PTP_PTP_TOD_SEC_MSB(pin));
+		s <<= 32;
+		s |= spx5_rd(sparx5, PTP_PTP_TOD_SEC_LSB(pin));
+		ns = spx5_rd(sparx5, PTP_PTP_TOD_NSEC(pin));
+		ns &= PTP_PTP_TOD_NSEC_PTP_TOD_NSEC;
+
+		spin_unlock_irqrestore(&sparx5->ptp_clock_lock, flags);
+
+		if ((ns & 0xFFFFFFF0) == 0x3FFFFFF0) {
+			s--;
+			ns &= 0xf;
+			ns += 999999984;
+		}
+		time = ktime_set(s, ns);
+
+		ptp_event.index = 0;
+		ptp_event.timestamp = time;
+		ptp_event.type = PTP_CLOCK_EXTTS;
+		ptp_clock_event(phc->clock, &ptp_event);
+	}
+
+	return IRQ_HANDLED;
+}
+
+static int sparx5_ptp_extts(struct ptp_clock_info *ptp,
+			    struct ptp_clock_request *rq, int on)
+{
+	struct sparx5_phc *phc = container_of(ptp, struct sparx5_phc, info);
+	struct sparx5 *sparx5 = phc->sparx5;
+	const struct sparx5_consts *consts = &sparx5->data->consts;
+	unsigned long flags;
+	int pin;
+	u32 val;
+
+	if (sparx5->ptp_ext_irq <= 0)
+		return -EOPNOTSUPP;
+
+	/* Reject requests with unsupported flags */
+	if (rq->extts.flags & ~(PTP_ENABLE_FEATURE |
+				PTP_RISING_EDGE |
+				PTP_STRICT_FLAGS))
+		return -EOPNOTSUPP;
+
+	pin = ptp_find_pin(phc->clock, PTP_PF_EXTTS, rq->extts.index);
+	if (pin == -1 || pin >= consts->ptp_pins)
+		return -EINVAL;
+
+	spin_lock_irqsave(&sparx5->ptp_clock_lock, flags);
+	spx5_rmw(PTP_PTP_PIN_CFG_PTP_PIN_ACTION_SET(PTP_PIN_ACTION_SAVE) |
+		 PTP_PTP_PIN_CFG_PTP_PIN_SYNC_SET(on ? 3 : 0) |
+		 PTP_PTP_PIN_CFG_PTP_PIN_DOM_SET(phc->index) |
+		 PTP_PTP_PIN_CFG_PTP_PIN_SELECT_SET(pin),
+		 PTP_PTP_PIN_CFG_PTP_PIN_ACTION |
+		 PTP_PTP_PIN_CFG_PTP_PIN_SYNC |
+		 PTP_PTP_PIN_CFG_PTP_PIN_DOM |
+		 PTP_PTP_PIN_CFG_PTP_PIN_SELECT,
+		 sparx5, PTP_PTP_PIN_CFG(pin));
+
+	val = spx5_rd(sparx5, PTP_PTP_PIN_INTR_ENA);
+	if (on)
+		val |= BIT(pin);
+	else
+		val &= ~BIT(pin);
+	spx5_wr(val, sparx5, PTP_PTP_PIN_INTR_ENA);
+
+	spin_unlock_irqrestore(&sparx5->ptp_clock_lock, flags);
+
+	return 0;
+}
+
 static int sparx5_ptp_enable(struct ptp_clock_info *ptp,
 			     struct ptp_clock_request *rq, int on)
 {
 	switch (rq->type) {
 	case PTP_CLK_REQ_PEROUT:
 		return sparx5_ptp_perout(ptp, rq, on);
+	case PTP_CLK_REQ_EXTTS:
+		return sparx5_ptp_extts(ptp, rq, on);
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -1045,6 +1152,7 @@ static int sparx5_ptp_phc_init(struct sparx5 *sparx5,
 	int i;
 
 	clock_info->n_per_out = consts->ptp_pins;
+	clock_info->n_ext_ts = consts->ptp_pins;
 	clock_info->n_pins = consts->ptp_pins;
 
 	for (i = 0; i < consts->ptp_pins; i++) {

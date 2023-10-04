@@ -390,6 +390,7 @@ struct sparx5 {
 	struct mutex ptp_lock; /* lock for ptp interface state */
 	u16 ptp_skbs;
 	int ptp_irq;
+	int ptp_ext_irq;
 	/* VCAP */
 	struct vcap_control *vcap_ctrl;
 	/* Common root for debugfs */
@@ -661,6 +662,7 @@ int sparx5_ptp_setup_traps(struct sparx5_port *port, struct ifreq *ifr);
 void sparx5_ptp_get_hwtimestamp(struct sparx5 *sparx5,
 				struct timespec64 *ts,
 				u32 nsec);
+irqreturn_t sparx5_ptp_ext_irq_handler(int irq, void *args);
 
 /* netlink */
 int sparx5_netlink_qos_init(struct sparx5 *sparx5);
