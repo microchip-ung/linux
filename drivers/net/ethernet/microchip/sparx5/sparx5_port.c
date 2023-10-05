@@ -1262,6 +1262,25 @@ int sparx5_port_init(struct sparx5 *sparx5,
 			DEV25G_PCS25G_SD_CFG(pix));
 	}
 
+	if (!is_sparx5(sparx5)) {
+		void __iomem *inst;
+		u32 dev, tinst;
+
+		if (ops->port_is_10g(port->portno)) {
+			dev = sparx5_to_high_dev(sparx5, port->portno);
+			tinst = sparx5_port_dev_index(sparx5, port->portno);
+			inst = spx5_inst_get(sparx5, dev, tinst);
+
+			spx5_inst_wr(5, inst, DEV10G_PTP_STAMPER_CFG(port->portno));
+		} else if (ops->port_is_5g(port->portno)) {
+			dev = sparx5_to_high_dev(sparx5, port->portno);
+			tinst = sparx5_port_dev_index(sparx5, port->portno);
+			inst = spx5_inst_get(sparx5, dev, tinst);
+
+			spx5_inst_wr(5, inst, DEV5G_PTP_STAMPER_CFG(port->portno));
+		}
+	}
+
 	return 0;
 }
 
