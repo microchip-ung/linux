@@ -2,6 +2,14 @@
 
 #include "sparx5_regs.h"
 
+const unsigned int sparx5_tsize[TSIZE_LAST] = {
+	[TC_DEV10G] = 12,
+	[TC_DEV2G5] = 65,
+	[TC_DEV5G] = 13,
+	[TC_PCS10G_BR] = 12,
+	[TC_PCS5G_BR] = 13,
+};
+
 const unsigned int sparx5_raddr[RADDR_LAST] = {
 	[RA_CPU_PROC_CTRL] = 176,
 	[RA_GCB_SOFT_RST] = 8,

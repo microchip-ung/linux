@@ -2,6 +2,14 @@
 
 #include "../sparx5_regs.h"
 
+const unsigned int lan969x_tsize[TSIZE_LAST] = {
+	[TC_DEV10G] = 10,
+	[TC_DEV2G5] = 28,
+	[TC_DEV5G] = 4,
+	[TC_PCS10G_BR] = 10,
+	[TC_PCS5G_BR] = 4,
+};
+
 const unsigned int lan969x_raddr[RADDR_LAST] = {
 	[RA_CPU_PROC_CTRL] = 160,
 	[RA_GCB_SOFT_RST] = 12,

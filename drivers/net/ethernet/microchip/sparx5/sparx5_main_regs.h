@@ -70,6 +70,7 @@ enum sparx5_target {
 #define RCNT(o)   regs->rcnt[o]
 #define FPOS(o)   regs->fpos[o]
 #define FSIZE(o)  regs->fsize[o]
+#define TSIZE(o)  regs->tsize[o]
 
 #define __REG(...)    __VA_ARGS__
 
@@ -3366,7 +3367,7 @@ enum sparx5_target {
 
 /* DEV10G:MAC_CFG_STATUS:MAC_ENA_CFG */
 #define DEV10G_MAC_ENA_CFG(t)                                                  \
-	__REG(TARGET_DEV10G, t, 12, 0, 0, 1, 60, 0, 0, 1, 4)
+	__REG(TARGET_DEV10G, t, TSIZE(TC_DEV10G), 0, 0, 1, 60, 0, 0, 1, 4)
 
 #define DEV10G_MAC_ENA_CFG_RX_ENA                BIT(4)
 #define DEV10G_MAC_ENA_CFG_RX_ENA_SET(x)\
@@ -3382,7 +3383,7 @@ enum sparx5_target {
 
 /* DEV10G:MAC_CFG_STATUS:MAC_MAXLEN_CFG */
 #define DEV10G_MAC_MAXLEN_CFG(t)                                               \
-	__REG(TARGET_DEV10G, t, 12, 0, 0, 1, 60, 8, 0, 1, 4)
+	__REG(TARGET_DEV10G, t, TSIZE(TC_DEV10G), 0, 0, 1, 60, 8, 0, 1, 4)
 
 #define DEV10G_MAC_MAXLEN_CFG_MAX_LEN_TAG_CHK    BIT(16)
 #define DEV10G_MAC_MAXLEN_CFG_MAX_LEN_TAG_CHK_SET(x)\
@@ -3398,7 +3399,7 @@ enum sparx5_target {
 
 /* DEV10G:MAC_CFG_STATUS:MAC_NUM_TAGS_CFG */
 #define DEV10G_MAC_NUM_TAGS_CFG(t)                                             \
-	__REG(TARGET_DEV10G, t, 12, 0, 0, 1, 60, 12, 0, 1, 4)
+	__REG(TARGET_DEV10G, t, TSIZE(TC_DEV10G), 0, 0, 1, 60, 12, 0, 1, 4)
 
 #define DEV10G_MAC_NUM_TAGS_CFG_NUM_TAGS         GENMASK(1, 0)
 #define DEV10G_MAC_NUM_TAGS_CFG_NUM_TAGS_SET(x)\
@@ -3408,7 +3409,7 @@ enum sparx5_target {
 
 /* DEV10G:MAC_CFG_STATUS:MAC_TAGS_CFG */
 #define DEV10G_MAC_TAGS_CFG(t, r)                                              \
-	__REG(TARGET_DEV10G, t, 12, 0, 0, 1, 60, 16, r, 3, 4)
+	__REG(TARGET_DEV10G, t, TSIZE(TC_DEV10G), 0, 0, 1, 60, 16, r, 3, 4)
 
 #define DEV10G_MAC_TAGS_CFG_TAG_ID               GENMASK(31, 16)
 #define DEV10G_MAC_TAGS_CFG_TAG_ID_SET(x)\
@@ -3424,7 +3425,7 @@ enum sparx5_target {
 
 /* DEV10G:MAC_CFG_STATUS:MAC_ADV_CHK_CFG */
 #define DEV10G_MAC_ADV_CHK_CFG(t)                                              \
-	__REG(TARGET_DEV10G, t, 12, 0, 0, 1, 60, 28, 0, 1, 4)
+	__REG(TARGET_DEV10G, t, TSIZE(TC_DEV10G), 0, 0, 1, 60, 28, 0, 1, 4)
 
 #define DEV10G_MAC_ADV_CHK_CFG_EXT_EOP_CHK_ENA   BIT(24)
 #define DEV10G_MAC_ADV_CHK_CFG_EXT_EOP_CHK_ENA_SET(x)\
@@ -3470,7 +3471,7 @@ enum sparx5_target {
 
 /* DEV10G:MAC_CFG_STATUS:MAC_TX_MONITOR_STICKY */
 #define DEV10G_MAC_TX_MONITOR_STICKY(t)                                        \
-	__REG(TARGET_DEV10G, t, 12, 0, 0, 1, 60, 48, 0, 1, 4)
+	__REG(TARGET_DEV10G, t, TSIZE(TC_DEV10G), 0, 0, 1, 60, 48, 0, 1, 4)
 
 #define DEV10G_MAC_TX_MONITOR_STICKY_LOCAL_ERR_STATE_STICKY BIT(4)
 #define DEV10G_MAC_TX_MONITOR_STICKY_LOCAL_ERR_STATE_STICKY_SET(x)\
@@ -3504,7 +3505,7 @@ enum sparx5_target {
 
 /* DEV10G:DEV_CFG_STATUS:DEV_RST_CTRL */
 #define DEV10G_DEV_RST_CTRL(t)                                                 \
-	__REG(TARGET_DEV10G, t, 12, 436, 0, 1, 52, 0, 0, 1, 4)
+	__REG(TARGET_DEV10G, t, TSIZE(TC_DEV10G), 436, 0, 1, 52, 0, 0, 1, 4)
 
 #define DEV10G_DEV_RST_CTRL_PARDET_MODE_ENA      BIT(28)
 #define DEV10G_DEV_RST_CTRL_PARDET_MODE_ENA_SET(x)\
@@ -3562,7 +3563,7 @@ enum sparx5_target {
 
 /* DEV10G:DEV_CFG_STATUS:PTP_STAMPER_CFG */
 #define DEV10G_PTP_STAMPER_CFG(t)                                              \
-	__REG(TARGET_DEV10G, t, 12, 436, 0, 1, 52, 20, 0, 1, 4)
+	__REG(TARGET_DEV10G, t, TSIZE(TC_DEV10G), 436, 0, 1, 52, 20, 0, 1, 4)
 
 #define DEV10G_PTP_STAMPER_CFG_PTP_TX_SFT_VAL    GENMASK(3, 2)
 #define DEV10G_PTP_STAMPER_CFG_PTP_TX_SFT_VAL_SET(x)\
@@ -3578,7 +3579,7 @@ enum sparx5_target {
 
 /* DEV10G:PCS25G_CFG_STATUS:PCS25G_CFG */
 #define DEV10G_PCS25G_CFG(t)                                                   \
-	__REG(TARGET_DEV10G, t, 12, 488, 0, 1, 32, 0, 0, 1, 4)
+	__REG(TARGET_DEV10G, t, TSIZE(TC_DEV10G), 488, 0, 1, 32, 0, 0, 1, 4)
 
 #define DEV10G_PCS25G_CFG_PCS25G_ENA             BIT(0)
 #define DEV10G_PCS25G_CFG_PCS25G_ENA_SET(x)\
@@ -3588,7 +3589,7 @@ enum sparx5_target {
 
 /* DEV10G:MM_CONFIG:ENABLE_CONFIG */
 #define DEV10G_ENABLE_CONFIG(t)                                                \
-	__REG(TARGET_DEV10G, t, 12, 520, 0, 1, 8, 0, 0, 1, 4)
+	__REG(TARGET_DEV10G, t, TSIZE(TC_DEV10G), 520, 0, 1, 8, 0, 0, 1, 4)
 
 #define DEV10G_ENABLE_CONFIG_MM_RX_ENA           BIT(0)
 #define DEV10G_ENABLE_CONFIG_MM_RX_ENA_SET(x)\
@@ -3610,7 +3611,7 @@ enum sparx5_target {
 
 /* DEV10G:MM_CONFIG:VERIF_CONFIG */
 #define DEV10G_VERIF_CONFIG(t)                                                 \
-	__REG(TARGET_DEV10G, t, 12, 520, 0, 1, 8, 4, 0, 1, 4)
+	__REG(TARGET_DEV10G, t, TSIZE(TC_DEV10G), 520, 0, 1, 8, 4, 0, 1, 4)
 
 #define DEV10G_VERIF_CONFIG_PRM_VERIFY_DIS       BIT(0)
 #define DEV10G_VERIF_CONFIG_PRM_VERIFY_DIS_SET(x)\
@@ -3632,7 +3633,7 @@ enum sparx5_target {
 
 /* DEV10G:MM_STATISTICS:MM_STATUS */
 #define DEV10G_MM_STATUS(t)                                                    \
-	__REG(TARGET_DEV10G, t, 12, 528, 0, 1, 4, 0, 0, 1, 4)
+	__REG(TARGET_DEV10G, t, TSIZE(TC_DEV10G), 528, 0, 1, 4, 0, 0, 1, 4)
 
 #define DEV10G_MM_STATUS_PRMPT_ACTIVE_STATUS     BIT(0)
 #define DEV10G_MM_STATUS_PRMPT_ACTIVE_STATUS_SET(x)\
@@ -3684,94 +3685,13 @@ enum sparx5_target {
 
 /* DEV10G:PTP_CFG_STATUS:DEV_PFRAME_CFG */
 #define DEV10G_DEV_PFRAME_CFG(t)                                               \
-	__REG(TARGET_DEV10G, t, 12, 548, 0, 1, 28, 24, 0, 1, 4)
+	__REG(TARGET_DEV10G, t, TSIZE(TC_DEV10G), 548, 0, 1, 28, 24, 0, 1, 4)
 
 #define DEV10G_DEV_PFRAME_CFG_DEV_FRAGMENT_IFG   GENMASK(7, 0)
 #define DEV10G_DEV_PFRAME_CFG_DEV_FRAGMENT_IFG_SET(x)\
 	FIELD_PREP(DEV10G_DEV_PFRAME_CFG_DEV_FRAGMENT_IFG, x)
 #define DEV10G_DEV_PFRAME_CFG_DEV_FRAGMENT_IFG_GET(x)\
 	FIELD_GET(DEV10G_DEV_PFRAME_CFG_DEV_FRAGMENT_IFG, x)
-
-/* DEV1G:PHASE_DETECTOR_CTRL:PHAD_CTRL */
-#define DEV2G5_PHAD_CTRL(t, g)                                                 \
-	__REG(TARGET_DEV2G5, t, 65, 200, g, 2,                                 \
-	      GSIZE(GW_DEV2G5_PHASE_DETECTOR_CTRL), 0, 0, 1, 4)
-
-#define DEV2G5_PHAD_CTRL_PHAD_ENA\
-	BIT(FPOS(FP_DEV2G5_PHAD_CTRL_PHAD_ENA))
-#define DEV2G5_PHAD_CTRL_PHAD_ENA_SET(x)\
-	spx5_field_prep(DEV2G5_PHAD_CTRL_PHAD_ENA, x)
-#define DEV2G5_PHAD_CTRL_PHAD_ENA_GET(x)\
-	FIELD_GET(DEV2G5_PHAD_CTRL_PHAD_ENA, x)
-
-#define DEV2G5_PHAD_CTRL_PHAD_FAILED\
-	BIT(FPOS(FP_DEV2G5_PHAD_CTRL_PHAD_FAILED))
-#define DEV2G5_PHAD_CTRL_PHAD_FAILED_SET(x)\
-	spx5_field_prep(DEV2G5_PHAD_CTRL_PHAD_FAILED, x)
-#define DEV2G5_PHAD_CTRL_PHAD_FAILED_GET(x)\
-	FIELD_GET(DEV2G5_PHAD_CTRL_PHAD_FAILED, x)
-
-/* SPARX5 ONLY */
-#define DEV2G5_PHAD_CTRL_REDUCED_RES             GENMASK(5, 3)
-#define DEV2G5_PHAD_CTRL_REDUCED_RES_SET(x)\
-	FIELD_PREP(DEV2G5_PHAD_CTRL_REDUCED_RES, x)
-#define DEV2G5_PHAD_CTRL_REDUCED_RES_GET(x)\
-	FIELD_GET(DEV2G5_PHAD_CTRL_REDUCED_RES, x)
-
-#define DEV2G5_PHAD_CTRL_LOCK_ACC                GENMASK(2, 0)
-#define DEV2G5_PHAD_CTRL_LOCK_ACC_SET(x)\
-	FIELD_PREP(DEV2G5_PHAD_CTRL_LOCK_ACC, x)
-#define DEV2G5_PHAD_CTRL_LOCK_ACC_GET(x)\
-	FIELD_GET(DEV2G5_PHAD_CTRL_LOCK_ACC, x)
-
-/* LAN969X ONLY */
-#define DEV2G5_PHAD_CTRL_PHAD_LOCK               BIT(18)
-#define DEV2G5_PHAD_CTRL_PHAD_LOCK_SET(x)\
-	FIELD_PREP(DEV2G5_PHAD_CTRL_PHAD_LOCK, x)
-#define DEV2G5_PHAD_CTRL_PHAD_LOCK_GET(x)\
-	FIELD_GET(DEV2G5_PHAD_CTRL_PHAD_LOCK, x)
-
-/* LAN969X ONLY */
-#define DEV2G5_PHAD_CTRL_DIV_STATE               GENMASK(17, 15)
-#define DEV2G5_PHAD_CTRL_DIV_STATE_SET(x)\
-	FIELD_PREP(DEV2G5_PHAD_CTRL_DIV_STATE, x)
-#define DEV2G5_PHAD_CTRL_DIV_STATE_GET(x)\
-	FIELD_GET(DEV2G5_PHAD_CTRL_DIV_STATE, x)
-
-/* LAN969X ONLY */
-#define DEV2G5_PHAD_CTRL_PHAD_ADJ                GENMASK(14, 13)
-#define DEV2G5_PHAD_CTRL_PHAD_ADJ_SET(x)\
-	FIELD_PREP(DEV2G5_PHAD_CTRL_PHAD_ADJ, x)
-#define DEV2G5_PHAD_CTRL_PHAD_ADJ_GET(x)\
-	FIELD_GET(DEV2G5_PHAD_CTRL_PHAD_ADJ, x)
-
-/* LAN969X ONLY */
-#define DEV2G5_PHAD_CTRL_ERR_MAX_ENA             BIT(12)
-#define DEV2G5_PHAD_CTRL_ERR_MAX_ENA_SET(x)\
-	FIELD_PREP(DEV2G5_PHAD_CTRL_ERR_MAX_ENA, x)
-#define DEV2G5_PHAD_CTRL_ERR_MAX_ENA_GET(x)\
-	FIELD_GET(DEV2G5_PHAD_CTRL_ERR_MAX_ENA, x)
-
-/* LAN969X ONLY */
-#define DEV2G5_PHAD_CTRL_DIV_CFG                 GENMASK(11, 9)
-#define DEV2G5_PHAD_CTRL_DIV_CFG_SET(x)\
-	FIELD_PREP(DEV2G5_PHAD_CTRL_DIV_CFG, x)
-#define DEV2G5_PHAD_CTRL_DIV_CFG_GET(x)\
-	FIELD_GET(DEV2G5_PHAD_CTRL_DIV_CFG, x)
-
-/* LAN969X ONLY */
-#define DEV2G5_PHAD_CTRL_TWEAKS                  GENMASK(8, 6)
-#define DEV2G5_PHAD_CTRL_TWEAKS_SET(x)\
-	FIELD_PREP(DEV2G5_PHAD_CTRL_TWEAKS, x)
-#define DEV2G5_PHAD_CTRL_TWEAKS_GET(x)\
-	FIELD_GET(DEV2G5_PHAD_CTRL_TWEAKS, x)
-
-/* LAN969X ONLY */
-#define DEV2G5_PHAD_CTRL_PHAD_MODE               BIT(4)
-#define DEV2G5_PHAD_CTRL_PHAD_MODE_SET(x)\
-	FIELD_PREP(DEV2G5_PHAD_CTRL_PHAD_MODE, x)
-#define DEV2G5_PHAD_CTRL_PHAD_MODE_GET(x)\
-	FIELD_GET(DEV2G5_PHAD_CTRL_PHAD_MODE, x)
 
 /* SPARX5 ONLY */
 /* DEV10G:MAC_CFG_STATUS:MAC_ENA_CFG */
@@ -3949,7 +3869,7 @@ enum sparx5_target {
 
 /* DEV1G:DEV_CFG_STATUS:DEV_RST_CTRL */
 #define DEV2G5_DEV_RST_CTRL(t)                                                 \
-	__REG(TARGET_DEV2G5, t, 65, 0, 0, 1, 36, 0, 0, 1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), 0, 0, 1, 36, 0, 0, 1, 4)
 
 #define DEV2G5_DEV_RST_CTRL_USXGMII_OSET_FILTER_DIS BIT(23)
 #define DEV2G5_DEV_RST_CTRL_USXGMII_OSET_FILTER_DIS_SET(x)\
@@ -4001,7 +3921,7 @@ enum sparx5_target {
 
 /* DEV1G:MAC_CFG_STATUS:MAC_ENA_CFG */
 #define DEV2G5_MAC_ENA_CFG(t)                                                  \
-	__REG(TARGET_DEV2G5, t, 65, 52, 0, 1, 36, 0, 0, 1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), 52, 0, 1, 36, 0, 0, 1, 4)
 
 #define DEV2G5_MAC_ENA_CFG_RX_ENA                BIT(4)
 #define DEV2G5_MAC_ENA_CFG_RX_ENA_SET(x)\
@@ -4017,7 +3937,7 @@ enum sparx5_target {
 
 /* DEV1G:MAC_CFG_STATUS:MAC_MODE_CFG */
 #define DEV2G5_MAC_MODE_CFG(t)                                                 \
-	__REG(TARGET_DEV2G5, t, 65, 52, 0, 1, 36, 4, 0, 1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), 52, 0, 1, 36, 4, 0, 1, 4)
 
 #define DEV2G5_MAC_MODE_CFG_FC_WORD_SYNC_ENA     BIT(8)
 #define DEV2G5_MAC_MODE_CFG_FC_WORD_SYNC_ENA_SET(x)\
@@ -4046,7 +3966,7 @@ enum sparx5_target {
 
 /* DEV1G:MAC_CFG_STATUS:MAC_MAXLEN_CFG */
 #define DEV2G5_MAC_MAXLEN_CFG(t)                                               \
-	__REG(TARGET_DEV2G5, t, 65, 52, 0, 1, 36, 8, 0, 1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), 52, 0, 1, 36, 8, 0, 1, 4)
 
 #define DEV2G5_MAC_MAXLEN_CFG_MAX_LEN            GENMASK(15, 0)
 #define DEV2G5_MAC_MAXLEN_CFG_MAX_LEN_SET(x)\
@@ -4056,7 +3976,7 @@ enum sparx5_target {
 
 /* DEV1G:MAC_CFG_STATUS:MAC_TAGS_CFG */
 #define DEV2G5_MAC_TAGS_CFG(t)                                                 \
-	__REG(TARGET_DEV2G5, t, 65, 52, 0, 1, 36, 12, 0, 1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), 52, 0, 1, 36, 12, 0, 1, 4)
 
 #define DEV2G5_MAC_TAGS_CFG_TAG_ID               GENMASK(31, 16)
 #define DEV2G5_MAC_TAGS_CFG_TAG_ID_SET(x)\
@@ -4084,7 +4004,7 @@ enum sparx5_target {
 
 /* DEV1G:MAC_CFG_STATUS:MAC_TAGS_CFG2 */
 #define DEV2G5_MAC_TAGS_CFG2(t)                                                \
-	__REG(TARGET_DEV2G5, t, 65, 52, 0, 1, 36, 16, 0, 1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), 52, 0, 1, 36, 16, 0, 1, 4)
 
 #define DEV2G5_MAC_TAGS_CFG2_TAG_ID3             GENMASK(31, 16)
 #define DEV2G5_MAC_TAGS_CFG2_TAG_ID3_SET(x)\
@@ -4100,7 +4020,7 @@ enum sparx5_target {
 
 /* DEV1G:MAC_CFG_STATUS:MAC_ADV_CHK_CFG */
 #define DEV2G5_MAC_ADV_CHK_CFG(t)                                              \
-	__REG(TARGET_DEV2G5, t, 65, 52, 0, 1, 36, 20, 0, 1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), 52, 0, 1, 36, 20, 0, 1, 4)
 
 #define DEV2G5_MAC_ADV_CHK_CFG_LEN_DROP_ENA      BIT(0)
 #define DEV2G5_MAC_ADV_CHK_CFG_LEN_DROP_ENA_SET(x)\
@@ -4110,7 +4030,7 @@ enum sparx5_target {
 
 /* DEV1G:MAC_CFG_STATUS:MAC_IFG_CFG */
 #define DEV2G5_MAC_IFG_CFG(t)                                                  \
-	__REG(TARGET_DEV2G5, t, 65, 52, 0, 1, 36, 24, 0, 1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), 52, 0, 1, 36, 24, 0, 1, 4)
 
 #define DEV2G5_MAC_IFG_CFG_RESTORE_OLD_IPG_CHECK BIT(17)
 #define DEV2G5_MAC_IFG_CFG_RESTORE_OLD_IPG_CHECK_SET(x)\
@@ -4138,7 +4058,7 @@ enum sparx5_target {
 
 /* DEV1G:MAC_CFG_STATUS:MAC_HDX_CFG */
 #define DEV2G5_MAC_HDX_CFG(t)                                                  \
-	__REG(TARGET_DEV2G5, t, 65, 52, 0, 1, 36, 28, 0, 1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), 52, 0, 1, 36, 28, 0, 1, 4)
 
 #define DEV2G5_MAC_HDX_CFG_BYPASS_COL_SYNC       BIT(26)
 #define DEV2G5_MAC_HDX_CFG_BYPASS_COL_SYNC_SET(x)\
@@ -4172,7 +4092,7 @@ enum sparx5_target {
 
 /* DEV1G:PCS1G_CFG_STATUS:PCS1G_CFG */
 #define DEV2G5_PCS1G_CFG(t)                                                    \
-	__REG(TARGET_DEV2G5, t, 65, 88, 0, 1, 68, 0, 0, 1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), 88, 0, 1, 68, 0, 0, 1, 4)
 
 #define DEV2G5_PCS1G_CFG_LINK_STATUS_TYPE        BIT(4)
 #define DEV2G5_PCS1G_CFG_LINK_STATUS_TYPE_SET(x)\
@@ -4194,7 +4114,7 @@ enum sparx5_target {
 
 /* DEV1G:PCS1G_CFG_STATUS:PCS1G_MODE_CFG */
 #define DEV2G5_PCS1G_MODE_CFG(t)                                               \
-	__REG(TARGET_DEV2G5, t, 65, 88, 0, 1, 68, 4, 0, 1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), 88, 0, 1, 68, 4, 0, 1, 4)
 
 #define DEV2G5_PCS1G_MODE_CFG_UNIDIR_MODE_ENA    BIT(4)
 #define DEV2G5_PCS1G_MODE_CFG_UNIDIR_MODE_ENA_SET(x)\
@@ -4216,7 +4136,7 @@ enum sparx5_target {
 
 /* DEV1G:PCS1G_CFG_STATUS:PCS1G_SD_CFG */
 #define DEV2G5_PCS1G_SD_CFG(t)                                                 \
-	__REG(TARGET_DEV2G5, t, 65, 88, 0, 1, 68, 8, 0, 1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), 88, 0, 1, 68, 8, 0, 1, 4)
 
 #define DEV2G5_PCS1G_SD_CFG_SD_SEL               BIT(8)
 #define DEV2G5_PCS1G_SD_CFG_SD_SEL_SET(x)\
@@ -4238,7 +4158,7 @@ enum sparx5_target {
 
 /* DEV1G:PCS1G_CFG_STATUS:PCS1G_ANEG_CFG */
 #define DEV2G5_PCS1G_ANEG_CFG(t)                                               \
-	__REG(TARGET_DEV2G5, t, 65, 88, 0, 1, 68, 12, 0, 1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), 88, 0, 1, 68, 12, 0, 1, 4)
 
 #define DEV2G5_PCS1G_ANEG_CFG_ADV_ABILITY        GENMASK(31, 16)
 #define DEV2G5_PCS1G_ANEG_CFG_ADV_ABILITY_SET(x)\
@@ -4266,7 +4186,7 @@ enum sparx5_target {
 
 /* DEV1G:PCS1G_CFG_STATUS:PCS1G_LB_CFG */
 #define DEV2G5_PCS1G_LB_CFG(t)                                                 \
-	__REG(TARGET_DEV2G5, t, 65, 88, 0, 1, 68, 20, 0, 1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), 88, 0, 1, 68, 20, 0, 1, 4)
 
 #define DEV2G5_PCS1G_LB_CFG_RA_ENA               BIT(4)
 #define DEV2G5_PCS1G_LB_CFG_RA_ENA_SET(x)\
@@ -4288,7 +4208,7 @@ enum sparx5_target {
 
 /* DEV1G:PCS1G_CFG_STATUS:PCS1G_ANEG_STATUS */
 #define DEV2G5_PCS1G_ANEG_STATUS(t)                                            \
-	__REG(TARGET_DEV2G5, t, 65, 88, 0, 1, 68, 32, 0, 1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), 88, 0, 1, 68, 32, 0, 1, 4)
 
 #define DEV2G5_PCS1G_ANEG_STATUS_LP_ADV_ABILITY  GENMASK(31, 16)
 #define DEV2G5_PCS1G_ANEG_STATUS_LP_ADV_ABILITY_SET(x)\
@@ -4316,7 +4236,7 @@ enum sparx5_target {
 
 /* DEV1G:PCS1G_CFG_STATUS:PCS1G_LINK_STATUS */
 #define DEV2G5_PCS1G_LINK_STATUS(t)                                            \
-	__REG(TARGET_DEV2G5, t, 65, 88, 0, 1, 68, 40, 0, 1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), 88, 0, 1, 68, 40, 0, 1, 4)
 
 #define DEV2G5_PCS1G_LINK_STATUS_DELAY_VAR       GENMASK(15, 12)
 #define DEV2G5_PCS1G_LINK_STATUS_DELAY_VAR_SET(x)\
@@ -4344,7 +4264,7 @@ enum sparx5_target {
 
 /* DEV1G:PCS1G_CFG_STATUS:PCS1G_STICKY */
 #define DEV2G5_PCS1G_STICKY(t)                                                 \
-	__REG(TARGET_DEV2G5, t, 65, 88, 0, 1, 68, 48, 0, 1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), 88, 0, 1, 68, 48, 0, 1, 4)
 
 #define DEV2G5_PCS1G_STICKY_LINK_DOWN_STICKY     BIT(4)
 #define DEV2G5_PCS1G_STICKY_LINK_DOWN_STICKY_SET(x)\
@@ -4360,7 +4280,7 @@ enum sparx5_target {
 
 /* DEV1G:PCS_FX100_CONFIGURATION:PCS_FX100_CFG */
 #define DEV2G5_PCS_FX100_CFG(t)                                                \
-	__REG(TARGET_DEV2G5, t, 65, 164, 0, 1, 4, 0, 0, 1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), 164, 0, 1, 4, 0, 0, 1, 4)
 
 #define DEV2G5_PCS_FX100_CFG_SD_SEL              BIT(26)
 #define DEV2G5_PCS_FX100_CFG_SD_SEL_SET(x)\
@@ -4442,7 +4362,7 @@ enum sparx5_target {
 
 /* DEV1G:PCS_FX100_STATUS:PCS_FX100_STATUS */
 #define DEV2G5_PCS_FX100_STATUS(t)                                             \
-	__REG(TARGET_DEV2G5, t, 65, 168, 0, 1, 4, 0, 0, 1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), 168, 0, 1, 4, 0, 0, 1, 4)
 
 #define DEV2G5_PCS_FX100_STATUS_EDGE_POS_PTP     GENMASK(11, 8)
 #define DEV2G5_PCS_FX100_STATUS_EDGE_POS_PTP_SET(x)\
@@ -4494,7 +4414,7 @@ enum sparx5_target {
 
 /* DEV1G:PTP_CFG_STATUS:DEV_PFRAME_CFG */
 #define DEV2G5_DEV_PFRAME_CFG(t)                                               \
-	__REG(TARGET_DEV2G5, t, 65, 172, 0, 1, 28, 24, 0, 1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), 172, 0, 1, 28, 24, 0, 1, 4)
 
 #define DEV2G5_DEV_PFRAME_CFG_DEV_FRAGMENT_IFG   GENMASK(7, 0)
 #define DEV2G5_DEV_PFRAME_CFG_DEV_FRAGMENT_IFG_SET(x)\
@@ -4502,10 +4422,91 @@ enum sparx5_target {
 #define DEV2G5_DEV_PFRAME_CFG_DEV_FRAGMENT_IFG_GET(x)\
 	FIELD_GET(DEV2G5_DEV_PFRAME_CFG_DEV_FRAGMENT_IFG, x)
 
+/* DEV1G:PHASE_DETECTOR_CTRL:PHAD_CTRL */
+#define DEV2G5_PHAD_CTRL(t, g)                                                 \
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), 200, g, 2,                   \
+	      GSIZE(GW_DEV2G5_PHASE_DETECTOR_CTRL), 0, 0, 1, 4)
+
+#define DEV2G5_PHAD_CTRL_PHAD_ENA\
+	BIT(FPOS(FP_DEV2G5_PHAD_CTRL_PHAD_ENA))
+#define DEV2G5_PHAD_CTRL_PHAD_ENA_SET(x)\
+	spx5_field_prep(DEV2G5_PHAD_CTRL_PHAD_ENA, x)
+#define DEV2G5_PHAD_CTRL_PHAD_ENA_GET(x)\
+	spx5_field_get(DEV2G5_PHAD_CTRL_PHAD_ENA, x)
+
+#define DEV2G5_PHAD_CTRL_PHAD_FAILED\
+	BIT(FPOS(FP_DEV2G5_PHAD_CTRL_PHAD_FAILED))
+#define DEV2G5_PHAD_CTRL_PHAD_FAILED_SET(x)\
+	spx5_field_prep(DEV2G5_PHAD_CTRL_PHAD_FAILED, x)
+#define DEV2G5_PHAD_CTRL_PHAD_FAILED_GET(x)\
+	spx5_field_get(DEV2G5_PHAD_CTRL_PHAD_FAILED, x)
+
+/* SPARX5 ONLY */
+#define DEV2G5_PHAD_CTRL_REDUCED_RES             GENMASK(5, 3)
+#define DEV2G5_PHAD_CTRL_REDUCED_RES_SET(x)\
+	FIELD_PREP(DEV2G5_PHAD_CTRL_REDUCED_RES, x)
+#define DEV2G5_PHAD_CTRL_REDUCED_RES_GET(x)\
+	FIELD_GET(DEV2G5_PHAD_CTRL_REDUCED_RES, x)
+
+#define DEV2G5_PHAD_CTRL_LOCK_ACC                GENMASK(2, 0)
+#define DEV2G5_PHAD_CTRL_LOCK_ACC_SET(x)\
+	FIELD_PREP(DEV2G5_PHAD_CTRL_LOCK_ACC, x)
+#define DEV2G5_PHAD_CTRL_LOCK_ACC_GET(x)\
+	FIELD_GET(DEV2G5_PHAD_CTRL_LOCK_ACC, x)
+
+/* LAN969X ONLY */
+#define DEV2G5_PHAD_CTRL_PHAD_LOCK               BIT(18)
+#define DEV2G5_PHAD_CTRL_PHAD_LOCK_SET(x)\
+	FIELD_PREP(DEV2G5_PHAD_CTRL_PHAD_LOCK, x)
+#define DEV2G5_PHAD_CTRL_PHAD_LOCK_GET(x)\
+	FIELD_GET(DEV2G5_PHAD_CTRL_PHAD_LOCK, x)
+
+/* LAN969X ONLY */
+#define DEV2G5_PHAD_CTRL_DIV_STATE               GENMASK(17, 15)
+#define DEV2G5_PHAD_CTRL_DIV_STATE_SET(x)\
+	FIELD_PREP(DEV2G5_PHAD_CTRL_DIV_STATE, x)
+#define DEV2G5_PHAD_CTRL_DIV_STATE_GET(x)\
+	FIELD_GET(DEV2G5_PHAD_CTRL_DIV_STATE, x)
+
+/* LAN969X ONLY */
+#define DEV2G5_PHAD_CTRL_PHAD_ADJ                GENMASK(14, 13)
+#define DEV2G5_PHAD_CTRL_PHAD_ADJ_SET(x)\
+	FIELD_PREP(DEV2G5_PHAD_CTRL_PHAD_ADJ, x)
+#define DEV2G5_PHAD_CTRL_PHAD_ADJ_GET(x)\
+	FIELD_GET(DEV2G5_PHAD_CTRL_PHAD_ADJ, x)
+
+/* LAN969X ONLY */
+#define DEV2G5_PHAD_CTRL_ERR_MAX_ENA             BIT(12)
+#define DEV2G5_PHAD_CTRL_ERR_MAX_ENA_SET(x)\
+	FIELD_PREP(DEV2G5_PHAD_CTRL_ERR_MAX_ENA, x)
+#define DEV2G5_PHAD_CTRL_ERR_MAX_ENA_GET(x)\
+	FIELD_GET(DEV2G5_PHAD_CTRL_ERR_MAX_ENA, x)
+
+/* LAN969X ONLY */
+#define DEV2G5_PHAD_CTRL_DIV_CFG                 GENMASK(11, 9)
+#define DEV2G5_PHAD_CTRL_DIV_CFG_SET(x)\
+	FIELD_PREP(DEV2G5_PHAD_CTRL_DIV_CFG, x)
+#define DEV2G5_PHAD_CTRL_DIV_CFG_GET(x)\
+	FIELD_GET(DEV2G5_PHAD_CTRL_DIV_CFG, x)
+
+/* LAN969X ONLY */
+#define DEV2G5_PHAD_CTRL_TWEAKS                  GENMASK(8, 6)
+#define DEV2G5_PHAD_CTRL_TWEAKS_SET(x)\
+	FIELD_PREP(DEV2G5_PHAD_CTRL_TWEAKS, x)
+#define DEV2G5_PHAD_CTRL_TWEAKS_GET(x)\
+	FIELD_GET(DEV2G5_PHAD_CTRL_TWEAKS, x)
+
+/* LAN969X ONLY */
+#define DEV2G5_PHAD_CTRL_PHAD_MODE               BIT(4)
+#define DEV2G5_PHAD_CTRL_PHAD_MODE_SET(x)\
+	FIELD_PREP(DEV2G5_PHAD_CTRL_PHAD_MODE, x)
+#define DEV2G5_PHAD_CTRL_PHAD_MODE_GET(x)\
+	FIELD_GET(DEV2G5_PHAD_CTRL_PHAD_MODE, x)
+
 /* DEV1G:MM_CONFIG:ENABLE_CONFIG */
 #define DEV2G5_ENABLE_CONFIG(t)                                                \
-	__REG(TARGET_DEV2G5, t, 65, GADDR(GA_DEV2G5_MM_CONFIG), 0, 1, 8, 0, 0, \
-	      1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), GADDR(GA_DEV2G5_MM_CONFIG),  \
+	      0, 1, 8, 0, 0, 1, 4)
 
 #define DEV2G5_ENABLE_CONFIG_MM_RX_ENA           BIT(0)
 #define DEV2G5_ENABLE_CONFIG_MM_RX_ENA_SET(x)\
@@ -4527,8 +4528,8 @@ enum sparx5_target {
 
 /* DEV1G:MM_CONFIG:VERIF_CONFIG */
 #define DEV2G5_VERIF_CONFIG(t)                                                 \
-	__REG(TARGET_DEV2G5, t, 65, GADDR(GA_DEV2G5_MM_CONFIG), 0, 1, 8, 4, 0, \
-	      1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5), GADDR(GA_DEV2G5_MM_CONFIG),  \
+	      0, 1, 8, 4, 0, 1, 4)
 
 #define DEV2G5_VERIF_CONFIG_PRM_VERIFY_DIS       BIT(0)
 #define DEV2G5_VERIF_CONFIG_PRM_VERIFY_DIS_SET(x)\
@@ -4550,8 +4551,8 @@ enum sparx5_target {
 
 /* DEV1G:MM_STATISTICS:MM_STATUS */
 #define DEV2G5_MM_STATUS(t)                                                    \
-	__REG(TARGET_DEV2G5, t, 65, GADDR(GA_DEV2G5_MM_STATISTICS), 0, 1, 4, 0,\
-	      0, 1, 4)
+	__REG(TARGET_DEV2G5, t, TSIZE(TC_DEV2G5),                              \
+	      GADDR(GA_DEV2G5_MM_STATISTICS), 0, 1, 4, 0, 0, 1, 4)
 
 #define DEV2G5_MM_STATUS_PRMPT_ACTIVE_STATUS     BIT(0)
 #define DEV2G5_MM_STATUS_PRMPT_ACTIVE_STATUS_SET(x)\
@@ -4603,7 +4604,7 @@ enum sparx5_target {
 
 /* DEV10G:MAC_CFG_STATUS:MAC_ENA_CFG */
 #define DEV5G_MAC_ENA_CFG(t)                                                   \
-	__REG(TARGET_DEV5G, t, 13, 0, 0, 1, 60, 0, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 0, 0, 1, 60, 0, 0, 1, 4)
 
 #define DEV5G_MAC_ENA_CFG_RX_ENA                 BIT(4)
 #define DEV5G_MAC_ENA_CFG_RX_ENA_SET(x)\
@@ -4619,7 +4620,7 @@ enum sparx5_target {
 
 /* DEV10G:MAC_CFG_STATUS:MAC_MAXLEN_CFG */
 #define DEV5G_MAC_MAXLEN_CFG(t)                                                \
-	__REG(TARGET_DEV5G, t, 13, 0, 0, 1, 60, 8, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 0, 0, 1, 60, 8, 0, 1, 4)
 
 #define DEV5G_MAC_MAXLEN_CFG_MAX_LEN_TAG_CHK     BIT(16)
 #define DEV5G_MAC_MAXLEN_CFG_MAX_LEN_TAG_CHK_SET(x)\
@@ -4635,7 +4636,7 @@ enum sparx5_target {
 
 /* DEV10G:MAC_CFG_STATUS:MAC_ADV_CHK_CFG */
 #define DEV5G_MAC_ADV_CHK_CFG(t)                                               \
-	__REG(TARGET_DEV5G, t, 13, 0, 0, 1, 60, 28, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 0, 0, 1, 60, 28, 0, 1, 4)
 
 #define DEV5G_MAC_ADV_CHK_CFG_EXT_EOP_CHK_ENA    BIT(24)
 #define DEV5G_MAC_ADV_CHK_CFG_EXT_EOP_CHK_ENA_SET(x)\
@@ -4681,323 +4682,323 @@ enum sparx5_target {
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_SYMBOL_ERR_CNT */
 #define DEV5G_RX_SYMBOL_ERR_CNT(t)                                             \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 0, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 0, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_PAUSE_CNT */
 #define DEV5G_RX_PAUSE_CNT(t)                                                  \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 4, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 4, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_UNSUP_OPCODE_CNT */
 #define DEV5G_RX_UNSUP_OPCODE_CNT(t)                                           \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 8, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 8, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_UC_CNT */
 #define DEV5G_RX_UC_CNT(t)                                                     \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 12, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 12, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_MC_CNT */
 #define DEV5G_RX_MC_CNT(t)                                                     \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 16, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 16, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_BC_CNT */
 #define DEV5G_RX_BC_CNT(t)                                                     \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 20, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 20, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_CRC_ERR_CNT */
 #define DEV5G_RX_CRC_ERR_CNT(t)                                                \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 24, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 24, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_UNDERSIZE_CNT */
 #define DEV5G_RX_UNDERSIZE_CNT(t)                                              \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 28, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 28, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_FRAGMENTS_CNT */
 #define DEV5G_RX_FRAGMENTS_CNT(t)                                              \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 32, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 32, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_IN_RANGE_LEN_ERR_CNT */
 #define DEV5G_RX_IN_RANGE_LEN_ERR_CNT(t)                                       \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 36, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 36, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_OUT_OF_RANGE_LEN_ERR_CNT */
 #define DEV5G_RX_OUT_OF_RANGE_LEN_ERR_CNT(t)                                   \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 40, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 40, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_OVERSIZE_CNT */
 #define DEV5G_RX_OVERSIZE_CNT(t)                                               \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 44, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 44, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_JABBERS_CNT */
 #define DEV5G_RX_JABBERS_CNT(t)                                                \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 48, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 48, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_SIZE64_CNT */
 #define DEV5G_RX_SIZE64_CNT(t)                                                 \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 52, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 52, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_SIZE65TO127_CNT */
 #define DEV5G_RX_SIZE65TO127_CNT(t)                                            \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 56, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 56, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_SIZE128TO255_CNT */
 #define DEV5G_RX_SIZE128TO255_CNT(t)                                           \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 60, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 60, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_SIZE256TO511_CNT */
 #define DEV5G_RX_SIZE256TO511_CNT(t)                                           \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 64, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 64, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_SIZE512TO1023_CNT */
 #define DEV5G_RX_SIZE512TO1023_CNT(t)                                          \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 68, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 68, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_SIZE1024TO1518_CNT */
 #define DEV5G_RX_SIZE1024TO1518_CNT(t)                                         \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 72, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 72, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_SIZE1519TOMAX_CNT */
 #define DEV5G_RX_SIZE1519TOMAX_CNT(t)                                          \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 76, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 76, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_IPG_SHRINK_CNT */
 #define DEV5G_RX_IPG_SHRINK_CNT(t)                                             \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 80, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 80, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:TX_PAUSE_CNT */
 #define DEV5G_TX_PAUSE_CNT(t)                                                  \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 84, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 84, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:TX_UC_CNT */
 #define DEV5G_TX_UC_CNT(t)                                                     \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 88, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 88, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:TX_MC_CNT */
 #define DEV5G_TX_MC_CNT(t)                                                     \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 92, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 92, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:TX_BC_CNT */
 #define DEV5G_TX_BC_CNT(t)                                                     \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 96, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 96, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:TX_SIZE64_CNT */
 #define DEV5G_TX_SIZE64_CNT(t)                                                 \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 100, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 100, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:TX_SIZE65TO127_CNT */
 #define DEV5G_TX_SIZE65TO127_CNT(t)                                            \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 104, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 104, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:TX_SIZE128TO255_CNT */
 #define DEV5G_TX_SIZE128TO255_CNT(t)                                           \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 108, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 108, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:TX_SIZE256TO511_CNT */
 #define DEV5G_TX_SIZE256TO511_CNT(t)                                           \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 112, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 112, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:TX_SIZE512TO1023_CNT */
 #define DEV5G_TX_SIZE512TO1023_CNT(t)                                          \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 116, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 116, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:TX_SIZE1024TO1518_CNT */
 #define DEV5G_TX_SIZE1024TO1518_CNT(t)                                         \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 120, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 120, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:TX_SIZE1519TOMAX_CNT */
 #define DEV5G_TX_SIZE1519TOMAX_CNT(t)                                          \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 124, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 124, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_ALIGNMENT_LOST_CNT */
 #define DEV5G_RX_ALIGNMENT_LOST_CNT(t)                                         \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 128, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 128, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_TAGGED_FRMS_CNT */
 #define DEV5G_RX_TAGGED_FRMS_CNT(t)                                            \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 132, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 132, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_UNTAGGED_FRMS_CNT */
 #define DEV5G_RX_UNTAGGED_FRMS_CNT(t)                                          \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 136, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 136, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:TX_TAGGED_FRMS_CNT */
 #define DEV5G_TX_TAGGED_FRMS_CNT(t)                                            \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 140, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 140, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:TX_UNTAGGED_FRMS_CNT */
 #define DEV5G_TX_UNTAGGED_FRMS_CNT(t)                                          \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 144, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 144, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_SYMBOL_ERR_CNT */
 #define DEV5G_PMAC_RX_SYMBOL_ERR_CNT(t)                                        \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 148, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 148, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_PAUSE_CNT */
 #define DEV5G_PMAC_RX_PAUSE_CNT(t)                                             \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 152, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 152, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_UNSUP_OPCODE_CNT */
 #define DEV5G_PMAC_RX_UNSUP_OPCODE_CNT(t)                                      \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 156, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 156, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_UC_CNT */
 #define DEV5G_PMAC_RX_UC_CNT(t)                                                \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 160, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 160, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_MC_CNT */
 #define DEV5G_PMAC_RX_MC_CNT(t)                                                \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 164, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 164, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_BC_CNT */
 #define DEV5G_PMAC_RX_BC_CNT(t)                                                \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 168, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 168, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_CRC_ERR_CNT */
 #define DEV5G_PMAC_RX_CRC_ERR_CNT(t)                                           \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 172, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 172, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_UNDERSIZE_CNT */
 #define DEV5G_PMAC_RX_UNDERSIZE_CNT(t)                                         \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 176, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 176, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_FRAGMENTS_CNT */
 #define DEV5G_PMAC_RX_FRAGMENTS_CNT(t)                                         \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 180, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 180, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_IN_RANGE_LEN_ERR_CNT */
 #define DEV5G_PMAC_RX_IN_RANGE_LEN_ERR_CNT(t)                                  \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 184, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 184, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_OUT_OF_RANGE_LEN_ERR_CNT */
 #define DEV5G_PMAC_RX_OUT_OF_RANGE_LEN_ERR_CNT(t)                              \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 188, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 188, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_OVERSIZE_CNT */
 #define DEV5G_PMAC_RX_OVERSIZE_CNT(t)                                          \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 192, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 192, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_JABBERS_CNT */
 #define DEV5G_PMAC_RX_JABBERS_CNT(t)                                           \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 196, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 196, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_SIZE64_CNT */
 #define DEV5G_PMAC_RX_SIZE64_CNT(t)                                            \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 200, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 200, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_SIZE65TO127_CNT */
 #define DEV5G_PMAC_RX_SIZE65TO127_CNT(t)                                       \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 204, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 204, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_SIZE128TO255_CNT */
 #define DEV5G_PMAC_RX_SIZE128TO255_CNT(t)                                      \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 208, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 208, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_SIZE256TO511_CNT */
 #define DEV5G_PMAC_RX_SIZE256TO511_CNT(t)                                      \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 212, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 212, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_SIZE512TO1023_CNT */
 #define DEV5G_PMAC_RX_SIZE512TO1023_CNT(t)                                     \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 216, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 216, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_SIZE1024TO1518_CNT */
 #define DEV5G_PMAC_RX_SIZE1024TO1518_CNT(t)                                    \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 220, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 220, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_SIZE1519TOMAX_CNT */
 #define DEV5G_PMAC_RX_SIZE1519TOMAX_CNT(t)                                     \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 224, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 224, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_TX_PAUSE_CNT */
 #define DEV5G_PMAC_TX_PAUSE_CNT(t)                                             \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 228, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 228, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_TX_UC_CNT */
 #define DEV5G_PMAC_TX_UC_CNT(t)                                                \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 232, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 232, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_TX_MC_CNT */
 #define DEV5G_PMAC_TX_MC_CNT(t)                                                \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 236, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 236, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_TX_BC_CNT */
 #define DEV5G_PMAC_TX_BC_CNT(t)                                                \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 240, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 240, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_TX_SIZE64_CNT */
 #define DEV5G_PMAC_TX_SIZE64_CNT(t)                                            \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 244, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 244, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_TX_SIZE65TO127_CNT */
 #define DEV5G_PMAC_TX_SIZE65TO127_CNT(t)                                       \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 248, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 248, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_TX_SIZE128TO255_CNT */
 #define DEV5G_PMAC_TX_SIZE128TO255_CNT(t)                                      \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 252, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 252, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_TX_SIZE256TO511_CNT */
 #define DEV5G_PMAC_TX_SIZE256TO511_CNT(t)                                      \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 256, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 256, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_TX_SIZE512TO1023_CNT */
 #define DEV5G_PMAC_TX_SIZE512TO1023_CNT(t)                                     \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 260, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 260, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_TX_SIZE1024TO1518_CNT */
 #define DEV5G_PMAC_TX_SIZE1024TO1518_CNT(t)                                    \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 264, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 264, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_TX_SIZE1519TOMAX_CNT */
 #define DEV5G_PMAC_TX_SIZE1519TOMAX_CNT(t)                                     \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 268, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 268, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_ALIGNMENT_LOST_CNT */
 #define DEV5G_PMAC_RX_ALIGNMENT_LOST_CNT(t)                                    \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 272, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 272, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:MM_RX_ASSEMBLY_ERR_CNT */
 #define DEV5G_MM_RX_ASSEMBLY_ERR_CNT(t)                                        \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 276, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 276, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:MM_RX_SMD_ERR_CNT */
 #define DEV5G_MM_RX_SMD_ERR_CNT(t)                                             \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 280, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 280, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:MM_RX_ASSEMBLY_OK_CNT */
 #define DEV5G_MM_RX_ASSEMBLY_OK_CNT(t)                                         \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 284, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 284, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:MM_RX_MERGE_FRAG_CNT */
 #define DEV5G_MM_RX_MERGE_FRAG_CNT(t)                                          \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 288, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 288, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:MM_TX_PFRAGMENT_CNT */
 #define DEV5G_MM_TX_PFRAGMENT_CNT(t)                                           \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 292, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 292, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_HIH_CKSM_ERR_CNT */
 #define DEV5G_RX_HIH_CKSM_ERR_CNT(t)                                           \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 296, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 296, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:RX_XGMII_PROT_ERR_CNT */
 #define DEV5G_RX_XGMII_PROT_ERR_CNT(t)                                         \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 300, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 300, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_HIH_CKSM_ERR_CNT */
 #define DEV5G_PMAC_RX_HIH_CKSM_ERR_CNT(t)                                      \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 304, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 304, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_32BIT:PMAC_RX_XGMII_PROT_ERR_CNT */
 #define DEV5G_PMAC_RX_XGMII_PROT_ERR_CNT(t)                                    \
-	__REG(TARGET_DEV5G, t, 13, 60, 0, 1, 312, 308, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 60, 0, 1, 312, 308, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_40BIT:RX_IN_BYTES_CNT */
 #define DEV5G_RX_IN_BYTES_CNT(t)                                               \
-	__REG(TARGET_DEV5G, t, 13, 372, 0, 1, 64, 0, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 372, 0, 1, 64, 0, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_40BIT:RX_IN_BYTES_MSB_CNT */
 #define DEV5G_RX_IN_BYTES_MSB_CNT(t)                                           \
-	__REG(TARGET_DEV5G, t, 13, 372, 0, 1, 64, 4, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 372, 0, 1, 64, 4, 0, 1, 4)
 
 #define DEV5G_RX_IN_BYTES_MSB_CNT_RX_IN_BYTES_MSB_CNT GENMASK(7, 0)
 #define DEV5G_RX_IN_BYTES_MSB_CNT_RX_IN_BYTES_MSB_CNT_SET(x)\
@@ -5007,11 +5008,11 @@ enum sparx5_target {
 
 /* DEV10G:DEV_STATISTICS_40BIT:RX_OK_BYTES_CNT */
 #define DEV5G_RX_OK_BYTES_CNT(t)                                               \
-	__REG(TARGET_DEV5G, t, 13, 372, 0, 1, 64, 8, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 372, 0, 1, 64, 8, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_40BIT:RX_OK_BYTES_MSB_CNT */
 #define DEV5G_RX_OK_BYTES_MSB_CNT(t)                                           \
-	__REG(TARGET_DEV5G, t, 13, 372, 0, 1, 64, 12, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 372, 0, 1, 64, 12, 0, 1, 4)
 
 #define DEV5G_RX_OK_BYTES_MSB_CNT_RX_OK_BYTES_MSB_CNT GENMASK(7, 0)
 #define DEV5G_RX_OK_BYTES_MSB_CNT_RX_OK_BYTES_MSB_CNT_SET(x)\
@@ -5021,11 +5022,11 @@ enum sparx5_target {
 
 /* DEV10G:DEV_STATISTICS_40BIT:RX_BAD_BYTES_CNT */
 #define DEV5G_RX_BAD_BYTES_CNT(t)                                              \
-	__REG(TARGET_DEV5G, t, 13, 372, 0, 1, 64, 16, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 372, 0, 1, 64, 16, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_40BIT:RX_BAD_BYTES_MSB_CNT */
 #define DEV5G_RX_BAD_BYTES_MSB_CNT(t)                                          \
-	__REG(TARGET_DEV5G, t, 13, 372, 0, 1, 64, 20, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 372, 0, 1, 64, 20, 0, 1, 4)
 
 #define DEV5G_RX_BAD_BYTES_MSB_CNT_RX_BAD_BYTES_MSB_CNT GENMASK(7, 0)
 #define DEV5G_RX_BAD_BYTES_MSB_CNT_RX_BAD_BYTES_MSB_CNT_SET(x)\
@@ -5035,11 +5036,11 @@ enum sparx5_target {
 
 /* DEV10G:DEV_STATISTICS_40BIT:TX_OUT_BYTES_CNT */
 #define DEV5G_TX_OUT_BYTES_CNT(t)                                              \
-	__REG(TARGET_DEV5G, t, 13, 372, 0, 1, 64, 24, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 372, 0, 1, 64, 24, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_40BIT:TX_OUT_BYTES_MSB_CNT */
 #define DEV5G_TX_OUT_BYTES_MSB_CNT(t)                                          \
-	__REG(TARGET_DEV5G, t, 13, 372, 0, 1, 64, 28, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 372, 0, 1, 64, 28, 0, 1, 4)
 
 #define DEV5G_TX_OUT_BYTES_MSB_CNT_TX_OUT_BYTES_MSB_CNT GENMASK(7, 0)
 #define DEV5G_TX_OUT_BYTES_MSB_CNT_TX_OUT_BYTES_MSB_CNT_SET(x)\
@@ -5049,11 +5050,11 @@ enum sparx5_target {
 
 /* DEV10G:DEV_STATISTICS_40BIT:TX_OK_BYTES_CNT */
 #define DEV5G_TX_OK_BYTES_CNT(t)                                               \
-	__REG(TARGET_DEV5G, t, 13, 372, 0, 1, 64, 32, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 372, 0, 1, 64, 32, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_40BIT:TX_OK_BYTES_MSB_CNT */
 #define DEV5G_TX_OK_BYTES_MSB_CNT(t)                                           \
-	__REG(TARGET_DEV5G, t, 13, 372, 0, 1, 64, 36, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 372, 0, 1, 64, 36, 0, 1, 4)
 
 #define DEV5G_TX_OK_BYTES_MSB_CNT_TX_OK_BYTES_MSB_CNT GENMASK(7, 0)
 #define DEV5G_TX_OK_BYTES_MSB_CNT_TX_OK_BYTES_MSB_CNT_SET(x)\
@@ -5063,11 +5064,11 @@ enum sparx5_target {
 
 /* DEV10G:DEV_STATISTICS_40BIT:PMAC_RX_OK_BYTES_CNT */
 #define DEV5G_PMAC_RX_OK_BYTES_CNT(t)                                          \
-	__REG(TARGET_DEV5G, t, 13, 372, 0, 1, 64, 40, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 372, 0, 1, 64, 40, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_40BIT:PMAC_RX_OK_BYTES_MSB_CNT */
 #define DEV5G_PMAC_RX_OK_BYTES_MSB_CNT(t)                                      \
-	__REG(TARGET_DEV5G, t, 13, 372, 0, 1, 64, 44, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 372, 0, 1, 64, 44, 0, 1, 4)
 
 #define DEV5G_PMAC_RX_OK_BYTES_MSB_CNT_PMAC_RX_OK_BYTES_MSB_CNT GENMASK(7, 0)
 #define DEV5G_PMAC_RX_OK_BYTES_MSB_CNT_PMAC_RX_OK_BYTES_MSB_CNT_SET(x)\
@@ -5077,11 +5078,11 @@ enum sparx5_target {
 
 /* DEV10G:DEV_STATISTICS_40BIT:PMAC_RX_BAD_BYTES_CNT */
 #define DEV5G_PMAC_RX_BAD_BYTES_CNT(t)                                         \
-	__REG(TARGET_DEV5G, t, 13, 372, 0, 1, 64, 48, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 372, 0, 1, 64, 48, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_40BIT:PMAC_RX_BAD_BYTES_MSB_CNT */
 #define DEV5G_PMAC_RX_BAD_BYTES_MSB_CNT(t)                                     \
-	__REG(TARGET_DEV5G, t, 13, 372, 0, 1, 64, 52, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 372, 0, 1, 64, 52, 0, 1, 4)
 
 #define DEV5G_PMAC_RX_BAD_BYTES_MSB_CNT_PMAC_RX_BAD_BYTES_MSB_CNT GENMASK(7, 0)
 #define DEV5G_PMAC_RX_BAD_BYTES_MSB_CNT_PMAC_RX_BAD_BYTES_MSB_CNT_SET(x)\
@@ -5091,11 +5092,11 @@ enum sparx5_target {
 
 /* DEV10G:DEV_STATISTICS_40BIT:PMAC_TX_OK_BYTES_CNT */
 #define DEV5G_PMAC_TX_OK_BYTES_CNT(t)                                          \
-	__REG(TARGET_DEV5G, t, 13, 372, 0, 1, 64, 56, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 372, 0, 1, 64, 56, 0, 1, 4)
 
 /* DEV10G:DEV_STATISTICS_40BIT:PMAC_TX_OK_BYTES_MSB_CNT */
 #define DEV5G_PMAC_TX_OK_BYTES_MSB_CNT(t)                                      \
-	__REG(TARGET_DEV5G, t, 13, 372, 0, 1, 64, 60, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 372, 0, 1, 64, 60, 0, 1, 4)
 
 #define DEV5G_PMAC_TX_OK_BYTES_MSB_CNT_PMAC_TX_OK_BYTES_MSB_CNT GENMASK(7, 0)
 #define DEV5G_PMAC_TX_OK_BYTES_MSB_CNT_PMAC_TX_OK_BYTES_MSB_CNT_SET(x)\
@@ -5105,7 +5106,7 @@ enum sparx5_target {
 
 /* DEV10G:DEV_CFG_STATUS:DEV_RST_CTRL */
 #define DEV5G_DEV_RST_CTRL(t)                                                  \
-	__REG(TARGET_DEV5G, t, 13, 436, 0, 1, 52, 0, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 436, 0, 1, 52, 0, 0, 1, 4)
 
 #define DEV5G_DEV_RST_CTRL_PARDET_MODE_ENA       BIT(28)
 #define DEV5G_DEV_RST_CTRL_PARDET_MODE_ENA_SET(x)\
@@ -5163,7 +5164,7 @@ enum sparx5_target {
 
 /* DEV10G:DEV_CFG_STATUS:PTP_STAMPER_CFG */
 #define DEV5G_PTP_STAMPER_CFG(t)                                               \
-	__REG(TARGET_DEV5G, t, 13, 436, 0, 1, 52, 20, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 436, 0, 1, 52, 20, 0, 1, 4)
 
 #define DEV5G_PTP_STAMPER_CFG_PTP_TX_SFT_VAL     GENMASK(3, 2)
 #define DEV5G_PTP_STAMPER_CFG_PTP_TX_SFT_VAL_SET(x)\
@@ -5179,7 +5180,7 @@ enum sparx5_target {
 
 /* DEV10G:MM_CONFIG:ENABLE_CONFIG */
 #define DEV5G_ENABLE_CONFIG(t)                                                 \
-	__REG(TARGET_DEV5G, t, 13, 520, 0, 1, 8, 0, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 520, 0, 1, 8, 0, 0, 1, 4)
 
 #define DEV5G_ENABLE_CONFIG_MM_RX_ENA            BIT(0)
 #define DEV5G_ENABLE_CONFIG_MM_RX_ENA_SET(x)\
@@ -5201,7 +5202,7 @@ enum sparx5_target {
 
 /* DEV10G:MM_CONFIG:VERIF_CONFIG */
 #define DEV5G_VERIF_CONFIG(t)                                                  \
-	__REG(TARGET_DEV5G, t, 13, 520, 0, 1, 8, 4, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 520, 0, 1, 8, 4, 0, 1, 4)
 
 #define DEV5G_VERIF_CONFIG_PRM_VERIFY_DIS        BIT(0)
 #define DEV5G_VERIF_CONFIG_PRM_VERIFY_DIS_SET(x)\
@@ -5223,7 +5224,7 @@ enum sparx5_target {
 
 /* DEV10G:MM_STATISTICS:MM_STATUS */
 #define DEV5G_MM_STATUS(t)                                                     \
-	__REG(TARGET_DEV5G, t, 13, 528, 0, 1, 4, 0, 0, 1, 4)
+	__REG(TARGET_DEV5G, t, TSIZE(TC_DEV5G), 528, 0, 1, 4, 0, 0, 1, 4)
 
 #define DEV5G_MM_STATUS_PRMPT_ACTIVE_STATUS      BIT(0)
 #define DEV5G_MM_STATUS_PRMPT_ACTIVE_STATUS_SET(x)\
@@ -7457,7 +7458,8 @@ enum sparx5_target {
 
 /* PCS_10GBASE_R:PCS_10GBR_CFG:PCS_CFG */
 #define PCS10G_BR_PCS_CFG(t)                                                   \
-	__REG(TARGET_PCS10G_BR, t, 12, 0, 0, 1, 56, 0, 0, 1, 4)
+	__REG(TARGET_PCS10G_BR, t, TSIZE(TC_PCS10G_BR), 0, 0, 1, 56, 0, 0, 1,  \
+	      4)
 
 #define PCS10G_BR_PCS_CFG_PCS_ENA                BIT(31)
 #define PCS10G_BR_PCS_CFG_PCS_ENA_SET(x)\
@@ -7533,7 +7535,8 @@ enum sparx5_target {
 
 /* PCS_10GBASE_R:PCS_10GBR_CFG:PCS_SD_CFG */
 #define PCS10G_BR_PCS_SD_CFG(t)                                                \
-	__REG(TARGET_PCS10G_BR, t, 12, 0, 0, 1, 56, 4, 0, 1, 4)
+	__REG(TARGET_PCS10G_BR, t, TSIZE(TC_PCS10G_BR), 0, 0, 1, 56, 4, 0, 1,  \
+	      4)
 
 #define PCS10G_BR_PCS_SD_CFG_SD_SEL              BIT(8)
 #define PCS10G_BR_PCS_SD_CFG_SD_SEL_SET(x)\
@@ -7655,7 +7658,7 @@ enum sparx5_target {
 
 /* PCS_10GBASE_R:PCS_10GBR_CFG:PCS_CFG */
 #define PCS5G_BR_PCS_CFG(t)                                                    \
-	__REG(TARGET_PCS5G_BR, t, 13, 0, 0, 1, 56, 0, 0, 1, 4)
+	__REG(TARGET_PCS5G_BR, t, TSIZE(TC_PCS5G_BR), 0, 0, 1, 56, 0, 0, 1, 4)
 
 #define PCS5G_BR_PCS_CFG_PCS_ENA                 BIT(31)
 #define PCS5G_BR_PCS_CFG_PCS_ENA_SET(x)\
@@ -7731,7 +7734,7 @@ enum sparx5_target {
 
 /* PCS_10GBASE_R:PCS_10GBR_CFG:PCS_SD_CFG */
 #define PCS5G_BR_PCS_SD_CFG(t)                                                 \
-	__REG(TARGET_PCS5G_BR, t, 13, 0, 0, 1, 56, 4, 0, 1, 4)
+	__REG(TARGET_PCS5G_BR, t, TSIZE(TC_PCS5G_BR), 0, 0, 1, 56, 4, 0, 1, 4)
 
 #define PCS5G_BR_PCS_SD_CFG_SD_SEL               BIT(8)
 #define PCS5G_BR_PCS_SD_CFG_SD_SEL_SET(x)\

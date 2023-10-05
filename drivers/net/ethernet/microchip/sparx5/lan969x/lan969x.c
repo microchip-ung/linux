@@ -343,6 +343,7 @@ const struct sparx5_match_data lan969x_desc = {
 	.iomap_size = ARRAY_SIZE(lan969x_main_iomap),
 	.ioranges = 2,
 	.regs = {
+		.tsize = lan969x_tsize,
 		.gaddr = lan969x_gaddr,
 		.gcnt = lan969x_gcnt,
 		.gsize = lan969x_gsize,

@@ -505,6 +505,7 @@ struct sparx5_consts {
 };
 
 struct sparx5_regs {
+	const unsigned int *tsize;
 	const unsigned int *gaddr;
 	const unsigned int *gcnt;
 	const unsigned int *gsize;

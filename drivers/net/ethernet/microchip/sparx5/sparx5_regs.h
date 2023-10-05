@@ -10,6 +10,15 @@
  * registers and fields.
  */
 
+enum sparx5_tsize_enum {
+	TC_DEV10G,
+	TC_DEV2G5,
+	TC_DEV5G,
+	TC_PCS10G_BR,
+	TC_PCS5G_BR,
+	TSIZE_LAST,
+};
+
 enum sparx5_raddr_enum {
 	RA_CPU_PROC_CTRL,
 	RA_GCB_SOFT_RST,
@@ -261,6 +270,7 @@ enum sparx5_fsize_enum {
 	FSIZE_LAST,
 };
 
+extern const unsigned int sparx5_tsize[TSIZE_LAST];
 extern const unsigned int sparx5_raddr[RADDR_LAST];
 extern const unsigned int sparx5_rcnt[RCNT_LAST];
 extern const unsigned int sparx5_gaddr[GADDR_LAST];

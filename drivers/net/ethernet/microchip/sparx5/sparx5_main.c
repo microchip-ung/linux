@@ -1038,6 +1038,7 @@ static const struct sparx5_match_data sparx5_desc = {
 	.iomap_size = ARRAY_SIZE(sparx5_main_iomap),
 	.ioranges = 3,
 	.regs = {
+		.tsize = sparx5_tsize,
 		.gaddr = sparx5_gaddr,
 		.gcnt = sparx5_gcnt,
 		.gsize = sparx5_gsize,

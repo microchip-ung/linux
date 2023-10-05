@@ -19,6 +19,7 @@ extern const struct vcap_statistics lan969x_vcap_stats;
 /* lan969x.c */
 extern const struct sparx5_match_data lan969x_desc;
 
+extern const unsigned int lan969x_tsize[TSIZE_LAST];
 extern const unsigned int lan969x_raddr[RADDR_LAST];
 extern const unsigned int lan969x_rcnt[RCNT_LAST];
 extern const unsigned int lan969x_gaddr[GADDR_LAST];
