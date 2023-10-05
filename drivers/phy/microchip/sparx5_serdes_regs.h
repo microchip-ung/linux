@@ -15,6 +15,8 @@
 #include <linux/types.h>
 #include <linux/bug.h>
 
+#include "sparx5_serdes.h"
+
 enum sparx5_serdes_target {
 	TARGET_SD10G_LANE = 200,
 	TARGET_SD25G_LANE = 212,
@@ -26,11 +28,24 @@ enum sparx5_serdes_target {
 	NUM_TARGETS = 332
 };
 
+enum sparx5_serdes_tsize_enum {
+	TC_SD10G_LANE,
+	TC_SD_CMU,
+	TC_SD_CMU_CFG,
+	TC_SD_LANE,
+	TSIZE_LAST,
+};
+
+const unsigned int *tsize;
+
+#define TSIZE(o) tsize[o]
+
 #define __REG(...)    __VA_ARGS__
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_01 */
 #define SD10G_LANE_LANE_01(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 4, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 4, 0,  \
+	      1, 4)
 
 #define SD10G_LANE_LANE_01_CFG_PMA_TX_CK_BITWIDTH_2_0 GENMASK(2, 0)
 #define SD10G_LANE_LANE_01_CFG_PMA_TX_CK_BITWIDTH_2_0_SET(x)\
@@ -52,7 +67,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_02 */
 #define SD10G_LANE_LANE_02(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 8, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 8, 0,  \
+	      1, 4)
 
 #define SD10G_LANE_LANE_02_CFG_EN_ADV            BIT(0)
 #define SD10G_LANE_LANE_02_CFG_EN_ADV_SET(x)\
@@ -86,7 +102,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_03 */
 #define SD10G_LANE_LANE_03(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 12, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 12, 0, \
+	      1, 4)
 
 #define SD10G_LANE_LANE_03_CFG_TAP_MAIN          BIT(0)
 #define SD10G_LANE_LANE_03_CFG_TAP_MAIN_SET(x)\
@@ -96,7 +113,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_04 */
 #define SD10G_LANE_LANE_04(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 16, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 16, 0, \
+	      1, 4)
 
 #define SD10G_LANE_LANE_04_CFG_TAP_DLY_4_0       GENMASK(4, 0)
 #define SD10G_LANE_LANE_04_CFG_TAP_DLY_4_0_SET(x)\
@@ -106,7 +124,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_06 */
 #define SD10G_LANE_LANE_06(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 24, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 24, 0, \
+	      1, 4)
 
 #define SD10G_LANE_LANE_06_CFG_PD_DRIVER         BIT(0)
 #define SD10G_LANE_LANE_06_CFG_PD_DRIVER_SET(x)\
@@ -146,7 +165,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_0B */
 #define SD10G_LANE_LANE_0B(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 44, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 44, 0, \
+	      1, 4)
 
 #define SD10G_LANE_LANE_0B_CFG_EQ_RES_3_0        GENMASK(3, 0)
 #define SD10G_LANE_LANE_0B_CFG_EQ_RES_3_0_SET(x)\
@@ -180,7 +200,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_0C */
 #define SD10G_LANE_LANE_0C(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 48, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 48, 0, \
+	      1, 4)
 
 #define SD10G_LANE_LANE_0C_CFG_OSCAL_AFE         BIT(0)
 #define SD10G_LANE_LANE_0C_CFG_OSCAL_AFE_SET(x)\
@@ -232,7 +253,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_0D */
 #define SD10G_LANE_LANE_0D(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 52, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 52, 0, \
+	      1, 4)
 
 #define SD10G_LANE_LANE_0D_CFG_CTLE_M_THR_1_0    GENMASK(1, 0)
 #define SD10G_LANE_LANE_0D_CFG_CTLE_M_THR_1_0_SET(x)\
@@ -248,7 +270,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_0E */
 #define SD10G_LANE_LANE_0E(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 56, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 56, 0, \
+	      1, 4)
 
 #define SD10G_LANE_LANE_0E_CFG_EQC_FORCE_3_0     GENMASK(3, 0)
 #define SD10G_LANE_LANE_0E_CFG_EQC_FORCE_3_0_SET(x)\
@@ -276,7 +299,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_0F */
 #define SD10G_LANE_LANE_0F(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 60, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 60, 0, \
+	      1, 4)
 
 #define SD10G_LANE_LANE_0F_R_CDR_M_GEN1_7_0      GENMASK(7, 0)
 #define SD10G_LANE_LANE_0F_R_CDR_M_GEN1_7_0_SET(x)\
@@ -286,7 +310,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_13 */
 #define SD10G_LANE_LANE_13(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 76, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 76, 0, \
+	      1, 4)
 
 #define SD10G_LANE_LANE_13_CFG_DCDR_PD           BIT(0)
 #define SD10G_LANE_LANE_13_CFG_DCDR_PD_SET(x)\
@@ -308,7 +333,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_14 */
 #define SD10G_LANE_LANE_14(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 80, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 80, 0, \
+	      1, 4)
 
 #define SD10G_LANE_LANE_14_CFG_PI_EXT_DAC_7_0    GENMASK(7, 0)
 #define SD10G_LANE_LANE_14_CFG_PI_EXT_DAC_7_0_SET(x)\
@@ -318,7 +344,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_15 */
 #define SD10G_LANE_LANE_15(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 84, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 84, 0, \
+	      1, 4)
 
 #define SD10G_LANE_LANE_15_CFG_PI_EXT_DAC_15_8   GENMASK(7, 0)
 #define SD10G_LANE_LANE_15_CFG_PI_EXT_DAC_15_8_SET(x)\
@@ -328,7 +355,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_16 */
 #define SD10G_LANE_LANE_16(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 88, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 88, 0, \
+	      1, 4)
 
 #define SD10G_LANE_LANE_16_CFG_PI_EXT_DAC_23_16  GENMASK(7, 0)
 #define SD10G_LANE_LANE_16_CFG_PI_EXT_DAC_23_16_SET(x)\
@@ -338,7 +366,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_1A */
 #define SD10G_LANE_LANE_1A(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 104, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 104, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_1A_CFG_PI_R_SCAN_EN      BIT(0)
 #define SD10G_LANE_LANE_1A_CFG_PI_R_SCAN_EN_SET(x)\
@@ -372,7 +401,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_22 */
 #define SD10G_LANE_LANE_22(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 136, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 136, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_22_CFG_DFETAP_EN_5_1     GENMASK(4, 0)
 #define SD10G_LANE_LANE_22_CFG_DFETAP_EN_5_1_SET(x)\
@@ -382,7 +412,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_23 */
 #define SD10G_LANE_LANE_23(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 140, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 140, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_23_CFG_DFE_PD            BIT(0)
 #define SD10G_LANE_LANE_23_CFG_DFE_PD_SET(x)\
@@ -416,7 +447,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_24 */
 #define SD10G_LANE_LANE_24(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 144, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 144, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_24_CFG_PI_BW_GEN1_3_0    GENMASK(3, 0)
 #define SD10G_LANE_LANE_24_CFG_PI_BW_GEN1_3_0_SET(x)\
@@ -432,7 +464,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_26 */
 #define SD10G_LANE_LANE_26(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 152, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 152, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_26_CFG_ISCAN_EXT_DAC_7_0 GENMASK(7, 0)
 #define SD10G_LANE_LANE_26_CFG_ISCAN_EXT_DAC_7_0_SET(x)\
@@ -442,7 +475,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_2F */
 #define SD10G_LANE_LANE_2F(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 188, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 188, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_2F_CFG_VGA_CP_2_0        GENMASK(2, 0)
 #define SD10G_LANE_LANE_2F_CFG_VGA_CP_2_0_SET(x)\
@@ -458,7 +492,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_30 */
 #define SD10G_LANE_LANE_30(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 192, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 192, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_30_CFG_SUMMER_EN         BIT(0)
 #define SD10G_LANE_LANE_30_CFG_SUMMER_EN_SET(x)\
@@ -474,7 +509,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_31 */
 #define SD10G_LANE_LANE_31(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 196, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 196, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_31_CFG_PI_RSTN           BIT(0)
 #define SD10G_LANE_LANE_31_CFG_PI_RSTN_SET(x)\
@@ -514,7 +550,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_32 */
 #define SD10G_LANE_LANE_32(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 200, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 200, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_32_CFG_ITX_IPCLK_BASE_1_0 GENMASK(1, 0)
 #define SD10G_LANE_LANE_32_CFG_ITX_IPCLK_BASE_1_0_SET(x)\
@@ -530,7 +567,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_33 */
 #define SD10G_LANE_LANE_33(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 204, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 204, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_33_CFG_ITX_IPDRIVER_BASE_2_0 GENMASK(2, 0)
 #define SD10G_LANE_LANE_33_CFG_ITX_IPDRIVER_BASE_2_0_SET(x)\
@@ -546,7 +584,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_35 */
 #define SD10G_LANE_LANE_35(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 212, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 212, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_35_CFG_TXRATE_1_0        GENMASK(1, 0)
 #define SD10G_LANE_LANE_35_CFG_TXRATE_1_0_SET(x)\
@@ -562,7 +601,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_36 */
 #define SD10G_LANE_LANE_36(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 216, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 216, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_36_CFG_PREDRV_SLEWRATE_1_0 GENMASK(1, 0)
 #define SD10G_LANE_LANE_36_CFG_PREDRV_SLEWRATE_1_0_SET(x)\
@@ -596,7 +636,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_37 */
 #define SD10G_LANE_LANE_37(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 220, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 220, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_37_CFG_RXDET_COMP_PD     BIT(0)
 #define SD10G_LANE_LANE_37_CFG_RXDET_COMP_PD_SET(x)\
@@ -624,7 +665,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_39 */
 #define SD10G_LANE_LANE_39(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 228, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 228, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_39_CFG_RXFILT_Y_2_0      GENMASK(2, 0)
 #define SD10G_LANE_LANE_39_CFG_RXFILT_Y_2_0_SET(x)\
@@ -640,7 +682,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_3A */
 #define SD10G_LANE_LANE_3A(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 232, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 232, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_3A_CFG_MP_MIN_3_0        GENMASK(3, 0)
 #define SD10G_LANE_LANE_3A_CFG_MP_MIN_3_0_SET(x)\
@@ -656,7 +699,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_3C */
 #define SD10G_LANE_LANE_3C(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 240, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 240, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_3C_CFG_DIS_ACC           BIT(0)
 #define SD10G_LANE_LANE_3C_CFG_DIS_ACC_SET(x)\
@@ -672,7 +716,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_40 */
 #define SD10G_LANE_LANE_40(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 256, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 256, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_40_CFG_LANE_RESERVE_7_0  GENMASK(7, 0)
 #define SD10G_LANE_LANE_40_CFG_LANE_RESERVE_7_0_SET(x)\
@@ -682,7 +727,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_41 */
 #define SD10G_LANE_LANE_41(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 260, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 260, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_41_CFG_LANE_RESERVE_15_8 GENMASK(7, 0)
 #define SD10G_LANE_LANE_41_CFG_LANE_RESERVE_15_8_SET(x)\
@@ -692,7 +738,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_0:LANE_42 */
 #define SD10G_LANE_LANE_42(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 0, 0, 1, 288, 264, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 0, 0, 1, 288, 264, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_42_CFG_CDR_KF_GEN1_2_0   GENMASK(2, 0)
 #define SD10G_LANE_LANE_42_CFG_CDR_KF_GEN1_2_0_SET(x)\
@@ -708,7 +755,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_1:LANE_48 */
 #define SD10G_LANE_LANE_48(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 288, 0, 1, 40, 0, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 288, 0, 1, 40, 0, 0, \
+	      1, 4)
 
 #define SD10G_LANE_LANE_48_CFG_ALOS_THR_3_0      GENMASK(3, 0)
 #define SD10G_LANE_LANE_48_CFG_ALOS_THR_3_0_SET(x)\
@@ -730,7 +778,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_1:LANE_50 */
 #define SD10G_LANE_LANE_50(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 288, 0, 1, 40, 32, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 288, 0, 1, 40, 32, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_50_CFG_SSC_PI_STEP_1_0   GENMASK(1, 0)
 #define SD10G_LANE_LANE_50_CFG_SSC_PI_STEP_1_0_SET(x)\
@@ -764,7 +813,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_2:LANE_52 */
 #define SD10G_LANE_LANE_52(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 328, 0, 1, 24, 0, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 328, 0, 1, 24, 0, 0, \
+	      1, 4)
 
 #define SD10G_LANE_LANE_52_CFG_IBIAS_TUNE_RESERVE_5_0 GENMASK(5, 0)
 #define SD10G_LANE_LANE_52_CFG_IBIAS_TUNE_RESERVE_5_0_SET(x)\
@@ -774,7 +824,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_4:LANE_83 */
 #define SD10G_LANE_LANE_83(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 464, 0, 1, 112, 60, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 464, 0, 1, 112, 60,  \
+	      0, 1, 4)
 
 #define SD10G_LANE_LANE_83_R_TX_BIT_REVERSE      BIT(0)
 #define SD10G_LANE_LANE_83_R_TX_BIT_REVERSE_SET(x)\
@@ -820,7 +871,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_5:LANE_93 */
 #define SD10G_LANE_LANE_93(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 576, 0, 1, 64, 12, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 576, 0, 1, 64, 12, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_93_R_RXEI_FIFO_RST_EN    BIT(0)
 #define SD10G_LANE_LANE_93_R_RXEI_FIFO_RST_EN_SET(x)\
@@ -872,7 +924,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_5:LANE_94 */
 #define SD10G_LANE_LANE_94(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 576, 0, 1, 64, 16, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 576, 0, 1, 64, 16, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_94_R_DWIDTHCTRL_2_0      GENMASK(2, 0)
 #define SD10G_LANE_LANE_94_R_DWIDTHCTRL_2_0_SET(x)\
@@ -906,7 +959,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_5:LANE_9E */
 #define SD10G_LANE_LANE_9E(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 576, 0, 1, 64, 56, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 576, 0, 1, 64, 56, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_9E_R_RXEQ_REG            BIT(0)
 #define SD10G_LANE_LANE_9E_R_RXEQ_REG_SET(x)\
@@ -928,7 +982,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_6:LANE_A1 */
 #define SD10G_LANE_LANE_A1(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 640, 0, 1, 128, 4, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 640, 0, 1, 128, 4, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_A1_R_PMA_TXCK_DIV_SEL_1_0 GENMASK(1, 0)
 #define SD10G_LANE_LANE_A1_R_PMA_TXCK_DIV_SEL_1_0_SET(x)\
@@ -962,7 +1017,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_6:LANE_A2 */
 #define SD10G_LANE_LANE_A2(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 640, 0, 1, 128, 8, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 640, 0, 1, 128, 8, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_A2_R_PCS2PMA_PHYMODE_4_0 GENMASK(4, 0)
 #define SD10G_LANE_LANE_A2_R_PCS2PMA_PHYMODE_4_0_SET(x)\
@@ -972,7 +1028,8 @@ enum sparx5_serdes_target {
 
 /* SD10G_LANE_TARGET:LANE_GRP_8:LANE_DF */
 #define SD10G_LANE_LANE_DF(t)                                                  \
-	__REG(TARGET_SD10G_LANE, t, 12, 832, 0, 1, 84, 60, 0, 1, 4)
+	__REG(TARGET_SD10G_LANE, t, TSIZE(TC_SD10G_LANE), 832, 0, 1, 84, 60, 0,\
+	      1, 4)
 
 #define SD10G_LANE_LANE_DF_LOL_UDL               BIT(0)
 #define SD10G_LANE_LANE_DF_LOL_UDL_SET(x)\
@@ -2260,7 +2317,7 @@ enum sparx5_serdes_target {
 
 /* SD10G_CMU_TARGET:CMU_GRP_0:CMU_00 */
 #define SD_CMU_CMU_00(t)                                                       \
-	__REG(TARGET_SD_CMU, t, 14, 0, 0, 1, 20, 0, 0, 1, 4)
+	__REG(TARGET_SD_CMU, t, TSIZE(TC_SD_CMU), 0, 0, 1, 20, 0, 0, 1, 4)
 
 #define SD_CMU_CMU_00_R_HWT_SIMULATION_MODE      BIT(0)
 #define SD_CMU_CMU_00_R_HWT_SIMULATION_MODE_SET(x)\
@@ -2288,7 +2345,7 @@ enum sparx5_serdes_target {
 
 /* SD10G_CMU_TARGET:CMU_GRP_1:CMU_05 */
 #define SD_CMU_CMU_05(t)                                                       \
-	__REG(TARGET_SD_CMU, t, 14, 20, 0, 1, 72, 0, 0, 1, 4)
+	__REG(TARGET_SD_CMU, t, TSIZE(TC_SD_CMU), 20, 0, 1, 72, 0, 0, 1, 4)
 
 #define SD_CMU_CMU_05_CFG_REFCK_TERM_EN          BIT(0)
 #define SD_CMU_CMU_05_CFG_REFCK_TERM_EN_SET(x)\
@@ -2304,7 +2361,7 @@ enum sparx5_serdes_target {
 
 /* SD10G_CMU_TARGET:CMU_GRP_1:CMU_06 */
 #define SD_CMU_CMU_06(t)                                                       \
-	__REG(TARGET_SD_CMU, t, 14, 20, 0, 1, 72, 4, 0, 1, 4)
+	__REG(TARGET_SD_CMU, t, TSIZE(TC_SD_CMU), 20, 0, 1, 72, 4, 0, 1, 4)
 
 #define SD_CMU_CMU_06_CFG_DISLOS                 BIT(0)
 #define SD_CMU_CMU_06_CFG_DISLOS_SET(x)\
@@ -2356,7 +2413,7 @@ enum sparx5_serdes_target {
 
 /* SD10G_CMU_TARGET:CMU_GRP_1:CMU_08 */
 #define SD_CMU_CMU_08(t)                                                       \
-	__REG(TARGET_SD_CMU, t, 14, 20, 0, 1, 72, 12, 0, 1, 4)
+	__REG(TARGET_SD_CMU, t, TSIZE(TC_SD_CMU), 20, 0, 1, 72, 12, 0, 1, 4)
 
 #define SD_CMU_CMU_08_CFG_VFILT2PAD              BIT(0)
 #define SD_CMU_CMU_08_CFG_VFILT2PAD_SET(x)\
@@ -2390,7 +2447,7 @@ enum sparx5_serdes_target {
 
 /* SD10G_CMU_TARGET:CMU_GRP_1:CMU_09 */
 #define SD_CMU_CMU_09(t)                                                       \
-	__REG(TARGET_SD_CMU, t, 14, 20, 0, 1, 72, 16, 0, 1, 4)
+	__REG(TARGET_SD_CMU, t, TSIZE(TC_SD_CMU), 20, 0, 1, 72, 16, 0, 1, 4)
 
 #define SD_CMU_CMU_09_CFG_EN_TX_CK_UP            BIT(0)
 #define SD_CMU_CMU_09_CFG_EN_TX_CK_UP_SET(x)\
@@ -2418,7 +2475,7 @@ enum sparx5_serdes_target {
 
 /* SD10G_CMU_TARGET:CMU_GRP_1:CMU_0D */
 #define SD_CMU_CMU_0D(t)                                                       \
-	__REG(TARGET_SD_CMU, t, 14, 20, 0, 1, 72, 32, 0, 1, 4)
+	__REG(TARGET_SD_CMU, t, TSIZE(TC_SD_CMU), 20, 0, 1, 72, 32, 0, 1, 4)
 
 #define SD_CMU_CMU_0D_CFG_PD_DIV64               BIT(0)
 #define SD_CMU_CMU_0D_CFG_PD_DIV64_SET(x)\
@@ -2452,7 +2509,7 @@ enum sparx5_serdes_target {
 
 /* SD10G_CMU_TARGET:CMU_GRP_3:CMU_1B */
 #define SD_CMU_CMU_1B(t)                                                       \
-	__REG(TARGET_SD_CMU, t, 14, 104, 0, 1, 20, 4, 0, 1, 4)
+	__REG(TARGET_SD_CMU, t, TSIZE(TC_SD_CMU), 104, 0, 1, 20, 4, 0, 1, 4)
 
 #define SD_CMU_CMU_1B_CFG_RESERVE_7_0            GENMASK(7, 0)
 #define SD_CMU_CMU_1B_CFG_RESERVE_7_0_SET(x)\
@@ -2462,7 +2519,7 @@ enum sparx5_serdes_target {
 
 /* SD10G_CMU_TARGET:CMU_GRP_4:CMU_1F */
 #define SD_CMU_CMU_1F(t)                                                       \
-	__REG(TARGET_SD_CMU, t, 14, 124, 0, 1, 68, 0, 0, 1, 4)
+	__REG(TARGET_SD_CMU, t, TSIZE(TC_SD_CMU), 124, 0, 1, 68, 0, 0, 1, 4)
 
 #define SD_CMU_CMU_1F_CFG_BIAS_DN_EN             BIT(0)
 #define SD_CMU_CMU_1F_CFG_BIAS_DN_EN_SET(x)\
@@ -2490,7 +2547,7 @@ enum sparx5_serdes_target {
 
 /* SD10G_CMU_TARGET:CMU_GRP_5:CMU_30 */
 #define SD_CMU_CMU_30(t)                                                       \
-	__REG(TARGET_SD_CMU, t, 14, 192, 0, 1, 72, 0, 0, 1, 4)
+	__REG(TARGET_SD_CMU, t, TSIZE(TC_SD_CMU), 192, 0, 1, 72, 0, 0, 1, 4)
 
 #define SD_CMU_CMU_30_R_PLL_DLOL_EN              BIT(0)
 #define SD_CMU_CMU_30_R_PLL_DLOL_EN_SET(x)\
@@ -2500,7 +2557,7 @@ enum sparx5_serdes_target {
 
 /* SD10G_CMU_TARGET:CMU_GRP_6:CMU_44 */
 #define SD_CMU_CMU_44(t)                                                       \
-	__REG(TARGET_SD_CMU, t, 14, 264, 0, 1, 632, 8, 0, 1, 4)
+	__REG(TARGET_SD_CMU, t, TSIZE(TC_SD_CMU), 264, 0, 1, 632, 8, 0, 1, 4)
 
 #define SD_CMU_CMU_44_R_PLL_RSTN                 BIT(0)
 #define SD_CMU_CMU_44_R_PLL_RSTN_SET(x)\
@@ -2516,7 +2573,7 @@ enum sparx5_serdes_target {
 
 /* SD10G_CMU_TARGET:CMU_GRP_6:CMU_45 */
 #define SD_CMU_CMU_45(t)                                                       \
-	__REG(TARGET_SD_CMU, t, 14, 264, 0, 1, 632, 12, 0, 1, 4)
+	__REG(TARGET_SD_CMU, t, TSIZE(TC_SD_CMU), 264, 0, 1, 632, 12, 0, 1, 4)
 
 #define SD_CMU_CMU_45_R_EN_RATECHG_CTRL          BIT(0)
 #define SD_CMU_CMU_45_R_EN_RATECHG_CTRL_SET(x)\
@@ -2568,7 +2625,7 @@ enum sparx5_serdes_target {
 
 /* SD10G_CMU_TARGET:CMU_GRP_6:CMU_47 */
 #define SD_CMU_CMU_47(t)                                                       \
-	__REG(TARGET_SD_CMU, t, 14, 264, 0, 1, 632, 20, 0, 1, 4)
+	__REG(TARGET_SD_CMU, t, TSIZE(TC_SD_CMU), 264, 0, 1, 632, 20, 0, 1, 4)
 
 #define SD_CMU_CMU_47_R_PCS2PMA_PHYMODE_4_0      GENMASK(4, 0)
 #define SD_CMU_CMU_47_R_PCS2PMA_PHYMODE_4_0_SET(x)\
@@ -2578,7 +2635,7 @@ enum sparx5_serdes_target {
 
 /* SD10G_CMU_TARGET:CMU_GRP_7:CMU_E0 */
 #define SD_CMU_CMU_E0(t)                                                       \
-	__REG(TARGET_SD_CMU, t, 14, 896, 0, 1, 8, 0, 0, 1, 4)
+	__REG(TARGET_SD_CMU, t, TSIZE(TC_SD_CMU), 896, 0, 1, 8, 0, 0, 1, 4)
 
 #define SD_CMU_CMU_E0_READ_VCO_CTUNE_3_0         GENMASK(3, 0)
 #define SD_CMU_CMU_E0_READ_VCO_CTUNE_3_0_SET(x)\
@@ -2594,7 +2651,8 @@ enum sparx5_serdes_target {
 
 /* SD_CMU_TARGET:SD_CMU_CFG:SD_CMU_CFG */
 #define SD_CMU_CFG_SD_CMU_CFG(t)                                               \
-	__REG(TARGET_SD_CMU_CFG, t, 14, 0, 0, 1, 8, 0, 0, 1, 4)
+	__REG(TARGET_SD_CMU_CFG, t, TSIZE(TC_SD_CMU_CFG), 0, 0, 1, 8, 0, 0, 1, \
+	      4)
 
 #define SD_CMU_CFG_SD_CMU_CFG_CMU_RST            BIT(0)
 #define SD_CMU_CFG_SD_CMU_CFG_CMU_RST_SET(x)\
@@ -2610,7 +2668,7 @@ enum sparx5_serdes_target {
 
 /* SD_LANE_TARGET:SD_RESET:SD_SER_RST */
 #define SD_LANE_SD_SER_RST(t)                                                  \
-	__REG(TARGET_SD_LANE, t, 25, 0, 0, 1, 8, 0, 0, 1, 4)
+	__REG(TARGET_SD_LANE, t, TSIZE(TC_SD_LANE), 0, 0, 1, 8, 0, 0, 1, 4)
 
 #define SD_LANE_SD_SER_RST_SER_RST               BIT(0)
 #define SD_LANE_SD_SER_RST_SER_RST_SET(x)\
@@ -2620,7 +2678,7 @@ enum sparx5_serdes_target {
 
 /* SD_LANE_TARGET:SD_RESET:SD_DES_RST */
 #define SD_LANE_SD_DES_RST(t)                                                  \
-	__REG(TARGET_SD_LANE, t, 25, 0, 0, 1, 8, 4, 0, 1, 4)
+	__REG(TARGET_SD_LANE, t, TSIZE(TC_SD_LANE), 0, 0, 1, 8, 4, 0, 1, 4)
 
 #define SD_LANE_SD_DES_RST_DES_RST               BIT(0)
 #define SD_LANE_SD_DES_RST_DES_RST_SET(x)\
@@ -2630,7 +2688,7 @@ enum sparx5_serdes_target {
 
 /* SD_LANE_TARGET:SD_LANE_CFG_STAT:SD_LANE_CFG */
 #define SD_LANE_SD_LANE_CFG(t)                                                 \
-	__REG(TARGET_SD_LANE, t, 25, 8, 0, 1, 8, 0, 0, 1, 4)
+	__REG(TARGET_SD_LANE, t, TSIZE(TC_SD_LANE), 8, 0, 1, 8, 0, 0, 1, 4)
 
 #define SD_LANE_SD_LANE_CFG_MACRO_RST            BIT(0)
 #define SD_LANE_SD_LANE_CFG_MACRO_RST_SET(x)\
@@ -2676,7 +2734,7 @@ enum sparx5_serdes_target {
 
 /* SD_LANE_TARGET:SD_LANE_CFG_STAT:SD_LANE_STAT */
 #define SD_LANE_SD_LANE_STAT(t)                                                \
-	__REG(TARGET_SD_LANE, t, 25, 8, 0, 1, 8, 4, 0, 1, 4)
+	__REG(TARGET_SD_LANE, t, TSIZE(TC_SD_LANE), 8, 0, 1, 8, 4, 0, 1, 4)
 
 #define SD_LANE_SD_LANE_STAT_PMA_RST_DONE        BIT(0)
 #define SD_LANE_SD_LANE_STAT_PMA_RST_DONE_SET(x)\
@@ -2698,7 +2756,7 @@ enum sparx5_serdes_target {
 
 /* SD_LANE_TARGET:SD_PWR_CFG:QUIET_MODE_6G */
 #define SD_LANE_QUIET_MODE_6G(t)                                               \
-	__REG(TARGET_SD_LANE, t, 25, 24, 0, 1, 8, 4, 0, 1, 4)
+	__REG(TARGET_SD_LANE, t, TSIZE(TC_SD_LANE), 24, 0, 1, 8, 4, 0, 1, 4)
 
 #define SD_LANE_QUIET_MODE_6G_QUIET_MODE         GENMASK(24, 0)
 #define SD_LANE_QUIET_MODE_6G_QUIET_MODE_SET(x)\
@@ -2708,7 +2766,7 @@ enum sparx5_serdes_target {
 
 /* SD_LANE_TARGET:CFG_STAT_FX100:MISC */
 #define SD_LANE_MISC(t)                                                        \
-	__REG(TARGET_SD_LANE, t, 25, 56, 0, 1, 56, 0, 0, 1, 4)
+	__REG(TARGET_SD_LANE, t, TSIZE(TC_SD_LANE), 56, 0, 1, 56, 0, 0, 1, 4)
 
 #define SD_LANE_MISC_SD_125_RST_DIS              BIT(0)
 #define SD_LANE_MISC_SD_125_RST_DIS_SET(x)\
@@ -2744,7 +2802,7 @@ enum sparx5_serdes_target {
 
 /* SD_LANE_TARGET:CFG_STAT_FX100:M_STAT_MISC */
 #define SD_LANE_M_STAT_MISC(t)                                                 \
-	__REG(TARGET_SD_LANE, t, 25, 56, 0, 1, 56, 36, 0, 1, 4)
+	__REG(TARGET_SD_LANE, t, TSIZE(TC_SD_LANE), 56, 0, 1, 56, 36, 0, 1, 4)
 
 #define SD_LANE_M_STAT_MISC_M_RIS_EDGE_PTR_ADJ_SUM GENMASK(21, 0)
 #define SD_LANE_M_STAT_MISC_M_RIS_EDGE_PTR_ADJ_SUM_SET(x)\
