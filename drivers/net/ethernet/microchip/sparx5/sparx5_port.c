@@ -938,6 +938,23 @@ static int sparx5_port_config_low_set(struct sparx5 *sparx5,
 		 sparx5,
 		 DEV2G5_DEV_RST_CTRL(port->portno));
 
+	/* Enable PHAD_CTRL to better timestamping */
+	if (!is_sparx5(sparx5)) {
+		for (int i = 0; i < 2; ++i) {
+			u32 val;
+
+			val = spx5_rd(sparx5, DEV2G5_PHAD_CTRL(port->portno, i));
+			val = DEV2G5_PHAD_CTRL_DIV_STATE_GET(val) + 1;
+			spx5_rmw(DEV2G5_PHAD_CTRL_DIV_STATE_SET(val),
+				 DEV2G5_PHAD_CTRL_DIV_STATE,
+				 sparx5, DEV2G5_PHAD_CTRL(port->portno, i));
+
+			spx5_rmw(DEV2G5_PHAD_CTRL_PHAD_ENA_SET(1),
+				 DEV2G5_PHAD_CTRL_PHAD_ENA,
+				 sparx5,DEV2G5_PHAD_CTRL(port->portno, i));
+		}
+	}
+
 	return 0;
 }
 
