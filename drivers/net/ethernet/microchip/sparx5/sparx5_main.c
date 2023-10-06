@@ -709,10 +709,6 @@ static int sparx5_start(struct sparx5 *sparx5)
 	if (err)
 		return err;
 
-	/* Fix me! */
-	if (!is_sparx5(sparx5))
-		sparx5_calendar_fix(sparx5);
-
 	/* Init stats */
 	err = sparx_stats_init(sparx5);
 	if (err)
@@ -1065,6 +1061,7 @@ static const struct sparx5_match_data sparx5_desc = {
 		.fdma_start = &sparx5_fdma_start,
 		.fdma_xmit = &sparx5_fdma_xmit,
 		.ptp_irq_handler = sparx5_ptp_irq_handler,
+		.get_internal_port_cal_speed = &sparx5_get_internal_port_cal_speed
 	},
 	.consts = {
 		.chip_ports = 65,

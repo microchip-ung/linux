@@ -60,4 +60,7 @@ int lan969x_fdma_stop(struct sparx5 *sparx5);
 int lan969x_fdma_start(struct sparx5 *sparx5);
 int lan969x_fdma_xmit(struct sparx5 *sparx5, u32 *ifh, struct sk_buff *skb);
 
+enum sparx5_cal_bw lan969x_get_internal_port_cal_speed(struct sparx5 *sparx5,
+						       u32 portno);
+
 #endif
