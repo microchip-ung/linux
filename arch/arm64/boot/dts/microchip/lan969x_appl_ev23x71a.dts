@@ -12,6 +12,7 @@
 	model = "lan969x appl ev23x71a (pcb8398)";
 	aliases {
 		serial0 = &usart0;
+		i2c0   = &i2c_poe;
 		i2c100 = &i2c_sfp0;
 		i2c101 = &i2c_sfp1;
 		i2c102 = &i2c_sfp2;
@@ -54,6 +55,10 @@
 
 		i2c_sfp3: i2c_sfp3 {
 			reg = <0x3>;
+		};
+
+		i2c_poe: i2c_poe {
+			reg = <0x7>;
 		};
 	};
 

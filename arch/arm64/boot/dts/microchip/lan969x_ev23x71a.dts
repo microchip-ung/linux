@@ -51,6 +51,10 @@
 		i2c_sfp3: i2c_sfp3 {
 			reg = <0x3>;
 		};
+
+		i2c_poe: i2c_poe {
+			reg = <0x7>;
+		};
 	};
 
 	leds {
