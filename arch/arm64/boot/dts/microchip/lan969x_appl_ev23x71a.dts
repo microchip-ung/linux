@@ -190,6 +190,8 @@
 	pinctrl-0 = <&sgpio_pins>;
 	pinctrl-names = "default";
 
+	bus-frequency = <5000000>;
+
 	microchip,sgpio-port-ranges = <0 1>, <6 9>;
 	status = "okay";
 
