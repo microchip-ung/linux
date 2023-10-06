@@ -84,6 +84,24 @@
 	};
 };
 
+&flx2 {
+	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_SPI>;
+	status = "okay";
+
+	spi2: spi@400 {
+		pinctrl-0 = <&fc2_pins>;
+		pinctrl-names = "default";
+		cs-gpios = <&gpio 63 GPIO_ACTIVE_LOW>;
+		status = "okay";
+
+		spi@0 {
+			compatible = "mchp,synce_dpll";
+			reg = <0>;
+			spi-max-frequency = <8000000>;
+		};
+	};
+};
+
 &flx3 {
 	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_TWI>;
 	status = "okay";
@@ -110,6 +128,11 @@
 
 	fc0_pins: fc0-pins {
 		pins = "GPIO_3", "GPIO_4";
+		function = "fc";
+	};
+
+	fc2_pins: fc2-pins {
+		pins = "GPIO_64", "GPIO_65", "GPIO_66";
 		function = "fc";
 	};
 
