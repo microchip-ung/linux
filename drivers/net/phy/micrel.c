@@ -3737,6 +3737,8 @@ static int lan8814_release_coma_mode(struct phy_device *phydev)
 	return 0;
 }
 
+#define LAN8841_EEE_STATE		56
+#define LAN8841_EEE_STATE_MASK2P5P	BIT(10)
 static void lan8814_workarounds_in_probe(struct phy_device *phydev)
 {
 	struct kszphy_priv *priv = phydev->priv;
@@ -3752,6 +3754,13 @@ static void lan8814_workarounds_in_probe(struct phy_device *phydev)
 	val &= ~LAN8814_DFE_INIT2_100_DEVICE_ERE_MASK_;
 	val |= (LAN8814_DFE_INIT2_100_DEVICE_ERE_VAL_ << 9);
 	lanphy_write_page_reg(phydev, 1, LAN8814_DFE_INIT2_100, val);
+
+	/* Fix LED issue. It was noticed that when traffic is passing and then
+	 * the cable is removed the LED was still on
+	 */
+	val = lanphy_read_page_reg(phydev, 2, LAN8841_EEE_STATE);
+	val &= ~LAN8841_EEE_STATE_MASK2P5P;
+	lanphy_write_page_reg(phydev, 2, LAN8841_EEE_STATE, val);
 
 	/* Below are PGA(Programmable Gain Amplifier) gain look-up-table entries,
 	 * Based on the measured incoming signal amplitude, a PGA gain is derived
