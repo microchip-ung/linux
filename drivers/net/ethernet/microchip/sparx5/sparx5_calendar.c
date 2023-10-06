@@ -183,12 +183,11 @@ static enum sparx5_cal_bw sparx5_get_port_cal_speed(struct sparx5 *sparx5,
 /* Auto configure the QSYS calendar based on port configuration */
 int sparx5_config_auto_calendar(struct sparx5 *sparx5)
 {
+	u32 value, idx, portno, max_core_bw, total_bw = 0, used_port_bw = 0;
 	const struct sparx5_consts *consts = &sparx5->data->consts;
-	u32 cal[7], value, idx, portno;
-	u32 max_core_bw;
-	u32 total_bw = 0, used_port_bw = 0;
-	int err = 0;
 	enum sparx5_cal_bw spd;
+	int err = 0;
+	u32 cal[7];
 
 	memset(cal, 0, sizeof(cal));
 
@@ -309,10 +308,10 @@ static int sparx5_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
 	const struct sparx5_consts *consts = &sparx5->data->consts;
 	int devs_per_taxi = consts->dsm_cal_max_devs_per_taxi;
 	const struct sparx5_ops *ops = &sparx5->data->ops;
-	bool slow_mode;
-	u32 gcd, idx, sum, min, factor;
 	u32 num_of_slots, slot_spd, empty_slots;
+	u32 gcd, idx, sum, min, factor;
 	u32 taxi_bw, clk_period_ps;
+	bool slow_mode;
 
 	clk_period_ps = sparx5_clk_period(sparx5->coreclock);
 	taxi_bw = 128 * 1000000 / clk_period_ps;
@@ -507,12 +506,12 @@ static int sparx5_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
 static int sparx5_dsm_calendar_check(struct sparx5 *sparx5,
 				     struct sparx5_calendar_data *data)
 {
+	u32 slot_indices[SPX5_DSM_CAL_LEN], distances[SPX5_DSM_CAL_LEN];
 	const struct sparx5_consts *consts = &sparx5->data->consts;
 	int devs_per_taxi = consts->dsm_cal_max_devs_per_taxi;
+	u32 cal_length = sparx5_dsm_cal_len(data->schedule);
 	u32 num_of_slots, idx, port;
 	int cnt, max_dist;
-	u32 slot_indices[SPX5_DSM_CAL_LEN], distances[SPX5_DSM_CAL_LEN];
-	u32 cal_length = sparx5_dsm_cal_len(data->schedule);
 
 	for (port = 0; port < devs_per_taxi; port++) {
 		num_of_slots = 0;
@@ -565,8 +564,8 @@ check_err:
 static int sparx5_dsm_calendar_update(struct sparx5 *sparx5, u32 taxi,
 				      struct sparx5_calendar_data *data)
 {
-	u32 idx;
-	u32 cal_len = sparx5_dsm_cal_len(data->schedule), len, val, act;
+	u32 cal_len = sparx5_dsm_cal_len(data->schedule);
+	u32 idx, len, val, act;
 
 	if (!is_sparx5(sparx5)) {
 		val = spx5_rd(sparx5, DSM_TAXI_CAL_CFG(taxi));
