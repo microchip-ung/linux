@@ -751,7 +751,16 @@ lan966x_vcap_is1_get_port_keysets(struct net_device *ndev, int lookup,
 		break;
 	}
 
-	/* TODO: handle RT keyset/protocol */
+	switch (ANA_VCAP_S1_CFG_KEY_RT_CFG_GET(value)) {
+	case VCAP_IS1_PS_RT_NORMAL:
+	case VCAP_IS1_PS_RT_7TUPLE:
+	case VCAP_IS1_PS_RT_DBL_VID:
+	case VCAP_IS1_PS_RT_DMAC_VID:
+	case VCAP_IS1_PS_RT_FOLLOW_OTHER:
+		vcap_keyset_list_add(keysetlist, VCAP_KFS_RT);
+		break;
+	}
+
 	return 0;
 }
 
@@ -903,6 +912,9 @@ static void lan966x_vcap_add_is1_default_fields(struct lan966x *lan966x,
 {
 	const struct vcap_field *field;
 	int lookup;
+
+	if (rule->keyset == VCAP_KFS_RT)
+		return;
 
 	field = vcap_lookup_keyfield(rule, VCAP_KF_IF_IGR_PORT_MASK);
 	if (field && field->width == 9)
