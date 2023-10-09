@@ -89,6 +89,17 @@
 	};
 };
 
+&flx1 {
+	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_USART>;
+	status = "okay";
+
+	usart1: serial@200 {
+		pinctrl-0 = <&fc1_pins>;
+		pinctrl-names = "default";
+		status = "okay";
+	};
+};
+
 &flx2 {
 	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_SPI>;
 	status = "okay";
@@ -133,6 +144,11 @@
 
 	fc0_pins: fc0-pins {
 		pins = "GPIO_3", "GPIO_4";
+		function = "fc";
+	};
+
+	fc1_pins: fc1-pins {
+		pins = "GPIO_28", "GPIO_29";
 		function = "fc";
 	};
 
