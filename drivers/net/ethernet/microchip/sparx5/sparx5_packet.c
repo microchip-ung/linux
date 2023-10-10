@@ -195,7 +195,7 @@ static void sparx5_xtr_grp(struct sparx5 *sparx5, u8 grp, bool byte_swap)
 	/* Finish up skb */
 	skb_put(skb, byte_cnt - ETH_FCS_LEN);
 	eth_skb_pad(skb);
-	sparx5_ptp_rxtstamp(sparx5, skb, fi.timestamp);
+	sparx5_ptp_rxtstamp(sparx5, skb, fi.src_port, fi.timestamp);
 	skb->protocol = eth_type_trans(skb, netdev);
 	netdev->stats.rx_bytes += skb->len;
 	netdev->stats.rx_packets++;

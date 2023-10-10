@@ -280,7 +280,8 @@ struct sparx5_port {
 	bool vlan_aware;
 	struct hrtimer inj_timer;
 	/* ptp */
-	u8 ptp_cmd;
+	u8 ptp_tx_cmd;
+	u8 ptp_rx_cmd;
 	u16 ts_id;
 	struct sk_buff_head tx_skbs;
 	bool is_mrouter;
@@ -667,7 +668,7 @@ void sparx5_ptp_deinit(struct sparx5 *sparx5);
 int sparx5_ptp_hwtstamp_set(struct sparx5_port *port, struct ifreq *ifr);
 int sparx5_ptp_hwtstamp_get(struct sparx5_port *port, struct ifreq *ifr);
 void sparx5_ptp_rxtstamp(struct sparx5 *sparx5, struct sk_buff *skb,
-			 u64 timestamp);
+			 u64 src_port, u64 timestamp);
 int sparx5_ptp_txtstamp_request(struct sparx5_port *port,
 				struct sk_buff *skb);
 void sparx5_ptp_txtstamp_release(struct sparx5_port *port,
