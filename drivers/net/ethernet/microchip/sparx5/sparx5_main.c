@@ -239,6 +239,21 @@ static int qlim_wm(struct sparx5 *sparx5, int fraction)
 	return (buf_mem / SPX5_BUFFER_CELL_SZ - 100) * fraction / 100;
 }
 
+static void sparx5_map_resources(struct sparx5 *sparx5, struct resource *iores[])
+{
+	struct resource *res;
+
+	res = platform_get_resource_byname(sparx5->pdev, IORESOURCE_MEM, "cpu");
+	if (res && IO_RANGES > 0)
+		iores[0] = res;
+	res = platform_get_resource_byname(sparx5->pdev, IORESOURCE_MEM, "dev");
+	if (res && IO_RANGES > 1)
+		iores[1] = res;
+	res = platform_get_resource_byname(sparx5->pdev, IORESOURCE_MEM, "gcb");
+	if (res && IO_RANGES > 2)
+		iores[2] = res;
+}
+
 static int sparx5_create_targets(struct sparx5 *sparx5)
 {
 	const struct sparx5_main_io_resource *iomap;
@@ -260,9 +275,8 @@ static int sparx5_create_targets(struct sparx5 *sparx5)
 			idx++;
 		}
 	}
+	sparx5_map_resources(sparx5, iores);
 	for (idx = 0; idx < ioranges; idx++) {
-		iores[idx] = platform_get_resource(sparx5->pdev, IORESOURCE_MEM,
-						   idx);
 		if (!iores[idx]) {
 			dev_err(sparx5->dev, "Invalid resource\n");
 			return -EINVAL;
