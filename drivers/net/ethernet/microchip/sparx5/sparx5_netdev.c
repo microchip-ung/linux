@@ -325,7 +325,12 @@ struct net_device *sparx5_create_netdev(struct sparx5 *sparx5, u32 portno)
 	spx5_port->ndev = ndev;
 	spx5_port->sparx5 = sparx5;
 	spx5_port->portno = portno;
-	snprintf(ndev->name, IFNAMSIZ, "eth%d", portno);
+
+	/* If the switch is PCIe mapped the host may have its own ports */
+	if (sparx5->is_pcie_device)
+		snprintf(ndev->name, IFNAMSIZ, "swp%d", portno);
+	else
+		snprintf(ndev->name, IFNAMSIZ, "eth%d", portno);
 
 	ndev->netdev_ops = &sparx5_port_netdev_ops;
 	ndev->ethtool_ops = &sparx5_ethtool_ops;
@@ -346,8 +351,8 @@ int sparx5_register_netdevs(struct sparx5 *sparx5)
 			err = register_netdev(sparx5->ports[portno]->ndev);
 			if (err) {
 				dev_err(sparx5->dev,
-					"port: %02u: netdev registration failed\n",
-					portno);
+					"port: %02u: netdev registration failed: %d\n",
+					portno, err);
 				return err;
 			}
 			sparx5_port_inj_timer_setup(sparx5->ports[portno]);

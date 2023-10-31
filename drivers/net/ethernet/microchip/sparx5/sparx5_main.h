@@ -421,6 +421,7 @@ struct sparx5 {
 	struct sparx5_mirror_probe mirror_probe[SPX5_MIRROR_PROBE_MAX];
 	/* Time Aware Shaper */
 	struct mutex tas_lock;
+	bool is_pcie_device;
 };
 
 struct sparx5_calendar_data {

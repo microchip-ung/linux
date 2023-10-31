@@ -824,6 +824,24 @@ static void sparx5_cleanup_ports(struct sparx5 *sparx5)
 	sparx5_destroy_netdevs(sparx5);
 }
 
+/* Discover if the parent node is a PCIe device */
+static bool sparx5_is_pcie_device(struct sparx5 *sparx5)
+{
+	struct device_node *parent = of_get_parent(sparx5->dev->of_node);
+	struct property *prop;
+	const char *name;
+
+	if (parent == NULL)
+		return false;
+	prop = of_find_property(parent, "compatible", NULL);
+	if (prop == NULL)
+		return false;
+	name = of_prop_next_string(prop, NULL);
+	if (name == NULL)
+		return false;
+	return strncmp(name, "pci", 3) == 0;
+}
+
 static int mchp_sparx5_probe(struct platform_device *pdev)
 {
 	struct initial_port_config *configs, *config;
@@ -844,6 +862,8 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, sparx5);
 	sparx5->pdev = pdev;
 	sparx5->dev = &pdev->dev;
+
+	sparx5->is_pcie_device = sparx5_is_pcie_device(sparx5);
 
 	data = device_get_match_data(sparx5->dev);
 	if (!data)
