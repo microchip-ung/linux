@@ -63,4 +63,7 @@ int lan969x_fdma_xmit(struct sparx5 *sparx5, u32 *ifh, struct sk_buff *skb);
 enum sparx5_cal_bw lan969x_get_internal_port_cal_speed(struct sparx5 *sparx5,
 						       u32 portno);
 
+int lan969x_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
+			      struct sparx5_calendar_data *data, u32 *cal_len);
+
 #endif

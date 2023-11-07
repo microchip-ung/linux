@@ -1061,7 +1061,8 @@ static const struct sparx5_match_data sparx5_desc = {
 		.fdma_start = &sparx5_fdma_start,
 		.fdma_xmit = &sparx5_fdma_xmit,
 		.ptp_irq_handler = sparx5_ptp_irq_handler,
-		.get_internal_port_cal_speed = &sparx5_get_internal_port_cal_speed
+		.get_internal_port_cal_speed = &sparx5_get_internal_port_cal_speed,
+		.dsm_calendar_calc = &sparx5_dsm_calendar_calc,
 	},
 	.consts = {
 		.chip_ports = 65,

@@ -15,7 +15,6 @@
 #define SPX5_CALBITS_PER_PORT          3   /* Bit per port in calendar register */
 
 /* DSM calendar information */
-#define SPX5_DSM_CAL_LEN               64
 #define SPX5_DSM_CAL_EMPTY             0xFFFF
 #define SPX5_DSM_CAL_BW_LOSS           553
 
@@ -39,19 +38,6 @@ u32 *sparx5_get_taxi(int idx)
 {
 	return sparx5_taxi_ports[idx];
 }
-
-struct sparx5_calendar_data {
-	u32 schedule[SPX5_DSM_CAL_LEN];
-	u32 avg_dist[SPX5_DSM_CAL_MAX_DEVS_PER_TAXI];
-	u32 taxi_ports[SPX5_DSM_CAL_MAX_DEVS_PER_TAXI];
-	u32 taxi_speeds[SPX5_DSM_CAL_MAX_DEVS_PER_TAXI];
-	u32 dev_slots[SPX5_DSM_CAL_MAX_DEVS_PER_TAXI];
-	u32 new_slots[SPX5_DSM_CAL_LEN];
-	u32 temp_sched[SPX5_DSM_CAL_LEN];
-	u32 indices[SPX5_DSM_CAL_LEN];
-	u32 short_list[SPX5_DSM_CAL_LEN];
-	u32 long_list[SPX5_DSM_CAL_LEN];
-};
 
 static u32 sparx5_target_bandwidth(struct sparx5 *sparx5)
 {
@@ -103,7 +89,7 @@ static u32 sparx5_clk_to_bandwidth(enum sparx5_core_clockfreq cclock)
 	return 0;
 }
 
-static u32 sparx5_cal_speed_to_value(enum sparx5_cal_bw speed)
+u32 sparx5_cal_speed_to_value(enum sparx5_cal_bw speed)
 {
 	switch (speed) {
 	case SPX5_CAL_SPEED_1G:   return 1000;
@@ -154,8 +140,7 @@ enum sparx5_cal_bw sparx5_get_internal_port_cal_speed(struct sparx5 *sparx5,
 	return SPX5_CAL_SPEED_NONE;
 }
 
-static enum sparx5_cal_bw sparx5_get_port_cal_speed(struct sparx5 *sparx5,
-						    u32 portno)
+enum sparx5_cal_bw sparx5_get_port_cal_speed(struct sparx5 *sparx5, u32 portno)
 {
 	const struct sparx5_consts *consts = &sparx5->data->consts;
 	const struct sparx5_ops *ops = &sparx5->data->ops;
@@ -294,8 +279,8 @@ static u32 sparx5_dsm_cp_cal(u32 *sched)
 	return SPX5_DSM_CAL_EMPTY;
 }
 
-static int sparx5_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
-				    struct sparx5_calendar_data *data)
+int sparx5_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
+			     struct sparx5_calendar_data *data, u32 *cal_len)
 {
 	const struct sparx5_consts *consts = &sparx5->data->consts;
 	int devs_per_taxi = consts->dsm_cal_max_devs_per_taxi;
@@ -492,16 +477,18 @@ static int sparx5_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
 			data->new_slots[slot] = SPX5_DSM_CAL_EMPTY;
 		}
 	}
+
+	*cal_len = sparx5_dsm_cal_len(data->schedule);
+
 	return 0;
 }
 
 static int sparx5_dsm_calendar_check(struct sparx5 *sparx5,
-				     struct sparx5_calendar_data *data)
+				     struct sparx5_calendar_data *data, u32 cal_length)
 {
 	u32 slot_indices[SPX5_DSM_CAL_LEN], distances[SPX5_DSM_CAL_LEN];
 	const struct sparx5_consts *consts = &sparx5->data->consts;
 	int devs_per_taxi = consts->dsm_cal_max_devs_per_taxi;
-	u32 cal_length = sparx5_dsm_cal_len(data->schedule);
 	u32 num_of_slots, idx, port;
 	int cnt, max_dist;
 
@@ -554,9 +541,8 @@ check_err:
 }
 
 static int sparx5_dsm_calendar_update(struct sparx5 *sparx5, u32 taxi,
-				      struct sparx5_calendar_data *data)
+				      struct sparx5_calendar_data *data, u32 cal_len)
 {
-	u32 cal_len = sparx5_dsm_cal_len(data->schedule);
 	u32 idx, len, val, act;
 
 	if (!is_sparx5(sparx5)) {
@@ -606,26 +592,30 @@ update_err:
 int sparx5_config_dsm_calendar(struct sparx5 *sparx5)
 {
 	const struct sparx5_consts *consts = &sparx5->data->consts;
+	const struct sparx5_ops *ops = &sparx5->data->ops;
 	int taxi, cal_taxis = consts->dsm_cal_taxis;
 	struct sparx5_calendar_data *data;
 	int err = 0;
+	u32 cal_len;
 
 	data = kzalloc(sizeof(*data), GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;
 
 	for (taxi = 0; taxi < cal_taxis; ++taxi) {
-		err = sparx5_dsm_calendar_calc(sparx5, taxi, data);
+		err = ops->dsm_calendar_calc(sparx5, taxi, data, &cal_len);
 		if (err) {
 			dev_err(sparx5->dev, "DSM calendar calculation failed\n");
 			goto cal_out;
 		}
-		err = sparx5_dsm_calendar_check(sparx5, data);
-		if (err) {
-			dev_err(sparx5->dev, "DSM calendar check failed\n");
-			goto cal_out;
+		if (is_sparx5(sparx5)) {
+			err = sparx5_dsm_calendar_check(sparx5, data, cal_len);
+			if (err) {
+				dev_err(sparx5->dev, "DSM calendar check failed\n");
+				goto cal_out;
+			}
 		}
-		err = sparx5_dsm_calendar_update(sparx5, taxi, data);
+		err = sparx5_dsm_calendar_update(sparx5, taxi, data, cal_len);
 		if (err) {
 			dev_err(sparx5->dev, "DSM calendar update failed\n");
 			goto cal_out;

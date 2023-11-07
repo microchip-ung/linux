@@ -356,6 +356,113 @@ enum sparx5_cal_bw lan969x_get_internal_port_cal_speed(struct sparx5 *sparx5,
 	return SPX5_CAL_SPEED_NONE;
 }
 
+int lan969x_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
+			      struct sparx5_calendar_data *data, u32 *cal_len)
+{
+	const struct sparx5_consts *consts = &sparx5->data->consts;
+	int devs_per_taxi = consts->dsm_cal_max_devs_per_taxi;
+	int bwavail[3], s_values[3] = { 5000, 2500, 1000 };
+	const struct sparx5_ops *ops = &sparx5->data->ops;
+	int i, j, p, sp, win, grplen, lcs, s, found;
+	int grp[LAN969X_DSM_CAL_MAX_DEVS_PER_TAXI];
+	u32 idx, taxi_bw, clk_period_ps;
+	int grps = 3, grpspd = 10000;
+	int cnt[30] = {0};
+
+	clk_period_ps = sparx5_clk_period(sparx5->coreclock);
+	taxi_bw = (128 * 1000000 / clk_period_ps) / (1 + 1 / 20);
+
+	memcpy(data->taxi_ports, ops->get_taxi(taxi),
+	       devs_per_taxi * sizeof(u32));
+
+	for (idx = 0; idx < devs_per_taxi; idx++) {
+		u32 portno = data->taxi_ports[idx];
+
+		if (portno < consts->chip_ports_all)
+			data->taxi_speeds[idx] = sparx5_cal_speed_to_value(sparx5_get_port_cal_speed(sparx5, portno));
+		else
+			data->taxi_speeds[idx] = 0;
+	}
+
+	if (taxi_bw < 30000) {
+		for (i = 0; i < LAN969X_DSM_CAL_MAX_DEVS_PER_TAXI &&
+			    data->taxi_speeds[i] != 10000;
+		     i++)
+			;
+
+		if (i == LAN969X_DSM_CAL_MAX_DEVS_PER_TAXI)
+			grpspd = 5000;
+		else
+			grps = 2;
+	}
+
+	lcs = grpspd;
+	for (i = 0; i < 3; i++) {
+		s = s_values[i];
+		found = 0;
+		for (j = 0; j < LAN969X_DSM_CAL_MAX_DEVS_PER_TAXI; j++) {
+			if (data->taxi_speeds[j] == s) {
+				found = 1;
+				break;
+			}
+		}
+		if (found) {
+			if (lcs == 2500)
+				lcs = 500;
+			else
+				lcs = s;
+		}
+	}
+	grplen = grpspd / lcs;
+
+	for (i = 0; i < grps; i++)
+		bwavail[i++] = grpspd;
+
+	for (i = 0; i < LAN969X_DSM_CAL_MAX_DEVS_PER_TAXI; i++) {
+		if (!data->taxi_speeds[i])
+			continue;
+
+		for (j = 0; j < grps && bwavail[j] < data->taxi_speeds[i]; j++)
+			;
+
+		if (j == grps) {
+			pr_err("Could not generate calendar at taxibw %d\n",
+			       taxi_bw);
+			return -EINVAL;
+		}
+
+		grp[i] = j;
+		bwavail[j] -= data->taxi_speeds[i];
+	}
+
+	for (i = 0; i < grplen; i++) {
+		for (j = 0; j < grps; j++) {
+			sp = 1;
+			win = LAN969X_DSM_CAL_MAX_DEVS_PER_TAXI;
+			for (p = 0; p < LAN969X_DSM_CAL_MAX_DEVS_PER_TAXI; p++) {
+				if (grp[p] != j)
+					continue;
+				cnt[p] -= (cnt[p] > 0);
+				if (data->taxi_speeds[p] > sp && !cnt[p]) {
+					win = p;
+					sp = data->taxi_speeds[p];
+				}
+			}
+
+			if (win == LAN969X_DSM_CAL_MAX_DEVS_PER_TAXI)
+				win = 10;
+
+			cnt[win] = grpspd / sp;
+			data->schedule[i * grps + j] = win;
+		}
+	}
+
+	*cal_len = (data->schedule[0] >= LAN969X_DSM_CAL_MAX_DEVS_PER_TAXI) ?
+			   1 : (grps * grplen);
+
+	return 0;
+}
+
 const struct sparx5_match_data lan969x_desc = {
 	.iomap = lan969x_main_iomap,
 	.iomap_size = ARRAY_SIZE(lan969x_main_iomap),
@@ -389,6 +496,7 @@ const struct sparx5_match_data lan969x_desc = {
 		.fdma_xmit = lan969x_fdma_xmit,
 		.ptp_irq_handler = lan969x_ptp_irq_handler,
 		.get_internal_port_cal_speed = &lan969x_get_internal_port_cal_speed,
+		.dsm_calendar_calc = &lan969x_dsm_calendar_calc,
 	},
 	.consts = {
 		.chip_ports = 30,
