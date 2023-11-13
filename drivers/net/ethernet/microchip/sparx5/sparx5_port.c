@@ -945,8 +945,8 @@ static int sparx5_port_config_low_set(struct sparx5 *sparx5,
 
 			val = spx5_rd(sparx5, DEV2G5_PHAD_CTRL(port->portno, i));
 			val = DEV2G5_PHAD_CTRL_DIV_STATE_GET(val) + 1;
-			spx5_rmw(DEV2G5_PHAD_CTRL_DIV_STATE_SET(val),
-				 DEV2G5_PHAD_CTRL_DIV_STATE,
+			spx5_rmw(DEV2G5_PHAD_CTRL_DIV_CFG_SET(val),
+				 DEV2G5_PHAD_CTRL_DIV_CFG,
 				 sparx5, DEV2G5_PHAD_CTRL(port->portno, i));
 
 			spx5_rmw(DEV2G5_PHAD_CTRL_PHAD_ENA_SET(1),
