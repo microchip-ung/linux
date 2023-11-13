@@ -26,6 +26,8 @@
 #define SPX5_RGMII_PORT_RATE 2       /* 1000Mbps  */
 #define SPX5_RGMII_DLL_SHIFT_90DEG 3 /* DLL phase shift 90deg. (2 ns @ 125MHz) */
 
+#define SPX5_PHAD_DIV 3 /* Divide port clock by the power of this */
+
 enum port_error {
 	SPX5_PERR_SPEED,
 	SPX5_PERR_IFTYPE,
@@ -938,20 +940,14 @@ static int sparx5_port_config_low_set(struct sparx5 *sparx5,
 		 sparx5,
 		 DEV2G5_DEV_RST_CTRL(port->portno));
 
-	/* Enable PHAD_CTRL to better timestamping */
+	/* Enable PHAD_CTRL for better timestamping */
 	if (!is_sparx5(sparx5)) {
 		for (int i = 0; i < 2; ++i) {
-			u32 val;
-
-			val = spx5_rd(sparx5, DEV2G5_PHAD_CTRL(port->portno, i));
-			val = DEV2G5_PHAD_CTRL_DIV_STATE_GET(val) + 1;
-			spx5_rmw(DEV2G5_PHAD_CTRL_DIV_CFG_SET(val),
-				 DEV2G5_PHAD_CTRL_DIV_CFG,
-				 sparx5, DEV2G5_PHAD_CTRL(port->portno, i));
-
-			spx5_rmw(DEV2G5_PHAD_CTRL_PHAD_ENA_SET(1),
+			spx5_rmw(DEV2G5_PHAD_CTRL_DIV_CFG_SET(SPX5_PHAD_DIV) |
+				 DEV2G5_PHAD_CTRL_PHAD_ENA_SET(1),
+				 DEV2G5_PHAD_CTRL_DIV_CFG |
 				 DEV2G5_PHAD_CTRL_PHAD_ENA,
-				 sparx5,DEV2G5_PHAD_CTRL(port->portno, i));
+				 sparx5, DEV2G5_PHAD_CTRL(port->portno, i));
 		}
 	}
 
