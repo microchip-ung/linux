@@ -211,17 +211,32 @@ static bool sparx5_fdma_rx_get_frame(struct sparx5 *sparx5, struct sparx5_rx *rx
 	/* Now do the normal processing of the skb */
 	sparx5_ifh_parse(sparx5, (u32 *)skb->data, &fi);
 	/* Map to port netdev */
+#ifdef CONFIG_SPARX5_SWITCH_APPL
+	port = sparx5->ports[0];
+#else
 	port = fi.src_port < consts->chip_ports ? sparx5->ports[fi.src_port] :
 						  NULL;
+#endif
 	if (!port || !port->ndev) {
 		dev_err(sparx5->dev, "Data on inactive port %d\n", fi.src_port);
 		sparx5_xtr_flush(sparx5, XTR_QUEUE);
 		return false;
 	}
 	skb->dev = port->ndev;
+
+#ifdef CONFIG_SPARX5_SWITCH_APPL
+	if (pskb_expand_head(skb, IFH_ENCAP_LEN, 0, GFP_ATOMIC))
+		return false;
+
+	*(u16 *)skb_push(skb, sizeof(u16)) = htons(consts->ifh_id);
+	*(u16 *)skb_push(skb, sizeof(u16)) = htons(IFH_ETH_TYPE);
+	ether_addr_copy((u8 *)skb_push(skb, ETH_ALEN), ifh_smac);
+	ether_addr_copy((u8 *)skb_push(skb, ETH_ALEN), ifh_dmac);
+#else
 	skb_pull(skb, IFH_LEN * sizeof(u32));
 	if (likely(!(skb->dev->features & NETIF_F_RXFCS)))
 		skb_trim(skb, skb->len - ETH_FCS_LEN);
+#endif
 
 	sparx5_ptp_rxtstamp(sparx5, skb, fi.src_port, fi.timestamp);
 	skb->protocol = eth_type_trans(skb, skb->dev);

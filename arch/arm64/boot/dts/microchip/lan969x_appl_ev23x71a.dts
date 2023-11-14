@@ -62,14 +62,15 @@
 		};
 	};
 
-	switch_vtss {
+	switch_vtss: switch_vtss@e0000000 {
 		compatible = "mchp,lan969x-switch-appl";
-		reg = <0xe2030000 0x20000>,
-		      <0xe3200000 0x10000>;
-		reg-names = "qs", "asm";
+		reg = <0xe00c0000 0x0010000>,
+		      <0xe2010000 0x1410000>;
+		reg-names = "cpu", "dev";
 
-		interrupts = <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>;
-		interrupt-names = "xtr";
+		interrupts = <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 88 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "xtr", "fdma";
 	};
 
 	switch_ifmux {

@@ -28,10 +28,12 @@ config SPARX5_DEBUG
 
 	  Do not enable this, unless you are debugging the driver.
 
-config LAN969X_SWITCH_APPL
-	tristate "Lan969x switch driver used by APPL"
+config SPARX5_SWITCH_APPL
+	tristate "Sparx5 switch driver used by APPL"
+	select LAN969X_SWITCH
 	help
-	  This driver supports the Lan969x network switch device for APPL.
+	  This driver supports the Sparx5 and Lan969x network switch devices for
+	  APPL.
 
 config LAN969X_SWITCH
 	tristate "Lan969x switch driver"

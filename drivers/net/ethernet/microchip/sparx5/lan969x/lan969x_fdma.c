@@ -127,8 +127,12 @@ static struct sk_buff *lan969x_fdma_rx_get_frame(struct sparx5 *sparx5,
 	skb_put(skb, FDMA_DCB_STATUS_BLOCKL(db->status));
 
 	sparx5_ifh_parse(sparx5, (u32 *)skb->data, &fi);
+#ifdef CONFIG_SPARX5_SWITCH_APPL
+	port = sparx5->ports[0];
+#else
 	port = fi.src_port < sparx5->data->consts.chip_ports ? sparx5->ports[fi.src_port] :
 						  NULL;
+#endif
 
 	if (WARN_ON(fi.src_port >= sparx5->data->consts.chip_ports))
 		goto free_skb;
@@ -137,11 +141,21 @@ static struct sk_buff *lan969x_fdma_rx_get_frame(struct sparx5 *sparx5,
 			       PAGE_SIZE << rx->page_order, DMA_FROM_DEVICE,
 			       DMA_ATTR_SKIP_CPU_SYNC);
 
-	skb->dev = sparx5->ports[fi.src_port]->ndev;
+	skb->dev = port->ndev;
+#ifdef CONFIG_SPARX5_SWITCH_APPL
+	if (pskb_expand_head(skb, IFH_ENCAP_LEN, 0, GFP_ATOMIC))
+		goto free_skb;
+
+	*(u16 *)skb_push(skb, sizeof(u16)) = htons(sparx5->data->consts.ifh_id);
+	*(u16 *)skb_push(skb, sizeof(u16)) = htons(IFH_ETH_TYPE);
+	ether_addr_copy((u8 *)skb_push(skb, ETH_ALEN), ifh_smac);
+	ether_addr_copy((u8 *)skb_push(skb, ETH_ALEN), ifh_dmac);
+#else
 	skb_pull(skb, IFH_LEN * sizeof(u32));
 
 	if (likely(!(skb->dev->features & NETIF_F_RXFCS)))
 		skb_trim(skb, skb->len - ETH_FCS_LEN);
+#endif
 
 	sparx5_ptp_rxtstamp(sparx5, skb, fi.src_port, fi.timestamp);
 	skb->protocol = eth_type_trans(skb, skb->dev);

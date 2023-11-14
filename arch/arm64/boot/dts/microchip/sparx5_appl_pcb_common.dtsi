@@ -17,10 +17,6 @@
 	enable-method = "spin-table";
 };
 
-&dma {
-	status = "okay";
-};
-
 &ifh0 {
 	status = "okay";
 };

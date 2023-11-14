@@ -74,6 +74,13 @@ enum sparx5_cal_bw {
 	SPX5_CAL_SPEED_12G5 = 7
 };
 
+#ifdef CONFIG_SPARX5_SWITCH_APPL
+extern const u8 ifh_dmac[];
+extern const u8 ifh_smac[];
+#define IFH_ENCAP_LEN		16
+#define IFH_ETH_TYPE		0x8880
+#endif
+
 #define SPX5_PORTS       65
 #define SPX5_PORTS_ALL   70
 /* Internals ports relative to last physical port */
@@ -534,6 +541,9 @@ struct sparx5_consts {
 	const struct vcap_info *vcaps;
 	const struct vcap_statistics *vcap_stats;
 	u8 ptp_pins;
+#ifdef CONFIG_SPARX5_SWITCH_APPL
+	u16 ifh_id;
+#endif
 };
 
 struct sparx5_regs {
