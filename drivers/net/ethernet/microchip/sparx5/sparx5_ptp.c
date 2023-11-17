@@ -15,6 +15,8 @@
 
 #define SPARX5_PTP_RULE_ID_OFFSET 2048
 
+#define LAN969X_WFH_ERROR_NS      73741824
+
 enum {
 	PTP_PIN_ACTION_IDLE = 0,
 	PTP_PIN_ACTION_LOAD,
@@ -943,6 +945,37 @@ static int sparx5_ptp_perout(struct ptp_clock_info *ptp,
 			 sparx5, PTP_PTP_PIN_CFG(pin));
 		spin_unlock_irqrestore(&sparx5->ptp_clock_lock, flags);
 		return 0;
+	}
+
+	/* On lan969x there is an issue with the HW, if the period is bigger
+	 * than 2^30 (1073741824ns) then the high waveform will be shorter by
+	 * 73741824ns. To fix this check for this conditions and then compensate
+	 * in SW for missing period. This is needed to do both for high waveform
+	 * and the total period otherwise if it is done only for high waveform
+	 * then the total period will still be shorter and if it is done for the
+	 * total period then the high waveform will be shorted.
+	 */
+	if (!is_sparx5(sparx5)) {
+		struct timespec64 period;
+
+		period.tv_sec = rq->perout.period.sec;
+		period.tv_nsec = rq->perout.period.nsec;
+
+		if (timespec64_to_ns(&period) >= NSEC_PER_SEC +
+						 LAN969X_WFH_ERROR_NS) {
+
+			rq->perout.on.nsec += LAN969X_WFH_ERROR_NS;
+			if (rq->perout.on.nsec >= NSEC_PER_SEC) {
+				rq->perout.on.nsec -= NSEC_PER_SEC;
+				rq->perout.on.sec += 1;
+			}
+
+			rq->perout.period.nsec += LAN969X_WFH_ERROR_NS;
+			if (rq->perout.period.nsec >= NSEC_PER_SEC) {
+				rq->perout.period.nsec -= NSEC_PER_SEC;
+				rq->perout.period.sec += 1;
+			}
+		}
 	}
 
 	if (rq->perout.period.sec == 1 &&
