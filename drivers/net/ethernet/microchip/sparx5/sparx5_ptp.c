@@ -1030,6 +1030,12 @@ static int sparx5_ptp_perout(struct ptp_clock_info *ptp,
 	wf_low = timespec64_to_ns(&ts_period);
 	wf_low -= wf_high;
 
+	if ((wf_low >> 30) != 0 || (wf_high >> 30) != 0) {
+		dev_warn(sparx5->dev,
+			 "WFL or WFH can't be bigger than 2^30\n");
+		return -EINVAL;
+	}
+
 	spin_lock_irqsave(&sparx5->ptp_clock_lock, flags);
 	spx5_wr(PTP_PIN_WF_LOW_PERIOD_PIN_WFL_SET(wf_low),
 		sparx5, PTP_PIN_WF_LOW_PERIOD(pin));
