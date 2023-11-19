@@ -4781,7 +4781,7 @@ static void lan8841_gpio_process_cap(struct kszphy_ptp_priv *ptp_priv)
 		return;
 
 	tmp = phy_read_mmd(phydev, 2, LAN8841_PTP_GPIO_CAP_STS);
-	if (!(tmp & LAN8841_PTP_GPIO_CAP_STS_PTP_GPIO_RE_STS(pin)) ||
+	if (!(tmp & LAN8841_PTP_GPIO_CAP_STS_PTP_GPIO_RE_STS(pin)) &&
 	    !(tmp & LAN8841_PTP_GPIO_CAP_STS_PTP_GPIO_FE_STS(pin)))
 		return;
 
