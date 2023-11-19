@@ -133,6 +133,7 @@
 #define LAN8841_1PPM_FORMAT			34360
 
 #define PTP_RX_VERSION				0x0248
+#define PTP_TX_VERSION				0x02AC
 
 #define PTP_RX_MOD				0x024F
 #define PTP_RX_MOD_BAD_UDPV4_CHKSUM_FORCE_FCS_DIS_ BIT(3)
@@ -3585,6 +3586,7 @@ static void lan8814_ptp_init(struct phy_device *phydev)
 
 	/* Disable checking for minorVersionPTP field */
 	lanphy_write_page_reg(phydev, 5, PTP_RX_VERSION, 0xff00);
+	lanphy_write_page_reg(phydev, 5, PTP_TX_VERSION, 0xff00);
 
 	skb_queue_head_init(&ptp_priv->tx_queue);
 	skb_queue_head_init(&ptp_priv->rx_queue);
@@ -3878,6 +3880,7 @@ static void lan8841_gpio_process_cap(struct kszphy_ptp_priv *ptp_priv);
 #define LAN8841_PTP_RX_VERSION			374
 #define LAN8841_PTP_TX_PARSE_L2_ADDR_EN		434
 #define LAN8841_PTP_TX_PARSE_IP_ADDR_EN		435
+#define LAN8841_PTP_TX_VERSION			438
 #define LAN8841_PTP_CMD_CTL			256
 #define LAN8841_PTP_CMD_CTL_PTP_ENABLE		BIT(2)
 #define LAN8841_PTP_CMD_CTL_PTP_DISABLE		BIT(1)
@@ -3949,6 +3952,7 @@ hw_init:
 
 	/* Disable checking for minorVersionPTP field */
 	phy_write_mmd(phydev, 2, LAN8841_PTP_RX_VERSION, 0xff00);
+	phy_write_mmd(phydev, 2, LAN8841_PTP_TX_VERSION, 0xff00);
 
 	/* 100BT Clause 40 improvenent errata */
 	phy_write_mmd(phydev, 28, LAN8841_ANALOG_CONTROL_1, 0x40);
