@@ -12,6 +12,7 @@
 #include <linux/of_platform.h>
 #include <linux/pci.h>
 #include <linux/delay.h>
+#include <linux/uio_driver.h>
 
 #include "lan969x_pci_regs.h"
 
@@ -24,6 +25,10 @@
 #define PCI_VENDOR_ID_MCHP		0x1055
 #define PCI_DEVICE_ID_MCHP_LAN969X	0x9690
 
+#define LAN969X_CSR_BAR		0
+#define CSR_TARGET_OFFSET	(0x10000)
+#define CSR_TARGET_LENGTH	(0x10000)
+
 #define LAN969X_CPU_BAR		1
 #define CPU_TARGET_OFFSET	(0xc0000)
 #define CPU_TARGET_LENGTH	(0x10000)
@@ -33,12 +38,21 @@
 #define IRQ_XTR_RDY		10
 #define IRQ_GPIO		15
 #define IRQ_SGPIO		16
+#define IRQ_FDMA_LEGACY		88
+
+#define LAN969X_UIO_VERSION	"1.0.0"
 
 static struct pci_device_id lan969x_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_MCHP, PCI_DEVICE_ID_MCHP_LAN969X) },
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, lan969x_ids);
+
+struct lan969x_priv {
+	struct uio_info switch_uio;
+	struct uio_info cpu_uio;
+	struct pci_dev *pdev;
+};
 
 static void lan969x_irq_unmask(struct irq_data *data)
 {
@@ -235,7 +249,7 @@ static int lan969x_irq_common_init(struct pci_dev *pdev, void __iomem *regs,
 			       LAN_OFFSET(CPU_INTR_IDENT2),
 			       LAN_OFFSET(CPU_INTR_TRIGGER2(0)),
 			       LAN_OFFSET(CPU_DST_INTR_MAP2(0)),
-			       0);
+			       BIT(IRQ_FDMA_LEGACY - 64));
 
 	/* Configure fourth domain (irq 96-127) */
 	lan969x_config_irqchip(irq_get_domain_generic_chip(domain, 96),
@@ -256,6 +270,50 @@ err_domain_remove:
 	irq_domain_remove(domain);
 
 	return ret;
+}
+
+static int lan969x_uio_bar(struct pci_dev *pdev, struct uio_info *uio,
+			   const char *name, int bar)
+{
+	int err;
+
+	uio->mem[0].name = name;
+	uio->mem[0].addr = pci_resource_start(pdev, bar);
+	uio->mem[0].size = pci_resource_len(pdev, bar);
+	uio->mem[0].memtype = UIO_MEM_PHYS;
+	uio->mem[0].internal_addr = devm_ioremap(&pdev->dev, uio->mem[0].addr,
+						 uio->mem[0].size);
+	uio->name = name;
+	uio->version = LAN969X_UIO_VERSION;
+	err = devm_uio_register_device(&pdev->dev, uio);
+	if (err)
+		dev_warn(&pdev->dev,
+			 "Could not register UIO driver for %s: %d\n", name,
+			 err);
+	return err;
+}
+
+static int lan969x_uio_init(struct pci_dev *pdev)
+{
+	struct lan969x_priv *priv;
+	struct uio_info *uio;
+	int err;
+
+	priv = devm_kzalloc(&pdev->dev, sizeof(*priv), GFP_KERNEL);
+	if (!priv)
+		return -ENOMEM;
+
+	priv->pdev = pdev;
+	uio = &priv->switch_uio;
+	uio->priv = priv;
+
+	err = lan969x_uio_bar(pdev, uio, "mscc_switch", LAN969X_CSR_BAR);
+	if (err)
+		return err;
+
+	uio = &priv->cpu_uio;
+	uio->priv = priv;
+	return lan969x_uio_bar(pdev, uio, "mscc_cpu", LAN969X_CPU_BAR);
 }
 
 static int lan969x_pci_probe(struct pci_dev *pdev,
@@ -290,6 +348,10 @@ static int lan969x_pci_probe(struct pci_dev *pdev,
 		dev_err(&pdev->dev, "Interrupt config failed: 0x%x\n", ret);
 		return ret;
 	}
+
+	ret = lan969x_uio_init(pdev);
+	if (ret)
+		return ret;
 
 	return of_platform_default_populate(pdev->dev.of_node, NULL, &pdev->dev);
 }
