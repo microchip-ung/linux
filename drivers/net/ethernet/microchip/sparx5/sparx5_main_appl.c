@@ -342,8 +342,13 @@ static int sparx5_appl_fdma(struct sparx5 *sparx5)
 {
 	int err;
 
-	if (!sparx5->fdma_irq || GCB_CHIP_ID_REV_ID_GET(sparx5->chip_id) <= 0)
+	if (!sparx5->fdma_irq)
 		return -EINVAL;
+
+	if (GCB_CHIP_ID_REV_ID_GET(sparx5->chip_id) <= 0) {
+		sparx5->fdma_irq = 0;
+		return -EINVAL;
+	}
 
 	err = devm_request_threaded_irq(sparx5->dev, sparx5->fdma_irq,
 					sparx5_fdma_handler, NULL, IRQF_SHARED,
