@@ -1,26 +1,46 @@
-// SPDX-License-Identifier: GPL-2.0+
-/* Microchip Sparx5 Switch driver VCAP Library
- *
- * Copyright (c) 2022 Microchip Technology Inc. and its subsidiaries.
- *
- * The Sparx5 Chip Register Model can be browsed at this location:
- * https://github.com/microchip-ung/sparx-5_reginfo
+/* SPDX-License-Identifier: GPL-2.0+ */
+/* Copyright (C) 2022 Microchip Technology Inc. and its subsidiaries.
+ * Microchip VCAP API
  */
 
-#ifndef __VCAP_API_DEBUGFS_H__
-#define __VCAP_API_DEBUGFS_H__
+#ifndef __VCAP_API_DEBUGFS__
+#define __VCAP_API_DEBUGFS__
 
 #include <linux/types.h>
-#include <linux/seq_file.h>
 #include <linux/debugfs.h>
+#include <linux/netdevice.h>
 
 #include "vcap_api.h"
-#include "vcap_api_client.h"
 
 #if defined(CONFIG_DEBUG_FS)
-struct dentry *vcap_debugfs(struct dentry *parent, struct vcap_control *vctrl);
+
+void vcap_port_debugfs(struct device *dev, struct dentry *parent,
+		       struct vcap_control *vctrl,
+		       struct net_device *ndev);
+
+/* Create a debugFS entry for a vcap instance */
+struct dentry *vcap_debugfs(struct device *dev, struct dentry *parent,
+			    struct vcap_control *vctrl);
+
 #else
-struct dentry *vcap_debugfs(struct dentry *parent, struct vcap_control *vctrl) { return NULL; }
+
+static inline void vcap_port_debugfs(struct device *dev, struct dentry *parent,
+				     struct vcap_control *vctrl,
+				     struct net_device *ndev)
+{
+}
+
+static inline struct dentry *vcap_debugfs(struct device *dev,
+					  struct dentry *parent,
+					  struct vcap_control *vctrl)
+{
+	return NULL;
+}
+
 #endif
 
-#endif /* __VCAP_API_DEBUGFS_H__ */
+void vcap_show_admin_info(struct vcap_control *vctrl,
+			  struct vcap_admin *admin,
+			  struct vcap_output_print *out);
+
+#endif /* __VCAP_API_DEBUGFS__ */

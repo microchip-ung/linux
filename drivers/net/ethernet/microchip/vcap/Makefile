@@ -5,7 +5,7 @@
 
 obj-$(CONFIG_VCAP) += vcap.o
 
-vcap-y += vcap_api.o vcap_netlink.o
+vcap-y += vcap_api.o vcap_tc.o vcap_netlink.o
 vcap-$(CONFIG_DEBUG_FS) += vcap_api_debugfs.o
 
-obj-$(CONFIG_VCAP_KUNIT_TEST) +=  vcap_ag_api_kunit.o
+obj-$(CONFIG_VCAP_KUNIT_TEST) +=  vcap_model_kunit.o
