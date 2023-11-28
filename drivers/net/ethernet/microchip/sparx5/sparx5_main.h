@@ -257,8 +257,6 @@ struct sparx5_port_tc {
 	bool block_shared[2];
 	 /* protocol assigned template per vcap lookup */
 	u16 flower_template_proto[SPARX5_VCAP_LOOKUP_MAX];
-	/* list of flower templates for this port */
-	struct list_head templates;
 	/* Port statistics */
 	struct flow_stats prev_mirror_stats;
 	struct sparx5_port_policer port_policer[SPX5_POLICERS_PER_PORT];
@@ -298,6 +296,7 @@ struct sparx5_port {
 	/* Frame preemption configuration */
 	struct sparx5_fp_port_conf fp;
 	struct sparx5_port_tc tc;
+	struct list_head tc_templates; /* list of TC templates on this port */
 };
 
 enum sparx5_core_clockfreq {

@@ -57,45 +57,6 @@ void sparx5_mirror_probe_debugfs(struct sparx5 *sparx5)
 			    &sparx5_mirror_probe_debugfs_fops);
 }
 
-static int sparx5_seq_printf(void *out, int arg, const char *fmt, ...)
-{
-	struct seq_file *seqf = out;
-	va_list args;
-
-	va_start(args, fmt);
-	seq_vprintf(seqf, fmt, args);
-	va_end(args);
-	return 0;
-}
-
-static int sparx5_vcap_debugfs_port_show(struct seq_file *m, void *unused)
-{
-	struct sparx5 *sparx5 = m->private;
-	struct vcap_control *ctrl;
-	struct vcap_admin *admin;
-
-	ctrl = sparx5->vcap_ctrl;
-	list_for_each_entry(admin, &ctrl->list, list) {
-		if (admin->vinst)
-			continue;
-		sparx5_vcap_port_info(sparx5, admin, sparx5_seq_printf, m, 0);
-	}
-	return 0;
-}
-DEFINE_SHOW_ATTRIBUTE(sparx5_vcap_debugfs_port);
-
-void sparx5_create_vcap_debugfs(struct sparx5 *sparx5,
-				struct vcap_control *ctrl)
-{
-	struct dentry *dir;
-	/* debug info about each vcap instance */
-	dir = vcap_debugfs(sparx5->debugfs_root, ctrl);
-	/* add debug info about port keyset config and port stickies */
-	if (dir)
-		debugfs_create_file("portkeysets", 0444, dir, sparx5,
-				    &sparx5_vcap_debugfs_port_fops);
-}
-
 static int sparx5_mactable_debugfs_show(struct seq_file *m, void *unused)
 {
 	struct sparx5 *sparx5 = m->private;

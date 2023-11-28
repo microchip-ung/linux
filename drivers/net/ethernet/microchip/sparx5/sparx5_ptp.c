@@ -10,6 +10,7 @@
 
 #include "sparx5_main_regs.h"
 #include "sparx5_main.h"
+#include "sparx5_tc.h"
 #include "sparx5_vcap_impl.h"
 #include "vcap_api_client.h"
 
@@ -106,18 +107,20 @@ static struct vcap_rule *sparx5_ptp_add_l2_key(struct sparx5_port *port)
 {
 	int rule_id = SPARX5_PTP_RULE_ID_OFFSET +
 		      port->portno * SPARX5_PTP_TRAP_RULES_CNT + 0;
+	struct vcap_control *vctrl = port->sparx5->vcap_ctrl;
 	int chain_id = SPARX5_VCAP_CID_IS2_L0;
 	int prio = (port->portno << 8) + 1;
 	struct vcap_rule *vrule;
 	int err;
 
-	vrule = vcap_alloc_rule(port->ndev, chain_id, VCAP_USER_PTP, prio, rule_id);
+	vrule = vcap_alloc_rule(vctrl, port->ndev, chain_id, VCAP_USER_PTP,
+				prio, rule_id);
 	if (!vrule || IS_ERR(vrule))
 		return vrule;
 
 	err = vcap_rule_add_key_u32(vrule, VCAP_KF_ETYPE, ETH_P_1588, ~0);
 	if (err) {
-		vcap_del_rule(port->ndev, rule_id);
+		vcap_del_rule(vctrl, port->ndev, rule_id);
 		return NULL;
 	}
 
@@ -128,18 +131,20 @@ static struct vcap_rule *sparx5_ptp_add_ipv4_event_key(struct sparx5_port *port)
 {
 	int rule_id = SPARX5_PTP_RULE_ID_OFFSET +
 		      port->portno * SPARX5_PTP_TRAP_RULES_CNT + 1;
+	struct vcap_control *vctrl = port->sparx5->vcap_ctrl;
 	int chain_id = SPARX5_VCAP_CID_IS2_L1;
 	int prio = (port->portno << 8) + 1;
 	struct vcap_rule *vrule;
 	int err;
 
-	vrule = vcap_alloc_rule(port->ndev, chain_id, VCAP_USER_PTP, prio, rule_id);
+	vrule = vcap_alloc_rule(vctrl, port->ndev, chain_id, VCAP_USER_PTP,
+				prio, rule_id);
 	if (!vrule || IS_ERR(vrule))
 		return vrule;
 
 	err = vcap_rule_add_key_u32(vrule, VCAP_KF_L4_DPORT, 319, ~0);
 	if (err) {
-		vcap_del_rule(port->ndev, rule_id);
+		vcap_del_rule(vctrl, port->ndev, rule_id);
 		return NULL;
 	}
 
@@ -150,18 +155,20 @@ static struct vcap_rule *sparx5_ptp_add_ipv4_general_key(struct sparx5_port *por
 {
 	int rule_id = SPARX5_PTP_RULE_ID_OFFSET +
 		      port->portno * SPARX5_PTP_TRAP_RULES_CNT + 2;
+	struct vcap_control *vctrl = port->sparx5->vcap_ctrl;
 	int chain_id = SPARX5_VCAP_CID_IS2_L1;
 	int prio = (port->portno << 8) + 1;
 	struct vcap_rule *vrule;
 	int err;
 
-	vrule = vcap_alloc_rule(port->ndev, chain_id, VCAP_USER_PTP, prio, rule_id);
+	vrule = vcap_alloc_rule(vctrl, port->ndev, chain_id, VCAP_USER_PTP,
+				prio, rule_id);
 	if (!vrule || IS_ERR(vrule))
 		return vrule;
 
 	err = vcap_rule_add_key_u32(vrule, VCAP_KF_L4_DPORT, 320, ~0);
 	if (err) {
-		vcap_del_rule(port->ndev, rule_id);
+		vcap_del_rule(vctrl, port->ndev, rule_id);
 		return NULL;
 	}
 
@@ -172,18 +179,20 @@ static struct vcap_rule *sparx5_ptp_add_ipv6_event_key(struct sparx5_port *port)
 {
 	int rule_id = SPARX5_PTP_RULE_ID_OFFSET +
 		      port->portno * SPARX5_PTP_TRAP_RULES_CNT + 3;
+	struct vcap_control *vctrl = port->sparx5->vcap_ctrl;
 	int chain_id = SPARX5_VCAP_CID_IS2_L2;
 	int prio = (port->portno << 8) + 1;
 	struct vcap_rule *vrule;
 	int err;
 
-	vrule = vcap_alloc_rule(port->ndev, chain_id, VCAP_USER_PTP, prio, rule_id);
+	vrule = vcap_alloc_rule(vctrl, port->ndev, chain_id, VCAP_USER_PTP,
+				prio, rule_id);
 	if (!vrule || IS_ERR(vrule))
 		return vrule;
 
 	err = vcap_rule_add_key_u32(vrule, VCAP_KF_L4_DPORT, 319, ~0);
 	if (err) {
-		vcap_del_rule(port->ndev, rule_id);
+		vcap_del_rule(vctrl, port->ndev, rule_id);
 		return NULL;
 	}
 
@@ -194,18 +203,20 @@ static struct vcap_rule *sparx5_ptp_add_ipv6_general_key(struct sparx5_port *por
 {
 	int rule_id = SPARX5_PTP_RULE_ID_OFFSET +
 		      port->portno * SPARX5_PTP_TRAP_RULES_CNT + 4;
+	struct vcap_control *vctrl = port->sparx5->vcap_ctrl;
 	int chain_id = SPARX5_VCAP_CID_IS2_L2;
 	int prio = (port->portno << 8) + 1;
 	struct vcap_rule *vrule;
 	int err;
 
-	vrule = vcap_alloc_rule(port->ndev, chain_id, VCAP_USER_PTP, prio, rule_id);
+	vrule = vcap_alloc_rule(vctrl, port->ndev, chain_id, VCAP_USER_PTP,
+				prio, rule_id);
 	if (!vrule || IS_ERR(vrule))
 		return vrule;
 
 	err = vcap_rule_add_key_u32(vrule, VCAP_KF_L4_DPORT, 320, ~0);
 	if (err) {
-		vcap_del_rule(port->ndev, rule_id);
+		vcap_del_rule(vctrl, port->ndev, rule_id);
 		return NULL;
 	}
 
@@ -244,7 +255,7 @@ free_rule:
 
 static int sparx5_ptp_del(struct sparx5_port *port, int rule_id)
 {
-	return vcap_del_rule(port->ndev, rule_id);
+	return vcap_del_rule(port->sparx5->vcap_ctrl, port->ndev, rule_id);
 }
 
 static int sparx5_ptp_del_l2(struct sparx5_port *port)
