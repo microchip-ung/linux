@@ -28,13 +28,16 @@ enum vcap_keyfield_set {
 	VCAP_KFS_ARP,               /* sparx5 is2 X6, sparx5 es2 X6, lan966x is2 X2, lan969x is2 X6, lan969x es2 X6 */
 	VCAP_KFS_DBL_VID,           /* lan966x is1 X1 */
 	VCAP_KFS_DMAC_VID,          /* lan966x is1 X1 */
+	VCAP_KFS_ETAG,              /* sparx5 is0 X2 */
 	VCAP_KFS_IP4_OTHER,         /* sparx5 is2 X6, sparx5 es2 X6, lan966x is2 X2, lan969x is2 X6, lan969x es2 X6 */
 	VCAP_KFS_IP4_TCP_UDP,       /* sparx5 is2 X6, sparx5 es2 X6, lan966x is2 X2, lan969x is2 X6, lan969x es2 X6 */
 	VCAP_KFS_IP6_OTHER,         /* lan966x is2 X4 */
 	VCAP_KFS_IP6_STD,           /* sparx5 is2 X6, sparx5 es2 X6, lan966x is2 X2, lan969x is2 X6, lan969x es2 X6 */
 	VCAP_KFS_IP6_TCP_UDP,       /* lan966x is2 X4 */
+	VCAP_KFS_IP6_VID,           /* sparx5 es2 X6 */
 	VCAP_KFS_IP_7TUPLE,         /* sparx5 is2 X12, sparx5 es2 X12, lan969x is2 X12, lan969x es2 X12 */
 	VCAP_KFS_ISDX,              /* sparx5 es0 X1, lan969x es0 X1 */
+	VCAP_KFS_LL_FULL,           /* sparx5 is0 X6 */
 	VCAP_KFS_MAC_ETYPE,         /* sparx5 is2 X6, sparx5 es2 X6, lan966x is2 X2, lan969x is2 X6, lan969x es2 X6 */
 	VCAP_KFS_MAC_LLC,           /* lan966x is2 X2 */
 	VCAP_KFS_MAC_SNAP,          /* lan966x is2 X2 */
@@ -45,6 +48,7 @@ enum vcap_keyfield_set {
 	VCAP_KFS_NORMAL_IP6,        /* lan966x is1 X4 */
 	VCAP_KFS_NORMAL_IP6_DMAC,   /* lan966x is1 X4 */
 	VCAP_KFS_OAM,               /* lan966x is2 X2 */
+	VCAP_KFS_PURE_5TUPLE_IP4,   /* sparx5 is0 X3 */
 	VCAP_KFS_RT,                /* lan966x is1 X1 */
 	VCAP_KFS_SMAC_SIP4,         /* lan966x is2 X1 */
 	VCAP_KFS_SMAC_SIP6,         /* lan966x is2 X2 */
@@ -56,6 +60,18 @@ enum vcap_keyfield_set {
  * Keys ending in _IS are booleans derived from frame data
  * Keys ending in _CLS are classified frame data
  *
+ * VCAP_KF_8021BR_ECID_BASE: W12, sparx5: is0
+ *   Used by 802.1BR Bridge Port Extension in an E-Tag
+ * VCAP_KF_8021BR_ECID_EXT: W8, sparx5: is0
+ *   Used by 802.1BR Bridge Port Extension in an E-Tag
+ * VCAP_KF_8021BR_E_TAGGED: W1, sparx5: is0
+ *   Set for frames containing an E-TAG (802.1BR Ethertype 893f)
+ * VCAP_KF_8021BR_GRP: W2, sparx5: is0
+ *   E-Tag group bits in 802.1BR Bridge Port Extension
+ * VCAP_KF_8021BR_IGR_ECID_BASE: W12, sparx5: is0
+ *   Used by 802.1BR Bridge Port Extension in an E-Tag
+ * VCAP_KF_8021BR_IGR_ECID_EXT: W8, sparx5: is0
+ *   Used by 802.1BR Bridge Port Extension in an E-Tag
  * VCAP_KF_8021CB_R_TAGGED_IS: W1, lan966x: is1
  *   Set if frame contains an RTAG: IEEE 802.1CB (FRER Redundancy tag, Ethertype
  *   0xf1c1)
@@ -104,6 +120,8 @@ enum vcap_keyfield_set {
  * VCAP_KF_8021Q_VLAN_TAGS: W3, sparx5: is0, lan969x: is0
  *   Number of VLAN tags in frame: 0: Untagged, 1: Single tagged, 3: Double
  *   tagged, 7: Triple tagged
+ * VCAP_KF_ACL_GRP_ID: W8, sparx5: es2
+ *   Used in interface map table
  * VCAP_KF_ARP_ADDR_SPACE_OK_IS: W1, sparx5: is2/es2, lan966x: is2, lan969x:
  *   is2/es2
  *   Set if hardware address is Ethernet
@@ -133,14 +151,14 @@ enum vcap_keyfield_set {
  * VCAP_KF_HOST_MATCH: W1, lan966x: is2
  *   The action from the SMAC_SIP4 or SMAC_SIP6 lookups. Used for IP source
  *   guarding.
- * VCAP_KF_IF_EGR_PORT_MASK: sparx5 es0 W7, sparx5 es2 W32, lan966x es0 W4,
- *   lan969x es0 W6, lan969x es2 W32
+ * VCAP_KF_IF_EGR_PORT_MASK: W32, sparx5: es2, lan969x: es2
  *   Egress port mask, one bit per port
  * VCAP_KF_IF_EGR_PORT_MASK_RNG: W3, sparx5: es2, lan969x: es2
  *   Select which 32 port group is available in IF_EGR_PORT (or virtual ports or
  *   CPU queue)
- * VCAP_KF_IF_IGR_PORT: sparx5 es2 W9, lan966x is1 W3, lan966x is2 W4, lan966x
- *   es0 W4, lan969x es2 W7
+ * VCAP_KF_IF_EGR_PORT_NO: *** No docstring ***
+ * VCAP_KF_IF_IGR_PORT: sparx5 is0 W7, sparx5 es2 W9, lan966x is1 W3, lan966x
+ *   is2 W4, lan966x es0 W4, lan969x es2 W7
  *   Sparx5: Logical ingress port number retrieved from
  *   ANA_CL::PORT_ID_CFG.LPORT_NUM or ERLEG, LAN966x: ingress port nunmber
  * VCAP_KF_IF_IGR_PORT_MASK: sparx5 is0 W65, sparx5 is2 W32, sparx5 is2 W65,
@@ -340,7 +358,7 @@ enum vcap_keyfield_set {
  *   Set if frame’s EtherType = 0x8902
  * VCAP_KF_PDU_TYPE: W4, lan966x: es0
  *   PDU type value (none, OAM CCM, MRP, DLR, RTE, IPv4, IPv6, OAM non-CCM)
- * VCAP_KF_PROT_ACTIVE: W1, sparx5: es0, lan969x: es0
+ * VCAP_KF_PROT_ACTIVE: W1, sparx5: es0/es2, lan969x: es0
  *   Protection is active
  * VCAP_KF_RED_TAGGED: W1, lan969x: is0/is2/es2
  *   Tagged by the redbox?
@@ -361,7 +379,7 @@ enum vcap_keyfield_set {
  *   is0/is2/es2
  *   Set if frame is IPv4/IPv6 TCP or UDP frame (IP protocol/next header equals 6
  *   or 17)
- * VCAP_KF_TYPE: sparx5 is0 W1, sparx5 is0 W2, sparx5 is2 W4, sparx5 is2 W2,
+ * VCAP_KF_TYPE: sparx5 is0 W2, sparx5 is0 W1, sparx5 is2 W4, sparx5 is2 W2,
  *   sparx5 es0 W1, sparx5 es2 W3, lan966x is1 W1, lan966x is1 W2, lan966x is2 W4,
  *   lan966x is2 W2, lan969x is0 W1, lan969x is0 W2, lan969x is2 W4, lan969x is2
  *   W2, lan969x es0 W1, lan969x es2 W3
@@ -371,6 +389,12 @@ enum vcap_keyfield_set {
 /* Keyfield names */
 enum vcap_key_field {
 	VCAP_KF_NO_VALUE,  /* initial value */
+	VCAP_KF_8021BR_ECID_BASE,
+	VCAP_KF_8021BR_ECID_EXT,
+	VCAP_KF_8021BR_E_TAGGED,
+	VCAP_KF_8021BR_GRP,
+	VCAP_KF_8021BR_IGR_ECID_BASE,
+	VCAP_KF_8021BR_IGR_ECID_EXT,
 	VCAP_KF_8021CB_R_TAGGED_IS,
 	VCAP_KF_8021Q_DEI0,
 	VCAP_KF_8021Q_DEI1,
@@ -391,6 +415,7 @@ enum vcap_key_field {
 	VCAP_KF_8021Q_VLAN_DBL_TAGGED_IS,
 	VCAP_KF_8021Q_VLAN_TAGGED_IS,
 	VCAP_KF_8021Q_VLAN_TAGS,
+	VCAP_KF_ACL_GRP_ID,
 	VCAP_KF_ARP_ADDR_SPACE_OK_IS,
 	VCAP_KF_ARP_LEN_OK_IS,
 	VCAP_KF_ARP_OPCODE,
@@ -404,6 +429,7 @@ enum vcap_key_field {
 	VCAP_KF_HOST_MATCH,
 	VCAP_KF_IF_EGR_PORT_MASK,
 	VCAP_KF_IF_EGR_PORT_MASK_RNG,
+	VCAP_KF_IF_EGR_PORT_NO,
 	VCAP_KF_IF_IGR_PORT,
 	VCAP_KF_IF_IGR_PORT_MASK,
 	VCAP_KF_IF_IGR_PORT_MASK_L3,
@@ -528,6 +554,7 @@ enum vcap_actionfield_set {
  * VCAP_AF_CPU_COPY_ENA: W1, sparx5: is2/es2, lan966x: is1/is2, lan969x: is2/es2
  *   Setting this bit to 1 causes all frames that hit this action to be copied to
  *   the CPU extraction queue specified in CPU_QUEUE_NUM.
+ * VCAP_AF_CPU_QU: *** No docstring ***
  * VCAP_AF_CPU_QUEUE_NUM: W3, sparx5: is2/es2, lan966x: is1/is2, lan969x:
  *   is2/es2
  *   CPU queue number. Used when CPU_COPY_ENA is set.
@@ -609,6 +636,7 @@ enum vcap_actionfield_set {
  *   See isdx_add_replace_sel
  * VCAP_AF_LLCT_ENA: *** No docstring ***
  * VCAP_AF_LLCT_PORT: *** No docstring ***
+ * VCAP_AF_LOOP_ENA: *** No docstring ***
  * VCAP_AF_LRN_DIS: W1, sparx5: is2, lan966x: is2, lan969x: is2
  *   Setting this bit to 1 disables learning of frames hitting this action.
  * VCAP_AF_MAP_IDX: sparx5 is0 W9, lan969x is0 W7
@@ -669,10 +697,11 @@ enum vcap_actionfield_set {
  *   classification is used.
  * VCAP_AF_PCP_VAL: W3, sparx5: is0, lan966x: is1, lan969x: is0
  *   See PCP_ENA.
+ * VCAP_AF_PIPELINE_ACT: *** No docstring ***
  * VCAP_AF_PIPELINE_FORCE_ENA: W1, sparx5: is2, lan969x: is2
  *   If set, use PIPELINE_PT unconditionally and set PIPELINE_ACT = NONE if
  *   PIPELINE_PT == NONE. Overrules previous settings of pipeline point.
- * VCAP_AF_PIPELINE_PT: W5, sparx5: is2, lan969x: is2
+ * VCAP_AF_PIPELINE_PT: sparx5 is2 W5, sparx5 es0 W2, lan969x is2 W5
  *   Pipeline point used if PIPELINE_FORCE_ENA is set
  * VCAP_AF_PN_STAT_OFS: *** No docstring ***
  * VCAP_AF_POLICE_ENA: W1, sparx5: is2/es2, lan966x: is1/is2, lan969x: is2/es2
@@ -723,6 +752,7 @@ enum vcap_actionfield_set {
  * VCAP_AF_SGID_ENA: *** No docstring ***
  * VCAP_AF_SGID_VAL: *** No docstring ***
  * VCAP_AF_SRC_FILTER_ENA: *** No docstring ***
+ * VCAP_AF_SWAP_MACS_ENA: *** No docstring ***
  * VCAP_AF_TAG_A_DEI_SEL: sparx5 es0 W3, lan966x es0 W2, lan969x es0 W3
  *   Selects PCP for ES0 tag A. 0: Classified DEI. 1: DEI_A_VAL. 2: DP and QoS
  *   mapped to PCP (per port table). 3: DP.
@@ -800,6 +830,7 @@ enum vcap_action_field {
 	VCAP_AF_COPY_PORT_NUM,
 	VCAP_AF_COPY_QUEUE_NUM,
 	VCAP_AF_CPU_COPY_ENA,
+	VCAP_AF_CPU_QU,
 	VCAP_AF_CPU_QUEUE_NUM,
 	VCAP_AF_CT_SEL,
 	VCAP_AF_CUSTOM_ACE_TYPE_ENA,
@@ -832,6 +863,7 @@ enum vcap_action_field {
 	VCAP_AF_ISDX_VAL,
 	VCAP_AF_LLCT_ENA,
 	VCAP_AF_LLCT_PORT,
+	VCAP_AF_LOOP_ENA,
 	VCAP_AF_LRN_DIS,
 	VCAP_AF_MAP_IDX,
 	VCAP_AF_MAP_KEY,
@@ -854,6 +886,7 @@ enum vcap_action_field {
 	VCAP_AF_PCP_C_VAL,
 	VCAP_AF_PCP_ENA,
 	VCAP_AF_PCP_VAL,
+	VCAP_AF_PIPELINE_ACT,
 	VCAP_AF_PIPELINE_FORCE_ENA,
 	VCAP_AF_PIPELINE_PT,
 	VCAP_AF_PN_STAT_OFS,
@@ -878,6 +911,7 @@ enum vcap_action_field {
 	VCAP_AF_SGID_ENA,
 	VCAP_AF_SGID_VAL,
 	VCAP_AF_SRC_FILTER_ENA,
+	VCAP_AF_SWAP_MACS_ENA,
 	VCAP_AF_TAG_A_DEI_SEL,
 	VCAP_AF_TAG_A_PCP_SEL,
 	VCAP_AF_TAG_A_TPID_SEL,
