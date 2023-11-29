@@ -25,9 +25,14 @@
 #define PCI_DEVICE_ID_MCHP_LAN969X	0x9690
 
 #define LAN969X_CPU_BAR		1
-#define LAN969X_NR_IRQ		121
 #define CPU_TARGET_OFFSET	(0xc0000)
 #define CPU_TARGET_LENGTH	(0x10000)
+
+#define LAN969X_NR_IRQ		121
+
+#define IRQ_XTR_RDY		10
+#define IRQ_GPIO		15
+#define IRQ_SGPIO		16
 
 static struct pci_device_id lan969x_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_MCHP, PCI_DEVICE_ID_MCHP_LAN969X) },
@@ -48,12 +53,70 @@ static void lan969x_irq_unmask(struct irq_data *data)
 	irq_gc_unlock(gc);
 }
 
-static void lan969x_irq_handler_domain(struct irq_domain *d,
+/*
+ * LAN969x level encoding: this is a 2 bit value with
+ * - LSB in CPU:INTR:INTR_TRIGGER*[0].INTR_TRIGGER
+ * - MSB in CPU:INTR:INTR_TRIGGER*[1].INTR_TRIGGER
+ * 0: Interrupt is level-activated
+ * 1: Interrupt is edge-triggered
+ * 2: Interrupt is falling-edge-triggered
+ * 3: Interrupt is rising-edge-triggered
+ */
+static int lan969x_irq_set_type(struct irq_data *data, unsigned int flow_type)
+{
+	struct irq_chip_generic *gc = irq_data_get_irq_chip_data(data);
+	struct irq_chip_type *ct = irq_data_get_chip_type(data);
+	int chip_hwirq = data->hwirq % 32;
+	u32 new_lsb = 0, new_msb = 0;
+	u32 lsb, msb;
+
+	switch (flow_type) {
+	case IRQ_TYPE_NONE:
+		return -1;
+	case IRQ_TYPE_EDGE_RISING:
+		new_lsb |= BIT(chip_hwirq);
+		new_msb |= BIT(chip_hwirq);
+		break;
+	case IRQ_TYPE_EDGE_FALLING:
+		new_msb |= BIT(chip_hwirq);
+		break;
+	case IRQ_TYPE_EDGE_BOTH:
+		new_lsb |= BIT(chip_hwirq);
+		break;
+	case IRQ_TYPE_LEVEL_LOW:
+	case IRQ_TYPE_LEVEL_HIGH:
+		break;
+	}
+
+	irq_gc_lock(gc);
+	/* Read the trigger register values */
+	lsb = irq_reg_readl(gc, ct->regs.polarity);
+	msb = irq_reg_readl(gc, ct->regs.polarity + 4);
+	/* Mask out the current trigger values */
+	lsb &= ~BIT(chip_hwirq);
+	msb &= ~BIT(chip_hwirq);
+	/* Add the new trigger values */
+	lsb |= new_lsb;
+	msb |= new_msb;
+	/* Write the new trigger register values */
+	irq_reg_writel(gc, lsb, ct->regs.polarity);
+	irq_reg_writel(gc, msb, ct->regs.polarity + 4);
+	irq_gc_unlock(gc);
+
+	irqd_set_trigger_type(data, flow_type);
+	if (flow_type & (IRQ_TYPE_LEVEL_LOW | IRQ_TYPE_LEVEL_HIGH))
+		irq_set_handler_locked(data, handle_level_irq);
+	else
+		irq_set_handler_locked(data, handle_edge_irq);
+	return IRQ_SET_MASK_OK;
+}
+
+static void lan969x_irq_handler_domain(struct irq_domain *dom,
 				       struct irq_chip *chip,
 				       struct irq_desc *desc,
 				       u32 first_irq)
 {
-	struct irq_chip_generic *gc = irq_get_domain_generic_chip(d, first_irq);
+	struct irq_chip_generic *gc = irq_get_domain_generic_chip(dom, first_irq);
 	u32 reg = irq_reg_readl(gc, gc->chip_types[0].regs.type);
 	u32 mask;
 	u32 val;
@@ -68,7 +131,7 @@ static void lan969x_irq_handler_domain(struct irq_domain *d,
 	while (reg) {
 		u32 hwirq = __fls(reg);
 
-		generic_handle_irq(irq_find_mapping(d, hwirq + first_irq));
+		generic_handle_irq(irq_find_mapping(dom, hwirq + first_irq));
 		reg &= ~(BIT(hwirq));
 	}
 
@@ -81,18 +144,48 @@ static void lan969x_irq_handler_domain(struct irq_domain *d,
 
 static void lan969x_irq_handler(struct irq_desc *desc)
 {
-	struct irq_domain *d = irq_desc_get_handler_data(desc);
+	struct irq_domain *dom = irq_desc_get_handler_data(desc);
 	struct irq_chip *chip = irq_desc_get_chip(desc);
 
-	lan969x_irq_handler_domain(d, chip, desc, 0);
-	lan969x_irq_handler_domain(d, chip, desc, 32);
+	lan969x_irq_handler_domain(dom, chip, desc, 0);
+	lan969x_irq_handler_domain(dom, chip, desc, 32);
+	lan969x_irq_handler_domain(dom, chip, desc, 64);
+	lan969x_irq_handler_domain(dom, chip, desc, 96);
+}
+
+static void lan969x_config_irqchip(struct irq_chip_generic *gc,
+				   void __iomem *regs,
+				   dma_addr_t acknowledge,
+				   dma_addr_t atomic_disable,
+				   dma_addr_t atomic_enable,
+				   dma_addr_t identity,
+				   dma_addr_t trigger,
+				   dma_addr_t map,
+				   u32 mask)
+{
+	gc->reg_base = regs;
+	gc->chip_types[0].regs.ack = acknowledge;
+	gc->chip_types[0].regs.mask = atomic_disable;
+	gc->chip_types[0].regs.enable = atomic_enable;
+	gc->chip_types[0].regs.type = identity;
+	gc->chip_types[0].regs.polarity = trigger;
+	gc->chip_types[0].chip.irq_ack = irq_gc_ack_set_bit;
+	gc->chip_types[0].chip.irq_mask = irq_gc_mask_set_bit;
+	gc->chip_types[0].chip.irq_unmask = lan969x_irq_unmask;
+	gc->chip_types[0].chip.irq_set_type = lan969x_irq_set_type;
+	gc->chip_types[0].mask_cache = &gc->mask_cache;
+	gc->mask_cache = mask;
+
+	/* Mask and ack interrupts */
+	irq_reg_writel(gc, 0, atomic_enable);
+	irq_reg_writel(gc, mask, acknowledge);
+	irq_reg_writel(gc, mask, map);
 }
 
 static int lan969x_irq_common_init(struct pci_dev *pdev, void __iomem *regs,
 				   int size)
 {
 	struct device_node *node = pdev->dev.of_node;
-	struct irq_chip_generic *gc;
 	struct irq_domain *domain;
 	int ret;
 
@@ -109,42 +202,53 @@ static int lan969x_irq_common_init(struct pci_dev *pdev, void __iomem *regs,
 		goto err_domain_remove;
 	}
 
-	/* Get first domain(0-31) */
-	gc = irq_get_domain_generic_chip(domain, 0);
-	gc->reg_base = regs;
-	gc->chip_types[0].regs.enable = LAN_OFFSET(CPU_INTR_ENA_SET);
-	gc->chip_types[0].regs.type = LAN_OFFSET(CPU_DST_INTR_IDENT(0));
-	gc->chip_types[0].regs.ack = LAN_OFFSET(CPU_INTR_STICKY);
-	gc->chip_types[0].regs.mask = LAN_OFFSET(CPU_INTR_ENA_CLR);
-	gc->chip_types[0].chip.irq_ack = irq_gc_ack_set_bit;
-	gc->chip_types[0].chip.irq_mask = irq_gc_mask_set_bit;
-	gc->chip_types[0].chip.irq_unmask = lan969x_irq_unmask;
-	/* Enable interrupts ANA, PTP-SYNC, PTP, XTR, INJ, GPIO, SGPIO */
-	gc->mask_cache = 0x18f80;
 
-	irq_reg_writel(gc, 0x0, LAN_OFFSET(CPU_INTR_ENA));
-	irq_reg_writel(gc, 0x18f80, LAN_OFFSET(CPU_INTR_STICKY));
-	irq_reg_writel(gc, 0x18f80, LAN_OFFSET(CPU_DST_INTR_MAP(0)));
+	/* Configure first domain (irq 0-31) */
+	lan969x_config_irqchip(irq_get_domain_generic_chip(domain, 0),
+			       regs,
+			       LAN_OFFSET(CPU_INTR_STICKY),
+			       LAN_OFFSET(CPU_INTR_ENA_CLR),
+			       LAN_OFFSET(CPU_INTR_ENA_SET),
+			       LAN_OFFSET(CPU_INTR_IDENT),
+			       LAN_OFFSET(CPU_INTR_TRIGGER(0)),
+			       LAN_OFFSET(CPU_DST_INTR_MAP(0)),
+			       BIT(IRQ_SGPIO) | BIT(IRQ_GPIO) |
+			       BIT(IRQ_XTR_RDY));
 
-	/* Get second domain(32-63) */
-	gc = irq_get_domain_generic_chip(domain, 32);
-	gc->reg_base = regs;
-	gc->chip_types[0].regs.enable = LAN_OFFSET(CPU_INTR_ENA_SET1);
-	gc->chip_types[0].regs.type = LAN_OFFSET(CPU_DST_INTR_IDENT1(0));
-	gc->chip_types[0].regs.ack = LAN_OFFSET(CPU_INTR_STICKY1);
-	gc->chip_types[0].regs.mask = LAN_OFFSET(CPU_INTR_ENA_CLR1);
-	gc->chip_types[0].chip.irq_ack = irq_gc_ack_set_bit;
-	gc->chip_types[0].chip.irq_mask = irq_gc_mask_set_bit;
-	gc->chip_types[0].chip.irq_unmask = lan969x_irq_unmask;
-	/* Enable interrupts FLX0, FLX1, FLX2, FLX3, FLX4 */
-	gc->mask_cache = 0x7c000;
+	/* Configure second domain (irq 32-63) */
+	lan969x_config_irqchip(irq_get_domain_generic_chip(domain, 32),
+			       regs,
+			       LAN_OFFSET(CPU_INTR_STICKY1),
+			       LAN_OFFSET(CPU_INTR_ENA_CLR1),
+			       LAN_OFFSET(CPU_INTR_ENA_SET1),
+			       LAN_OFFSET(CPU_INTR_IDENT1),
+			       LAN_OFFSET(CPU_INTR_TRIGGER1(0)),
+			       LAN_OFFSET(CPU_DST_INTR_MAP1(0)),
+			       0);
 
-	irq_reg_writel(gc, 0x0, LAN_OFFSET(CPU_INTR_ENA1));
-	irq_reg_writel(gc, 0x7c000, LAN_OFFSET(CPU_INTR_STICKY1));
-	irq_reg_writel(gc, 0x7c000, LAN_OFFSET(CPU_DST_INTR_MAP1(0)));
+	/* Configure third domain (irq 64-95) */
+	lan969x_config_irqchip(irq_get_domain_generic_chip(domain, 64),
+			       regs,
+			       LAN_OFFSET(CPU_INTR_STICKY2),
+			       LAN_OFFSET(CPU_INTR_ENA_CLR2),
+			       LAN_OFFSET(CPU_INTR_ENA_SET2),
+			       LAN_OFFSET(CPU_INTR_IDENT2),
+			       LAN_OFFSET(CPU_INTR_TRIGGER2(0)),
+			       LAN_OFFSET(CPU_DST_INTR_MAP2(0)),
+			       0);
 
-	irq_set_chained_handler_and_data(pdev->irq, lan969x_irq_handler,
-					 domain);
+	/* Configure fourth domain (irq 96-127) */
+	lan969x_config_irqchip(irq_get_domain_generic_chip(domain, 96),
+			       regs,
+			       LAN_OFFSET(CPU_INTR_STICKY3),
+			       LAN_OFFSET(CPU_INTR_ENA_CLR3),
+			       LAN_OFFSET(CPU_INTR_ENA_SET3),
+			       LAN_OFFSET(CPU_INTR_IDENT3),
+			       LAN_OFFSET(CPU_INTR_TRIGGER3(0)),
+			       LAN_OFFSET(CPU_DST_INTR_MAP3(0)),
+			       0);
+
+	irq_set_chained_handler_and_data(pdev->irq, lan969x_irq_handler, domain);
 
 	return 0;
 

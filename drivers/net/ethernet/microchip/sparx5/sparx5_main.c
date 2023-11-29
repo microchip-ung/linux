@@ -239,6 +239,21 @@ static int qlim_wm(struct sparx5 *sparx5, int fraction)
 	return (buf_mem / SPX5_BUFFER_CELL_SZ - 100) * fraction / 100;
 }
 
+static void sparx5_map_resources(struct sparx5 *sparx5, struct resource *iores[])
+{
+	struct resource *res;
+
+	res = platform_get_resource_byname(sparx5->pdev, IORESOURCE_MEM, "cpu");
+	if (res && IO_RANGES > 0)
+		iores[0] = res;
+	res = platform_get_resource_byname(sparx5->pdev, IORESOURCE_MEM, "dev");
+	if (res && IO_RANGES > 1)
+		iores[1] = res;
+	res = platform_get_resource_byname(sparx5->pdev, IORESOURCE_MEM, "gcb");
+	if (res && IO_RANGES > 2)
+		iores[2] = res;
+}
+
 static int sparx5_create_targets(struct sparx5 *sparx5)
 {
 	const struct sparx5_main_io_resource *iomap;
@@ -260,9 +275,8 @@ static int sparx5_create_targets(struct sparx5 *sparx5)
 			idx++;
 		}
 	}
+	sparx5_map_resources(sparx5, iores);
 	for (idx = 0; idx < ioranges; idx++) {
-		iores[idx] = platform_get_resource(sparx5->pdev, IORESOURCE_MEM,
-						   idx);
 		if (!iores[idx]) {
 			dev_err(sparx5->dev, "Invalid resource\n");
 			return -EINVAL;
@@ -810,6 +824,24 @@ static void sparx5_cleanup_ports(struct sparx5 *sparx5)
 	sparx5_destroy_netdevs(sparx5);
 }
 
+/* Discover if the parent node is a PCIe device */
+static bool sparx5_is_pcie_device(struct sparx5 *sparx5)
+{
+	struct device_node *parent = of_get_parent(sparx5->dev->of_node);
+	struct property *prop;
+	const char *name;
+
+	if (parent == NULL)
+		return false;
+	prop = of_find_property(parent, "compatible", NULL);
+	if (prop == NULL)
+		return false;
+	name = of_prop_next_string(prop, NULL);
+	if (name == NULL)
+		return false;
+	return strncmp(name, "pci", 3) == 0;
+}
+
 static int mchp_sparx5_probe(struct platform_device *pdev)
 {
 	struct initial_port_config *configs, *config;
@@ -830,6 +862,8 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, sparx5);
 	sparx5->pdev = pdev;
 	sparx5->dev = &pdev->dev;
+
+	sparx5->is_pcie_device = sparx5_is_pcie_device(sparx5);
 
 	data = device_get_match_data(sparx5->dev);
 	if (!data)
