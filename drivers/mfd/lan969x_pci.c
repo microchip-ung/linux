@@ -38,6 +38,7 @@
 #define IRQ_XTR_RDY		10
 #define IRQ_GPIO		15
 #define IRQ_SGPIO		16
+#define IRQ_FLEXCOM3		49
 #define IRQ_FDMA_LEGACY		88
 
 #define LAN969X_UIO_VERSION	"1.0.0"
@@ -238,7 +239,7 @@ static int lan969x_irq_common_init(struct pci_dev *pdev, void __iomem *regs,
 			       LAN_OFFSET(CPU_INTR_IDENT1),
 			       LAN_OFFSET(CPU_INTR_TRIGGER1(0)),
 			       LAN_OFFSET(CPU_DST_INTR_MAP1(0)),
-			       0);
+			       BIT(IRQ_FLEXCOM3 - 32));
 
 	/* Configure third domain (irq 64-95) */
 	lan969x_config_irqchip(irq_get_domain_generic_chip(domain, 64),
@@ -287,9 +288,10 @@ static int lan969x_uio_bar(struct pci_dev *pdev, struct uio_info *uio,
 	uio->version = LAN969X_UIO_VERSION;
 	err = devm_uio_register_device(&pdev->dev, uio);
 	if (err)
-		dev_warn(&pdev->dev,
-			 "Could not register UIO driver for %s: %d\n", name,
-			 err);
+		if (err != -EPROBE_DEFER)
+			dev_warn(&pdev->dev,
+				 "Could not register UIO driver for %s: %d\n",
+				 name, err);
 	return err;
 }
 
