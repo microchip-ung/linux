@@ -114,11 +114,39 @@
 				};
 			};
 
+			lan969x_flx3: flexcom@e0064000 {
+				compatible = "atmel,sama5d2-flexcom";
+				reg = <0xe0064000 0x100>;
+				clocks = <&fabric_clk>;
+				#address-cells = <1>;
+				#size-cells = <1>;
+				ranges = <0x0 0xe0064000 0x800>;
+
+				atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_TWI>;
+				status = "okay";
+
+				lan969x_i2c3: i2c@600 {
+					compatible = "microchip,sam9x60-i2c";
+					reg = <0x600 0x200>;
+					interrupts = <49 IRQ_TYPE_LEVEL_HIGH>;
+					clocks = <&fabric_clk>;
+					#address-cells = <1>;
+					#size-cells = <0>;
+					pinctrl-0 = <&fc3_pins>;
+					pinctrl-names = "default";
+					i2c-analog-filter;
+					i2c-digital-filter;
+					i2c-digital-filter-width-ns = <35>;
+					i2c-sda-hold-time-ns = <1500>;
+					status = "okay";
+				};
+			};
+
 			i2c-mux {
 				compatible = "i2c-mux-gpio";
 				#address-cells = <1>;
 				#size-cells = <0>;
-				i2c-parent = <&i2c3>;
+				i2c-parent = <&lan969x_i2c3>;
 
 				mux-gpios = <&sgpio_out 0 1 GPIO_ACTIVE_HIGH
 					     &sgpio_out 0 2 GPIO_ACTIVE_HIGH
@@ -196,6 +224,57 @@
 				reg = <0xe3410000 0x150000>;
 			};
 
+			leds {
+				compatible = "gpio-leds";
+
+				led-s6-green {
+					label = "s6:green";
+					gpios = <&sgpio_out 6 0 GPIO_ACTIVE_LOW>;
+					default-state = "off";
+				};
+
+				led-s6-yellow {
+					label = "s6:yellow";
+					gpios = <&sgpio_out 6 1 GPIO_ACTIVE_LOW>;
+					default-state = "off";
+				};
+
+				led-s7-green {
+					label = "s7:green";
+					gpios = <&sgpio_out 7 0 GPIO_ACTIVE_LOW>;
+					default-state = "off";
+				};
+
+				led-s7-yellow {
+					label = "s7:yellow";
+					gpios = <&sgpio_out 7 1 GPIO_ACTIVE_LOW>;
+					default-state = "off";
+				};
+
+				led-s8-green {
+					label = "s8:green";
+					gpios = <&sgpio_out 8 0 GPIO_ACTIVE_LOW>;
+					default-state = "off";
+				};
+
+				led-s8-yellow {
+					label = "s8:yellow";
+					gpios = <&sgpio_out 8 1 GPIO_ACTIVE_LOW>;
+					default-state = "off";
+				};
+
+				led-s9-green {
+					label = "s9:green";
+					gpios = <&sgpio_out 9 0 GPIO_ACTIVE_LOW>;
+					default-state = "off";
+				};
+
+				led-s9-yellow {
+					label = "s9:yellow";
+					gpios = <&sgpio_out 9 1 GPIO_ACTIVE_LOW>;
+					default-state = "off";
+				};
+			};
 		};
 	};
 };
