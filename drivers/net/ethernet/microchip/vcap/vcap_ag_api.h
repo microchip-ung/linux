@@ -31,6 +31,7 @@ enum vcap_keyfield_set {
 	VCAP_KFS_ETAG,              /* sparx5 is0 X2 */
 	VCAP_KFS_IP4_OTHER,         /* sparx5 is2 X6, sparx5 es2 X6, lan966x is2 X2, lan969x is2 X6, lan969x es2 X6 */
 	VCAP_KFS_IP4_TCP_UDP,       /* sparx5 is2 X6, sparx5 es2 X6, lan966x is2 X2, lan969x is2 X6, lan969x es2 X6 */
+	VCAP_KFS_IP4_VID,           /* sparx5 es2 X3 */
 	VCAP_KFS_IP6_OTHER,         /* lan966x is2 X4 */
 	VCAP_KFS_IP6_STD,           /* sparx5 is2 X6, sparx5 es2 X6, lan966x is2 X2, lan969x is2 X6, lan969x es2 X6 */
 	VCAP_KFS_IP6_TCP_UDP,       /* lan966x is2 X4 */
@@ -424,6 +425,7 @@ enum vcap_key_field {
 	VCAP_KF_ARP_SENDER_MATCH_IS,
 	VCAP_KF_ARP_TGT_MATCH_IS,
 	VCAP_KF_COSID_CLS,
+	VCAP_KF_ES0_ISDX_KEY_ENA,
 	VCAP_KF_ETYPE,
 	VCAP_KF_ETYPE_LEN_IS,
 	VCAP_KF_HOST_MATCH,
@@ -495,6 +497,7 @@ enum vcap_key_field {
 	VCAP_KF_LOOKUP_GEN_IDX_SEL,
 	VCAP_KF_LOOKUP_INDEX,
 	VCAP_KF_LOOKUP_PAG,
+	VCAP_KF_MIRROR_PROBE,
 	VCAP_KF_OAM_CCM_CNTS_EQ0,
 	VCAP_KF_OAM_DETECTED,
 	VCAP_KF_OAM_FLAGS,

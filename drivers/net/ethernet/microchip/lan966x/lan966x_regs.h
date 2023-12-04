@@ -6150,9 +6150,11 @@ enum lan966x_target {
 #define REW_STAT_CFG              __REG(TARGET_REW,\
 					0, 1, 3072, 0, 1, 528, 520, 0, 1, 4)
 
-#define REW_STAT_CFG_STAT_MODE(x)                ((x) & GENMASK(1, 0))
-#define REW_STAT_CFG_STAT_MODE_M                 GENMASK(1, 0)
-#define REW_STAT_CFG_STAT_MODE_X(x)              ((x) & GENMASK(1, 0))
+#define REW_STAT_CFG_STAT_MODE                   GENMASK(1, 0)
+#define REW_STAT_CFG_STAT_MODE_SET(x)\
+	FIELD_PREP(REW_STAT_CFG_STAT_MODE, x)
+#define REW_STAT_CFG_STAT_MODE_GET(x)\
+	FIELD_GET(REW_STAT_CFG_STAT_MODE, x)
 
 /*      SYS:SYSTEM:RESET_CFG */
 #define SYS_RESET_CFG             __REG(TARGET_SYS, 0, 1, 4128, 0, 1, 168, 0, 0, 1, 4)

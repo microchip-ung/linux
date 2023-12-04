@@ -5,10 +5,10 @@
 #include <linux/if_bridge.h>
 
 #include "lan966x_afi.h"
-#include "lan966x_vcap_impl.h"
 #include "lan966x_vcap_utils.h"
 
 #include "lan966x_cfm.h"
+#include "vcap_api_client.h"
 
 #define PRIO_CNT 8
 #define MEP_CCM_MEGID_CFG_REPLICATION 12
@@ -669,7 +669,8 @@ static int lan966x_add_raps_is2_rule(struct lan966x_port *port, u32 vid)
 	struct vcap_rule *vrule;
 	int err;
 
-	vrule = vcap_alloc_rule(port->dev, chain_id, VCAP_USER_CFM, prio, rule_id);
+	vrule = vcap_alloc_rule(port->lan966x->vcap_ctrl, port->dev, chain_id,
+				VCAP_USER_CFM, prio, rule_id);
 	if (!vrule || IS_ERR(vrule))
 		return -ENOMEM;
 
@@ -706,7 +707,7 @@ static int lan966x_mod_raps_is2_rule(struct lan966x_port *port,
 	u8 mask_mode;
 	int err;
 
-	vrule = vcap_get_rule(port->dev, rule_id);
+	vrule = vcap_get_rule(port->lan966x->vcap_ctrl, rule_id);
 	if (!vrule || IS_ERR(vrule))
 		return 1;
 
@@ -731,7 +732,7 @@ static void lan966x_del_raps_is2_rule(struct lan966x_port *port)
 {
 	int rule_id = LAN966X_CFM_RULE_ID_OFFSET + port->chip_port;
 
-	vcap_del_rule(port->dev, rule_id);
+	vcap_del_rule(port->lan966x->vcap_ctrl, port->dev, rule_id);
 }
 
 static void lan966x_mip_destroy(struct lan966x_port *port, struct lan966x_mip *mip)

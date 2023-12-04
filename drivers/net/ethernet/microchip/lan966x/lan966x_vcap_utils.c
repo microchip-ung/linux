@@ -3,7 +3,7 @@
 
 #include "lan966x_main.h"
 #include "lan966x_vcap_utils.h"
-#include "lan966x_vcap_impl.h"
+#include "vcap_api_client.h"
 
 #define LAN966X_MRP_RULE_ID_OFFSET	512
 #define LAN966X_CFM_RULE_ID_OFFSET	520
@@ -21,7 +21,8 @@ static int lan966x_is1_add_ether(struct lan966x_port *port,
 	struct vcap_rule *vrule;
 	int err;
 
-	vrule = vcap_alloc_rule(port->dev, chain_id, user, prio, *rule_id);
+	vrule = vcap_alloc_rule(port->lan966x->vcap_ctrl, port->dev, chain_id,
+				user, prio, *rule_id);
 	if (!vrule || IS_ERR(vrule)) {
 		netdev_dbg(port->dev, "Failed to add rule based on etype");
 		return 1;
@@ -63,7 +64,8 @@ static int lan966x_is1_add_dmac(struct lan966x_port *port,
 	struct vcap_rule *vrule;
 	int err;
 
-	vrule = vcap_alloc_rule(port->dev, chain_id, user, prio, *rule_id);
+	vrule = vcap_alloc_rule(port->lan966x->vcap_ctrl, port->dev, chain_id,
+				user, prio, *rule_id);
 	if (!vrule || IS_ERR(vrule))
 		return 1;
 
@@ -123,5 +125,5 @@ int lan966x_add_prio_is1_rule(struct lan966x_port *port, enum vcap_user user, u3
 
 void lan966x_del_prio_is1_rule(struct lan966x_port *port, u32 rule_id)
 {
-	vcap_del_rule(port->dev, rule_id);
+	vcap_del_rule(port->lan966x->vcap_ctrl, port->dev, rule_id);
 }

@@ -21,6 +21,9 @@
 #include "lan966x_qos.h"
 #include <uapi/linux/mrp_bridge.h>
 
+#include <vcap_api.h>
+#include <vcap_api_client.h>
+
 #define TABLE_UPDATE_SLEEP_US		10
 #define TABLE_UPDATE_TIMEOUT_US		100000
 
@@ -95,6 +98,18 @@
 #define SE_IDX_QUEUE			0  /* 0-79 : Queue scheduler elements */
 #define SE_IDX_PORT			80 /* 80-89 : Port schedular elements */
 
+#define LAN966X_VCAP_CID_IS1_L0 VCAP_CID_INGRESS_L0 /* IS1 lookup 0 */
+#define LAN966X_VCAP_CID_IS1_L1 VCAP_CID_INGRESS_L1 /* IS1 lookup 1 */
+#define LAN966X_VCAP_CID_IS1_L2 VCAP_CID_INGRESS_L2 /* IS1 lookup 2 */
+#define LAN966X_VCAP_CID_IS1_MAX (VCAP_CID_INGRESS_L3 - 1) /* IS1 Max */
+
+#define LAN966X_VCAP_CID_IS2_L0 VCAP_CID_INGRESS_STAGE2_L0 /* IS2 lookup 0 */
+#define LAN966X_VCAP_CID_IS2_L1 VCAP_CID_INGRESS_STAGE2_L1 /* IS2 lookup 1 */
+#define LAN966X_VCAP_CID_IS2_MAX (VCAP_CID_INGRESS_STAGE2_L2 - 1) /* IS2 Max */
+
+#define LAN966X_VCAP_CID_ES0_L0 VCAP_CID_EGRESS_L0 /* ES0 lookup 0 */
+#define LAN966X_VCAP_CID_ES0_MAX (VCAP_CID_EGRESS_L1 - 1) /* ES0 Max */
+
 #define LAN966X_VLAN_SRC_CHK        0x01
 #define LAN966X_VLAN_MIRROR         0x02
 #define LAN966X_VLAN_LEARN_DISABLED 0x04
@@ -115,6 +130,54 @@ enum macaccess_entry_type {
 	ENTRYTYPE_LOCKED,
 	ENTRYTYPE_MACV4,
 	ENTRYTYPE_MACV6,
+};
+
+/* Controls how PORT_MASK is applied */
+enum LAN966X_PORT_MASK_MODE {
+	LAN966X_PMM_NO_ACTION,
+	LAN966X_PMM_REPLACE,
+	LAN966X_PMM_FORWARDING,
+	LAN966X_PMM_REDIRECT,
+};
+
+enum vcap_is2_port_sel_ipv6 {
+	VCAP_IS2_PS_IPV6_TCPUDP_OTHER,
+	VCAP_IS2_PS_IPV6_STD,
+	VCAP_IS2_PS_IPV6_IP4_TCPUDP_IP4_OTHER,
+	VCAP_IS2_PS_IPV6_MAC_ETYPE,
+};
+
+enum vcap_is1_port_sel_other {
+	VCAP_IS1_PS_OTHER_NORMAL,
+	VCAP_IS1_PS_OTHER_7TUPLE,
+	VCAP_IS1_PS_OTHER_DBL_VID,
+	VCAP_IS1_PS_OTHER_DMAC_VID,
+};
+
+enum vcap_is1_port_sel_ipv4 {
+	VCAP_IS1_PS_IPV4_NORMAL,
+	VCAP_IS1_PS_IPV4_7TUPLE,
+	VCAP_IS1_PS_IPV4_5TUPLE_IP4,
+	VCAP_IS1_PS_IPV4_DBL_VID,
+	VCAP_IS1_PS_IPV4_DMAC_VID,
+};
+
+enum vcap_is1_port_sel_ipv6 {
+	VCAP_IS1_PS_IPV6_NORMAL,
+	VCAP_IS1_PS_IPV6_7TUPLE,
+	VCAP_IS1_PS_IPV6_5TUPLE_IP4,
+	VCAP_IS1_PS_IPV6_NORMAL_IP6,
+	VCAP_IS1_PS_IPV6_5TUPLE_IP6,
+	VCAP_IS1_PS_IPV6_DBL_VID,
+	VCAP_IS1_PS_IPV6_DMAC_VID,
+};
+
+enum vcap_is1_port_sel_rt {
+	VCAP_IS1_PS_RT_NORMAL,
+	VCAP_IS1_PS_RT_7TUPLE,
+	VCAP_IS1_PS_RT_DBL_VID,
+	VCAP_IS1_PS_RT_DMAC_VID,
+	VCAP_IS1_PS_RT_FOLLOW_OTHER = 7,
 };
 
 struct lan966x_port;
@@ -720,6 +783,14 @@ int lan966x_tc_flower(struct lan966x_port *port,
 		      struct flow_cls_offload *f,
 		      bool ingress);
 
+int lan966x_goto_port_add(struct lan966x_port *port,
+			  int from_cid, int to_cid,
+			  unsigned long goto_id,
+			  struct netlink_ext_ack *extack);
+int lan966x_goto_port_del(struct lan966x_port *port,
+			  unsigned long goto_id,
+			  struct netlink_ext_ack *extack);
+
 int lan966x_police_del(struct lan966x_port *port, u16 pol_idx);
 int lan966x_police_add(struct lan966x_port *port,
 		       struct lan966x_tc_policer *pol,
@@ -755,6 +826,21 @@ int lan966x_pmac_del(struct lan966x_port *port, u8 *mac, u16 vlan);
 int lan966x_pmac_purge(struct lan966x *lan966x);
 void lan966x_pmac_init(struct lan966x *lan966x);
 void lan966x_pmac_deinit(struct lan966x *lan966x);
+
+int lan966x_vcap_init(struct lan966x *lan966x);
+void lan966x_vcap_deinit(struct lan966x *lan966x);
+#if defined(CONFIG_DEBUG_FS)
+int lan966x_vcap_port_info(struct net_device *dev,
+			   struct vcap_admin *admin,
+			   struct vcap_output_print *out);
+#else
+static inline int lan966x_vcap_port_info(struct net_device *dev,
+					 struct vcap_admin *admin,
+					 struct vcap_output_print *out)
+{
+	return 0;
+}
+#endif
 
 static inline void __iomem *lan_addr(void __iomem *base[],
 				     int id, int tinst, int tcnt,
