@@ -841,6 +841,16 @@ static inline int lan966x_vcap_port_info(struct net_device *dev,
 	return 0;
 }
 #endif
+int lan966x_vcap_get_port_keyset(struct net_device *ndev,
+				 struct vcap_admin *admin, int cid,
+				 u16 l3_proto,
+				 struct vcap_keyset_list *keysetlist);
+const char *lan966x_vcap_keyset_name(struct net_device *ndev,
+				     enum vcap_keyfield_set keyset);
+void lan966x_vcap_set_port_keyset(struct net_device *ndev,
+				  struct vcap_admin *admin, int cid,
+				  u16 l3_proto, enum vcap_keyfield_set keyset,
+				  struct vcap_keyset_list *orig);
 
 static inline void __iomem *lan_addr(void __iomem *base[],
 				     int id, int tinst, int tcnt,

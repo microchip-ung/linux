@@ -12,10 +12,52 @@
 #define LAN966X_IS2_LOOKUPS 2
 #define LAN966X_ES0_LOOKUPS 1
 
+/* Access lookup bitfields */
+#define ANA_VCAP_S2_CFG_OAM_LOOKUP_DIS(l) BIT(l)
+#define ANA_VCAP_S2_CFG_IP6_LOOKUP_CFG(l) GENMASK(3 + (2 * l), 2 + (2 * l))
+#define ANA_VCAP_S2_CFG_IP_OTHER_LOOKUP_DIS(l) BIT(6 + l)
+#define ANA_VCAP_S2_CFG_IP_TCPUDP_LOOKUP_DIS(l)  BIT(8 + l)
+#define ANA_VCAP_S2_CFG_ARP_LOOKUP_DIS(l) BIT(10 + l)
+#define ANA_VCAP_S2_CFG_SNAP_LOOKUP_DIS(l)  BIT(12 + 1)
+
+#define ANA_VCAP_S2_CFG_OAM_LOOKUP_DIS_SET(l, x) (((x) << l) & GENMASK(1, 0))
+#define ANA_VCAP_S2_CFG_IP6_LOOKUP_CFG_SET(l, x)                                   \
+	((((x) << 2) << (2 * l)) & GENMASK(5, 2))
+#define ANA_VCAP_S2_CFG_IP_OTHER_LOOKUP_DIS_SET(l, x)                              \
+	((((x) << 6) << l) & GENMASK(7, 6))
+#define ANA_VCAP_S2_CFG_IP_TCPUDP_LOOKUP_DIS_SET(l, x)                             \
+	((((x) << 8) << l) & GENMASK(9, 8))
+#define ANA_VCAP_S2_CFG_ARP_LOOKUP_DIS_SET(l, x)                                   \
+	((((x) << 10) << l) & GENMASK(11, 10))
+#define ANA_VCAP_S2_CFG_SNAP_LOOKUP_DIS_SET(l, x)                                  \
+	((((x) << 12) << l) & GENMASK(13, 12))
+
+#define ANA_VCAP_S2_CFG_OAM_LOOKUP_DIS_GET(l, x)                               \
+	((((x)&GENMASK(1, 0)) >> l) & 0x1)
+#define ANA_VCAP_S2_CFG_IP6_LOOKUP_CFG_GET(l, x)                               \
+	(((((x)&GENMASK(5, 2)) >> 2) >> (2 * l)) & 0x3)
+#define ANA_VCAP_S2_CFG_IP_OTHER_LOOKUP_DIS_GET(l, x)                          \
+	(((((x)&GENMASK(7, 6)) >> 6) >> l) & 0x1)
+#define ANA_VCAP_S2_CFG_IP_TCPUDP_LOOKUP_DIS_GET(l, x)                         \
+	(((((x)&GENMASK(9, 8)) >> 8) >> l) & 0x1)
+#define ANA_VCAP_S2_CFG_ARP_LOOKUP_DIS_GET(l, x)                               \
+	(((((x)&GENMASK(11, 10)) >> 10) >> l) & 0x1)
+#define ANA_VCAP_S2_CFG_SNAP_LOOKUP_DIS_GET(l, x)                              \
+	(((((x)&GENMASK(13, 12)) >> 12) >> l) & 0x1)
+
 #define LAN966X_STAT_ESDX_GRN_BYTES 0x300
 #define LAN966X_STAT_ESDX_GRN_PKTS 0x301
 #define LAN966X_STAT_ESDX_YEL_BYTES 0x302
 #define LAN966X_STAT_ESDX_YEL_PKTS 0x303
+
+/* Ingress Stage 1 traffic type classification */
+enum vcap_is1_port_traffic_class {
+	VCAP_IS1_PTC_OTHER,
+	VCAP_IS1_PTC_IPV4,
+	VCAP_IS1_PTC_IPV6,
+	VCAP_IS1_PTC_RT,
+	VCAP_IS1_PTC_MAX,
+};
 
 static struct lan966x_vcap_inst {
 	enum vcap_type vtype; /* type of vcap */
@@ -115,6 +157,23 @@ static int lan966x_vcap_is2_cid_to_lookup(int cid)
 	if (cid >= LAN966X_VCAP_CID_IS2_L1 &&
 	    cid < LAN966X_VCAP_CID_IS2_MAX)
 		return 1;
+
+	return 0;
+}
+
+static int
+lan966x_vcap_es0_get_port_keysets(struct net_device *ndev,
+				  struct vcap_keyset_list *keysetlist)
+{
+	struct lan966x_port *port = netdev_priv(ndev);
+	struct lan966x *lan966x = port->lan966x;
+	int portno = port->chip_port;
+	u32 value;
+
+	/* Check if the port keyset selection is enabled */
+	value = lan_rd(lan966x, REW_PORT_CFG(portno));
+	if (!REW_PORT_CFG_ES0_EN_GET(value))
+		return -ENOENT;
 
 	return 0;
 }
@@ -703,6 +762,300 @@ static void lan966x_vcap_port_key_deselection(struct lan966x *lan966x,
 		       lan966x_vcaps[admin->vtype].name);
 		break;
 	}
+}
+
+/* Get the keyset name from the LAN966X VCAP model */
+const char *lan966x_vcap_keyset_name(struct net_device *ndev,
+				     enum vcap_keyfield_set keyset)
+{
+	struct lan966x_port *port = netdev_priv(ndev);
+	struct vcap_control *vctrl = port->lan966x->vcap_ctrl;
+
+	return vctrl->stats->keyfield_set_names[keyset];
+}
+
+static u32 lan966x_vcap_is1_keyset_to_other_ps(enum vcap_keyfield_set keyset)
+{
+	switch (keyset) {
+	case VCAP_KFS_7TUPLE:
+		return VCAP_IS1_PS_OTHER_7TUPLE;
+	case VCAP_KFS_NORMAL:
+	case VCAP_KFS_NORMAL_DMAC:
+		return VCAP_IS1_PS_OTHER_NORMAL;
+	default:
+		return VCAP_IS1_PS_OTHER_7TUPLE;
+	}
+}
+
+static u32 lan966x_vcap_is1_keyset_to_ipv4_ps(enum vcap_keyfield_set keyset)
+{
+		switch (keyset) {
+		case VCAP_KFS_7TUPLE:
+			return VCAP_IS1_PS_IPV4_7TUPLE;
+		case VCAP_KFS_5TUPLE_IP4:
+			return VCAP_IS1_PS_IPV4_5TUPLE_IP4;
+		case VCAP_KFS_NORMAL:
+		case VCAP_KFS_NORMAL_DMAC:
+			return VCAP_IS1_PS_IPV4_NORMAL;
+		default:
+			return VCAP_IS1_PS_IPV4_7TUPLE;
+		}
+}
+
+static u32 lan966x_vcap_is1_keyset_to_ipv6_ps(enum vcap_keyfield_set keyset)
+{
+		switch (keyset) {
+		case VCAP_KFS_NORMAL:
+		case VCAP_KFS_NORMAL_DMAC:
+			return VCAP_IS1_PS_IPV6_NORMAL;
+		case VCAP_KFS_5TUPLE_IP6:
+			return VCAP_IS1_PS_IPV6_5TUPLE_IP6;
+		case VCAP_KFS_7TUPLE:
+		case VCAP_KFS_NORMAL_7TUPLE:
+			return VCAP_IS1_PS_IPV6_7TUPLE;
+		case VCAP_KFS_5TUPLE_IP4:
+			return VCAP_IS1_PS_IPV6_5TUPLE_IP4;
+		case VCAP_KFS_NORMAL_IP6:
+		case VCAP_KFS_NORMAL_IP6_DMAC:
+			return VCAP_IS1_PS_IPV6_NORMAL_IP6;
+		case VCAP_KFS_DMAC_VID:
+			return VCAP_IS1_PS_IPV6_DMAC_VID;
+		default:
+			return VCAP_IS1_PS_IPV6_7TUPLE;
+		}
+}
+
+static u32 lan966x_vcap_is2_keyset_ipv6_to_ps(enum vcap_keyfield_set keyset)
+{
+	switch (keyset) {
+	case VCAP_KFS_IP6_OTHER:
+		return VCAP_IS2_PS_IPV6_TCPUDP_OTHER;
+	case VCAP_KFS_IP6_TCP_UDP:
+		return VCAP_IS2_PS_IPV6_TCPUDP_OTHER;
+	case VCAP_KFS_IP6_STD:
+		return VCAP_IS2_PS_IPV6_STD;
+	case VCAP_KFS_IP4_OTHER:
+		return VCAP_IS2_PS_IPV6_IP4_TCPUDP_IP4_OTHER;
+	case VCAP_KFS_IP4_TCP_UDP:
+		return VCAP_IS2_PS_IPV6_IP4_TCPUDP_IP4_OTHER;
+	default:
+		return VCAP_IS2_PS_IPV6_MAC_ETYPE;
+	}
+}
+
+static u32 lan966x_vcap_is2_keyset_to_ps(enum vcap_keyfield_set keyset)
+{
+	switch (keyset) {
+	case VCAP_KFS_MAC_ETYPE:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+static void lan966x_vcap_is1_set_port_keyset(struct net_device *ndev,
+					     int lookup,
+					     enum vcap_keyfield_set keyset,
+					     int l3_proto)
+{
+	struct lan966x_port *port = netdev_priv(ndev);
+	struct lan966x *lan966x = port->lan966x;
+	int portno = port->chip_port;
+	u32 value;
+
+	switch (l3_proto) {
+	case ETH_P_IP:
+		value = lan966x_vcap_is1_keyset_to_ipv4_ps(keyset);
+		lan_rmw(ANA_VCAP_S1_CFG_KEY_IP4_CFG_SET(value),
+			ANA_VCAP_S1_CFG_KEY_IP4_CFG,
+			lan966x, ANA_VCAP_S1_CFG(portno, lookup));
+
+		if (keyset == VCAP_KFS_NORMAL_DMAC) {
+			value = lan_rd(lan966x, ANA_VCAP_CFG(portno));
+			value = ANA_VCAP_CFG_S1_DMAC_DIP_ENA_GET(value);
+			value |= BIT(lookup);
+
+			lan_rmw(ANA_VCAP_CFG_S1_DMAC_DIP_ENA_SET(value),
+				ANA_VCAP_CFG_S1_DMAC_DIP_ENA,
+				lan966x, ANA_VCAP_CFG(port->chip_port));
+		}
+		else {
+			value = lan_rd(lan966x, ANA_VCAP_CFG(portno));
+			value = ANA_VCAP_CFG_S1_DMAC_DIP_ENA_GET(value);
+			value &= !BIT(lookup);
+
+			lan_rmw(ANA_VCAP_CFG_S1_DMAC_DIP_ENA_SET(value),
+				ANA_VCAP_CFG_S1_DMAC_DIP_ENA,
+				lan966x, ANA_VCAP_CFG(port->chip_port));
+		}
+		break;
+	case ETH_P_IPV6:
+		value = lan966x_vcap_is1_keyset_to_ipv6_ps(keyset);
+		lan_rmw(ANA_VCAP_S1_CFG_KEY_IP6_CFG_SET(value),
+			ANA_VCAP_S1_CFG_KEY_IP6_CFG,
+			lan966x, ANA_VCAP_S1_CFG(portno, lookup));
+
+		if (keyset == VCAP_KFS_NORMAL_IP6_DMAC) {
+			value = lan_rd(lan966x, ANA_VCAP_CFG(portno));
+			value = ANA_VCAP_CFG_S1_DMAC_DIP_ENA_GET(value);
+			value |= BIT(lookup);
+
+			lan_rmw(ANA_VCAP_CFG_S1_DMAC_DIP_ENA_SET(value),
+				ANA_VCAP_CFG_S1_DMAC_DIP_ENA,
+				lan966x, ANA_VCAP_CFG(port->chip_port));
+		}
+		else {
+			value = lan_rd(lan966x, ANA_VCAP_CFG(portno));
+			value = ANA_VCAP_CFG_S1_DMAC_DIP_ENA_GET(value);
+			value &= !BIT(lookup);
+
+			lan_rmw(ANA_VCAP_CFG_S1_DMAC_DIP_ENA_SET(value),
+				ANA_VCAP_CFG_S1_DMAC_DIP_ENA,
+				lan966x, ANA_VCAP_CFG(port->chip_port));
+		}
+		break;
+	default:
+		value = lan966x_vcap_is1_keyset_to_other_ps(keyset);
+		lan_rmw(ANA_VCAP_S1_CFG_KEY_OTHER_CFG_SET(value),
+			ANA_VCAP_S1_CFG_KEY_OTHER_CFG,
+			lan966x, ANA_VCAP_S1_CFG(portno, lookup));
+
+		if (keyset == VCAP_KFS_NORMAL_DMAC) {
+			value = lan_rd(lan966x, ANA_VCAP_CFG(portno));
+			value = ANA_VCAP_CFG_S1_DMAC_DIP_ENA_GET(value);
+			value |= BIT(lookup);
+
+			lan_rmw(ANA_VCAP_CFG_S1_DMAC_DIP_ENA_SET(value),
+				ANA_VCAP_CFG_S1_DMAC_DIP_ENA,
+				lan966x, ANA_VCAP_CFG(port->chip_port));
+		}
+		else {
+			value = lan_rd(lan966x, ANA_VCAP_CFG(portno));
+			value = ANA_VCAP_CFG_S1_DMAC_DIP_ENA_GET(value);
+			value &= !BIT(lookup);
+
+			lan_rmw(ANA_VCAP_CFG_S1_DMAC_DIP_ENA_SET(value),
+				ANA_VCAP_CFG_S1_DMAC_DIP_ENA,
+				lan966x, ANA_VCAP_CFG(port->chip_port));
+		}
+		break;
+	}
+}
+
+static void lan966x_vcap_is2_set_port_keyset(struct net_device *ndev,
+					     int lookup,
+					     enum vcap_keyfield_set keyset,
+					     int l3_proto)
+{
+	struct lan966x_port *port = netdev_priv(ndev);
+	struct lan966x *lan966x = port->lan966x;
+	int portno = port->chip_port;
+	u32 value;
+
+	switch (l3_proto) {
+	case ETH_P_ARP:
+		value = lan966x_vcap_is2_keyset_to_ps(keyset);
+		lan_rmw(ANA_VCAP_S2_CFG_ARP_LOOKUP_DIS_SET(lookup, value),
+			ANA_VCAP_S2_CFG_ARP_LOOKUP_DIS(lookup),
+			lan966x, ANA_VCAP_S2_CFG(portno));
+		break;
+	case ETH_P_IP:
+		value = ANA_VCAP_S2_CFG_IP_TCPUDP_LOOKUP_DIS_SET(lookup, lan966x_vcap_is2_keyset_to_ps(keyset)) |
+			ANA_VCAP_S2_CFG_IP_OTHER_LOOKUP_DIS_SET(lookup, lan966x_vcap_is2_keyset_to_ps(keyset));
+		lan_rmw(value,
+			ANA_VCAP_S2_CFG_IP_TCPUDP_LOOKUP_DIS(lookup) |
+			ANA_VCAP_S2_CFG_IP_OTHER_LOOKUP_DIS(lookup),
+			lan966x, ANA_VCAP_S2_CFG(portno));
+		break;
+	case ETH_P_IPV6:
+		value = ANA_VCAP_S2_CFG_IP6_LOOKUP_CFG_SET(lookup, lan966x_vcap_is2_keyset_ipv6_to_ps(keyset));
+		lan_rmw(value,
+			ANA_VCAP_S2_CFG_IP6_LOOKUP_CFG(lookup),
+			lan966x, ANA_VCAP_S2_CFG(portno));
+		break;
+	default:
+		value = ANA_VCAP_S2_CFG_OAM_LOOKUP_DIS_SET(lookup, 1) |
+			ANA_VCAP_S2_CFG_SNAP_LOOKUP_DIS_SET(lookup, 1) |
+			ANA_VCAP_S2_CFG_ARP_LOOKUP_DIS_SET(lookup, 1) |
+			ANA_VCAP_S2_CFG_IP_TCPUDP_LOOKUP_DIS_SET(lookup, 1) |
+			ANA_VCAP_S2_CFG_IP_OTHER_LOOKUP_DIS_SET(lookup, 1) |
+			ANA_VCAP_S2_CFG_IP6_LOOKUP_CFG_SET(lookup, VCAP_IS2_PS_IPV6_MAC_ETYPE);
+		lan_rmw(value,
+			ANA_VCAP_S2_CFG_OAM_LOOKUP_DIS(lookup) |
+			ANA_VCAP_S2_CFG_SNAP_LOOKUP_DIS(lookup) |
+			ANA_VCAP_S2_CFG_ARP_LOOKUP_DIS(lookup) |
+			ANA_VCAP_S2_CFG_IP_TCPUDP_LOOKUP_DIS(lookup) |
+			ANA_VCAP_S2_CFG_IP_OTHER_LOOKUP_DIS(lookup) |
+			ANA_VCAP_S2_CFG_IP6_LOOKUP_CFG(lookup),
+			lan966x, ANA_VCAP_S2_CFG(portno));
+		break;
+	}
+}
+
+/* Set the port keyset for the vcap lookup */
+void lan966x_vcap_set_port_keyset(struct net_device *ndev,
+				  struct vcap_admin *admin, int cid,
+				  u16 l3_proto, enum vcap_keyfield_set keyset,
+				  struct vcap_keyset_list *orig)
+{
+	int lookup;
+
+	switch (admin->vtype) {
+	case VCAP_TYPE_ES0:
+		/* No selection */
+		break;
+	case VCAP_TYPE_IS1:
+		lookup = lan966x_vcap_is1_cid_to_lookup(cid);
+		if (orig)
+			lan966x_vcap_is1_get_port_keysets(ndev, lookup, orig,
+							  l3_proto);
+		lan966x_vcap_is1_set_port_keyset(ndev, lookup, keyset,
+						 l3_proto);
+		break;
+	case VCAP_TYPE_IS2:
+		lookup = lan966x_vcap_is2_cid_to_lookup(cid);
+		if (orig)
+			lan966x_vcap_is2_get_port_keysets(ndev, lookup, orig,
+							  l3_proto);
+		lan966x_vcap_is2_set_port_keyset(ndev, lookup, keyset,
+						 l3_proto);
+		break;
+	default:
+		pr_err("%s:%d: vcap type: %d not supported\n", __func__,
+		       __LINE__, admin->vtype);
+		break;
+	}
+}
+
+/* Get the port keyset for the vcap lookup */
+int lan966x_vcap_get_port_keyset(struct net_device *ndev,
+				 struct vcap_admin *admin, int cid,
+				 u16 l3_proto,
+				 struct vcap_keyset_list *keysetlist)
+{
+	int err = 0;
+	int lookup;
+
+	switch (admin->vtype) {
+	case VCAP_TYPE_IS1:
+		lookup = lan966x_vcap_is1_cid_to_lookup(cid);
+		err = lan966x_vcap_is1_get_port_keysets(ndev, lookup,
+							keysetlist, l3_proto);
+		break;
+	case VCAP_TYPE_IS2:
+		lookup = lan966x_vcap_is2_cid_to_lookup(cid);
+		err = lan966x_vcap_is2_get_port_keysets(ndev, lookup,
+							keysetlist, l3_proto);
+		break;
+	case VCAP_TYPE_ES0:
+		err = lan966x_vcap_es0_get_port_keysets(ndev, keysetlist);
+		break;
+	default:
+		pr_err("%s:%d: vcap type: %d not supported\n", __func__,
+		       __LINE__, admin->vtype);
+		break;
+	}
+	return err;
 }
 
 int lan966x_vcap_init(struct lan966x *lan966x)
