@@ -21,8 +21,6 @@
 
 #include "sparx5_serdes.h"
 
-#define SPX5_CMU_MAX          14
-
 #define SPX5_SERDES_10G_START 13
 #define SPX5_SERDES_25G_START 25
 
@@ -2576,7 +2574,7 @@ static const struct sparx5_serdes_match_data sparx5_desc = {
 	.tsize = sparx5_serdes_tsize,
 	.consts = {
 		.sd_max       = 33,
-		.cmu_max      = 10,
+		.cmu_max      = 14,
 	},
 	.ops = {
 		.serdes_type_set      = &sparx5_serdes_type_set,
