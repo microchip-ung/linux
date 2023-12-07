@@ -2158,7 +2158,7 @@ static int sparx5_serdes_power_save(struct sparx5_serdes_macro *macro, u32 pwdn)
 	if (macro->serdestype == SPX5_SDT_6G ||
 	    macro->serdestype == SPX5_SDT_10G)
 		sd_lane_inst = sdx5_inst_get(priv, TARGET_SD_LANE,
-					     macro->stpidx);
+					     macro->sidx);
 	else
 		sd_lane_inst = sdx5_inst_get(priv, TARGET_SD_LANE_25G,
 					     macro->stpidx);
