@@ -469,6 +469,7 @@ static int sparx5_init_coreclock(struct sparx5 *sparx5)
 	const struct sparx5_consts *consts = &sparx5->data->consts;
 	enum sparx5_core_clockfreq freq = sparx5->coreclock;
 	u32 clk_div, clk_period, pol_upd_int, idx;
+	enum sparx5_core_clockref ref;
 
 	/* Verify if core clock frequency is supported on target.
 	 * If 'VTSS_CORE_CLOCK_DEFAULT' then the highest supported
@@ -521,6 +522,7 @@ static int sparx5_init_coreclock(struct sparx5 *sparx5)
 	case SPX5_TARGET_CT_LAN9698TSN:
 	case SPX5_TARGET_CT_LAN9698RED:
 		freq = SPX5_CORE_CLOCK_328MHZ;
+		ref = SPX5_CORE_CLOCK_REF_39MHZ;
 		break;
 	default:
 		dev_err(sparx5->dev, "Target (%#04x) not supported\n",
@@ -569,6 +571,7 @@ static int sparx5_init_coreclock(struct sparx5 *sparx5)
 
 	/* Update state with chosen frequency */
 	sparx5->coreclock = freq;
+	sparx5->coreclockref = ref;
 
 	clk_period = sparx5_clk_period(freq);
 

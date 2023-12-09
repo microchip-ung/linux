@@ -39,13 +39,19 @@ static u64 sparx5_ptp_get_1ppm(struct sparx5 *sparx5)
 
 	switch (sparx5->coreclock) {
 	case SPX5_CORE_CLOCK_180MHZ:
-		res = 3208129404120;
+		if (sparx5->coreclockref == SPX5_CORE_CLOCK_REF_25MHZ)
+			res = 3207484700609;
+		else
+			res = 3208129404120;
 		break;
 	case SPX5_CORE_CLOCK_250MHZ:
 		res = 2301339409586;
 		break;
 	case SPX5_CORE_CLOCK_328MHZ:
-		res = 1756832768924;
+		if (sparx5->coreclockref == SPX5_CORE_CLOCK_REF_25MHZ)
+			res = 1756479716445;
+		else
+			res = 1756832768924;
 		break;
 	case SPX5_CORE_CLOCK_500MHZ:
 		res = 1150669704793;
@@ -67,13 +73,19 @@ static u64 sparx5_ptp_get_nominal_value(struct sparx5 *sparx5)
 
 	switch (sparx5->coreclock) {
 	case SPX5_CORE_CLOCK_180MHZ:
-		res = 0x2C834656FFBDCFFA;
+		if (sparx5->coreclockref == SPX5_CORE_CLOCK_REF_25MHZ)
+			res = 0x2C8346575A51DBE7;
+		else
+			res = 0x2C834656FFBDCFFA;
 		break;
 	case SPX5_CORE_CLOCK_250MHZ:
 		res = 0x1FF0000000000000;
 		break;
 	case SPX5_CORE_CLOCK_328MHZ:
-		res = 0x18604697DD0F9B5B;
+		if (sparx5->coreclockref == SPX5_CORE_CLOCK_REF_25MHZ)
+			res = 0x186044FEF1EA9C10;
+		else
+			res = 0x18604697DD0F9B5B;
 		break;
 	case SPX5_CORE_CLOCK_500MHZ:
 		res = 0x0FF8000000000000;

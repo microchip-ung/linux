@@ -309,6 +309,12 @@ enum sparx5_core_clockfreq {
 	SPX5_CORE_CLOCK_625MHZ,   /* 625MHZ core clock frequency */
 };
 
+/* This is used only for speeds 180MHz and 328MHz */
+enum sparx5_core_clockref {
+	SPX5_CORE_CLOCK_REF_25MHZ,   /* Force to use 25Mhz ref. clock */
+	SPX5_CORE_CLOCK_REF_39MHZ,   /* Force to use 39Mhz ref. clock */
+};
+
 struct sparx5_phc {
 	struct ptp_clock *clock;
 	struct ptp_clock_info info;
@@ -364,6 +370,7 @@ struct sparx5 {
 	/* port structures are in net device */
 	struct sparx5_port *ports[SPX5_PORTS];
 	enum sparx5_core_clockfreq coreclock;
+	enum sparx5_core_clockref coreclockref;
 	/* Statistics */
 	u32 num_stats;
 	u32 num_ethtool_stats;
