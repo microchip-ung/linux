@@ -80,6 +80,7 @@ static u32 sparx5_target_bandwidth(struct sparx5 *sparx5)
 static u32 sparx5_clk_to_bandwidth(enum sparx5_core_clockfreq cclock)
 {
 	switch (cclock) {
+	case SPX5_CORE_CLOCK_180MHZ: return 60000; /* 180000 / 3 */
 	case SPX5_CORE_CLOCK_250MHZ: return 83000; /* 250000 / 3 */
 	case SPX5_CORE_CLOCK_328MHZ: return 109375; /* 328000 / 3 */
 	case SPX5_CORE_CLOCK_500MHZ: return 166000; /* 500000 / 3 */

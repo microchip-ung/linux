@@ -29,7 +29,8 @@ enum {
 static u64 sparx5_ptp_get_1ppm(struct sparx5 *sparx5)
 {
 	/* Represents 1ppm adjustment in 2^59 format with 1.59687500000(625)
-	 * 1.99609375000(500), 3.99218750000(250) as reference
+	 * 1.99609375000(500), 3.04761904762(380), 3.99218750000(250),
+	 * 5.56521739130(180) as reference
 	 * The value is calculated as following:
 	 * (1/1000000)/((2^-59)/X)
 	 */
@@ -37,6 +38,9 @@ static u64 sparx5_ptp_get_1ppm(struct sparx5 *sparx5)
 	u64 res = 0;
 
 	switch (sparx5->coreclock) {
+	case SPX5_CORE_CLOCK_180MHZ:
+		res = 3208129404120;
+		break;
 	case SPX5_CORE_CLOCK_250MHZ:
 		res = 2301339409586;
 		break;
@@ -62,6 +66,9 @@ static u64 sparx5_ptp_get_nominal_value(struct sparx5 *sparx5)
 	u64 res = 0;
 
 	switch (sparx5->coreclock) {
+	case SPX5_CORE_CLOCK_180MHZ:
+		res = 0x2C834656FFBDCFFA;
+		break;
 	case SPX5_CORE_CLOCK_250MHZ:
 		res = 0x1FF0000000000000;
 		break;

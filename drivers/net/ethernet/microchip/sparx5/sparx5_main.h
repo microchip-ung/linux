@@ -302,6 +302,7 @@ struct sparx5_port {
 
 enum sparx5_core_clockfreq {
 	SPX5_CORE_CLOCK_DEFAULT,  /* Defaults to the highest supported frequency */
+	SPX5_CORE_CLOCK_180MHZ,   /* 180MHZ core clock frequency */
 	SPX5_CORE_CLOCK_250MHZ,   /* 250MHZ core clock frequency */
 	SPX5_CORE_CLOCK_328MHZ,   /* 328MHZ core clock frequency */
 	SPX5_CORE_CLOCK_500MHZ,   /* 500MHZ core clock frequency */
@@ -923,6 +924,8 @@ u32 sparx5_get_packet_pipeline_pt(enum sparx5_packet_pipeline_pt pt);
 static inline u32 sparx5_clk_period(enum sparx5_core_clockfreq cclock)
 {
 	switch (cclock) {
+	case SPX5_CORE_CLOCK_180MHZ:
+		return 5564;
 	case SPX5_CORE_CLOCK_250MHZ:
 		return 4000;
 	case SPX5_CORE_CLOCK_328MHZ:
