@@ -26,4 +26,6 @@ int lan966x_add_prio_is1_rule(struct lan966x_port *port, enum vcap_user user,
  */
 void lan966x_del_prio_is1_rule(struct lan966x_port *port, u32 rule_id);
 
+void lan966x_dmac_enable(struct lan966x_port *port, int lookup, bool enable);
+
 #endif

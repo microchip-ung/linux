@@ -1731,6 +1731,15 @@ enum lan966x_target {
 #define ANA_DSCP_CFG_DSCP_REWR_ENA_GET(x)\
 	FIELD_GET(ANA_DSCP_CFG_DSCP_REWR_ENA, x)
 
+/*      ANA:COMMON:RT_CUSTOM */
+#define ANA_RT_CUSTOM             __REG(TARGET_ANA, 0, 1, 31232, 0, 1, 552, 516, 0, 1, 4)
+
+#define ANA_RT_CUSTOM_ETYPE                 GENMASK(15, 0)
+#define ANA_RT_CUSTOM_ETYPE_SET(x)\
+	FIELD_PREP(ANA_RT_CUSTOM_ETYPE, x)
+#define ANA_RT_CUSTOM_ETYPE_GET(x)\
+	FIELD_GET(ANA_RT_CUSTOM_ETYPE, x)
+
 /*      ANA:POL:POL_PIR_CFG */
 #define ANA_POL_PIR_CFG(g)        __REG(TARGET_ANA, 0, 1, 16384, g, 345, 32, 0, 0, 1, 4)
 

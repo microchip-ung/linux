@@ -3,6 +3,7 @@
 #include <net/tc_act/tc_gate.h>
 
 #include "lan966x_main.h"
+#include "lan966x_vcap_utils.h"
 #include "vcap_api.h"
 #include "vcap_api_client.h"
 #include "vcap_tc.h"
@@ -137,6 +138,8 @@ lan966x_tc_flower_handler_basic_usage(struct vcap_tc_flower_parse_usage *st)
 		} else if (st->l3_proto == ETH_P_IPV6 &&
 			   st->admin->vtype == VCAP_TYPE_IS1) {
 			/* Don't set any keys in this case */
+		} else if (st->l3_proto == ETH_P_ALL) {
+			/* Nothing to do */
 		} else if (st->l3_proto == ETH_P_SNAP &&
 			   st->admin->vtype == VCAP_TYPE_IS1) {
 			err = vcap_rule_add_key_bit(st->vrule,
@@ -244,19 +247,80 @@ lan966x_tc_flower_handler_vlan_usage(struct vcap_tc_flower_parse_usage *st)
 	return vcap_tc_flower_handler_vlan_usage(st, vid_key, pcp_key);
 }
 
+static int lan966x_tc_flower_handler_portnum_usage(struct vcap_tc_flower_parse_usage *st)
+{
+	struct flow_match_ports match;
+	enum vcap_key_field key;
+	u16 value, mask;
+	int err = 0;
+
+	if (st->admin->vtype == VCAP_TYPE_IS1)
+		key = VCAP_KF_ETYPE;
+	else
+		key = VCAP_KF_L4_DPORT;
+
+	flow_rule_match_ports(st->frule, &match);
+	if (match.mask->src) {
+		value = be16_to_cpu(match.key->src);
+		mask = be16_to_cpu(match.mask->src);
+		err = vcap_rule_add_key_u32(st->vrule, VCAP_KF_L4_SPORT, value, mask);
+		if (err)
+			goto out;
+	}
+	if (match.mask->dst) {
+		value = be16_to_cpu(match.key->dst);
+		mask = be16_to_cpu(match.mask->dst);
+		err = vcap_rule_add_key_u32(st->vrule, key, value, mask);
+		if (err)
+			goto out;
+	}
+	st->used_keys |= BIT(FLOW_DISSECTOR_KEY_PORTS);
+	return err;
+out:
+	NL_SET_ERR_MSG_MOD(st->fco->common.extack, "port parse error");
+	return err;
+}
+
+int lan966x_tc_flower_handler_ip_usage(struct vcap_tc_flower_parse_usage *st)
+{
+	struct flow_match_ip match;
+	enum vcap_key_field key;
+	int err;
+
+	flow_rule_match_ip(st->frule, &match);
+
+	if (st->admin->vtype == VCAP_TYPE_IS1)
+		key = VCAP_KF_L3_DSCP;
+	else
+		key = VCAP_KF_L3_TOS;
+
+	if (match.mask->tos) {
+		err = vcap_rule_add_key_u32(st->vrule, key,
+					    match.key->tos,
+					    match.mask->tos);
+		if (err)
+			goto out;
+	}
+	st->used_keys |= BIT(FLOW_DISSECTOR_KEY_IP);
+	return err;
+out:
+	NL_SET_ERR_MSG_MOD(st->fco->common.extack, "ip_tos parse error");
+	return err;
+}
+
 static int
 (*lan966x_tc_flower_handlers_usage[])(struct vcap_tc_flower_parse_usage *st) = {
 	[FLOW_DISSECTOR_KEY_ETH_ADDRS] = vcap_tc_flower_handler_ethaddr_usage,
 	[FLOW_DISSECTOR_KEY_IPV4_ADDRS] = vcap_tc_flower_handler_ipv4_usage,
 	[FLOW_DISSECTOR_KEY_IPV6_ADDRS] = vcap_tc_flower_handler_ipv6_usage,
 	[FLOW_DISSECTOR_KEY_CONTROL] = lan966x_tc_flower_handler_control_usage,
-	[FLOW_DISSECTOR_KEY_PORTS] = vcap_tc_flower_handler_portnum_usage,
+	[FLOW_DISSECTOR_KEY_PORTS] = lan966x_tc_flower_handler_portnum_usage,
 	[FLOW_DISSECTOR_KEY_BASIC] = lan966x_tc_flower_handler_basic_usage,
 	[FLOW_DISSECTOR_KEY_CVLAN] = lan966x_tc_flower_handler_cvlan_usage,
 	[FLOW_DISSECTOR_KEY_VLAN] = lan966x_tc_flower_handler_vlan_usage,
 	[FLOW_DISSECTOR_KEY_TCP] = vcap_tc_flower_handler_tcp_usage,
 	[FLOW_DISSECTOR_KEY_ARP] = vcap_tc_flower_handler_arp_usage,
-	[FLOW_DISSECTOR_KEY_IP] = vcap_tc_flower_handler_ip_usage,
+	[FLOW_DISSECTOR_KEY_IP] = lan966x_tc_flower_handler_ip_usage,
 };
 
 static int
@@ -639,11 +703,11 @@ lan966x_tc_select_protocol_keyset(struct net_device *ndev,
 			++count;
 		}
 	}
-	if (count == 0)
+	/* Fail if the VCAP has port keysets and no keyset matched the rule
+	 * keys.
+	 */
+	if (portkeysetlist.cnt > 0 && count == 0)
 		return -EPROTO;
-
-	if (l3_proto == ETH_P_ALL && count < portkeysetlist.cnt)
-		return -ENOENT;
 
 	for (idx = 0; idx < LAN966X_MAX_RULE_SIZE; ++idx) {
 		mru = &multi->rule[idx];
@@ -671,6 +735,7 @@ lan966x_tc_select_protocol_keyset(struct net_device *ndev,
 		mru->selected = false; /* mark as done */
 		break; /* Stop here and add more rules later */
 	}
+
 	return err;
 }
 
@@ -879,8 +944,8 @@ static int lan966x_tc_flower_add(struct lan966x_port *port,
 	u16 l3_proto = ETH_P_ALL;
 	struct flow_rule *frule;
 	struct vcap_rule *vrule;
+	int err, idx, lookup;
 	u32 ports = 0;
-	int err, idx;
 	u32 polidx;
 	u32 sfi_ix;
 	u32 sgi_ix;
@@ -897,6 +962,9 @@ static int lan966x_tc_flower_add(struct lan966x_port *port,
 		return PTR_ERR(vrule);
 
 	vrule->cookie = f->cookie;
+
+	state.vrule = vrule;
+	state.frule = flow_cls_offload_flow_rule(f);
 	err = lan966x_tc_flower_use_dissectors(&state, admin, vrule);
 	if (err)
 		goto out;
@@ -911,13 +979,13 @@ static int lan966x_tc_flower_add(struct lan966x_port *port,
 	flow_action_for_each(idx, act, &frule->action) {
 		switch (act->id) {
 		case FLOW_ACTION_TRAP:
+
 			if (admin->vtype != VCAP_TYPE_IS2) {
 				NL_SET_ERR_MSG_MOD(f->common.extack,
 						   "Trap action not supported in this VCAP");
 				err = -EOPNOTSUPP;
 				goto out;
 			}
-
 			err = vcap_rule_add_action_bit(vrule,
 						       VCAP_AF_CPU_COPY_ENA,
 						       VCAP_BIT_1);
@@ -928,7 +996,6 @@ static int lan966x_tc_flower_add(struct lan966x_port *port,
 							LAN966X_PMM_REPLACE);
 			if (err)
 				goto out;
-
 			break;
 		case FLOW_ACTION_DROP:
 			if (admin->vtype != VCAP_TYPE_IS2) {
@@ -1277,6 +1344,12 @@ static int lan966x_tc_flower_add(struct lan966x_port *port,
 					   "No matching port keyset for filter protocol and keys");
 			goto out;
 		}
+
+		lookup = vcap_chain_id_to_lookup(admin, f->common.chain_index);
+		if (vrule->keyset == VCAP_KFS_NORMAL_DMAC)
+			lan966x_dmac_enable(port, lookup, true);
+		else
+			lan966x_dmac_enable(port, lookup, false);
 	}
 
 	err = lan966x_tc_add_rule_counter(admin, vrule);
@@ -1298,6 +1371,7 @@ static int lan966x_tc_flower_add(struct lan966x_port *port,
 	if (state.l3_proto == ETH_P_ALL)
 		err = lan966x_tc_add_remaining_rules(port, f, vrule, admin,
 						     &multi);
+
 out:
 	vcap_free_rule(vrule);
 	return err;

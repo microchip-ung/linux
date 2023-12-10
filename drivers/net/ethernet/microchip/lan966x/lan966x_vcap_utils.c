@@ -127,3 +127,28 @@ void lan966x_del_prio_is1_rule(struct lan966x_port *port, u32 rule_id)
 {
 	vcap_del_rule(port->lan966x->vcap_ctrl, port->dev, rule_id);
 }
+
+void lan966x_dmac_enable(struct lan966x_port *port, int lookup, bool enable)
+{
+	struct lan966x *lan966x = port->lan966x;
+	u32 value;
+
+	if (enable) {
+		value = lan_rd(lan966x, ANA_VCAP_CFG(port->chip_port));
+		value = ANA_VCAP_CFG_S1_DMAC_DIP_ENA_GET(value);
+		value |= BIT(lookup);
+
+		lan_rmw(ANA_VCAP_CFG_S1_DMAC_DIP_ENA_SET(value),
+			ANA_VCAP_CFG_S1_DMAC_DIP_ENA,
+			lan966x, ANA_VCAP_CFG(port->chip_port));
+	}
+	else {
+		value = lan_rd(lan966x, ANA_VCAP_CFG(port->chip_port));
+		value = ANA_VCAP_CFG_S1_DMAC_DIP_ENA_GET(value);
+		value &= !BIT(lookup);
+
+		lan_rmw(ANA_VCAP_CFG_S1_DMAC_DIP_ENA_SET(value),
+			ANA_VCAP_CFG_S1_DMAC_DIP_ENA,
+			lan966x, ANA_VCAP_CFG(port->chip_port));
+	}
+}
