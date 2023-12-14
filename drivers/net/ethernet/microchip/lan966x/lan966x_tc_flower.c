@@ -45,6 +45,7 @@ static bool lan966x_tc_is_known_etype(struct vcap_tc_flower_parse_usage *st,
 		case ETH_P_IP:
 		case ETH_P_IPV6:
 		case ETH_P_RTAG:
+		case ETH_P_SNAP:
 			return true;
 		}
 		break;
@@ -116,6 +117,82 @@ out:
 	return err;
 }
 
+int lan966x_tc_flower_handler_ipv6_usage(struct vcap_tc_flower_parse_usage *st)
+{
+	struct flow_match_basic match;
+
+	flow_rule_match_basic(st->frule, &match);
+	if (match.mask->n_proto)
+		st->l3_proto = be16_to_cpu(match.key->n_proto);
+
+	return vcap_tc_flower_handler_ipv6_usage(st);
+}
+
+int lan966x_tc_flower_handler_basic_usage_normal_ipv6(struct vcap_tc_flower_parse_usage *st)
+{
+	struct flow_match_basic match;
+	int err = 0;
+
+	flow_rule_match_basic(st->frule, &match);
+	if (match.mask->n_proto) {
+		st->l3_proto = be16_to_cpu(match.key->n_proto);
+		if (!lan966x_tc_is_known_etype(st, st->l3_proto)) {
+			err = vcap_rule_add_key_u32(st->vrule, VCAP_KF_ETYPE,
+						    st->l3_proto, ~0);
+			if (err)
+				goto out;
+		} else if (st->l3_proto == ETH_P_IP) {
+			err = vcap_rule_add_key_bit(st->vrule, VCAP_KF_IP4_IS,
+						    VCAP_BIT_1);
+			if (err)
+				goto out;
+		} else if (st->l3_proto == ETH_P_IPV6) {
+			/* Not available in IP6 type keysets */
+			/* err = vcap_rule_add_key_bit(st->vrule, VCAP_KF_IP4_IS, */
+			/* 			    VCAP_BIT_0); */
+			/* if (err) */
+			/* 	goto out; */
+		} else if (st->l3_proto == ETH_P_ALL) {
+			/* Nothing to do */
+		} else {
+			vcap_rule_add_key_bit(st->vrule, VCAP_KF_ETYPE_LEN_IS,
+					      VCAP_BIT_1);
+			vcap_rule_add_key_u32(st->vrule, VCAP_KF_ETYPE,
+					      st->l3_proto, ~0);
+		}
+	}
+	if (match.mask->ip_proto) {
+		st->l4_proto = match.key->ip_proto;
+
+		if (st->l4_proto == IPPROTO_TCP ||
+		    st->l4_proto == IPPROTO_UDP)
+			vcap_rule_add_key_bit(st->vrule, VCAP_KF_TCP_UDP_IS,
+					      VCAP_BIT_1);
+		else
+			vcap_rule_add_key_bit(st->vrule, VCAP_KF_TCP_UDP_IS,
+					      VCAP_BIT_0);
+
+		vcap_rule_add_key_u32(st->vrule, VCAP_KF_L3_IP_PROTO,
+				      st->l4_proto, ~0);
+	}
+
+	st->used_keys |= BIT(FLOW_DISSECTOR_KEY_BASIC);
+	return err;
+out:
+	NL_SET_ERR_MSG_MOD(st->fco->common.extack, "ip_proto parse error");
+	return err;
+}
+
+static bool
+lan966x_tc_flower_use_ipv6_keyset(struct vcap_tc_flower_parse_usage *st)
+{
+	if (vcap_contains_key(st->vrule, VCAP_KF_L3_IP6_SIP) ||
+	    vcap_contains_key(st->vrule, VCAP_KF_L3_IP6_DIP))
+		return true;
+
+	return false;
+}
+
 static int
 lan966x_tc_flower_handler_basic_usage(struct vcap_tc_flower_parse_usage *st)
 {
@@ -177,6 +254,10 @@ lan966x_tc_flower_handler_basic_usage(struct vcap_tc_flower_parse_usage *st)
 	if (match.mask->ip_proto) {
 		st->l4_proto = match.key->ip_proto;
 
+		/* Use ipv6 keysets if ipv6 SIP or DIP keys have been added */
+		if (lan966x_tc_flower_use_ipv6_keyset(st))
+			return lan966x_tc_flower_handler_basic_usage_normal_ipv6(st);
+
 		if (st->l4_proto == IPPROTO_TCP) {
 			if (st->admin->vtype == VCAP_TYPE_IS1) {
 				err = vcap_rule_add_key_bit(st->vrule,
@@ -215,61 +296,6 @@ lan966x_tc_flower_handler_basic_usage(struct vcap_tc_flower_parse_usage *st)
 	}
 
 	st->used_keys |= BIT_ULL(FLOW_DISSECTOR_KEY_BASIC);
-	return err;
-out:
-	NL_SET_ERR_MSG_MOD(st->fco->common.extack, "ip_proto parse error");
-	return err;
-}
-
-int lan966x_tc_flower_handler_basic_usage_normal_ipv6(struct vcap_tc_flower_parse_usage *st)
-{
-	struct flow_match_basic match;
-	int err = 0;
-
-	flow_rule_match_basic(st->frule, &match);
-	if (match.mask->n_proto) {
-		st->l3_proto = be16_to_cpu(match.key->n_proto);
-		if (!lan966x_tc_is_known_etype(st, st->l3_proto)) {
-			err = vcap_rule_add_key_u32(st->vrule, VCAP_KF_ETYPE,
-						    st->l3_proto, ~0);
-			if (err)
-				goto out;
-		} else if (st->l3_proto == ETH_P_IP) {
-			err = vcap_rule_add_key_bit(st->vrule, VCAP_KF_IP4_IS,
-						    VCAP_BIT_1);
-			if (err)
-				goto out;
-		} else if (st->l3_proto == ETH_P_IPV6) {
-			/* Not available in IP6 type keysets */
-			/* err = vcap_rule_add_key_bit(st->vrule, VCAP_KF_IP4_IS, */
-			/* 			    VCAP_BIT_0); */
-			/* if (err) */
-			/* 	goto out; */
-		} else if (st->l3_proto == ETH_P_ALL) {
-			/* Nothing to do */
-		} else {
-			vcap_rule_add_key_bit(st->vrule, VCAP_KF_ETYPE_LEN_IS,
-					      VCAP_BIT_1);
-			vcap_rule_add_key_u32(st->vrule, VCAP_KF_ETYPE,
-					      st->l3_proto, ~0);
-		}
-	}
-	if (match.mask->ip_proto) {
-		st->l4_proto = match.key->ip_proto;
-
-		if (st->l4_proto == IPPROTO_TCP ||
-		    st->l4_proto == IPPROTO_UDP)
-			vcap_rule_add_key_bit(st->vrule, VCAP_KF_TCP_UDP_IS,
-					      VCAP_BIT_1);
-		else
-			vcap_rule_add_key_bit(st->vrule, VCAP_KF_TCP_UDP_IS,
-					      VCAP_BIT_0);
-
-		vcap_rule_add_key_u32(st->vrule, VCAP_KF_L3_IP_PROTO,
-				      st->l4_proto, ~0);
-	}
-
-	st->used_keys |= BIT(FLOW_DISSECTOR_KEY_BASIC);
 	return err;
 out:
 	NL_SET_ERR_MSG_MOD(st->fco->common.extack, "ip_proto parse error");
@@ -367,7 +393,7 @@ static int
 (*lan966x_tc_flower_handlers_usage[])(struct vcap_tc_flower_parse_usage *st) = {
 	[FLOW_DISSECTOR_KEY_ETH_ADDRS] = vcap_tc_flower_handler_ethaddr_usage,
 	[FLOW_DISSECTOR_KEY_IPV4_ADDRS] = vcap_tc_flower_handler_ipv4_usage,
-	[FLOW_DISSECTOR_KEY_IPV6_ADDRS] = vcap_tc_flower_handler_ipv6_usage,
+	[FLOW_DISSECTOR_KEY_IPV6_ADDRS] = lan966x_tc_flower_handler_ipv6_usage,
 	[FLOW_DISSECTOR_KEY_CONTROL] = lan966x_tc_flower_handler_control_usage,
 	[FLOW_DISSECTOR_KEY_PORTS] = lan966x_tc_flower_handler_portnum_usage,
 	[FLOW_DISSECTOR_KEY_BASIC] = lan966x_tc_flower_handler_basic_usage,
@@ -385,8 +411,23 @@ lan966x_tc_flower_use_dissectors(struct vcap_tc_flower_parse_usage *st,
 {
 	int idx, err = 0;
 
+	/* Fix me!
+	 *
+	 * We have a circular dependency between basic_usage and ipv6_usage.
+	 * Make sure ipv6_usage() is called first, so that basic_usage() can
+	 * decide if we should use ipv6 keysets or not.
+	 */
+	if (flow_rule_match_key(st->frule, FLOW_DISSECTOR_KEY_IPV6_ADDRS) &&
+	    lan966x_tc_flower_handlers_usage[FLOW_DISSECTOR_KEY_IPV6_ADDRS]) {
+		err = lan966x_tc_flower_handlers_usage[FLOW_DISSECTOR_KEY_IPV6_ADDRS](st);
+		if (err)
+			return err;
+	}
+
 	for (idx = 0; idx < ARRAY_SIZE(lan966x_tc_flower_handlers_usage); ++idx) {
 		if (!flow_rule_match_key(st->frule, idx))
+			continue;
+		if (idx == FLOW_DISSECTOR_KEY_IPV6_ADDRS)
 			continue;
 		if (!lan966x_tc_flower_handlers_usage[idx])
 			continue;
@@ -981,19 +1022,6 @@ static bool lan966x_tc_flower_use_template(struct net_device *ndev,
 	return false;
 }
 
-static enum vcap_keyfield_set lan966x_tc_get_temp_keyfield_set(struct lan966x_port *port)
-{
-	struct lan966x_tc_flower_template *tmpl;
-
-	if (list_empty(&port->tc.templates))
-		return VCAP_KFS_NO_VALUE;
-
-	tmpl = list_first_entry(&port->tc.templates,
-				struct lan966x_tc_flower_template,
-				list);
-	return tmpl->keyset;
-}
-
 static int lan966x_tc_flower_add(struct lan966x_port *port,
 				 struct flow_cls_offload *f,
 				 struct vcap_admin *admin,
@@ -1033,17 +1061,6 @@ static int lan966x_tc_flower_add(struct lan966x_port *port,
 
 	state.vrule = vrule;
 	state.frule = flow_cls_offload_flow_rule(f);
-
-	switch (lan966x_tc_get_temp_keyfield_set(port)) {
-	case VCAP_KFS_5TUPLE_IP6:
-	case VCAP_KFS_NORMAL_IP6:
-	case VCAP_KFS_NORMAL_IP6_DMAC:
-		lan966x_tc_flower_handlers_usage[FLOW_DISSECTOR_KEY_BASIC] = lan966x_tc_flower_handler_basic_usage_normal_ipv6;
-		break;
-	default:
-		lan966x_tc_flower_handlers_usage[FLOW_DISSECTOR_KEY_BASIC] = lan966x_tc_flower_handler_basic_usage;
-		break;
-	}
 
 	err = lan966x_tc_flower_use_dissectors(&state, admin, vrule);
 	if (err)
@@ -1415,7 +1432,6 @@ static int lan966x_tc_flower_add(struct lan966x_port *port,
 			goto out;
 		}
 	}
-
 	if (!lan966x_tc_flower_use_template(port->dev, f, admin, vrule)) {
 		err = lan966x_tc_select_protocol_keyset(port->dev, vrule, admin,
 							state.l3_proto, &multi);

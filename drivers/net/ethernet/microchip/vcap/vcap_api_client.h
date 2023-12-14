@@ -343,6 +343,8 @@ int vcap_rule_mod_action_u128(struct vcap_rule *rule,
 int vcap_rule_get_key_u32(struct vcap_rule *rule, enum vcap_key_field key,
 			  u32 *value, u32 *mask);
 
+bool vcap_contains_key(struct vcap_rule *rule, enum vcap_key_field key);
+
 /* Remove a key field with value and mask in the rule */
 int vcap_rule_rem_key(struct vcap_rule *rule, enum vcap_key_field key);
 

@@ -2704,6 +2704,11 @@ vcap_find_keyfield(struct vcap_rule *rule, enum vcap_key_field key)
 	return NULL;
 }
 
+bool vcap_contains_key(struct vcap_rule *rule, enum vcap_key_field key)
+{
+	return vcap_find_keyfield(rule, key) != NULL;
+}
+
 /* Find information on a key field in a rule */
 const struct vcap_field *vcap_lookup_keyfield(struct vcap_rule *rule,
 					      enum vcap_key_field key)

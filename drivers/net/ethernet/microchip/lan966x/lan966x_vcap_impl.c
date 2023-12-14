@@ -203,6 +203,7 @@ lan966x_vcap_is1_get_port_keysets(struct net_device *ndev, int lookup,
 			break;
 		case VCAP_IS1_PS_IPV4_NORMAL:
 			vcap_keyset_list_add(keysetlist, VCAP_KFS_NORMAL);
+			vcap_keyset_list_add(keysetlist, VCAP_KFS_NORMAL_DMAC);
 			break;
 		case VCAP_IS1_PS_IPV4_DBL_VID:
 			vcap_keyset_list_add(keysetlist, VCAP_KFS_DBL_VID);
@@ -219,6 +220,7 @@ lan966x_vcap_is1_get_port_keysets(struct net_device *ndev, int lookup,
 		case VCAP_IS1_PS_IPV6_NORMAL_IP6:
 			vcap_keyset_list_add(keysetlist, VCAP_KFS_NORMAL);
 			vcap_keyset_list_add(keysetlist, VCAP_KFS_NORMAL_IP6);
+			vcap_keyset_list_add(keysetlist, VCAP_KFS_NORMAL_IP6_DMAC);
 			break;
 		case VCAP_IS1_PS_IPV6_5TUPLE_IP6:
 			vcap_keyset_list_add(keysetlist, VCAP_KFS_5TUPLE_IP6);
@@ -245,7 +247,6 @@ lan966x_vcap_is1_get_port_keysets(struct net_device *ndev, int lookup,
 	case VCAP_IS1_PS_OTHER_NORMAL:
 		vcap_keyset_list_add(keysetlist, VCAP_KFS_NORMAL);
 		vcap_keyset_list_add(keysetlist, VCAP_KFS_NORMAL_DMAC);
-
 		break;
 	case VCAP_IS1_PS_OTHER_DBL_VID:
 		vcap_keyset_list_add(keysetlist, VCAP_KFS_DBL_VID);
@@ -900,53 +901,92 @@ static u32 lan966x_vcap_is2_keyset_to_ps(enum vcap_keyfield_set keyset)
 	}
 }
 
+static void lan966x_vcap_s1_set_port_ipv4_keyset(struct lan966x_port *port,
+						 int lookup,
+						 enum vcap_keyfield_set keyset)
+{
+	struct lan966x *lan966x = port->lan966x;
+	int portno = port->chip_port;
+	u32 value;
+
+	value = lan966x_vcap_is1_keyset_to_ipv4_ps(keyset);
+	lan_rmw(ANA_VCAP_S1_CFG_KEY_IP4_CFG_SET(value),
+		ANA_VCAP_S1_CFG_KEY_IP4_CFG, lan966x,
+		ANA_VCAP_S1_CFG(portno, lookup));
+
+	if (keyset == VCAP_KFS_NORMAL_DMAC)
+		lan966x_dmac_enable(port, lookup, true);
+	else
+		lan966x_dmac_enable(port, lookup, false);
+
+	return;
+}
+
+static void lan966x_vcap_s1_set_port_ipv6_keyset(struct lan966x_port *port,
+						 int lookup,
+						 enum vcap_keyfield_set keyset)
+{
+	struct lan966x *lan966x = port->lan966x;
+	int portno = port->chip_port;
+	u32 value;
+
+	value = lan966x_vcap_is1_keyset_to_ipv6_ps(keyset);
+	lan_rmw(ANA_VCAP_S1_CFG_KEY_IP6_CFG_SET(value),
+		ANA_VCAP_S1_CFG_KEY_IP6_CFG, lan966x,
+		ANA_VCAP_S1_CFG(portno, lookup));
+
+	if (keyset == VCAP_KFS_NORMAL_IP6_DMAC)
+		lan966x_dmac_enable(port, lookup, true);
+
+	else
+		lan966x_dmac_enable(port, lookup, false);
+
+	return;
+}
+
+static void lan966x_vcap_s1_set_port_other_keyset(struct lan966x_port *port,
+						  int lookup,
+						  enum vcap_keyfield_set keyset)
+{
+	struct lan966x *lan966x = port->lan966x;
+	int portno = port->chip_port;
+	u32 value;
+
+	value = lan966x_vcap_is1_keyset_to_other_ps(keyset);
+	lan_rmw(ANA_VCAP_S1_CFG_KEY_OTHER_CFG_SET(value),
+		ANA_VCAP_S1_CFG_KEY_OTHER_CFG, lan966x,
+		ANA_VCAP_S1_CFG(portno, lookup));
+
+	if (keyset == VCAP_KFS_NORMAL_DMAC)
+		lan966x_dmac_enable(port, lookup, true);
+
+	else
+		lan966x_dmac_enable(port, lookup, false);
+
+	return;
+}
+
 static void lan966x_vcap_is1_set_port_keyset(struct net_device *ndev,
 					     int lookup,
 					     enum vcap_keyfield_set keyset,
 					     int l3_proto)
 {
 	struct lan966x_port *port = netdev_priv(ndev);
-	struct lan966x *lan966x = port->lan966x;
-	int portno = port->chip_port;
-	u32 value;
 
 	switch (l3_proto) {
+	case ETH_P_ALL:
+		lan966x_vcap_s1_set_port_ipv4_keyset(port, lookup, keyset);
+		lan966x_vcap_s1_set_port_ipv6_keyset(port, lookup, keyset);
+		lan966x_vcap_s1_set_port_other_keyset(port, lookup, keyset);
+		break;
 	case ETH_P_IP:
-		value = lan966x_vcap_is1_keyset_to_ipv4_ps(keyset);
-		lan_rmw(ANA_VCAP_S1_CFG_KEY_IP4_CFG_SET(value),
-			ANA_VCAP_S1_CFG_KEY_IP4_CFG,
-			lan966x, ANA_VCAP_S1_CFG(portno, lookup));
-
-		if (keyset == VCAP_KFS_NORMAL_DMAC)
-			lan966x_dmac_enable(port, lookup, true);
-		else
-			lan966x_dmac_enable(port, lookup, false);
+		lan966x_vcap_s1_set_port_ipv4_keyset(port, lookup, keyset);
 		break;
 	case ETH_P_IPV6:
-		value = lan966x_vcap_is1_keyset_to_ipv6_ps(keyset);
-		lan_rmw(ANA_VCAP_S1_CFG_KEY_IP6_CFG_SET(value),
-			ANA_VCAP_S1_CFG_KEY_IP6_CFG,
-			lan966x, ANA_VCAP_S1_CFG(portno, lookup));
-
-		if (keyset == VCAP_KFS_NORMAL_IP6_DMAC)
-			lan966x_dmac_enable(port, lookup, true);
-
-		else
-			lan966x_dmac_enable(port, lookup, false);
-
+		lan966x_vcap_s1_set_port_ipv6_keyset(port, lookup, keyset);
 		break;
 	default:
-		value = lan966x_vcap_is1_keyset_to_other_ps(keyset);
-		lan_rmw(ANA_VCAP_S1_CFG_KEY_OTHER_CFG_SET(value),
-			ANA_VCAP_S1_CFG_KEY_OTHER_CFG,
-			lan966x, ANA_VCAP_S1_CFG(portno, lookup));
-
-		if (keyset == VCAP_KFS_NORMAL_DMAC)
-			lan966x_dmac_enable(port, lookup, true);
-
-		else
-			lan966x_dmac_enable(port, lookup, false);
-
+		lan966x_vcap_s1_set_port_other_keyset(port, lookup, keyset);
 		break;
 	}
 }
