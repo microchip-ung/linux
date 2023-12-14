@@ -254,9 +254,9 @@ static bool vcap_verify_keystream_keyset(struct vcap_control *vctrl,
 	typefld = &fields[VCAP_KF_TYPE];
 	vcap_iter_init(&iter, vcap->sw_width, tgt, typefld->offset);
 	vcap_decode_field(mskstream, &iter, typefld->width, (u8 *)&mask);
-	/* no type info if there are no mask bits */
+	/* all type info if there are no mask bits */
 	if (vcap_bitarray_zero(typefld->width, (u8 *)&mask))
-		return false;
+		return true;
 
 	/* Get the value of the type field in the stream and compare to the
 	 * one define in the vcap keyset
