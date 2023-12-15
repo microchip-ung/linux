@@ -293,7 +293,8 @@ lan966x_vcap_is2_get_port_keysets(struct net_device *dev, int lookup,
 		found = true;
 	}
 
-	if (l3_proto == ETH_P_ALL || l3_proto == ETH_P_CFM) {
+	if (l3_proto == ETH_P_ALL || l3_proto == ETH_P_CFM ||
+	    l3_proto == ETH_P_SLOW || l3_proto == 0x88ee) {
 		if (ANA_VCAP_S2_CFG_OAM_DIS_GET(val) & (BIT(0) << lookup))
 			vcap_keyset_list_add(keysetlist, VCAP_KFS_MAC_ETYPE);
 		else
