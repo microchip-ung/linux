@@ -137,20 +137,22 @@ int lan966x_tc_flower_handler_ipv6_usage(struct vcap_tc_flower_parse_usage *st)
 			if (err)
 				goto out;
 
-			/* With ipv6 addresses, we have to hit: NORMAL_IPV6 or
-			 * 5TUPLE_IPV6. These keysets do not support TCP_IS key,
-			 * which might have been added earlier by the
+			/* IS1: With ipv6 addresses, we have to hit: NORMAL_IPV6
+			 * or 5TUPLE_IPV6. These keysets do not support TCP_IS
+			 * key, which might have been added earlier by the
 			 * basic_usage() dissector. We remove it, and add the
 			 * l4 proto in the L3_IP_PROTO key instead.
 			 */
-			if (vcap_contains_key(st->vrule, VCAP_KF_TCP_IS))
-				vcap_rule_rem_key(st->vrule, VCAP_KF_TCP_IS);
+			if (st->admin->vtype == VCAP_TYPE_IS1) {
+				if (vcap_contains_key(st->vrule, VCAP_KF_TCP_IS))
+					vcap_rule_rem_key(st->vrule, VCAP_KF_TCP_IS);
 
-			err = vcap_rule_add_key_u32(st->vrule,
-						    VCAP_KF_L3_IP_PROTO,
-						    st->l4_proto, ~0);
-			if (err)
-				goto out;
+				err = vcap_rule_add_key_u32(st->vrule,
+							    VCAP_KF_L3_IP_PROTO,
+							    st->l4_proto, ~0);
+				if (err)
+					goto out;
+			}
 		}
 		if (!ipv6_addr_any(&mt.mask->dst)) {
 
@@ -161,21 +163,24 @@ int lan966x_tc_flower_handler_ipv6_usage(struct vcap_tc_flower_parse_usage *st)
 			if (err)
 				goto out;
 
-			/* With ipv6 addresses, we have to hit: NORMAL_IPV6 or
-			 * 5TUPLE_IPV6. These keysets do not support TCP_IS key,
-			 * which might have been added earlier by the
+			/* IS1: With ipv6 addresses, we have to hit: NORMAL_IPV6
+			 * or 5TUPLE_IPV6. These keysets do not support TCP_IS
+			 * key, which might have been added earlier by the
 			 * basic_usage() dissector. We remove it, and add the
 			 * l4 proto in the L3_IP_PROTO key instead.
 			 */
-			if (vcap_contains_key(st->vrule, VCAP_KF_TCP_IS))
-				vcap_rule_rem_key(st->vrule, VCAP_KF_TCP_IS);
+			if (st->admin->vtype == VCAP_TYPE_IS1) {
+				if (vcap_contains_key(st->vrule, VCAP_KF_TCP_IS))
+					vcap_rule_rem_key(st->vrule, VCAP_KF_TCP_IS);
 
-			if (!vcap_contains_key(st->vrule, VCAP_KF_L3_IP_PROTO))
-				err = vcap_rule_add_key_u32(st->vrule,
-							    VCAP_KF_L3_IP_PROTO,
-							    st->l4_proto, ~0);
-			if (err)
-				goto out;
+				if (!vcap_contains_key(st->vrule, VCAP_KF_L3_IP_PROTO)) {
+					err = vcap_rule_add_key_u32(st->vrule,
+								    VCAP_KF_L3_IP_PROTO,
+								    st->l4_proto, ~0);
+					if (err)
+						goto out;
+				}
+			}
 		}
 	}
 	st->used_keys |= BIT_ULL(FLOW_DISSECTOR_KEY_IPV6_ADDRS);
