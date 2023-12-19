@@ -3583,14 +3583,14 @@ int vcap_get_rule_count_by_cookie(struct vcap_control *vctrl,
 			err = vcap_read_counter(ri, &temp);
 			if (err)
 				goto unlock;
-			ctr->value += temp.value;
 
-			/* Reset the rule counter */
-			temp.value = 0;
-			temp.sticky = 0;
-			err = vcap_write_counter(ri, &temp);
-			if (err)
-				goto unlock;
+			/* Instead of reset the counter in HW, update the
+			 * counter in SW with the last read value and then next
+			 * time when calculating the number of packets just
+			 * substract from what HW says the last read value
+			 * In this way the HW counters will not be ever erased*/
+			ctr->value += temp.value - ri->counter.value;
+			ri->counter.value = temp.value;
 		}
 		mutex_unlock(&admin->lock);
 	}
