@@ -119,78 +119,70 @@ out:
 
 int lan966x_tc_flower_handler_ipv6_usage(struct vcap_tc_flower_parse_usage *st)
 {
-	struct flow_match_basic match;
-
-	flow_rule_match_basic(st->frule, &match);
-	if (match.mask->n_proto)
-		st->l3_proto = be16_to_cpu(match.key->n_proto);
-
-	return vcap_tc_flower_handler_ipv6_usage(st);
-}
-
-int lan966x_tc_flower_handler_basic_usage_normal_ipv6(struct vcap_tc_flower_parse_usage *st)
-{
-	struct flow_match_basic match;
 	int err = 0;
 
-	flow_rule_match_basic(st->frule, &match);
-	if (match.mask->n_proto) {
-		st->l3_proto = be16_to_cpu(match.key->n_proto);
-		if (!lan966x_tc_is_known_etype(st, st->l3_proto)) {
-			err = vcap_rule_add_key_u32(st->vrule, VCAP_KF_ETYPE,
-						    st->l3_proto, ~0);
+	if (st->l3_proto == ETH_P_IPV6) {
+		struct flow_match_ipv6_addrs mt;
+		struct vcap_u128_key sip;
+		struct vcap_u128_key dip;
+
+		flow_rule_match_ipv6_addrs(st->frule, &mt);
+		/* Check if address masks are non-zero */
+		if (!ipv6_addr_any(&mt.mask->src)) {
+
+			vcap_netbytes_copy(sip.value, mt.key->src.s6_addr, 16);
+			vcap_netbytes_copy(sip.mask, mt.mask->src.s6_addr, 16);
+			err = vcap_rule_add_key_u128(st->vrule,
+						     VCAP_KF_L3_IP6_SIP, &sip);
 			if (err)
 				goto out;
-		} else if (st->l3_proto == ETH_P_IP) {
-			err = vcap_rule_add_key_bit(st->vrule, VCAP_KF_IP4_IS,
-						    VCAP_BIT_1);
+
+			/* With ipv6 addresses, we have to hit: NORMAL_IPV6 or
+			 * 5TUPLE_IPV6. These keysets do not support TCP_IS key,
+			 * which might have been added earlier by the
+			 * basic_usage() dissector. We remove it, and add the
+			 * l4 proto in the L3_IP_PROTO key instead.
+			 */
+			if (vcap_contains_key(st->vrule, VCAP_KF_TCP_IS))
+				vcap_rule_rem_key(st->vrule, VCAP_KF_TCP_IS);
+
+			err = vcap_rule_add_key_u32(st->vrule,
+						    VCAP_KF_L3_IP_PROTO,
+						    st->l4_proto, ~0);
 			if (err)
 				goto out;
-		} else if (st->l3_proto == ETH_P_IPV6) {
-			/* Not available in IP6 type keysets */
-			/* err = vcap_rule_add_key_bit(st->vrule, VCAP_KF_IP4_IS, */
-			/* 			    VCAP_BIT_0); */
-			/* if (err) */
-			/* 	goto out; */
-		} else if (st->l3_proto == ETH_P_ALL) {
-			/* Nothing to do */
-		} else {
-			vcap_rule_add_key_bit(st->vrule, VCAP_KF_ETYPE_LEN_IS,
-					      VCAP_BIT_1);
-			vcap_rule_add_key_u32(st->vrule, VCAP_KF_ETYPE,
-					      st->l3_proto, ~0);
+		}
+		if (!ipv6_addr_any(&mt.mask->dst)) {
+
+			vcap_netbytes_copy(dip.value, mt.key->dst.s6_addr, 16);
+			vcap_netbytes_copy(dip.mask, mt.mask->dst.s6_addr, 16);
+			err = vcap_rule_add_key_u128(st->vrule,
+						     VCAP_KF_L3_IP6_DIP, &dip);
+			if (err)
+				goto out;
+
+			/* With ipv6 addresses, we have to hit: NORMAL_IPV6 or
+			 * 5TUPLE_IPV6. These keysets do not support TCP_IS key,
+			 * which might have been added earlier by the
+			 * basic_usage() dissector. We remove it, and add the
+			 * l4 proto in the L3_IP_PROTO key instead.
+			 */
+			if (vcap_contains_key(st->vrule, VCAP_KF_TCP_IS))
+				vcap_rule_rem_key(st->vrule, VCAP_KF_TCP_IS);
+
+			if (!vcap_contains_key(st->vrule, VCAP_KF_L3_IP_PROTO))
+				err = vcap_rule_add_key_u32(st->vrule,
+							    VCAP_KF_L3_IP_PROTO,
+							    st->l4_proto, ~0);
+			if (err)
+				goto out;
 		}
 	}
-	if (match.mask->ip_proto) {
-		st->l4_proto = match.key->ip_proto;
-
-		if (st->l4_proto == IPPROTO_TCP ||
-		    st->l4_proto == IPPROTO_UDP)
-			vcap_rule_add_key_bit(st->vrule, VCAP_KF_TCP_UDP_IS,
-					      VCAP_BIT_1);
-		else
-			vcap_rule_add_key_bit(st->vrule, VCAP_KF_TCP_UDP_IS,
-					      VCAP_BIT_0);
-
-		vcap_rule_add_key_u32(st->vrule, VCAP_KF_L3_IP_PROTO,
-				      st->l4_proto, ~0);
-	}
-
-	st->used_keys |= BIT(FLOW_DISSECTOR_KEY_BASIC);
+	st->used_keys |= BIT_ULL(FLOW_DISSECTOR_KEY_IPV6_ADDRS);
 	return err;
 out:
-	NL_SET_ERR_MSG_MOD(st->fco->common.extack, "ip_proto parse error");
+	NL_SET_ERR_MSG_MOD(st->fco->common.extack, "ipv6_addr parse error");
 	return err;
-}
-
-static bool
-lan966x_tc_flower_use_ipv6_keyset(struct vcap_tc_flower_parse_usage *st)
-{
-	if (vcap_contains_key(st->vrule, VCAP_KF_L3_IP6_SIP) ||
-	    vcap_contains_key(st->vrule, VCAP_KF_L3_IP6_DIP))
-		return true;
-
-	return false;
 }
 
 static int
@@ -253,10 +245,6 @@ lan966x_tc_flower_handler_basic_usage(struct vcap_tc_flower_parse_usage *st)
 	}
 	if (match.mask->ip_proto) {
 		st->l4_proto = match.key->ip_proto;
-
-		/* Use ipv6 keysets if ipv6 SIP or DIP keys have been added */
-		if (lan966x_tc_flower_use_ipv6_keyset(st))
-			return lan966x_tc_flower_handler_basic_usage_normal_ipv6(st);
 
 		if (st->l4_proto == IPPROTO_TCP) {
 			if (st->admin->vtype == VCAP_TYPE_IS1) {
@@ -411,23 +399,8 @@ lan966x_tc_flower_use_dissectors(struct vcap_tc_flower_parse_usage *st,
 {
 	int idx, err = 0;
 
-	/* Fix me!
-	 *
-	 * We have a circular dependency between basic_usage and ipv6_usage.
-	 * Make sure ipv6_usage() is called first, so that basic_usage() can
-	 * decide if we should use ipv6 keysets or not.
-	 */
-	if (flow_rule_match_key(st->frule, FLOW_DISSECTOR_KEY_IPV6_ADDRS) &&
-	    lan966x_tc_flower_handlers_usage[FLOW_DISSECTOR_KEY_IPV6_ADDRS]) {
-		err = lan966x_tc_flower_handlers_usage[FLOW_DISSECTOR_KEY_IPV6_ADDRS](st);
-		if (err)
-			return err;
-	}
-
 	for (idx = 0; idx < ARRAY_SIZE(lan966x_tc_flower_handlers_usage); ++idx) {
 		if (!flow_rule_match_key(st->frule, idx))
-			continue;
-		if (idx == FLOW_DISSECTOR_KEY_IPV6_ADDRS)
 			continue;
 		if (!lan966x_tc_flower_handlers_usage[idx])
 			continue;
