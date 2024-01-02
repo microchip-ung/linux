@@ -116,6 +116,10 @@ SECTIONS
 
 	/* will be freed after init */
 	. = ALIGN(PAGE_SIZE);		/* Init code and data */
+#ifdef CONFIG_MIPS_RAW_APPENDED_DTB
+	/* leave space for Redboot Rootfs */
+	. += 0x150000;
+#endif
 	__init_begin = .;
 	INIT_TEXT_SECTION(PAGE_SIZE)
 	INIT_DATA_SECTION(16)
