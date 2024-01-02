@@ -1,0 +1,174 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/mfd/atmel,flexcom.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Atmel Flexcom (Flexible Serial Communication Unit)
+
+maintainers:
+  - Kavyasree Kotagiri <kavyasree.kotagiri@microchip.com>
+
+description:
+  The Atmel Flexcom is just a wrapper which embeds a SPI controller,
+  an I2C controller and an USART. Only one function can be used at a
+  time and is chosen at boot time according to the device tree.
+
+properties:
+  compatible:
+    enum:
+      - atmel,sama5d2-flexcom
+      - microchip,lan966x-flexcom
+
+  reg:
+    minItems: 1
+    maxItems: 2
+
+  clocks:
+    maxItems: 1
+
+  "#address-cells":
+    const: 1
+
+  "#size-cells":
+    const: 1
+
+  ranges:
+    description:
+      One range for the full I/O register region. (including USART,
+      TWI and SPI registers).
+    items:
+      maxItems: 3
+
+  atmel,flexcom-mode:
+    description: |
+      Specifies the flexcom mode as follows:
+      1: USART
+      2: SPI
+      3: I2C.
+    $ref: /schemas/types.yaml#/definitions/uint32
+    enum: [1, 2, 3]
+
+  microchip,flx-shrd-pins:
+    description: Specify the Flexcom shared pins to be used for flexcom
+      chip-selects.
+    $ref: /schemas/types.yaml#/definitions/uint32-array
+    minItems: 1
+    maxItems: 2
+    items:
+      minimum: 0
+      maximum: 20
+
+  microchip,flx-cs:
+    description: Flexcom chip selects. Here, value of '0' represents "cts" line
+      of flexcom USART or "cs0" line of flexcom SPI and value of '1' represents
+      "rts" line of flexcom USART or "cs1" line of flexcom SPI.
+    $ref: /schemas/types.yaml#/definitions/uint32-array
+    minItems: 1
+    maxItems: 2
+    items:
+      minimum: 0
+      maximum: 1
+
+patternProperties:
+  "^serial@[0-9a-f]+$":
+    description: See atmel-usart.txt for details of USART bindings.
+    type: object
+
+  "^spi@[0-9a-f]+$":
+    description: See ../spi/spi_atmel.txt for details of SPI bindings.
+    type: object
+
+    properties:
+      compatible:
+        const: atmel,at91rm9200-spi
+
+  "^i2c@[0-9a-f]+$":
+    description: See ../i2c/i2c-at91.txt for details of I2C bindings.
+    type: object
+
+required:
+  - compatible
+  - reg
+  - clocks
+  - "#address-cells"
+  - "#size-cells"
+  - ranges
+  - atmel,flexcom-mode
+
+allOf:
+  - if:
+      properties:
+        compatible:
+          contains:
+            const: microchip,lan966x-flexcom
+
+    then:
+      properties:
+        reg:
+          minItems: 2
+          maxItems: 2
+          items:
+            - description: Flexcom base regsiters map
+            - description: Flexcom shared registers map
+      required:
+        - microchip,flx-shrd-pins
+        - microchip,flx-cs
+
+additionalProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/interrupt-controller/arm-gic.h>
+
+    flx0: flexcom@f8034000 {
+          compatible = "atmel,sama5d2-flexcom";
+          reg = <0xf8034000 0x200>;
+          clocks = <&flx0_clk>;
+          #address-cells = <1>;
+          #size-cells = <1>;
+          ranges = <0x0 0xf8034000 0x800>;
+          atmel,flexcom-mode = <2>;
+
+          spi0: spi@400 {
+                compatible = "atmel,at91rm9200-spi";
+                reg = <0x400 0x200>;
+                interrupts = <19 IRQ_TYPE_LEVEL_HIGH 7>;
+                pinctrl-names = "default";
+                pinctrl-0 = <&pinctrl_flx0_default>;
+                #address-cells = <1>;
+                #size-cells = <0>;
+                clocks = <&flx0_clk>;
+                clock-names = "spi_clk";
+                atmel,fifo-size = <32>;
+          };
+    };
+  - |
+    #include <dt-bindings/interrupt-controller/arm-gic.h>
+
+    flx3: flexcom@e0064000 {
+          compatible = "microchip,lan966x-flexcom";
+          reg = <0xe0064000 0x100>,
+                <0xe2004180 0x8>;
+          clocks = <&flx0_clk>;
+          #address-cells = <1>;
+          #size-cells = <1>;
+          ranges = <0x0 0xe0040000 0x800>;
+          atmel,flexcom-mode = <2>;
+          microchip,flx-shrd-pins = <9>;
+          microchip,flx-cs = <0>;
+
+          spi3: spi@400 {
+                compatible = "atmel,at91rm9200-spi";
+                reg = <0x400 0x200>;
+                interrupts = <GIC_SPI 51 IRQ_TYPE_LEVEL_HIGH>;
+                pinctrl-names = "default";
+                pinctrl-0 = <&pinctrl_flx3_default>;
+                #address-cells = <1>;
+                #size-cells = <0>;
+                clocks = <&nic_clk>;
+                clock-names = "spi_clk";
+                atmel,fifo-size = <32>;
+          };
+    };
+...
