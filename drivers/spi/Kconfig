@@ -531,6 +531,12 @@ config SPI_JCORE
 	  This enables support for the SPI master controller in the J-Core
 	  synthesizable, open source SoC.
 
+config SPI_LAN966X_RTE
+	tristate "LAN966X SPI RTE"
+	depends on OF
+	help
+	  This sets the QSPI 0 in master mode for RTE usage
+
 config SPI_LM70_LLP
 	tristate "Parallel port adapter for LM70 eval board (DEVELOPMENT)"
 	depends on PARPORT
