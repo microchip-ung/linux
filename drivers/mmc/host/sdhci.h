@@ -340,6 +340,23 @@
 #define   SDHCI_SPEC_410	4
 #define   SDHCI_SPEC_420	5
 
+#define SDHCI_EDBGR                     0x238
+#define SDHCI_EDBGR_KEY_MASK            GENMASK(31, 24)
+#define SDHCI_EDBGR_INU                 BIT(3)
+#define SDHCI_EDBGR_CEFEN               BIT(2)
+#define SDHCI_EDBGR_TIMWEN              BIT(1)
+#define SDHCI_EDBGR_TXPHWEN             BIT(0)
+
+#define SDHCI_TXPHTR                    0x270
+#define SDHCI_TXPHTR_PH104EN            BIT(28)
+#define SDHCI_TXPHTR_PH104              GENMASK(27, 24)
+#define SDHCI_TXPHTR_PH50EN             BIT(20)
+#define SDHCI_TXPHTR_PH50               GENMASK(19, 16)
+#define SDHCI_TXPHTR_PH25EN             BIT(12)
+#define SDHCI_TXPHTR_PH25               GENMASK(11, 8)
+#define SDHCI_TXPHTR_PHHSEN             BIT(4)
+#define SDHCI_TXPHTR_PHHS               GENMASK(3, 0)
+
 /*
  * End of controller registers.
  */
@@ -536,6 +553,8 @@ struct sdhci_host {
 #define SDHCI_QUIRK2_USE_32BIT_BLK_CNT			(1<<18)
 /* Issue CMD and DATA reset together */
 #define SDHCI_QUIRK2_ISSUE_CMD_DAT_RESET_TOGETHER	(1<<19)
+/* Controller doesn't support sdr104 speed mode */
+#define SDHCI_QUIRK2_BROKEN_SDR104			(1<<19)
 
 	int irq;		/* Device IRQ */
 	void __iomem *ioaddr;	/* Mapped address */
