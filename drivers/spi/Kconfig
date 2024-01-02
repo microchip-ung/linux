@@ -576,6 +576,12 @@ config SPI_KSPI2
 
 	  This driver can also be built as a module. If so, the module
 	  will be called spi-kspi2.
+	  
+config SPI_LAN966X_RTE
+	tristate "LAN966X SPI RTE"
+	depends on OF
+	help
+	  This sets the QSPI 0 in master mode for RTE usage
 
 config SPI_LM70_LLP
 	tristate "Parallel port adapter for LM70 eval board (DEVELOPMENT)"
