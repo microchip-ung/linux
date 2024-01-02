@@ -895,7 +895,7 @@ static int vsc9953_mdio_bus_alloc(struct ocelot *ocelot)
 	rc = mscc_miim_setup(dev, &bus, "VSC9953 internal MDIO bus",
 			     ocelot->targets[GCB],
 			     ocelot->map[GCB][GCB_MIIM_MII_STATUS & REG_MASK],
-			     true);
+			     true, NULL);
 	if (rc) {
 		dev_err(dev, "failed to setup MDIO bus\n");
 		return rc;
