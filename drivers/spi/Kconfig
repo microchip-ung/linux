@@ -1154,6 +1154,12 @@ config SPI_XCOMM
 	  Support for the SPI-I2C bridge found on the Analog Devices
 	  AD-FMCOMMS1-EBZ board.
 
+config SPI_VCOREIII_BB
+	tristate "VCore-III SPI controller (DT)"
+	depends on OF
+	help
+	  SPI driver for VCore-III using bitbanging.
+
 config SPI_XILINX
 	tristate "Xilinx SPI controller common module"
 	depends on HAS_IOMEM
