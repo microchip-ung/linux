@@ -1,0 +1,90 @@
+# SPDX-License-Identifier: (GPL-2.0 OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/interrupt-controller/microchip,lan9645x-oic.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Microchip lan9645x outbound interrupt controller
+
+maintainers:
+  - Jens Emil Schulz Østergaard <jensemil.schulzostergaard@microchip.com>
+
+allOf:
+  - $ref: /schemas/interrupt-controller.yaml#
+
+description: |
+  The Microchip lan9645x outband interrupt controller (OIC) maps the internal
+  interrupt sources of the lan9645x device to an external interrupt.
+
+  The external interrupt is typically mapped to GPIOs.
+
+properties:
+  compatible:
+    const: microchip,lan9645x-oic
+
+  '#interrupt-cells':
+    const: 1
+
+  interrupt-controller: true
+
+  reg:
+    maxItems: 1
+
+  reg-names:
+    const: cpu_intr
+
+  interrupts-extended:
+    maxItems: 1
+
+  interrupt-names:
+    maxItems: 1
+
+  microchip,dst_target:
+    $ref: /schemas/types.yaml#/definitions/uint32
+    default: 2
+    minimum: 0
+    maximum: 5
+    description: |
+      Destination interrupt target. The values are
+      0: Internal MCU
+      1: Internal MCU
+      2: External GPIO IRQ0
+      3: External GPIO IRQ1
+      4: External GPIO IRQ2
+      5: External GPIO IRQ3
+
+  microchip,drv_mode:
+    $ref: /schemas/types.yaml#/definitions/uint32
+    default: 0
+    minimum: 0
+    maximum: 1
+    description: |
+      Drive mode of external destination interrupt. Encoding is:
+      0: Only drive external interrupt output when asserted (tristate when inactive)
+      1: External interrupt output is always driven
+
+required:
+  - compatible
+  - '#interrupt-cells'
+  - interrupt-controller
+  - interrupts-extended
+  - reg
+
+additionalProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/interrupt-controller/irq.h>
+    interrupt-controller@52001c {
+        compatible = "microchip,lan9645x-oic";
+        reg = <0 0>;
+        reg-names = "cpu_intr";
+        microchip,dst_target = <2>;
+        microchip,drv_mode   = <1>;
+        #interrupt-cells = <1>;
+        interrupt-controller;
+        interrupt-parent = <&intc>;
+        interrupts-extended = <&intc 24 IRQ_TYPE_LEVEL_LOW>;
+        interrupt-names = "external-irq";
+    };
+...

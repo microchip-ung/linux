@@ -1,0 +1,307 @@
+# SPDX-License-Identifier: GPL-2.0-only OR BSD-2-Clause
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/net/dsa/microchip,lan9645x-switch.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Microchip Lan9645x Ethernet switch controller
+
+maintainers:
+  - Jens Emil Schulz Østergaard <jensemil.schulzostergaard@microchip.com>
+
+description: |
+  The lan9645x switch is a multi-port Gigabit AVB/TSN Ethernet Switch with
+  five integrated 10/100/1000Base-T PHYs. In addition to the integrated PHYs,
+  it supports up to 2 RGMII/RMII, up to 2 BASE-X/SERDES/2.5GBASE-X and one
+  Quad-SGMII/Quad-USGMII interfaces.
+
+properties:
+  compatible:
+    const: "microchip,lan9645x-switch"
+
+  reg:
+    items:
+      - description: "Target DEVCPU_ORG: CPU Device Origin"
+      - description: "Target DEVCPU_GCB: General Configuration Block"
+      - description: "Target DEVCPU_QS: CPU Device Queue System"
+      - description: "Target PTP: Precision Timing Protocol Configuration"
+      - description: Target CHIP_TOP
+      - description: "Target TAS: Time Aware Scheduling"
+      - description: "Target REW: Rewriter Configuration"
+      - description: "Target VCAP_ES0: VCAP ES0 Configuration"
+      - description: "Target VCAP_S1: VCAP IS1 Configuration"
+      - description: "Target VCAP_S2: VCAP IS2 Configuration"
+      - description: "Target OAM_MEP: OAM MEP processor block"
+      - description: "Target SYS: Switching Engine Configuration"
+      - description: "Target HSIO: High Speed IO"
+      - description: "Target DEV[*]: Port Configuration"
+      - description: "Target DEV[*]: Port Configuration"
+      - description: "Target DEV[*]: Port Configuration"
+      - description: "Target DEV[*]: Port Configuration"
+      - description: "Target DEV[*]: Port Configuration"
+      - description: "Target DEV[*]: Port Configuration"
+      - description: "Target DEV[*]: Port Configuration"
+      - description: "Target DEV[*]: Port Configuration"
+      - description: "Target DEV[*]: Port Configuration"
+      - description: "Target UVOV: UnderVoltatageOverVoltage"
+      - description: "Target QSYS: Queue System Configuration"
+      - description: "Target AFI: Automatic Frame Injector Configuration"
+      - description: "Target ANA: Analyzer Configuration"
+      - description: "Target IROM: Read-only memory"
+      - description: "Target IRAM: SRAM memory"
+      - description: "Target EROM_I2C: Read-only memory"
+      - description: "Target EROM_SPI: Read-only memory"
+      - description: "Target CUPHY: CuPHY registers"
+      - description: Target UART
+      - description: "Target I2C[*]"
+      - description: "Target I2C[*]"
+      - description: Target TIMERS
+      - description: "Target CPU: CPU system registers"
+      - description: "Target OTP: One Time Programmable"
+      - description: Target WDT
+
+  reg-names:
+    items:
+      - const: org
+      - const: gcb
+      - const: qs
+      - const: ptp
+      - const: chip_top
+      - const: tas
+      - const: rew
+      - const: vcap
+      - const: vcap1
+      - const: vcap2
+      - const: mep
+      - const: sys
+      - const: hsio
+      - const: dev
+      - const: dev1
+      - const: dev2
+      - const: dev3
+      - const: dev4
+      - const: dev5
+      - const: dev6
+      - const: dev7
+      - const: dev8
+      - const: uvov
+      - const: qsys
+      - const: afi
+      - const: ana
+      - const: irom
+      - const: iram
+      - const: erom_i2c
+      - const: erom_spi
+      - const: cuphy
+      - const: uart
+      - const: i2c
+      - const: i2c1
+      - const: timers
+      - const: cpu
+      - const: otp
+      - const: wdt
+
+  interrupts-extended:
+    minItems: 1
+    items:
+      - description: analyzer interrupt
+      - description: ptp interrupt
+      - description: ptp external interrupt
+
+  interrupt-names:
+    minItems: 1
+    items:
+      - const: lan9645x-ptp
+      - const: lan9645x-ptp-ext
+      - const: lan9645x-ana
+
+
+$ref: dsa.yaml#
+
+patternProperties:
+  "^(ethernet-)?ports$":
+    type: object
+    additionalProperties: true
+    patternProperties:
+      "^(ethernet-)?port@[0-6]$":
+        type: object
+        description: Ethernet switch ports
+
+        $ref: dsa-port.yaml#
+
+        properties:
+          microchip,led-drive_mode:
+            $ref: /schemas/types.yaml#/definitions/uint32-array
+            minItems: 2
+            maxItems: 2
+            description:
+              Set the LED drive mode
+
+          phys:
+            $ref: /schemas/types.yaml#/definitions/phandle-array
+            description:
+              Phandle of a Ethernet SerDes PHY
+
+        unevaluatedProperties: false
+
+oneOf:
+  - required:
+      - ports
+  - required:
+      - ethernet-ports
+
+required:
+  - compatible
+  - reg
+  - interrupts-extended
+
+unevaluatedProperties: false
+
+examples:
+  - |
+    #include "dt-bindings/phy/phy-lan9645x-serdes.h"
+    soc {
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+      ethernet-switch@1 {
+        compatible = "microchip,lan9645x-switch";
+        reg = <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>,
+              <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>,
+              <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>,
+              <0>, <0>;
+        reg-names = "org",
+                    "gcb",
+                    "qs",
+                    "ptp",
+                    "chip_top",
+                    "tas",
+                    "rew",
+                    "vcap",
+                    "vcap1",
+                    "vcap2",
+                    "mep",
+                    "sys",
+                    "hsio",
+                    "dev",
+                    "dev1",
+                    "dev2",
+                    "dev3",
+                    "dev4",
+                    "dev5",
+                    "dev6",
+                    "dev7",
+                    "dev8",
+                    "uvov",
+                    "qsys",
+                    "afi",
+                    "ana",
+                    "irom",
+                    "iram",
+                    "erom_i2c",
+                    "erom_spi",
+                    "cuphy",
+                    "uart",
+                    "i2c",
+                    "i2c1",
+                    "timers",
+                    "cpu",
+                    "otp",
+                    "wdt";
+        interrupts-extended = <&lan9645x_irq 27>, <&lan9645x_irq 26>;
+        interrupt-names = "lan9645x-ptp", "lan9645x-ptp-ext";
+        pinctrl-0 = <&lan9645x_leds>, <&lan9645x_ptp1_pins>, <&lan9645x_ptp2_pins>;
+        pinctrl-names = "default";
+
+        ethernet-ports {
+          #address-cells = <1>;
+          #size-cells = <0>;
+
+          port@0 {
+            reg = <0>;
+            label = "lan0";
+            phy-mode = "gmii";
+            phy-handle = <&cuphy0>;
+            phys = <&lan9645x_serdes 0 LAN9645X_CU(0)>;
+          };
+
+          port@1 {
+            reg = <1>;
+            label = "lan1";
+            phy-mode = "gmii";
+            phy-handle = <&cuphy1>;
+            phys = <&lan9645x_serdes 1 LAN9645X_CU(1)>;
+            microchip,led-drive_mode = <1 3>;
+          };
+
+          port@2 {
+            reg = <2>;
+            label = "lan2";
+            phy-mode = "gmii";
+            phy-handle = <&cuphy2>;
+            phys = <&lan9645x_serdes 2 LAN9645X_CU(2)>;
+          };
+
+          port@3 {
+            reg = <3>;
+            label = "lan3";
+            phy-mode = "gmii";
+            phy-handle = <&cuphy3>;
+            phys = <&lan9645x_serdes 3 LAN9645X_CU(3)>;
+          };
+
+          port@4 {
+            reg = <4>;
+            label = "lan4";
+            status = "disabled";
+            phy-mode = "gmii";
+            phy-handle = <&cuphy4>;
+            phys = <&lan9645x_serdes 4 LAN9645X_CU(4)>;
+          };
+
+          port@5 {
+            reg = <5>;
+            label = "lan5";
+            phys = <&lan9645x_serdes 5 LAN9645X_SERDES6G(0)>;
+            phy-mode = "sgmii";
+            managed = "in-band-status";
+            sfp = <&lan_sfp0>;
+          };
+
+          port@6 {
+            reg = <6>;
+            label = "lan6";
+            phy-mode = "sgmii";
+            managed = "in-band-status";
+            phys = <&lan9645x_serdes 6 LAN9645X_SERDES6G(1)>;
+            sfp = <&lan_sfp1>;
+          };
+
+          port@7 {
+            reg = <7>;
+            label = "lan7";
+            phy-mode = "rgmii-id";
+            phys = <&lan9645x_serdes 7 LAN9645X_RGMII(0)>;
+            status = "ok";
+            ethernet = <&cpu_host_port>;
+            fixed-link {
+              speed = <1000>;
+              full-duplex;
+              pause;
+            };
+          };
+
+          port@8 {
+            reg = <8>;
+            label = "lan8";
+            phy-handle = <&rgmii1>;
+            phy-mode = "rgmii-id";
+            phys = <&lan9645x_serdes 8 LAN9645X_RGMII(1)>;
+            status = "disabled";
+          };
+        };
+      };
+    };
+
+
+...

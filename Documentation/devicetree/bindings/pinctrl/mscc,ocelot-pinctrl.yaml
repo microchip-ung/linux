@@ -37,6 +37,12 @@ properties:
       - description: Extended pin configuration registers
     minItems: 1
 
+  reg-names:
+    minItems: 1
+    items:
+      - description: Base address
+      - description: Extended pin configuration registers
+
   gpio-controller: true
 
   '#gpio-cells':
