@@ -383,6 +383,14 @@ int nanddev_init(struct nand_device *nand, const struct nand_ops *ops,
 	mtd->size = nanddev_size(nand);
 	mtd->owner = owner;
 
+	if (mtd->oobsize == 64) {
+		/* Experimental: set the subpage shift - we need it for our device
+		 * and nobody else seems to care
+		 */
+		pr_info("%s:%d: Setting subpage_sft to 2\n", __func__, __LINE__);
+		mtd->subpage_sft = 2;
+	}
+
 	return nanddev_bbt_init(nand);
 }
 EXPORT_SYMBOL_GPL(nanddev_init);
