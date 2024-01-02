@@ -48,6 +48,7 @@
 struct mscc_miim_info {
 	unsigned int phy_reset_offset;
 	unsigned int phy_reset_bits;
+	int (*reset)(struct mii_bus *bus);
 };
 
 struct mscc_miim_dev {
@@ -200,6 +201,18 @@ static int mscc_miim_reset(struct mii_bus *bus)
 	return 0;
 }
 
+static int lan9668_miim_reset(struct mii_bus *bus)
+{
+	struct reset_control *reset;
+
+	reset = devm_reset_control_get_optional_shared(bus->parent, "phy");
+	if (IS_ERR(reset))
+		return dev_err_probe(bus->parent, PTR_ERR(reset), "Failed to get reset\n");
+	reset_control_reset(reset);
+
+	return 0;
+}
+
 static const struct regmap_config mscc_miim_regmap_config = {
 	.reg_bits	= 32,
 	.val_bits	= 32,
@@ -215,7 +228,8 @@ static const struct regmap_config mscc_miim_phy_regmap_config = {
 
 int mscc_miim_setup(struct device *dev, struct mii_bus **pbus, const char *name,
 		    struct regmap *mii_regmap, int status_offset,
-		    bool ignore_read_errors)
+		    bool ignore_read_errors,
+		    int (*reset)(struct mii_bus *bus))
 {
 	struct mscc_miim_dev *miim;
 	struct mii_bus *bus;
@@ -227,7 +241,7 @@ int mscc_miim_setup(struct device *dev, struct mii_bus **pbus, const char *name,
 	bus->name = name;
 	bus->read = mscc_miim_read;
 	bus->write = mscc_miim_write;
-	bus->reset = mscc_miim_reset;
+	bus->reset = reset;
 	snprintf(bus->id, MII_BUS_ID_SIZE, "%s-mii", dev_name(dev));
 	bus->parent = dev;
 
@@ -271,6 +285,7 @@ static int mscc_miim_probe(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
 	struct regmap *mii_regmap, *phy_regmap;
+	const struct mscc_miim_info *info;
 	struct device *dev = &pdev->dev;
 	struct reset_control *reset;
 	struct mscc_miim_dev *miim;
@@ -296,7 +311,12 @@ static int mscc_miim_probe(struct platform_device *pdev)
 		return dev_err_probe(dev, PTR_ERR(phy_regmap),
 				     "Unable to create phy register regmap\n");
 
-	ret = mscc_miim_setup(dev, &bus, "mscc_miim", mii_regmap, 0, false);
+	info = device_get_match_data(dev);
+	if (!info)
+		return -EINVAL;
+
+	ret = mscc_miim_setup(dev, &bus, "mscc_miim", mii_regmap, 0, false,
+			      info->reset);
 	if (ret < 0) {
 		dev_err(dev, "Unable to setup the MDIO bus\n");
 		return ret;
@@ -304,10 +324,7 @@ static int mscc_miim_probe(struct platform_device *pdev)
 
 	miim = bus->priv;
 	miim->phy_regs = phy_regmap;
-
-	miim->info = device_get_match_data(dev);
-	if (!miim->info)
-		return -EINVAL;
+	miim->info = info;
 
 	miim->clk = devm_clk_get_optional(dev, NULL);
 	if (IS_ERR(miim->clk))
@@ -356,11 +373,17 @@ static const struct mscc_miim_info mscc_ocelot_miim_info = {
 	.phy_reset_offset = MSCC_PHY_REG_PHY_CFG,
 	.phy_reset_bits = PHY_CFG_PHY_ENA | PHY_CFG_PHY_COMMON_RESET |
 			  PHY_CFG_PHY_RESET,
+	.reset = mscc_miim_reset,
 };
 
 static const struct mscc_miim_info microchip_lan966x_miim_info = {
 	.phy_reset_offset = LAN966X_CUPHY_COMMON_CFG,
 	.phy_reset_bits = CUPHY_COMMON_CFG_RESET_N,
+	.reset = mscc_miim_reset,
+};
+
+static const struct mscc_miim_info microchip_lan9668_miim_info = {
+	.reset = lan9668_miim_reset,
 };
 
 static const struct of_device_id mscc_miim_match[] = {
@@ -370,6 +393,9 @@ static const struct of_device_id mscc_miim_match[] = {
 	}, {
 		.compatible = "microchip,lan966x-miim",
 		.data = &microchip_lan966x_miim_info
+	}, {
+		.compatible = "microchip,lan9668-miim",
+		.data = &microchip_lan9668_miim_info
 	},
 	{ }
 };
