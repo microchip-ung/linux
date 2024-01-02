@@ -234,12 +234,16 @@ static void i2c_dw_of_configure(struct device *device)
 {
 	struct platform_device *pdev = to_platform_device(device);
 	struct dw_i2c_dev *dev = dev_get_drvdata(device);
+	struct resource *res;
 
 	switch (dev->flags & MODEL_MASK) {
 	case MODEL_MSCC_OCELOT:
-		dev->ext = devm_platform_ioremap_resource(pdev, 1);
-		if (!IS_ERR(dev->ext))
-			dev->set_sda_hold_time = mscc_twi_set_sda_hold_time;
+		res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+		if (res) {
+			dev->ext = devm_ioremap_resource(&pdev->dev, res);
+			if (!IS_ERR(dev->ext))
+				dev->set_sda_hold_time = mscc_twi_set_sda_hold_time;
+		}
 		break;
 	default:
 		break;
