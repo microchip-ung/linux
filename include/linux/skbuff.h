@@ -606,6 +606,12 @@ struct skb_shared_info {
 	unsigned int	gso_type;
 	u32		tskey;
 
+	/* When non-NULL, this function is called instead of
+	 * skb_free_head() when the data associated with an
+	 * SKB is released (#dataref reaches zero).
+	 */
+	void (*free)(struct sk_buff *skb);
+
 	/*
 	 * Warning : all fields before dataref are cleared in __alloc_skb()
 	 */
@@ -1307,7 +1313,7 @@ static inline bool skb_data_unref(const struct sk_buff *skb,
 
 	if (atomic_read(&shinfo->dataref) == bias)
 		smp_rmb();
-	else if (atomic_sub_return(bias, &shinfo->dataref))
+	if (atomic_sub_return(bias, &shinfo->dataref))
 		return false;
 
 	return true;

@@ -1051,8 +1051,12 @@ static void skb_kfree_head(void *head, unsigned int end_offset)
 static void skb_free_head(struct sk_buff *skb)
 {
 	unsigned char *head = skb->head;
+	struct skb_shared_info *shinfo = skb_shinfo(skb);
 
-	if (skb->head_frag) {
+	if (shinfo->free) {
+		if (!atomic_read(&shinfo->dataref))
+			shinfo->free(skb);
+	} else if (skb->head_frag) {
 		if (skb_pp_recycle(skb, head))
 			return;
 		skb_free_frag(head);
@@ -1066,7 +1070,9 @@ static void skb_release_data(struct sk_buff *skb, enum skb_drop_reason reason)
 	struct skb_shared_info *shinfo = skb_shinfo(skb);
 	int i;
 
-	if (!skb_data_unref(skb, shinfo))
+	if (atomic_sub_return(skb->nohdr ? (1 << SKB_DATAREF_SHIFT) + 1 : 1,
+			      &shinfo->dataref) &&
+	    skb->cloned)
 		goto exit;
 
 	if (skb_zcopy(skb)) {
@@ -2287,6 +2293,7 @@ int pskb_expand_head(struct sk_buff *skb, int nhead, int ntail,
 	skb->cloned   = 0;
 	skb->hdr_len  = 0;
 	skb->nohdr    = 0;
+	skb_shinfo(skb)->free = NULL;
 	atomic_set(&skb_shinfo(skb)->dataref, 1);
 
 	skb_metadata_clear(skb);
