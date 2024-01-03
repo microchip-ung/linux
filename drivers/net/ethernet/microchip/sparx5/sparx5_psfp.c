@@ -7,7 +7,6 @@
 #include "sparx5_main_regs.h"
 #include "sparx5_main.h"
 
-#define SPX5_PSFP_SF_CNT 1024
 #define SPX5_PSFP_SG_CONFIG_CHANGE_SLEEP 1000
 #define SPX5_PSFP_SG_CONFIG_CHANGE_TIMEO 100000
 
@@ -18,7 +17,7 @@ static struct sparx5_pool_entry sparx5_psfp_fm_pool[SPX5_SDLB_CNT];
 static struct sparx5_pool_entry sparx5_psfp_sg_pool[SPX5_PSFP_SG_CNT];
 
 /* Pool of available stream filters */
-static struct sparx5_pool_entry sparx5_psfp_sf_pool[SPX5_PSFP_SF_CNT];
+struct sparx5_pool_entry sparx5_psfp_sf_pool[SPX5_PSFP_SF_CNT];
 
 static int sparx5_psfp_sf_get(struct sparx5 *sparx5, u32 *id)
 {

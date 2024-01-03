@@ -7,7 +7,7 @@
 #include "sparx5_main_regs.h"
 #include "sparx5_main.h"
 
-struct sparx5_sdlb_group sdlb_groups[SPX5_SDLB_GROUP_CNT] = {
+static struct sparx5_sdlb_group sdlb_groups[SPX5_SDLB_GROUP_CNT] = {
 	{ SPX5_SDLB_GROUP_RATE_MAX,    8192 / 1, 64 }, /*  25 G */
 	{ 15000000000ULL,              8192 / 1, 64 }, /*  15 G */
 	{ 10000000000ULL,              8192 / 1, 64 }, /*  10 G */
@@ -71,7 +71,7 @@ static void sparx5_sdlb_group_enable(struct sparx5 *sparx5, u32 group)
 		 ANA_AC_SDLB_PUP_CTRL(group));
 }
 
-static u32 sparx5_sdlb_group_get_first(struct sparx5 *sparx5, u32 group)
+u32 sparx5_sdlb_group_get_first(struct sparx5 *sparx5, u32 group)
 {
 	u32 val;
 
@@ -80,8 +80,8 @@ static u32 sparx5_sdlb_group_get_first(struct sparx5 *sparx5, u32 group)
 	return ANA_AC_SDLB_XLB_START_LBSET_START_GET(val);
 }
 
-static u32 sparx5_sdlb_group_get_next(struct sparx5 *sparx5, u32 group,
-				      u32 lb)
+u32 sparx5_sdlb_group_get_next(struct sparx5 *sparx5, u32 group,
+			       u32 lb)
 {
 	u32 val;
 
@@ -90,8 +90,8 @@ static u32 sparx5_sdlb_group_get_next(struct sparx5 *sparx5, u32 group,
 	return ANA_AC_SDLB_XLB_NEXT_LBSET_NEXT_GET(val);
 }
 
-static bool sparx5_sdlb_group_is_first(struct sparx5 *sparx5, u32 group,
-				       u32 lb)
+bool sparx5_sdlb_group_is_first(struct sparx5 *sparx5, u32 group,
+				u32 lb)
 {
 	return lb == sparx5_sdlb_group_get_first(sparx5, group);
 }
@@ -102,7 +102,7 @@ static bool sparx5_sdlb_group_is_last(struct sparx5 *sparx5, u32 group,
 	return lb == sparx5_sdlb_group_get_next(sparx5, group, lb);
 }
 
-static bool sparx5_sdlb_group_is_empty(struct sparx5 *sparx5, u32 group)
+bool sparx5_sdlb_group_is_empty(struct sparx5 *sparx5, u32 group)
 {
 	u32 val;
 

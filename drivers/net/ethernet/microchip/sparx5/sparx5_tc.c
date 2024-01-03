@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0+
-/* Microchip Sparx5 Switch driver
+/* Microchip VCAP API
  *
  * Copyright (c) 2022 Microchip Technology Inc. and its subsidiaries.
  */
 
-#include <net/pkt_cls.h>
-#include <net/pkt_sched.h>
-
 #include "sparx5_tc.h"
+#include "sparx5_tc_dbg.h"
+#include "sparx5_main_regs.h"
 #include "sparx5_main.h"
 #include "sparx5_qos.h"
 
@@ -15,8 +14,8 @@
 static LIST_HEAD(sparx5_block_cb_list);
 
 static int sparx5_tc_block_cb(enum tc_setup_type type,
-			      void *type_data,
-			      void *cb_priv, bool ingress)
+			       void *type_data,
+			       void *cb_priv, bool ingress)
 {
 	struct net_device *ndev = cb_priv;
 
@@ -47,14 +46,19 @@ static int sparx5_tc_block_cb_egress(enum tc_setup_type type,
 static int sparx5_tc_setup_block(struct net_device *ndev,
 				 struct flow_block_offload *fbo)
 {
+	struct sparx5_port *port = netdev_priv(ndev);
 	flow_setup_cb_t *cb;
 
-	if (fbo->binder_type == FLOW_BLOCK_BINDER_TYPE_CLSACT_INGRESS)
+	if (fbo->binder_type == FLOW_BLOCK_BINDER_TYPE_CLSACT_INGRESS) {
 		cb = sparx5_tc_block_cb_ingress;
-	else if (fbo->binder_type == FLOW_BLOCK_BINDER_TYPE_CLSACT_EGRESS)
+		port->tc.block_shared[0] = fbo->block_shared;
+	}
+	else if (fbo->binder_type == FLOW_BLOCK_BINDER_TYPE_CLSACT_EGRESS) {
 		cb = sparx5_tc_block_cb_egress;
-	else
+		port->tc.block_shared[1] = fbo->block_shared;
+	} else {
 		return -EOPNOTSUPP;
+	}
 
 	return flow_block_cb_setup_simple(fbo, &sparx5_block_cb_list,
 					  cb, ndev, ndev, false);
@@ -69,7 +73,7 @@ static void sparx5_tc_get_layer_and_idx(struct sparx5 *sparx5, u32 parent,
 	} else {
 		u32 queue = TC_H_MIN(parent) - 1;
 		*layer = 0;
-		*idx = SPX5_HSCH_L0_GET_IDX(portno, queue);
+		*idx = sparx5_hsch_l0_get_idx(sparx5, portno, queue);
 	}
 }
 
@@ -154,9 +158,36 @@ static int sparx5_tc_setup_qdisc_ets(struct net_device *ndev,
 	return -EOPNOTSUPP;
 }
 
+static int sparx5_tc_setup_qdisc_cbs(struct net_device *ndev,
+				     struct tc_cbs_qopt_offload *qopt)
+{
+	struct sparx5_port *port = netdev_priv(ndev);
+
+	return qopt->enable ? sparx5_cbs_add(port, qopt) :
+			      sparx5_cbs_del(port, qopt);
+}
+
+static int sparx5_tc_setup_qdisc_taprio(struct net_device *ndev,
+					struct tc_taprio_qopt_offload *qopt)
+{
+	struct sparx5_port *port = netdev_priv(ndev);
+
+	switch (qopt->cmd) {
+	case TAPRIO_CMD_REPLACE:
+		return sparx5_tas_enable(port, qopt);
+	case TAPRIO_CMD_DESTROY:
+		return sparx5_tas_disable(port);
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+
 int sparx5_port_setup_tc(struct net_device *ndev, enum tc_setup_type type,
 			 void *type_data)
 {
+	pr_debug("%s:%d: %s: type: %s\n", __func__, __LINE__, netdev_name(ndev),
+		 tc_dbg_tc_setup_type(type));
+
 	switch (type) {
 	case TC_SETUP_BLOCK:
 		return sparx5_tc_setup_block(ndev, type_data);
@@ -166,6 +197,10 @@ int sparx5_port_setup_tc(struct net_device *ndev, enum tc_setup_type type,
 		return sparx5_tc_setup_qdisc_tbf(ndev, type_data);
 	case TC_SETUP_QDISC_ETS:
 		return sparx5_tc_setup_qdisc_ets(ndev, type_data);
+	case TC_SETUP_QDISC_CBS:
+		return sparx5_tc_setup_qdisc_cbs(ndev, type_data);
+	case TC_SETUP_QDISC_TAPRIO:
+		return sparx5_tc_setup_qdisc_taprio(ndev, type_data);
 	default:
 		return -EOPNOTSUPP;
 	}

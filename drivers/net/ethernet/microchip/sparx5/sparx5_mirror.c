@@ -21,7 +21,7 @@ static u32 sparx5_mirror_to_dir(bool ingress)
 }
 
 /* Get ports belonging to this mirror */
-static u64 sparx5_mirror_port_get(struct sparx5 *sparx5, u32 idx)
+u64 sparx5_mirror_port_get(struct sparx5 *sparx5, u32 idx)
 {
 	u64 val;
 
@@ -74,7 +74,7 @@ static bool sparx5_mirror_is_empty(struct sparx5 *sparx5, u32 idx)
 }
 
 /* Get direction of mirror */
-static u32 sparx5_mirror_dir_get(struct sparx5 *sparx5, u32 idx)
+u32 sparx5_mirror_dir_get(struct sparx5 *sparx5, u32 idx)
 {
 	u32 val = spx5_rd(sparx5, ANA_AC_PROBE_CFG(idx));
 
@@ -99,7 +99,7 @@ static void sparx5_mirror_monitor_set(struct sparx5 *sparx5, u32 idx,
 }
 
 /* Get the monitor port of this mirror */
-static u32 sparx5_mirror_monitor_get(struct sparx5 *sparx5, u32 idx)
+u32 sparx5_mirror_monitor_get(struct sparx5 *sparx5, u32 idx)
 {
 	u32 val = spx5_rd(sparx5,
 			  QFWD_FRAME_COPY_CFG(idx + SPX5_QFWD_MP_OFFSET));

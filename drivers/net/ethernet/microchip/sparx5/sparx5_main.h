@@ -19,10 +19,16 @@
 #include <linux/hrtimer.h>
 #include <linux/debugfs.h>
 #include <net/flow_offload.h>
+#include <net/pkt_cls.h>
+#include <net/xdp.h>
 
 #include <fdma_api.h>
+#include "afi_api.h"
 
 #include "sparx5_main_regs.h"
+#include "sparx5_vcap_impl.h"
+#include "sparx5_qos.h"
+#include "sparx5_mrp.h"
 
 /* Target chip type */
 enum spx5_target_chiptype {
@@ -31,11 +37,11 @@ enum spx5_target_chiptype {
 	SPX5_TARGET_CT_7552       = 0x7552,  /* SparX-5-128 Enterprise */
 	SPX5_TARGET_CT_7556       = 0x7556,  /* SparX-5-160 Enterprise */
 	SPX5_TARGET_CT_7558       = 0x7558,  /* SparX-5-200 Enterprise */
-	SPX5_TARGET_CT_7546TSN    = 0x47546, /* SparX-5-64i Industrial */
-	SPX5_TARGET_CT_7549TSN    = 0x47549, /* SparX-5-90i Industrial */
-	SPX5_TARGET_CT_7552TSN    = 0x47552, /* SparX-5-128i Industrial */
-	SPX5_TARGET_CT_7556TSN    = 0x47556, /* SparX-5-160i Industrial */
-	SPX5_TARGET_CT_7558TSN    = 0x47558, /* SparX-5-200i Industrial */
+	SPX5_TARGET_CT_7546TSN    = 0x0546, /* SparX-5-64i Industrial */
+	SPX5_TARGET_CT_7549TSN    = 0x0549, /* SparX-5-90i Industrial */
+	SPX5_TARGET_CT_7552TSN    = 0x0552, /* SparX-5-128i Industrial */
+	SPX5_TARGET_CT_7556TSN    = 0x0556, /* SparX-5-160i Industrial */
+	SPX5_TARGET_CT_7558TSN    = 0x0558, /* SparX-5-200i Industrial */
 	SPX5_TARGET_CT_LAN9694    = 0x9694,  /* lan969x-40 */
 	SPX5_TARGET_CT_LAN9691VAO = 0x9691,  /* lan969x-40-VAO */
 	SPX5_TARGET_CT_LAN9694TSN = 0x9695,  /* lan969x-40-TSN */
@@ -78,8 +84,15 @@ enum sparx5_cal_bw {
 enum sparx5_feature {
 	SPX5_FEATURE_PSFP = BIT(0),
 	SPX5_FEATURE_PTP  = BIT(1),
+	SPX5_FEATURE_REDBOX = BIT(2),
 };
 
+#ifdef CONFIG_SPARX5_SWITCH_APPL
+extern const u8 ifh_dmac[];
+extern const u8 ifh_smac[];
+#define IFH_ENCAP_LEN		16
+#define IFH_ETH_TYPE		0x8880
+#endif
 #define SPX5_PORTS             65
 #define SPX5_PORTS_ALL         70 /* Total number of ports */
 
@@ -98,10 +111,12 @@ enum sparx5_feature {
 #define PGID_BCAST             6
 #define PGID_CPU               7
 #define PGID_MCAST_START       8
+#define PGID_MRP               9
 
 #define PGID_TABLE_SIZE	       3290
 
 #define IFH_LEN                9 /* 36 bytes */
+#define IFH_LEN_BYTES          (IFH_LEN * sizeof(u32))
 #define NULL_VID               0
 #define SPX5_MACT_PULL_DELAY   (2 * HZ)
 #define SPX5_STATS_CHECK_DELAY (1 * HZ)
@@ -117,9 +132,11 @@ enum sparx5_feature {
 #define FDMA_DCB_MAX			64
 #define FDMA_RX_DCB_MAX_DBS		15
 #define FDMA_TX_DCB_MAX_DBS		1
+#define FDMA_WEIGHT			4
 
 #define SPARX5_PHC_COUNT		3
 #define SPARX5_PHC_PORT			0
+#define SPARX5_MAX_PHC_PINS_NUM		7
 
 #define IFH_REW_OP_NOOP			0x0
 #define IFH_REW_OP_ONE_STEP_PTP		0x3
@@ -130,11 +147,34 @@ enum sparx5_feature {
 #define IFH_PDU_TYPE_IPV4_UDP_PTP	0x6
 #define IFH_PDU_TYPE_IPV6_UDP_PTP	0x7
 
+#define SPARX5_VCAP_LOOKUP_MAX		(6+4+1+2) /* IS0, IS2, ES0, ES2 */
+
+#define SPX5_POLICERS_PER_PORT		4  /* port policers */
+
+#define SPX5_MIRROR_PROBE_MAX 3
+#define SPX5_QFWD_MP_OFFSET 9
+
 #define SPX5_DSM_CAL_LEN               64
 #define SPX5_DSM_CAL_MAX_DEVS_PER_TAXI 13
 #define SPX5_DSM_CAL_EMPTY             0xFFFF
+#define SPX5_DSM_CAL_TAXIS             8
 
 #define SPARX5_MAX_PTP_ID	512
+
+/* Must be maximum values across all L3 enabled platforms */
+#define SPARX5_ROUTER_LEG_N_VMID 511
+#define SPARX5_ARP_TBL_SIZE 2047
+
+#define SPX5_BUM_UNKNOWN_BROADCAST BIT(0)
+#define SPX5_BUM_UNKNOWN_MULTICAST BIT(1)
+#define SPX5_BUM_UNKNOWN_UNICAST BIT(2)
+#define SPX5_BUM_KNOWN_BROADCAST BIT(3)
+#define SPX5_BUM_KNOWN_MULTICAST BIT(4)
+#define SPX5_BUM_KNOWN_UNICAST BIT(5)
+#define SPX5_BUM_LEARN_FRAMES BIT(6)
+
+#define SPX5_USXGMII_QUAD 2
+#define SPX5_USXGMII_SPEED 6
 
 struct sparx5;
 
@@ -171,13 +211,29 @@ struct sparx5_rx {
 	u8 page_order;
 };
 
+enum spx5_db_data_type {
+	SPX5_DB_DATA_TYPE_SKB,
+	SPX5_DB_DATA_TYPE_XDPF,
+	SPX5_DB_DATA_TYPE_PAGE
+};
+
 /* Used to store information about TX buffers. */
 struct sparx5_tx_buf {
+	struct list_head list;
 	struct net_device *dev;
 	struct sk_buff *skb;
+	void *cpu_addr;
 	dma_addr_t dma_addr;
 	bool used;
 	bool ptp;
+	int len;
+	union {
+		struct sk_buff *skb;
+		struct xdp_frame *xdpf;
+		struct page *page;
+	} data;
+	enum spx5_db_data_type data_type;
+	int offset;
 };
 
 /* Frame DMA transmit state:
@@ -186,8 +242,10 @@ struct sparx5_tx_buf {
 struct sparx5_tx {
 	struct fdma fdma;
 	struct sparx5_tx_buf *dbs;
+	struct list_head db_list;
 	u64 packets;
 	u64 dropped;
+	u16 max_mtu;
 };
 
 struct sparx5_port_config {
@@ -204,6 +262,29 @@ struct sparx5_port_config {
 	u32 pause_adv;
 	phy_interface_t phy_mode;
 	u32 sd_sgpio;
+
+	/* When configuring the usxgmii then it is needed to configure only 1
+	 * time the serdes for all 4 ports which are attached to it. This is set
+	 * to true on the base port when the serdes is configured.
+	 */
+	bool usx_enabled;
+};
+
+struct sparx5_port_policer {
+	struct flow_stats prev;
+	struct flow_stats stats;
+	/* port policers holds the client reference (cookie) */
+	unsigned long policer;
+};
+
+struct sparx5_port_tc {
+	 /* ingress/egress using shared filter block */
+	bool block_shared[2];
+	 /* protocol assigned template per vcap lookup */
+	u16 flower_template_proto[SPARX5_VCAP_LOOKUP_MAX];
+	/* Port statistics */
+	struct flow_stats prev_mirror_stats;
+	struct sparx5_port_policer port_policer[SPX5_POLICERS_PER_PORT];
 };
 
 struct sparx5_port {
@@ -231,24 +312,49 @@ struct sparx5_port {
 	bool vlan_aware;
 	struct hrtimer inj_timer;
 	/* ptp */
-	u8 ptp_cmd;
+	u8 ptp_tx_cmd;
+	u8 ptp_rx_cmd;
 	u16 ts_id;
 	struct sk_buff_head tx_skbs;
 	bool is_mrouter;
 	struct list_head tc_templates; /* list of TC templates on this port */
+
+	bool mcast_ena;
+	/* QOS port configuration */
+	struct mchp_qos_port_conf qos_port_conf;
+	/* Frame preemption configuration */
+	struct sparx5_fp_port_conf fp;
+	struct sparx5_port_tc tc;
+
+	struct mrp_port *mrp_port;
+	struct bpf_prog *xdp_prog;
+	struct xdp_rxq_info xdp_rxq;
+
+	/* LAG */
+	struct net_device *lag_master;
+	enum netdev_lag_hash lag_hash_type;
+	bool lag_tx_active;
 };
 
 enum sparx5_core_clockfreq {
 	SPX5_CORE_CLOCK_DEFAULT,  /* Defaults to the highest supported frequency */
+	SPX5_CORE_CLOCK_180MHZ,   /* 180MHZ core clock frequency */
 	SPX5_CORE_CLOCK_250MHZ,   /* 250MHZ core clock frequency */
 	SPX5_CORE_CLOCK_328MHZ,   /* 328MHZ core clock frequency */
 	SPX5_CORE_CLOCK_500MHZ,   /* 500MHZ core clock frequency */
 	SPX5_CORE_CLOCK_625MHZ,   /* 625MHZ core clock frequency */
 };
 
+/* This is used only for speeds 180MHz and 328MHz */
+enum sparx5_core_clockref {
+	SPX5_CORE_CLOCK_REF_25MHZ,   /* Force to use 25Mhz ref. clock */
+	SPX5_CORE_CLOCK_REF_39MHZ,   /* Force to use 39Mhz ref. clock */
+};
+
 struct sparx5_phc {
 	struct ptp_clock *clock;
 	struct ptp_clock_info info;
+	struct ptp_pin_desc pins[SPARX5_MAX_PHC_PINS_NUM];
 	struct kernel_hwtstamp_config hwtstamp_config;
 	struct sparx5 *sparx5;
 	u8 index;
@@ -271,6 +377,10 @@ struct sparx5_mdb_entry {
 	u16 pgid_idx;
 };
 
+struct sparx5_mall_port_policer_entry {
+	struct flow_action_entry action;
+};
+
 struct sparx5_mall_mirror_entry {
 	u32 idx;
 	struct sparx5_port *port;
@@ -284,12 +394,61 @@ struct sparx5_mall_entry {
 	bool ingress;
 	union {
 		struct sparx5_mall_mirror_entry mirror;
+		struct sparx5_mall_port_policer_entry port_policer;
 	};
 };
 
 #define SPARX5_PTP_TIMEOUT		msecs_to_jiffies(10)
 #define SPARX5_SKB_CB(skb) \
 	((struct sparx5_skb_cb *)((skb)->cb))
+
+struct sparx5_port_stats {
+	u64 rx_unicast;
+	u64 rx_multicast;
+	u64 rx_broadcast;
+	u64 tx_unicast;
+	u64 tx_multicast;
+	u64 tx_broadcast;
+	u64 rx_bytes;
+	u64 tx_bytes;
+};
+
+/* sparx5_router.c */
+int sparx5_rr_router_init(struct sparx5 *sparx5);
+void sparx5_rr_router_deinit(struct sparx5 *sparx5);
+
+struct sparx5_rr_hw_route {
+	u32 vrule_id;
+	bool vrule_id_valid;
+};
+
+struct sparx5_router {
+	struct sparx5 *sparx5;
+	struct notifier_block fib_nb;
+	struct notifier_block netevent_nb;
+	struct notifier_block inetaddr_nb;
+	struct notifier_block inetaddr_valid_nb;
+	struct notifier_block netdevice_nb;
+	struct notifier_block inet6addr_nb;
+	struct notifier_block inet6addr_valid_nb;
+	struct rhashtable neigh_ht;
+	struct rhashtable fib_ht;
+	struct sparx5_rr_hw_route link_local; /* Trap all link-local traffic. */
+	struct net_device *port_dev; /* For VCAP API. */
+
+	struct list_head fib_lpm4_list;
+	struct list_head fib_lpm6_list;
+	struct mutex lock; /* Global router lock for all shared data. */
+
+	struct workqueue_struct *sparx5_router_owq;
+
+	atomic_t legs_count;
+	struct list_head leg_list;
+	/* Track allocated router leg indices in hw */
+	DECLARE_BITMAP(vmid_mask, SPARX5_ROUTER_LEG_N_VMID);
+	/* Track allocated arp table indices in hw */
+	DECLARE_BITMAP(arp_tbl_mask, SPARX5_ARP_TBL_SIZE);
+};
 
 struct sparx5_regs {
 	const unsigned int *tsize;
@@ -320,9 +479,18 @@ struct sparx5_consts {
 	u32 qres_max_prio_idx;   /* Maximum QRES prio index */
 	u32 qres_max_colour_idx; /* Maximum QRES colour index */
 	u32 tod_pin;             /* PTP TOD pin */
+	u32 n_pol_acl;
 	const struct sparx5_vcap_inst *vcaps_cfg;
 	const struct vcap_info *vcaps;
 	const struct vcap_statistics *vcap_stats;
+	u8 ptp_pins;
+#ifdef CONFIG_SPARX5_SWITCH_APPL
+	u16 ifh_id;
+#endif
+	int vmid_cnt;
+	int arp_tbl_cnt;
+	int bum_slb_cnt;
+	int isdx_cnt;
 };
 
 struct sparx5_ops {
@@ -348,6 +516,11 @@ struct sparx5_ops {
 	int (*fdma_poll)(struct napi_struct *napi, int weight);
 	int (*fdma_xmit)(struct sparx5 *sparx5, u32 *ifh, struct sk_buff *skb,
 			 struct net_device *dev);
+	int (*fdma_resize)(struct sparx5 *sparx5);
+	u32 (*get_mtu)(struct sparx5 *sparx5);
+	int (*port_get_10g_qxgmii_idx)(struct sparx5 *sparx5,
+				       struct sparx5_port *port,
+				       size_t idx);
 };
 
 struct sparx5_main_io_resource {
@@ -373,7 +546,7 @@ struct sparx5 {
 	u32 features;
 	void __iomem *regs[NUM_TARGETS];
 	int port_count;
-	struct mutex lock; /* MAC reg lock */
+	spinlock_t lock; /* MAC reg lock */
 	/* port structures are in net device */
 	struct sparx5_port *ports[SPX5_PORTS];
 	enum sparx5_core_clockfreq coreclock;
@@ -398,6 +571,7 @@ struct sparx5 {
 	DECLARE_BITMAP(bridge_mask, SPX5_PORTS);
 	DECLARE_BITMAP(bridge_fwd_mask, SPX5_PORTS);
 	DECLARE_BITMAP(bridge_lrn_mask, SPX5_PORTS);
+	DECLARE_BITMAP(bridge_psec_mask, SPX5_PORTS);
 	DECLARE_BITMAP(vlan_mask[VLAN_N_VID], SPX5_PORTS);
 	/* SW MAC table */
 	struct list_head mact_entries;
@@ -433,7 +607,25 @@ struct sparx5 {
 	struct list_head mall_entries;
 	/* Common root for debugfs */
 	struct dentry *debugfs_root;
+
 	const struct sparx5_match_data *data;
+	enum sparx5_core_clockref coreclockref;
+	int ptp_ext_irq;
+	/* Time Aware Shaper */
+	struct mutex tas_lock;
+	bool is_pcie_device;
+	/* L3 Forwarding */
+	struct sparx5_router *router;
+#ifdef CONFIG_MFD_LAN969X_PCI
+	/* fdma pci */
+	struct fdma_pci_atu atu;
+#endif
+	/* AFI */
+	struct afi_control *afi_ctrl;
+
+	struct mrp_control *mrp_ctrl;
+
+	int oam_vop_irq;
 };
 
 /* sparx5_main.c */
@@ -443,6 +635,14 @@ bool sparx5_has_feature(struct sparx5 *sparx5, enum sparx5_feature feature);
 /* sparx5_switchdev.c */
 int sparx5_register_notifier_blocks(struct sparx5 *sparx5);
 void sparx5_unregister_notifier_blocks(struct sparx5 *sparx5);
+void sparx5_attr_stp_state_set(struct sparx5_port *port, u8 state);
+int sparx5_port_prechangeupper(struct net_device *dev,
+			       struct net_device *brport_dev,
+			       struct netdev_notifier_changeupper_info *info);
+
+int sparx5_port_changeupper(struct net_device *dev,
+			    struct net_device *brport_dev,
+			    struct netdev_notifier_changeupper_info *info);
 
 /* sparx5_packet.c */
 struct frame_info {
@@ -454,6 +654,8 @@ void sparx5_xtr_flush(struct sparx5 *sparx5, u8 grp);
 void sparx5_ifh_parse(struct sparx5 *sparx5, u32 *ifh, struct frame_info *info);
 irqreturn_t sparx5_xtr_handler(int irq, void *_priv);
 netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev);
+netdev_tx_t sparx5_port_xmit_mrp(struct sparx5_port *port, struct sk_buff *skb,
+				 u32 ifh[IFH_LEN]);
 int sparx5_manual_injection_mode(struct sparx5 *sparx5);
 void sparx5_port_inj_timer_setup(struct sparx5_port *port);
 
@@ -468,9 +670,29 @@ int sparx5_fdma_xmit(struct sparx5 *sparx5, u32 *ifh, struct sk_buff *skb,
 irqreturn_t sparx5_fdma_handler(int irq, void *args);
 void sparx5_fdma_reload(struct sparx5 *sparx5, struct fdma *fdma);
 void sparx5_fdma_injection_mode(struct sparx5 *sparx5);
+u32 sparx5_fdma_port_ctrl(struct sparx5 *sparx5);
+void sparx5_fdma_rx_activate(struct sparx5 *sparx5, struct sparx5_rx *rx);
+void sparx5_fdma_rx_deactivate(struct sparx5 *sparx5, struct sparx5_rx *rx);
+void sparx5_fdma_tx_activate(struct sparx5 *sparx5, struct sparx5_tx *tx);
+void sparx5_fdma_tx_deactivate(struct sparx5 *sparx5, struct sparx5_tx *tx);
+struct net_device *sparx5_fdma_get_ndev(struct sparx5 *sparx5);
+void sparx5_fdma_llp_configure(struct sparx5 *sparx5, u64 addr, u32 channel_id);
+int sparx5_fdma_resize(struct sparx5 *sparx5);
+u32 sparx5_fdma_get_mtu(struct sparx5 *sparx5);
 
 /* sparx5_mactable.c */
-void sparx5_mact_pull_work(struct work_struct *work);
+struct sparx5_mact_entry {
+	struct list_head list;
+	unsigned char mac[ETH_ALEN];
+	u32 flags;
+#define MAC_ENT_ALIVE	BIT(0)
+#define MAC_ENT_MOVED	BIT(1)
+#define MAC_ENT_LOCK	BIT(2)
+	u16 vid;
+	u16 port;
+	bool lag;
+};
+
 int sparx5_mact_learn(struct sparx5 *sparx5, int port,
 		      const unsigned char mac[ETH_ALEN], u16 vid);
 bool sparx5_mact_getnext(struct sparx5 *sparx5,
@@ -489,9 +711,12 @@ int sparx5_del_mact_entry(struct sparx5 *sparx5,
 int sparx5_mc_sync(struct net_device *dev, const unsigned char *addr);
 int sparx5_mc_unsync(struct net_device *dev, const unsigned char *addr);
 void sparx5_set_ageing(struct sparx5 *sparx5, int msecs);
-void sparx5_mact_init(struct sparx5 *sparx5);
+int sparx5_mact_init(struct sparx5 *sparx5);
+void sparx5_mact_deinit(struct sparx5 *sparx5);
 
 /* sparx5_vlan.c */
+void sparx5_update_dst_fwd(struct sparx5 *sparx5);
+void sparx5_pgid_cpu_copy_ena(struct sparx5 *spx5, u16 pgid, bool enable);
 void sparx5_pgid_update_mask(struct sparx5_port *port, int pgid, bool enable);
 void sparx5_pgid_clear(struct sparx5 *spx5, int pgid);
 void sparx5_pgid_read_mask(struct sparx5 *sparx5, int pgid, u32 portmask[3]);
@@ -510,11 +735,24 @@ int sparx5_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
 			     struct sparx5_calendar_data *data);
 u32 sparx5_cal_speed_to_value(enum sparx5_cal_bw speed);
 enum sparx5_cal_bw sparx5_get_port_cal_speed(struct sparx5 *sparx5, u32 portno);
+int sparx5_calendar_init(struct sparx5 *sparx5);
+void sparx5_calendar_fix(struct sparx5 *sparx5);
+enum sparx5_cal_bw sparx5_get_internal_port_cal_speed(struct sparx5 *sparx5,
+						      u32 portno);
+u32 sparx5_cal_speed_to_value(enum sparx5_cal_bw speed);
+enum sparx5_cal_bw sparx5_get_port_cal_speed(struct sparx5 *sparx5, u32 portno);
+
 
 
 /* sparx5_ethtool.c */
 void sparx5_get_stats64(struct net_device *ndev, struct rtnl_link_stats64 *stats);
-int sparx_stats_init(struct sparx5 *sparx5);
+int sparx5_stats_init(struct sparx5 *sparx5);
+void sparx5_stats_deinit(struct sparx5 *sparx5);
+void sparx5_get_port_stats(struct sparx5 *sparx5, int portno,
+			   struct sparx5_port_stats *stats);
+void sparx5_update_cpuport_stats(struct sparx5 *sparx5, int portno);
+bool sparx5_get_cpuport_stats(struct sparx5 *sparx5, int portno, int idx,
+			      const char **name, u64 *val);
 
 /* sparx5_dcb.c */
 #ifdef CONFIG_SPARX5_DCB
@@ -534,7 +772,11 @@ void sparx5_set_port_ifh_pdu_type(struct sparx5 *sparx5, void *ifh_hdr,
 				  u32 pdu_type);
 void sparx5_set_port_ifh_pdu_w16_offset(struct sparx5 *sparx5, void *ifh_hdr,
 					u32 pdu_w16_offset);
+void sparx5_set_port_ifh_afi(struct sparx5 *sparx5, void *ifh_hdr, bool afi);
+void sparx5_set_port_ifh_sp(struct sparx5 *sparx5, void *ifh_hdr, bool sp);
+void sparx5_set_port_ifh_cl_qos(struct sparx5 *sparx5, void *ifh_hdr, u8 cl_qos);
 void sparx5_set_port_ifh(struct sparx5 *sparx5, void *ifh_hdr, u16 portno);
+void sparx5_set_port_ifh_pipeline_pt(struct sparx5 *sparx5, void *ifh_hdr, u8 pipeline_pt);
 bool sparx5_netdevice_check(const struct net_device *dev);
 struct net_device *sparx5_create_netdev(struct sparx5 *sparx5, u32 portno);
 int sparx5_register_netdevs(struct sparx5 *sparx5);
@@ -550,7 +792,7 @@ int sparx5_ptp_hwtstamp_set(struct sparx5_port *port,
 void sparx5_ptp_hwtstamp_get(struct sparx5_port *port,
 			     struct kernel_hwtstamp_config *cfg);
 void sparx5_ptp_rxtstamp(struct sparx5 *sparx5, struct sk_buff *skb,
-			 u64 timestamp);
+			 u64 src_port, u64 timestamp);
 int sparx5_ptp_txtstamp_request(struct sparx5_port *port,
 				struct sk_buff *skb);
 void sparx5_ptp_txtstamp_release(struct sparx5_port *port,
@@ -560,10 +802,30 @@ int sparx5_ptp_gettime64(struct ptp_clock_info *ptp, struct timespec64 *ts);
 void sparx5_get_hwtimestamp(struct sparx5 *sparx5,
 			    struct timespec64 *ts,
 			    u32 nsec);
+int sparx5_ptp_del_traps(struct sparx5_port *port);
+int sparx5_ptp_setup_traps(struct sparx5_port *port,
+			   struct kernel_hwtstamp_config *cfg);
+void sparx5_ptp_get_hwtimestamp(struct sparx5 *sparx5,
+				struct timespec64 *ts,
+				u32 nsec);
+irqreturn_t sparx5_ptp_ext_irq_handler(int irq, void *args);
+
+/* sparx5_netlink *.c */
+int sparx5_netlink_qos_init(struct sparx5 *sparx5);
+void sparx5_netlink_qos_uninit(void);
+int sparx5_netlink_fp_init(void);
+void sparx5_netlink_fp_uninit(void);
 
 /* sparx5_vcap_impl.c */
 int sparx5_vcap_init(struct sparx5 *sparx5);
 void sparx5_vcap_destroy(struct sparx5 *sparx5);
+
+/* sparx5_vcap_ag_api.c  */
+extern const struct vcap_info sparx5_vcaps[];
+extern const struct vcap_statistics sparx5_vcap_stats;
+
+/* sparx5_vcap_impl.c */
+extern const struct sparx5_vcap_inst sparx5_vcap_inst_cfg[];
 
 /* sparx5_pgid.c */
 enum sparx5_pgid_type {
@@ -572,10 +834,16 @@ enum sparx5_pgid_type {
 	SPX5_PGID_MULTICAST,
 };
 
+static inline u32 sparx5_get_pgid_index(struct sparx5 *sparx5, int pgid)
+{
+	return sparx5->data->consts->n_ports + pgid;
+}
+
 void sparx5_pgid_init(struct sparx5 *spx5);
 int sparx5_pgid_alloc_mcast(struct sparx5 *spx5, u16 *idx);
 int sparx5_pgid_free(struct sparx5 *spx5, u16 idx);
 int sparx5_get_pgid(struct sparx5 *sparx5, int pgid);
+int sparx5_pgid_alloc_glag(struct sparx5 *spx5, u16 *idx);
 
 /* sparx5_pool.c */
 struct sparx5_pool_entry {
@@ -593,6 +861,9 @@ int sparx5_pool_get_with_idx(struct sparx5_pool_entry *pool, int size, u32 idx,
 int sparx5_port_mux_set(struct sparx5 *sparx5, struct sparx5_port *port,
 			struct sparx5_port_config *conf);
 int sparx5_get_internal_port(struct sparx5 *sparx5, int port);
+int sparx5_port_get_10g_qxgmii_idx(struct sparx5 *sparx5,
+				   struct sparx5_port *port,
+				   size_t idx);
 
 /* sparx5_sdlb.c */
 #define SPX5_SDLB_PUP_TOKEN_DISABLE 0x1FFF
@@ -611,7 +882,6 @@ struct sparx5_sdlb_group {
 	u32 nsets;
 };
 
-extern struct sparx5_sdlb_group sdlb_groups[SPX5_SDLB_GROUP_CNT];
 struct sparx5_sdlb_group *sparx5_get_sdlb_group(int idx);
 int sparx5_sdlb_pup_token_get(struct sparx5 *sparx5, u32 pup_interval,
 			      u64 rate);
@@ -626,9 +896,16 @@ int sparx5_sdlb_group_del(struct sparx5 *sparx5, u32 group, u32 idx);
 void sparx5_sdlb_group_init(struct sparx5 *sparx5, u64 max_rate, u32 min_burst,
 			    u32 frame_size, u32 idx);
 
-/* sparx5_police.c */
+u32 sparx5_sdlb_group_get_first(struct sparx5 *sparx5, u32 group);
+u32 sparx5_sdlb_group_get_next(struct sparx5 *sparx5, u32 group, u32 sdlb);
+bool sparx5_sdlb_group_is_first(struct sparx5 *sparx5, u32 group, u32 sdlb);
+bool sparx5_sdlb_group_is_empty(struct sparx5 *sparx5, u32 group);
+
 enum {
-	/* More policer types will be added later */
+	SPX5_POL_BUM,
+	SPX5_POL_STORM,
+	SPX5_POL_ACL,
+	SPX5_POL_PORT,
 	SPX5_POL_SERVICE
 };
 
@@ -641,15 +918,46 @@ struct sparx5_policer {
 	u8 event_mask;
 };
 
+#define SPARX5_POL_ACL_NUM 64 /* Number of acl policers */
+#define SPARX5_POL_SRV_NUM 4096
+/* Index of ACL discard policer */
+#define SPX5_POL_ACL_DISCARD (SPARX5_POL_ACL_NUM - 1)
+/* Bits for acl policer cnt statistics */
+#define SPX5_POL_ACL_STAT_CNT_UNMASKED_NO_ERR BIT(1)
+/* Bits for acl policer global event mask */
+#define SPX5_POL_ACL_STAT_CNT_CPU_DISCARDED BIT(2)
+#define SPX5_POL_ACL_STAT_CNT_FPORT_DISCADED BIT(3)
+
+/* Port Policer units */
+#define SPX5_POLICER_RATE_UNIT 25040 /* bits/sec */
+#define SPX5_POLICER_BYTE_BURST_UNIT 8192 /* bytes per burst */
+#define SPX5_POLICER_FRAME_BURST_UNIT 2504 /* frames per burst */
+
+/* sparx5_police.c */
+int sparx5_policer_init(struct sparx5 *sparx5);
+int sparx5_policer_port_stats_update(struct sparx5_port *port, int polidx);
+int sparx5_policer_stats_update(struct sparx5 *sparx5,
+				struct sparx5_policer *pol);
+
 int sparx5_policer_conf_set(struct sparx5 *sparx5, struct sparx5_policer *pol);
+void sparx5_policer_reset_counters(struct sparx5 *sparx5);
+int sparx5_update_port_policer_stats(struct net_device *ndev,
+				     struct tc_cls_matchall_offload *tmo);
+int sparx5_add_port_policer(struct sparx5_mall_entry *entry);
+int sparx5_delete_port_policer(struct sparx5_mall_entry *entry);
+int sparx5_policer_bum_add(struct sparx5 *sparx5, struct sparx5_policer *pol,
+			   u32 *id);
+int sparx5_policer_bum_del(struct sparx5 *sparx5, u32 id);
+int sparx5_policer_bum_id_get(struct sparx5 *sparx5, u32 isdx);
+void sparx5_policer_bum_init(struct sparx5 *sparx5);
 
 /* sparx5_psfp.c */
+#define SPX5_PSFP_SF_CNT 1024
 #define SPX5_PSFP_GCE_CNT 4
 #define SPX5_PSFP_SG_CNT 1024
 #define SPX5_PSFP_SG_MIN_CYCLE_TIME_NS (1 * NSEC_PER_USEC)
 #define SPX5_PSFP_SG_MAX_CYCLE_TIME_NS ((1 * NSEC_PER_SEC) - 1)
 #define SPX5_PSFP_SG_MAX_IPV (SPX5_PRIOS - 1)
-#define SPX5_PSFP_SG_OPEN (SPX5_PSFP_SG_CNT - 1)
 #define SPX5_PSFP_SG_CYCLE_TIME_DEFAULT 1000000
 #define SPX5_PSFP_SF_MAX_SDU 16383
 
@@ -702,9 +1010,13 @@ void sparx5_isdx_conf_set(struct sparx5 *sparx5, u32 isdx, u32 sfid, u32 fmid);
 
 void sparx5_psfp_init(struct sparx5 *sparx5);
 
+/* Needed for qos_debugfs */
+extern struct sparx5_pool_entry sparx5_psfp_sf_pool[SPX5_PSFP_SF_CNT];
+
 /* sparx5_qos.c */
 void sparx5_new_base_time(struct sparx5 *sparx5, const u32 cycle_time,
 			  const ktime_t org_base_time, ktime_t *new_base_time);
+void sparx5_update_u64_counter(u64 *cntr, u32 msb, u32 lsb);
 
 /* sparx5_mirror.c */
 int sparx5_mirror_add(struct sparx5_mall_entry *entry);
@@ -712,10 +1024,91 @@ void sparx5_mirror_del(struct sparx5_mall_entry *entry);
 void sparx5_mirror_stats(struct sparx5_mall_entry *entry,
 			 struct flow_stats *fstats);
 
+/* For debugfs */
+u64 sparx5_mirror_port_get(struct sparx5 *sparx5, u32 idx);
+u32 sparx5_mirror_dir_get(struct sparx5 *sparx5, u32 idx);
+u32 sparx5_mirror_monitor_get(struct sparx5 *sparx5, u32 idx);
+
+/* sparx5_mtu.c */
+int sparx5_mtu_change(struct net_device *dev, int new_mtu);
+u32 sparx5_mtu_max(struct sparx5 *sparx5);
+
+/* sparx5_tc.c */
+int sparx5_setup_tc(struct net_device *dev, enum tc_setup_type type,
+		    void *type_data);
+
+/* sparx5_packet.c */
+void sparx5_consume_skb(struct sk_buff *skb);
+bool sparx5_skb_offloaded(struct sparx5 *sparx5, u32 port, struct sk_buff *skb);
+
+/* sparx5_afi.c */
+int sparx5_afi_init(struct sparx5 *sparx5);
+void sparx5_afi_deinit(struct sparx5 *sparx5);
+
+/* sparx5_debugfs.c */
+void sparx5_debugfs(struct sparx5 *sparx5);
+
+/* sparx5_xdp.c */
+bool sparx5_port_has_xdp(struct sparx5_port *port);
+bool sparx5_has_xdp(struct sparx5 *sparx5);
+int sparx5_xdp_port_init(struct sparx5_port *port);
+void sparx5_xdp_port_deinit(struct sparx5_port *port);
+int sparx5_xdp(struct net_device *dev, struct netdev_bpf *xdp);
+int sparx5_xdp_xmit(struct net_device *dev, int n, struct xdp_frame **frames,
+		    u32 flags);
+int sparx5_xdp_run(struct sparx5_port *port, struct page *page, u32 len);
+void sparx5_xdp_mem_type_set(struct sparx5 *sparx5, enum xdp_mem_type type,
+			     void *allocator);
+
+/* sparx5_isdx.c */
+int sparx5_isdx_get(struct sparx5 *sparx5, u32 *isdx);
+int sparx5_isdx_put(struct sparx5 *sparx5, u32 isdx);
+
+/* sparx5_mdb.c */
+struct switchdev_obj_port_mdb;
+int sparx5_handle_mdb_add(struct net_device *dev,
+			  const struct switchdev_obj_port_mdb *v);
+
+int sparx5_handle_mdb_del(struct net_device *dev,
+			  const struct switchdev_obj_port_mdb *v);
+int sparx5_mdb_entries_clear(struct sparx5 *sparx5);
+int sparx5_mdb_entries_restore(struct sparx5 *sparx5);
+
+/* FDMA return action codes for checking if the frame is valid
+ * FDMA_PASS, frame is valid and can be used
+ * FDMA_ERROR, something went wrong, stop getting more frames
+ * FDMA_DROP, frame is dropped, but continue to get more frames
+ * FDMA_TX, frame is given to TX, but continue to get more frames
+ * FDMA_REDIRECT, frame is given to TX, but continue to get more frames
+ */
+enum sparx5_fdma_action {
+	FDMA_PASS = 0,
+	FDMA_ERROR,
+	FDMA_DROP,
+	FDMA_TX,
+	FDMA_REDIRECT,
+};
+
+/* sparx5_lag.c */
+int sparx5_lag_join(struct sparx5_port *port, struct net_device *brport_dev,
+		    struct net_device *bond, struct netlink_ext_ack *extack);
+void sparx5_lag_leave(struct sparx5_port *port, struct net_device *bond);
+int sparx5_lag_aggr_code_set(struct net_device *dev,
+			     struct netdev_notifier_changeupper_info *info);
+int sparx5_lag_aggr_masks_set(struct sparx5_port *port, bool leaving);
+bool sparx5_lag_is_first(struct net_device *lag_master, struct net_device *dev);
+void sparx5_lag_mask_get(struct sparx5 *sparx5, struct net_device *lag_master,
+			 unsigned long *lag_mask);
+
+/* sparx5_psec.c */
+void sparx5_psec_set(struct sparx5_port *port, bool enable);
+
 /* Clock period in picoseconds */
 static inline u32 sparx5_clk_period(enum sparx5_core_clockfreq cclock)
 {
 	switch (cclock) {
+	case SPX5_CORE_CLOCK_180MHZ:
+		return 5564;
 	case SPX5_CORE_CLOCK_250MHZ:
 		return 4000;
 	case SPX5_CORE_CLOCK_328MHZ:
@@ -747,9 +1140,9 @@ static inline __pure int spx5_offset(int id, int tinst, int tcnt,
 				     int raddr, int rinst,
 				     int rcnt, int rwidth)
 {
-	WARN_ON((tinst) >= tcnt);
-	WARN_ON((ginst) >= gcnt);
-	WARN_ON((rinst) >= rcnt);
+	WARN((tinst) >= tcnt, "tinst %d >= tcnt %d\n", tinst, tcnt);
+	WARN((ginst) >= gcnt, "ginst %d >= gcnt %d\n", ginst, gcnt);
+	WARN((rinst) >= rcnt, "rinst %d >= rcnt %d\n", rinst, rcnt);
 	return gbase + ((ginst) * gwidth) +
 		raddr + ((rinst) * rwidth);
 }
@@ -764,9 +1157,9 @@ static inline void __iomem *spx5_addr(void __iomem *base[],
 				      int raddr, int rinst,
 				      int rcnt, int rwidth)
 {
-	WARN_ON((tinst) >= tcnt);
-	WARN_ON((ginst) >= gcnt);
-	WARN_ON((rinst) >= rcnt);
+	WARN((tinst) >= tcnt, "tinst %d >= tcnt %d\n", tinst, tcnt);
+	WARN((ginst) >= gcnt, "ginst %d >= gcnt %d\n", ginst, gcnt);
+	WARN((rinst) >= rcnt, "rinst %d >= rcnt %d\n", rinst, rcnt);
 	return base[id + (tinst)] +
 		gbase + ((ginst) * gwidth) +
 		raddr + ((rinst) * rwidth);
@@ -778,8 +1171,8 @@ static inline void __iomem *spx5_inst_addr(void __iomem *base,
 					   int raddr, int rinst,
 					   int rcnt, int rwidth)
 {
-	WARN_ON((ginst) >= gcnt);
-	WARN_ON((rinst) >= rcnt);
+	WARN((ginst) >= gcnt, "ginst %d >= gcnt %d\n", ginst, gcnt);
+	WARN((rinst) >= rcnt, "rinst %d >= rcnt %d\n", rinst, rcnt);
 	return base +
 		gbase + ((ginst) * gwidth) +
 		raddr + ((rinst) * rwidth);

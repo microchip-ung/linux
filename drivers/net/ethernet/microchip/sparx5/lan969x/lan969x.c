@@ -12,6 +12,7 @@
 static const struct sparx5_main_io_resource lan969x_main_iomap[] =  {
 	{ TARGET_CPU,                   0xc0000, 0 }, /* 0xe00c0000 */
 	{ TARGET_FDMA,                  0xc0400, 0 }, /* 0xe00c0400 */
+	{ TARGET_PCIE_DBI,             0x400000, 0 }, /* 0xe0400000 */
 	{ TARGET_GCB,                 0x2010000, 1 }, /* 0xe2010000 */
 	{ TARGET_QS,                  0x2030000, 1 }, /* 0xe2030000 */
 	{ TARGET_PTP,                 0x2040000, 1 }, /* 0xe2040000 */
@@ -24,6 +25,7 @@ static const struct sparx5_main_io_resource lan969x_main_iomap[] =  {
 	{ TARGET_VCAP_ES2,            0x20d0000, 1 }, /* 0xe20d0000 */
 	{ TARGET_VCAP_ES0,            0x20e0000, 1 }, /* 0xe20e0000 */
 	{ TARGET_ANA_AC_POL,          0x2200000, 1 }, /* 0xe2200000 */
+	{ TARGET_AFI,                 0x2240000, 1 }, /* 0xe2240000 */
 	{ TARGET_QRES,                0x2280000, 1 }, /* 0xe2280000 */
 	{ TARGET_EACL,                0x22c0000, 1 }, /* 0xe22c0000 */
 	{ TARGET_ANA_CL,              0x2400000, 1 }, /* 0xe2400000 */
@@ -31,6 +33,7 @@ static const struct sparx5_main_io_resource lan969x_main_iomap[] =  {
 	{ TARGET_ANA_AC_SDLB,         0x2500000, 1 }, /* 0xe2500000 */
 	{ TARGET_HSCH,                0x2580000, 1 }, /* 0xe2580000 */
 	{ TARGET_REW,                 0x2600000, 1 }, /* 0xe2600000 */
+	{ TARGET_VOP_MRP,             0x2700000, 1 }, /* 0xe2700000 */
 	{ TARGET_ANA_L2,              0x2800000, 1 }, /* 0xe2800000 */
 	{ TARGET_ANA_AC,              0x2900000, 1 }, /* 0xe2900000 */
 	{ TARGET_VOP,                 0x2a00000, 1 }, /* 0xe2a00000 */
@@ -94,6 +97,11 @@ static const struct sparx5_main_io_resource lan969x_main_iomap[] =  {
 	{ TARGET_DEVRGMII +  1,       0x30e8000, 1 }, /* 0xe30e8000 */
 	{ TARGET_DSM,                 0x30ec000, 1 }, /* 0xe30ec000 */
 	{ TARGET_PORT_CONF,           0x30f0000, 1 }, /* 0xe30f0000 */
+	{ TARGET_RB,                  0x30f4000, 1 }, /* 0xe30f4000 */
+	{ TARGET_RB +  1,             0x30f8000, 1 }, /* 0xe30f8000 */
+	{ TARGET_RB +  2,             0x30fc000, 1 }, /* 0xe30fc000 */
+	{ TARGET_RB +  3,             0x3100000, 1 }, /* 0xe3100000 */
+	{ TARGET_RB +  4,             0x3104000, 1 }, /* 0xe3104000 */
 	{ TARGET_ASM,                 0x3200000, 1 }, /* 0xe3200000 */
 	{ TARGET_HSIO_WRAP,           0x3408000, 1 }, /* 0xe3408000 */
 };
@@ -142,6 +150,16 @@ static u32 lan969x_get_dev_mode_bit(struct sparx5 *sparx5, int port)
 
 static u32 lan969x_port_dev_mapping(struct sparx5 *sparx5, int port)
 {
+	
+	if (lan969x_port_is_rgmii(port)) {
+		switch (port) {
+		case 28:
+			return 0;
+		case 29:
+			return 1;
+		}
+	}	
+	
 	if (lan969x_port_is_5g(port)) {
 		switch (port) {
 		case 9:
@@ -185,7 +203,7 @@ static u32 lan969x_port_dev_mapping(struct sparx5 *sparx5, int port)
 }
 
 static int lan969x_port_mux_set(struct sparx5 *sparx5, struct sparx5_port *port,
-				struct sparx5_port_config *conf)
+			 struct sparx5_port_config *conf)
 {
 	u32 portno = port->portno;
 	u32 inst;
@@ -198,6 +216,27 @@ static int lan969x_port_mux_set(struct sparx5 *sparx5, struct sparx5_port *port,
 		inst = (portno - portno % 4) / 4;
 		spx5_rmw(BIT(inst), BIT(inst), sparx5, PORT_CONF_QSGMII_ENA);
 		break;
+	case PHY_INTERFACE_MODE_10G_QXGMII:
+		if (portno >= 8 && portno <= 23) {
+			/* equals index 2-5 */
+			inst = portno / 4;
+
+			spx5_rmw(PORT_CONF_USXGMII_CFG_TX_ENA_SET(1) |
+				 PORT_CONF_USXGMII_CFG_RX_ENA_SET(1) |
+				 PORT_CONF_USXGMII_CFG_NUM_PORTS_SET(SPX5_USXGMII_QUAD),
+				 PORT_CONF_USXGMII_CFG_TX_ENA |
+				 PORT_CONF_USXGMII_CFG_RX_ENA |
+				 PORT_CONF_USXGMII_CFG_NUM_PORTS,
+				 sparx5,
+				 PORT_CONF_USXGMII_CFG(inst));
+
+			spx5_rmw(BIT(inst),
+				 BIT(inst),
+				 sparx5,
+				 PORT_CONF_USXGMII_ENA);
+		} else {
+			return -EINVAL;
+		}
 	default:
 		break;
 	}
@@ -281,7 +320,7 @@ static irqreturn_t lan969x_ptp_irq_handler(int irq, void *args)
 		spin_unlock_irqrestore(&sparx5->ptp_ts_id_lock, flags);
 
 		/* Get the h/w timestamp */
-		sparx5_get_hwtimestamp(sparx5, &ts, delay);
+		sparx5_ptp_get_hwtimestamp(sparx5, &ts, delay);
 
 		/* Set the timestamp in the skb */
 		shhwtstamps.hwtstamp = ktime_set(ts.tv_sec, ts.tv_nsec);
@@ -291,6 +330,27 @@ static irqreturn_t lan969x_ptp_irq_handler(int irq, void *args)
 	}
 
 	return IRQ_HANDLED;
+}
+
+static int lan969x_port_get_10g_qxgmii_idx(struct sparx5 *sparx5,
+					   struct sparx5_port *port,
+					   size_t idx)
+{
+	uint8_t map[][4] = { { 8,  9, 10, 11},
+			     {12, 13, 14, 15},
+			     {16, 17, 18, 19},
+			     {20, 21, 22, 23}};
+
+	for (int i = 0; i < ARRAY_SIZE(map); ++i) {
+		for (int j = 0; j < ARRAY_SIZE(map[i]); ++j) {
+			if (port->portno != map[i][j])
+				continue;
+
+			return map[i][idx];
+		}
+	}
+
+	return -ENODEV;
 }
 
 static const struct sparx5_regs lan969x_regs = {
@@ -325,6 +385,11 @@ static const struct sparx5_consts lan969x_consts = {
 	.vcaps               = lan969x_vcaps,
 	.vcap_stats          = &lan969x_vcap_stats,
 	.vcaps_cfg           = lan969x_vcap_inst_cfg,
+	.vmid_cnt = 127,
+	.arp_tbl_cnt = 1024,
+	.ptp_pins = 7,
+	.bum_slb_cnt = 128,
+	.isdx_cnt = 1024,
 };
 
 static const struct sparx5_ops lan969x_ops = {
@@ -341,10 +406,21 @@ static const struct sparx5_ops lan969x_ops = {
 	.ptp_irq_handler         = &lan969x_ptp_irq_handler,
 	.dsm_calendar_calc       = &lan969x_dsm_calendar_calc,
 	.port_config_rgmii       = &lan969x_port_config_rgmii,
-	.fdma_init               = &lan969x_fdma_init,
-	.fdma_deinit             = &lan969x_fdma_deinit,
-	.fdma_poll               = &lan969x_fdma_napi_poll,
-	.fdma_xmit               = &lan969x_fdma_xmit,
+#ifndef CONFIG_MFD_LAN969X_PCI
+	.fdma_deinit             = lan969x_fdma_deinit,
+	.fdma_init               = lan969x_fdma_init,
+	.fdma_resize             = lan969x_fdma_resize,
+	.fdma_xmit               = lan969x_fdma_xmit,
+	.fdma_poll               = lan969x_fdma_napi_poll,
+#else
+	.fdma_deinit             = lan969x_fdma_pci_stop,
+	.fdma_init               = lan969x_fdma_pci_start,
+	.fdma_resize             = lan969x_fdma_pci_resize,
+	.fdma_xmit               = lan969x_fdma_pci_xmit,
+	.fdma_poll               = lan969x_fdma_pci_napi_poll,
+#endif
+	.get_mtu = &sparx5_mtu_max,
+	.port_get_10g_qxgmii_idx = &lan969x_port_get_10g_qxgmii_idx,
 };
 
 const struct sparx5_match_data lan969x_desc = {

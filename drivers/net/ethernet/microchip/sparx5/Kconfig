@@ -11,6 +11,9 @@ config SPARX5_SWITCH
 	select RESET_CONTROLLER
 	select VCAP
 	select FDMA
+	select PAGE_POOL
+	select AFI
+	select MCHP_MRP
 	help
 	  This driver supports the Sparx5 network switch device.
 
@@ -25,9 +28,27 @@ config SPARX5_DCB
 
 	  If unsure, set to Y.
 
+config SPARX5_DEBUG
+	bool "Sparx5 Switch debugging"
+	depends on SPARX5_SWITCH
+	help
+	  Sparx5 Switch debugging,
+
+	  This adds VCAP and TC command debugging to the runtime.
+
+	  Do not enable this, unless you are debugging the driver.
+
+config SPARX5_SWITCH_APPL
+	tristate "Sparx5 switch driver used by APPL"
+	select LAN969X_SWITCH
+	help
+	  This driver supports the Sparx5 and Lan969x network switch devices for
+	  APPL.
+
 config LAN969X_SWITCH
 	bool "Lan969x switch driver"
 	depends on SPARX5_SWITCH
+	depends on HSR || HSR=n
 	select PAGE_POOL
 	help
 	  This driver supports the lan969x family of network switch devices.

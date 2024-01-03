@@ -6,7 +6,6 @@
 
 #include "lan969x.h"
 
-#define LAN969X_DSM_CAL_DEVS_PER_TAXI 10
 #define LAN969X_DSM_CAL_TAXIS 5
 
 enum lan969x_dsm_cal_dev {
@@ -43,6 +42,11 @@ lan969x_taxi_ports[LAN969X_DSM_CAL_TAXIS][LAN969X_DSM_CAL_DEVS_PER_TAXI] = {
 	{ 26, 27, 99, 99, 99, 99, 99, 99, 99, 99 }
 };
 
+u32 *lan969x_get_taxi(int idx)
+{
+	return lan969x_taxi_ports[idx];
+}
+
 static int lan969x_dsm_cal_idx_get(u32 *calendar, u32 cal_len, u32 *cal_idx)
 {
 	if (*cal_idx >= cal_len)
@@ -72,6 +76,26 @@ static int lan969x_dsm_cal_get_speed(enum lan969x_dsm_cal_dev dev)
 		dev == DSM_CAL_DEV_5G  ? 5000 :
 		dev == DSM_CAL_DEV_2G5 ? 2500 :
 					 1000);
+}
+
+static void lan969x_dsm_cal_print(struct lan969x_dsm_cal_dev_speed *speeds)
+{
+	for (int idx = 0; idx < DSM_CAL_DEV_MAX; idx++) {
+		struct lan969x_dsm_cal_dev_speed *speed = &speeds[idx];
+		char buf[LAN969X_DSM_CAL_DEVS_PER_TAXI * 4];
+		int size = 0;
+
+		buf[0] = '\0';
+		for (u32 dev = 0; dev < speed->n_devs; dev++) {
+			size += snprintf(buf + size, sizeof(buf) - size, " %u ",
+					 speed->devs[dev]);
+		}
+
+		pr_info("Speed = %5u, dev_cnt = %u, slots_required = %u, slots_between_repeats = %u, devs = %s",
+			 lan969x_dsm_cal_get_speed(idx), speed->n_devs,
+			 speed->n_slots, speed->gap,
+			 buf);
+	}
 }
 
 int lan969x_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
@@ -166,6 +190,8 @@ int lan969x_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
 		pr_err("Invalid length: %u for taxi: %u", cal_len, taxi);
 		return -EINVAL;
 	}
+
+	lan969x_dsm_cal_print(dev_speeds);
 
 	for (u32 i = 0; i < SPX5_DSM_CAL_LEN; i++)
 		data->schedule[i] = SPX5_DSM_CAL_EMPTY;

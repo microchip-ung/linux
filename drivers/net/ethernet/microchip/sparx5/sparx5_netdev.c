@@ -9,6 +9,8 @@
 #include "sparx5_port.h"
 #include "sparx5_tc.h"
 
+#include "lan969x/lan969x.h"
+
 /* The IFH bit position of the first VSTAX bit. This is because the
  * VSTAX bit positions in Data sheet is starting from zero.
  */
@@ -102,6 +104,26 @@ void sparx5_set_port_ifh_timestamp(struct sparx5 *sparx5, void *ifh_hdr,
 			    is_sparx5(sparx5) ? 40 : 38);
 }
 
+void sparx5_set_port_ifh_afi(struct sparx5 *sparx5, void *ifh_hdr, bool afi)
+ {
+	__ifh_encode_bitfield(ifh_hdr, afi, is_sparx5(sparx5) ? 72 : 71, 1);
+ }
+
+void sparx5_set_port_ifh_sp(struct sparx5 *sparx5, void *ifh_hdr, bool sp)
+ {
+	__ifh_encode_bitfield(ifh_hdr, sp, 132, 1);
+}
+
+void sparx5_set_port_ifh_cl_qos(struct sparx5 *sparx5, void *ifh_hdr, u8 cl_qos)
+{
+	__ifh_encode_bitfield(ifh_hdr, cl_qos, 129, 3);
+}
+
+void sparx5_set_port_ifh_pipeline_pt(struct sparx5 *sparx5, void *ifh_hdr, u8 pipeline_pt)
+{
+	__ifh_encode_bitfield(ifh_hdr, pipeline_pt, 37, 5);
+}
+
 static int sparx5_port_open(struct net_device *ndev)
 {
 	struct sparx5_port *port = netdev_priv(ndev);
@@ -116,7 +138,7 @@ static int sparx5_port_open(struct net_device *ndev)
 
 	phylink_start(port->phylink);
 
-	if (!ndev->phydev) {
+	if (port->serdes) {
 		/* power up serdes */
 		port->conf.power_down = false;
 		if (port->conf.serdes_reset)
@@ -149,7 +171,7 @@ static int sparx5_port_stop(struct net_device *ndev)
 	phylink_stop(port->phylink);
 	phylink_disconnect_phy(port->phylink);
 
-	if (!ndev->phydev) {
+	if (port->serdes) {
 		/* power down serdes */
 		port->conf.power_down = true;
 		if (port->conf.serdes_reset)
@@ -238,17 +260,42 @@ static int sparx5_port_hwtstamp_set(struct net_device *dev,
 {
 	struct sparx5_port *sparx5_port = netdev_priv(dev);
 	struct sparx5 *sparx5 = sparx5_port->sparx5;
+	int err;
 
-	if (!sparx5->ptp)
+	if (cfg->source != HWTSTAMP_SOURCE_NETDEV &&
+	    cfg->source != HWTSTAMP_SOURCE_PHYLIB)
 		return -EOPNOTSUPP;
 
-	return sparx5_ptp_hwtstamp_set(sparx5_port, cfg, extack);
+	if((sparx5_port->ptp_rx_cmd && cfg->rx_filter)) {
+		// Looks like timestamping doesn't get disabled by upper layers
+		// This is a quick workaround, to prevent failing, if the filters
+		// are already enabled.
+		return 0;
+	}
+
+	err = sparx5_ptp_setup_traps(sparx5_port, cfg);
+	if (err)
+		return err;
+
+	if (cfg->source == HWTSTAMP_SOURCE_NETDEV) {
+		if (!sparx5->ptp)
+			return -EOPNOTSUPP;
+
+		err = sparx5_ptp_hwtstamp_set(sparx5_port, cfg, extack);
+		if (err) {
+			sparx5_ptp_del_traps(sparx5_port);
+			return err;
+		}
+	}
+
+	return 0;
 }
 
 static const struct net_device_ops sparx5_port_netdev_ops = {
 	.ndo_open               = sparx5_port_open,
 	.ndo_stop               = sparx5_port_stop,
 	.ndo_start_xmit         = sparx5_port_xmit_impl,
+	.ndo_change_mtu		= sparx5_mtu_change,
 	.ndo_set_rx_mode        = sparx5_set_rx_mode,
 	.ndo_get_phys_port_name = sparx5_port_get_phys_port_name,
 	.ndo_set_mac_address    = sparx5_set_mac_address,
@@ -259,6 +306,8 @@ static const struct net_device_ops sparx5_port_netdev_ops = {
 	.ndo_setup_tc           = sparx5_port_setup_tc,
 	.ndo_hwtstamp_get       = sparx5_port_hwtstamp_get,
 	.ndo_hwtstamp_set       = sparx5_port_hwtstamp_set,
+	.ndo_bpf		= sparx5_xdp,
+	.ndo_xdp_xmit		= sparx5_xdp_xmit,
 };
 
 bool sparx5_netdevice_check(const struct net_device *dev)
@@ -278,6 +327,16 @@ struct net_device *sparx5_create_netdev(struct sparx5 *sparx5, u32 portno)
 
 	ndev->hw_features |= NETIF_F_HW_TC;
 	ndev->features |= NETIF_F_HW_TC;
+	if (!is_sparx5(sparx5)) {
+		ndev->hw_features |= LAN969X_SUPPORTED_HSR_FEATURES;
+		ndev->features |= LAN969X_SUPPORTED_HSR_FEATURES;
+		ndev->xdp_features = NETDEV_XDP_ACT_BASIC |
+				     NETDEV_XDP_ACT_REDIRECT |
+				     NETDEV_XDP_ACT_NDO_XMIT;
+	}
+
+	/* The MAC supports frame lengths of up to 14,000 bytes */
+	ndev->max_mtu = 14000;
 
 	SET_NETDEV_DEV(ndev, sparx5->dev);
 	spx5_port = netdev_priv(ndev);
@@ -285,8 +344,16 @@ struct net_device *sparx5_create_netdev(struct sparx5 *sparx5, u32 portno)
 	spx5_port->sparx5 = sparx5;
 	spx5_port->portno = portno;
 
+	/* If the switch is PCIe mapped the host may have its own ports */
+	if (sparx5->is_pcie_device)
+		snprintf(ndev->name, IFNAMSIZ, "swp%d", portno);
+	else
+		snprintf(ndev->name, IFNAMSIZ, "eth%d", portno);
+
 	ndev->netdev_ops = &sparx5_port_netdev_ops;
 	ndev->ethtool_ops = &sparx5_ethtool_ops;
+	ndev->needed_headroom = IFH_LEN * 4;
+	ndev->see_all_hwtstamp_requests = true;
 
 	eth_hw_addr_gen(ndev, sparx5->base_mac, portno + 1);
 
@@ -300,7 +367,13 @@ int sparx5_register_netdevs(struct sparx5 *sparx5)
 
 	for (portno = 0; portno < sparx5->data->consts->n_ports; portno++)
 		if (sparx5->ports[portno]) {
-			err = register_netdev(sparx5->ports[portno]->ndev);
+			struct net_device *port_ndev = sparx5->ports[portno]->ndev;
+
+			port_ndev->dev.of_node = sparx5->ports[portno]->of_node;
+
+			pr_info("of_node: %s", port_ndev->dev.of_node->name);
+			
+			err = register_netdev(port_ndev);
 			if (err) {
 				dev_err(sparx5->dev,
 					"port: %02u: netdev registration failed\n",
@@ -333,9 +406,15 @@ void sparx5_destroy_netdevs(struct sparx5 *sparx5)
 
 void sparx5_unregister_netdevs(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = sparx5->data->consts;
 	int portno;
 
-	for (portno = 0; portno < sparx5->data->consts->n_ports; portno++)
-		if (sparx5->ports[portno])
-			unregister_netdev(sparx5->ports[portno]->ndev);
+	for (portno = 0; portno < consts->n_ports; portno++) {
+		struct sparx5_port *port = sparx5->ports[portno];
+
+		if (port) {
+			sparx5_xdp_port_deinit(port);
+			unregister_netdev(port->ndev);
+		}
+	}
 }

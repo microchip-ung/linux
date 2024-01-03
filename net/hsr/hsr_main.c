@@ -151,6 +151,16 @@ int hsr_get_version(struct net_device *dev, enum hsr_version *ver)
 }
 EXPORT_SYMBOL(hsr_get_version);
 
+bool is_hsr_redbox(struct net_device *dev)
+{
+	struct hsr_priv *hsr;
+
+	hsr = netdev_priv(dev);
+
+	return hsr->redbox;
+}
+EXPORT_SYMBOL(is_hsr_redbox);
+
 static struct notifier_block hsr_nb = {
 	.notifier_call = hsr_netdev_notify,	/* Slave event notifications */
 };

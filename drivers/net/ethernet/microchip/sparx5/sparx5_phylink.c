@@ -41,6 +41,7 @@ sparx5_phylink_mac_select_pcs(struct phylink_config *config,
 	case PHY_INTERFACE_MODE_5GBASER:
 	case PHY_INTERFACE_MODE_10GBASER:
 	case PHY_INTERFACE_MODE_25GBASER:
+	case PHY_INTERFACE_MODE_10G_QXGMII:
 		return &port->phylink_pcs;
 	default:
 		return NULL;
@@ -110,7 +111,13 @@ static int sparx5_pcs_config(struct phylink_pcs *pcs, unsigned int neg_mode,
 {
 	struct sparx5_port *port = sparx5_pcs_to_port(pcs);
 	struct sparx5_port_config conf;
+	const struct sparx5_ops *ops;
 	int ret = 0;
+
+	ops = port->sparx5->data->ops;
+
+	if (ops->is_port_rgmii(port->portno))
+		return 0;
 
 	conf = port->conf;
 	conf.power_down = false;

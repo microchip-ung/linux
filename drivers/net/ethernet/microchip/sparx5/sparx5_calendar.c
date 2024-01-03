@@ -24,10 +24,10 @@
 
 /* Maps from taxis to port numbers */
 static u32 sparx5_taxi_ports[SPX5_DSM_CAL_TAXIS][SPX5_DSM_CAL_MAX_DEVS_PER_TAXI] = {
-	{57, 12, 0, 1, 2, 16, 17, 18, 19, 20, 21, 22, 23},
-	{58, 13, 3, 4, 5, 24, 25, 26, 27, 28, 29, 30, 31},
-	{59, 14, 6, 7, 8, 32, 33, 34, 35, 36, 37, 38, 39},
-	{60, 15, 9, 10, 11, 40, 41, 42, 43, 44, 45, 46, 47},
+	{57, 12,  0,  1,  2, 16, 17, 18, 19, 20, 21, 22, 23},
+	{58, 13,  3,  4,  5, 24, 25, 26, 27, 28, 29, 30, 31},
+	{59, 14,  6,  7,  8, 32, 33, 34, 35, 36, 37, 38, 39},
+	{60, 15,  9, 10, 11, 40, 41, 42, 43, 44, 45, 46, 47},
 	{61, 48, 49, 50, 99, 99, 99, 99, 99, 99, 99, 99, 99},
 	{62, 51, 52, 53, 99, 99, 99, 99, 99, 99, 99, 99, 99},
 	{56, 63, 54, 55, 99, 99, 99, 99, 99, 99, 99, 99, 99},
@@ -57,17 +57,17 @@ static u32 sparx5_target_bandwidth(struct sparx5 *sparx5)
 	case SPX5_TARGET_CT_LAN9694RED:
 	case SPX5_TARGET_CT_LAN9694TSN:
 	case SPX5_TARGET_CT_LAN9694:
-		return 68000;
+		return 48000;
 	case SPX5_TARGET_CT_LAN9696RED:
 	case SPX5_TARGET_CT_LAN9696TSN:
 	case SPX5_TARGET_CT_LAN9692VAO:
 	case SPX5_TARGET_CT_LAN9696:
-		return 88000;
+		return 66000;
 	case SPX5_TARGET_CT_LAN9698RED:
 	case SPX5_TARGET_CT_LAN9698TSN:
 	case SPX5_TARGET_CT_LAN9693VAO:
 	case SPX5_TARGET_CT_LAN9698:
-		return 101000;
+		return 102000;
 	default:
 		return 0;
 	}
@@ -76,6 +76,7 @@ static u32 sparx5_target_bandwidth(struct sparx5 *sparx5)
 static u32 sparx5_clk_to_bandwidth(enum sparx5_core_clockfreq cclock)
 {
 	switch (cclock) {
+	case SPX5_CORE_CLOCK_180MHZ: return 60000; /* 180000 / 3 */
 	case SPX5_CORE_CLOCK_250MHZ: return 83000; /* 250000 / 3 */
 	case SPX5_CORE_CLOCK_328MHZ: return 109375; /* 328000 / 3 */
 	case SPX5_CORE_CLOCK_500MHZ: return 166000; /* 500000 / 3 */
@@ -363,14 +364,16 @@ int sparx5_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
 			data->avg_dist[idx] = -1;
 		}
 		data->dev_slots[idx] = ((spd * factor / slot_spd) + 999) / 1000;
-		if (spd != 25000 && (spd != 10000 || !slow_mode)) {
-			if (num_of_slots < (5 * data->dev_slots[idx])) {
-				dev_err(sparx5->dev,
-					"Taxi %u, speed %u, Low slot sep.\n",
-					taxi, spd);
-				return -EINVAL;
+		if (is_sparx5(sparx5))
+			/* Improved and allowed on lan969x, i.e. this check can be skipped  */
+			if (spd != 25000 && (spd != 10000 || !slow_mode)) {
+				if (num_of_slots < (5 * data->dev_slots[idx])) {
+					dev_err(sparx5->dev,
+						"Taxi %u, speed %u, Low slot sep.\n",
+						taxi, spd);
+					return -EINVAL;
+				}
 			}
-		}
 		sum += data->dev_slots[idx];
 		if (sum > num_of_slots) {
 			dev_err(sparx5->dev,
@@ -473,10 +476,10 @@ int sparx5_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
 static int sparx5_dsm_calendar_check(struct sparx5 *sparx5,
 				     struct sparx5_calendar_data *data)
 {
-	u32 num_of_slots, idx, port;
-	int cnt, max_dist;
 	u32 slot_indices[SPX5_DSM_CAL_LEN], distances[SPX5_DSM_CAL_LEN];
 	u32 cal_length = sparx5_dsm_cal_len(data->schedule);
+	u32 num_of_slots, idx, port;
+	int cnt, max_dist;
 
 	for (port = 0; port < SPX5_DSM_CAL_MAX_DEVS_PER_TAXI; port++) {
 		num_of_slots = 0;
@@ -609,4 +612,19 @@ int sparx5_config_dsm_calendar(struct sparx5 *sparx5)
 cal_out:
 	kfree(data);
 	return err;
+}
+
+int sparx5_calendar_init(struct sparx5 *sparx5)
+{
+	int err;
+
+	err = sparx5_config_auto_calendar(sparx5);
+	if (err)
+		return err;
+
+	err = sparx5_config_dsm_calendar(sparx5);
+	if (err)
+		return err;
+
+	return 0;
 }

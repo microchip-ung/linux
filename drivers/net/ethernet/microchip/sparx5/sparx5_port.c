@@ -11,12 +11,22 @@
 #include "sparx5_main_regs.h"
 #include "sparx5_main.h"
 #include "sparx5_port.h"
+#include "sparx5_qos.h"
 
 #define SPX5_ETYPE_TAG_C     0x8100
 #define SPX5_ETYPE_TAG_S     0x88a8
 
 #define SPX5_WAIT_US         1000
 #define SPX5_WAIT_MAX_US     2000
+
+#define SPX5_RGMII_TX_CLK_DISABLE 0  /* Disable TX clock generation*/
+#define SPX5_RGMII_TX_CLK_125MHZ 1   /* 1000Mbps */
+#define SPX5_RGMII_TX_CLK_25MHZ  2   /* 100Mbps */
+#define SPX5_RGMII_TX_CLK_2M5MHZ 3   /* 10Mbps */
+#define SPX5_RGMII_PORT_START_IDX 28
+#define SPX5_RGMII_DLL_SHIFT_90DEG 3 /* DLL phase shift 90deg. (2 ns @ 125MHz) */
+
+#define SPX5_PHAD_DIV 3 /* Divide port clock by the power of this */
 
 enum port_error {
 	SPX5_PERR_SPEED,
@@ -155,6 +165,31 @@ static int sparx5_get_sfi_status(struct sparx5 *sparx5,
 	return 0;
 }
 
+static int sparx5_get_10g_qxgmii_status(struct sparx5 *sparx5,
+					struct sparx5_port *port,
+					struct sparx5_port_status *status)
+{
+	struct phylink_link_state state;
+	uint16_t adv;
+	u32 aneg;
+
+	aneg = spx5_rd(sparx5, DEV2G5_USXGMII_ANEG_STATUS(port->portno));
+	spx5_wr(aneg, sparx5, DEV2G5_USXGMII_ANEG_STATUS(port->portno));
+
+	status->an_complete = DEV2G5_USXGMII_ANEG_STATUS_ANEG_COMPLETE_GET(aneg);
+	adv = DEV2G5_USXGMII_ANEG_STATUS_LP_ADV_ABILITY_GET(aneg);
+
+	status->link = !DEV2G5_USXGMII_ANEG_STATUS_PAGE_RX_STICKY_GET(aneg) &&
+		       !DEV2G5_USXGMII_ANEG_STATUS_LINK_DOWN_STATUS_GET(aneg);
+	status->link_down = DEV2G5_USXGMII_ANEG_STATUS_LINK_DOWN_STATUS_GET(aneg);
+
+	phylink_decode_usxgmii_word(&state, adv);
+	status->speed = state.speed;
+	status->duplex = state.duplex;
+
+	return 0;
+}
+
 /* Get link status of 1000Base-X/in-band and SFI ports.
  */
 int sparx5_get_port_status(struct sparx5 *sparx5,
@@ -177,6 +212,8 @@ int sparx5_get_port_status(struct sparx5 *sparx5,
 	case PHY_INTERFACE_MODE_10GBASER:
 	case PHY_INTERFACE_MODE_25GBASER:
 		return sparx5_get_sfi_status(sparx5, port, status);
+	case PHY_INTERFACE_MODE_10G_QXGMII:
+		return sparx5_get_10g_qxgmii_status(sparx5, port, status);
 	case PHY_INTERFACE_MODE_NA:
 		return 0;
 	default:
@@ -243,6 +280,12 @@ static int sparx5_port_verify_speed(struct sparx5 *sparx5,
 			return sparx5_port_error(port, conf, SPX5_PERR_IFTYPE);
 		fallthrough;
 	case PHY_INTERFACE_MODE_SGMII:
+		if (conf->speed != SPEED_1000 &&
+		    conf->speed != SPEED_100 &&
+		    conf->speed != SPEED_10)
+			return sparx5_port_error(port, conf, SPX5_PERR_SPEED);
+		break;
+	case PHY_INTERFACE_MODE_10G_QXGMII:
 		if (conf->speed != SPEED_1000 &&
 		    conf->speed != SPEED_100 &&
 		    conf->speed != SPEED_10 &&
@@ -350,8 +393,10 @@ static int sparx5_port_disable(struct sparx5 *sparx5, struct sparx5_port *port, 
 			      DEV10G_MAC_ENA_CFG(0));
 	} else {
 		/* 1: Reset the PCS Rx clock domain  */
-		spx5_inst_rmw(DEV2G5_DEV_RST_CTRL_PCS_RX_RST,
-			      DEV2G5_DEV_RST_CTRL_PCS_RX_RST,
+		spx5_inst_rmw(DEV2G5_DEV_RST_CTRL_PCS_RX_RST |
+			      DEV2G5_DEV_RST_CTRL_USX_PCS_RX_RST,
+			      DEV2G5_DEV_RST_CTRL_PCS_RX_RST |
+			      DEV2G5_DEV_RST_CTRL_USX_PCS_RX_RST,
 			      devinst,
 			      DEV2G5_DEV_RST_CTRL(0));
 		/* 2: Disable MAC frame reception */
@@ -418,11 +463,15 @@ static int sparx5_port_disable(struct sparx5 *sparx5, struct sparx5_port *port, 
 
 	} else {
 		spx5_inst_rmw(DEV2G5_DEV_RST_CTRL_SPEED_SEL_SET(3) |
+			      DEV2G5_DEV_RST_CTRL_USX_PCS_TX_RST_SET(1) |
+			      DEV2G5_DEV_RST_CTRL_USX_PCS_RX_RST_SET(1) |
 			      DEV2G5_DEV_RST_CTRL_PCS_TX_RST_SET(1) |
 			      DEV2G5_DEV_RST_CTRL_PCS_RX_RST_SET(1) |
 			      DEV2G5_DEV_RST_CTRL_MAC_TX_RST_SET(1) |
 			      DEV2G5_DEV_RST_CTRL_MAC_RX_RST_SET(1),
 			      DEV2G5_DEV_RST_CTRL_SPEED_SEL |
+			      DEV2G5_DEV_RST_CTRL_USX_PCS_TX_RST |
+			      DEV2G5_DEV_RST_CTRL_USX_PCS_RX_RST |
 			      DEV2G5_DEV_RST_CTRL_PCS_TX_RST |
 			      DEV2G5_DEV_RST_CTRL_PCS_RX_RST |
 			      DEV2G5_DEV_RST_CTRL_MAC_TX_RST |
@@ -527,6 +576,7 @@ static int sparx5_port_fifo_sz(struct sparx5 *sparx5,
 
 /* Configure port muxing:
  * QSGMII:     4x2G5 devices
+ * 10G_QXGMII  4x2G5 devices
  */
 int sparx5_port_mux_set(struct sparx5 *sparx5, struct sparx5_port *port,
 			struct sparx5_port_config *conf)
@@ -555,6 +605,54 @@ int sparx5_port_mux_set(struct sparx5 *sparx5, struct sparx5_port *port,
 				 PORT_CONF_USGMII_CFG_QUAD_MODE,
 				 sparx5,
 				 PORT_CONF_USGMII_CFG((portno / 8)));
+		}
+		break;
+	case PHY_INTERFACE_MODE_10G_QXGMII:
+		inst = BIT(sparx5_port_dev_mapping(sparx5, portno));
+
+		if (sparx5_port_is_5g(portno)) {
+			spx5_rmw(inst,
+				 inst,
+				 sparx5,
+				 PORT_CONF_DEV5G_MODES);
+		} else if (sparx5_port_is_10g(portno)) {
+			spx5_rmw(inst,
+				 inst,
+				 sparx5,
+				 PORT_CONF_DEV10G_MODES);
+		} else if (sparx5_port_is_25g(portno)) {
+			spx5_rmw(inst,
+				 inst,
+				 sparx5,
+				 PORT_CONF_DEV25G_MODES);
+		}
+
+		if (portno > 47 && portno < 64) {
+			/* All the ports can be part of the QUSXGMII interface,
+			 * but we need to set this only 1 per each group of the
+			 * interfaces, in this case we do it only when we
+			 * configure the higher ports. And then there is a
+			 * mapping from each group of ports to a
+			 * PORT_CONF_USXGMII. In this case the port 48
+			 * correspond to PORT_CONF_USXGMII(16), port 49
+			 * correspond to PORT_CONF_USXGMII(17), etc...
+			 */
+			inst = portno - 48;
+			inst += 16;
+
+			spx5_rmw(PORT_CONF_USXGMII_CFG_TX_ENA_SET(1) |
+				 PORT_CONF_USXGMII_CFG_RX_ENA_SET(1) |
+				 PORT_CONF_USXGMII_CFG_NUM_PORTS_SET(SPX5_USXGMII_QUAD),
+				 PORT_CONF_USXGMII_CFG_TX_ENA |
+				 PORT_CONF_USXGMII_CFG_RX_ENA |
+				 PORT_CONF_USXGMII_CFG_NUM_PORTS,
+				 sparx5,
+				 PORT_CONF_USXGMII_CFG(inst));
+
+			spx5_rmw(BIT(inst),
+				 BIT(inst),
+				 sparx5,
+				 PORT_CONF_USXGMII_ENA);
 		}
 		break;
 	default:
@@ -693,6 +791,55 @@ static u16 sparx5_get_aneg_word(struct sparx5_port_config *conf)
 		return 1; /* Enable SGMII Aneg */
 }
 
+int sparx5_port_get_10g_qxgmii_idx(struct sparx5 *sparx5,
+				   struct sparx5_port *port,
+				   size_t idx)
+{
+	uint8_t map[][4] = { {48,  0, 16, 32},
+			     {49,  1, 17, 33},
+			     {50,  2, 18, 34},
+			     {51,  3, 19, 35},
+			     {52,  4, 20, 36},
+			     {53,  5, 21, 37},
+			     {54,  6, 22, 38},
+			     {55,  7, 23, 39},
+			     {56,  8, 24, 40},
+			     {57,  9, 25, 41},
+			     {58, 10, 26, 42},
+			     {59, 11, 27, 43},
+			     {60, 12, 28, 44},
+			     {61, 13, 29, 45},
+			     {62, 14, 30, 46},
+			     {63, 15, 31, 47}};
+
+	for (int i = 0; i < ARRAY_SIZE(map); ++i) {
+		for (int j = 0; j < ARRAY_SIZE(map[i]); ++j) {
+			if (port->portno != map[i][j])
+				continue;
+
+			return map[i][idx];
+		}
+	}
+
+	return -ENODEV;
+}
+
+static struct sparx5_port *sparx5_port_get_usx_base(struct sparx5 *sparx5,
+						    struct sparx5_port *port)
+{
+	const struct sparx5_ops *ops = sparx5->data->ops;
+	int idx;
+
+	if (!ops->port_get_10g_qxgmii_idx(sparx5, port, 0))
+		return NULL;
+
+	idx = ops->port_get_10g_qxgmii_idx(sparx5, port, 0);
+	if (idx < 0)
+		return NULL;
+
+	return sparx5->ports[idx];
+}
+
 int sparx5_serdes_set(struct sparx5 *sparx5,
 		      struct sparx5_port *port,
 		      struct sparx5_port_config *conf)
@@ -703,6 +850,21 @@ int sparx5_serdes_set(struct sparx5 *sparx5,
 	    ((port->portno % 4) != 0)) {
 		return 0;
 	}
+
+	if (conf->portmode == PHY_INTERFACE_MODE_10G_QXGMII) {
+		struct sparx5_port *p = sparx5_port_get_usx_base(sparx5, port);
+
+		if (!p) {
+			return -EINVAL;
+		}
+
+		if (p->conf.usx_enabled) {
+			return 0;
+		}
+
+		p->conf.usx_enabled = true;
+	}
+
 	if (sparx5_is_baser(conf->portmode)) {
 		if (conf->portmode == PHY_INTERFACE_MODE_25GBASER)
 			speed = SPEED_25000;
@@ -739,12 +901,95 @@ int sparx5_serdes_set(struct sparx5 *sparx5,
 	return err;
 }
 
+struct net_device *sparx5_port_get_ndev(struct sparx5 *sparx5)
+{
+	/* Fetch a port netdev, any will do */
+	for (int i = 0; i < sparx5->data->consts->n_ports; ++i) {
+		struct sparx5_port *port = sparx5->ports[i];
+
+		if (port && port->ndev)
+			return port->ndev;
+	}
+	return NULL;
+}
+
+static int sparx5_port_usx_pcs_low_set(struct sparx5 *sparx5,
+				       struct sparx5_port *port,
+				       struct sparx5_port_config *conf)
+{
+	/* Take USX_PCS and the MAC out of reset. Otherwise it seems that the
+	 * PCS can't negotiate with the PHY.
+	 */
+	spx5_rmw(DEV2G5_DEV_RST_CTRL_SPEED_SEL_SET(SPX5_USXGMII_SPEED) |
+		 DEV2G5_DEV_RST_CTRL_MAC_TX_RST_SET(0) |
+		 DEV2G5_DEV_RST_CTRL_MAC_RX_RST_SET(0) |
+		 DEV2G5_DEV_RST_CTRL_USX_PCS_TX_RST_SET(0) |
+		 DEV2G5_DEV_RST_CTRL_USX_PCS_RX_RST_SET(0),
+		 DEV2G5_DEV_RST_CTRL_SPEED_SEL |
+		 DEV2G5_DEV_RST_CTRL_MAC_TX_RST |
+		 DEV2G5_DEV_RST_CTRL_MAC_RX_RST |
+		 DEV2G5_DEV_RST_CTRL_USX_PCS_TX_RST |
+		 DEV2G5_DEV_RST_CTRL_USX_PCS_RX_RST,
+		 sparx5,
+		 DEV2G5_DEV_RST_CTRL(port->portno));
+
+	spx5_rmw(DEV2G5_USXGMII_RX_RADAPT_CFG_RX_RADAPT_ADD_LVL_SET(3) |
+		 DEV2G5_USXGMII_RX_RADAPT_CFG_RX_RADAPT_DROP_LVL_SET(7) |
+		 DEV2G5_USXGMII_RX_RADAPT_CFG_RX_RADAPT_MIN_IFG_SET(1),
+		 DEV2G5_USXGMII_RX_RADAPT_CFG_RX_RADAPT_ADD_LVL |
+		 DEV2G5_USXGMII_RX_RADAPT_CFG_RX_RADAPT_DROP_LVL |
+		 DEV2G5_USXGMII_RX_RADAPT_CFG_RX_RADAPT_MIN_IFG,
+		 sparx5,
+		 DEV2G5_USXGMII_RX_RADAPT_CFG(port->portno));
+
+	spx5_rmw(DEV2G5_USXGMII_TX_RADAPT_CFG_TX_LF_GEN_DIS_SET(0) |
+		 DEV2G5_USXGMII_TX_RADAPT_CFG_TX_RADAPT_ADD_LVL_SET(2) |
+		 DEV2G5_USXGMII_TX_RADAPT_CFG_TX_RADAPT_DROP_LVL_SET(6) |
+		 DEV2G5_USXGMII_TX_RADAPT_CFG_TX_RADAPT_MIN_IFG_SET(1),
+		 DEV2G5_USXGMII_TX_RADAPT_CFG_TX_LF_GEN_DIS |
+		 DEV2G5_USXGMII_TX_RADAPT_CFG_TX_RADAPT_ADD_LVL |
+		 DEV2G5_USXGMII_TX_RADAPT_CFG_TX_RADAPT_DROP_LVL |
+		 DEV2G5_USXGMII_TX_RADAPT_CFG_TX_RADAPT_MIN_IFG,
+		 sparx5,
+		 DEV2G5_USXGMII_TX_RADAPT_CFG(port->portno));
+
+	spx5_rmw(DEV2G5_USXGMII_ANEG_CFG_ADV_ABILITY_SET(0xd801) |
+		 DEV2G5_USXGMII_ANEG_CFG_LINK_TIMER_SET(1) |
+		 DEV2G5_USXGMII_ANEG_CFG_ANEG_ENA_SET(1) |
+		 DEV2G5_USXGMII_ANEG_CFG_SW_RESOLVE_ENA_SET(1),
+		 DEV2G5_USXGMII_ANEG_CFG_ADV_ABILITY |
+		 DEV2G5_USXGMII_ANEG_CFG_LINK_TIMER |
+		 DEV2G5_USXGMII_ANEG_CFG_ANEG_ENA |
+		 DEV2G5_USXGMII_ANEG_CFG_SW_RESOLVE_ENA,
+		 sparx5,
+		 DEV2G5_USXGMII_ANEG_CFG(port->portno));
+
+	/* Set Link Fault Signaling which is used according to 802.3 figure
+	 * 46-11 Link Fault Signaling State Diagram
+	 */
+	spx5_rmw(DEV2G5_USXGMII_GMII_XGMII_MAP_CFG_LFS_MODE_ENA_SET(0) |
+		 DEV2G5_USXGMII_GMII_XGMII_MAP_CFG_LFS_MAX_NON_FAULT_SEQ_SET(127) |
+		 DEV2G5_USXGMII_GMII_XGMII_MAP_CFG_LFS_MAX_FAULT_SEQ_SET(3),
+		 DEV2G5_USXGMII_GMII_XGMII_MAP_CFG_LFS_MODE_ENA |
+		 DEV2G5_USXGMII_GMII_XGMII_MAP_CFG_LFS_MAX_NON_FAULT_SEQ |
+		 DEV2G5_USXGMII_GMII_XGMII_MAP_CFG_LFS_MAX_FAULT_SEQ,
+		 sparx5,
+		 DEV2G5_USXGMII_GMII_XGMII_MAP_CFG(port->portno));
+
+	sparx5_serdes_set(sparx5, port, conf);
+
+	return 0;
+}
+
 static int sparx5_port_pcs_low_set(struct sparx5 *sparx5,
 				   struct sparx5_port *port,
 				   struct sparx5_port_config *conf)
 {
 	bool sgmii = false, inband_aneg = false;
 	int err;
+
+	if (conf->portmode == PHY_INTERFACE_MODE_10G_QXGMII)
+		return sparx5_port_usx_pcs_low_set(sparx5, port, conf);
 
 	if (conf->inband) {
 		if (conf->portmode == PHY_INTERFACE_MODE_SGMII ||
@@ -795,6 +1040,17 @@ static int sparx5_port_pcs_low_set(struct sparx5 *sparx5,
 		 DEV2G5_DEV_RST_CTRL_PCS_RX_RST,
 		 sparx5,
 		 DEV2G5_DEV_RST_CTRL(port->portno));
+
+	/* Enable PHAD_CTRL for better timestamping */
+	if (!is_sparx5(sparx5)) {
+		for (int i = 0; i < 2; ++i) {
+			spx5_rmw(DEV2G5_PHAD_CTRL_DIV_CFG_SET(SPX5_PHAD_DIV) |
+				 DEV2G5_PHAD_CTRL_PHAD_ENA_SET(1),
+				 DEV2G5_PHAD_CTRL_DIV_CFG |
+				 DEV2G5_PHAD_CTRL_PHAD_ENA,
+				 sparx5, DEV2G5_PHAD_CTRL(port->portno, i));
+		}
+	}
 
 	return 0;
 }
@@ -890,7 +1146,7 @@ static int sparx5_port_config_low_set(struct sparx5 *sparx5,
 	bool fdx = conf->duplex == DUPLEX_FULL;
 	int spd = conf->speed;
 
-	clk_spd = spd == SPEED_10 ? 0 : spd == SPEED_100 ? 1 : 2;
+	clk_spd = spd == SPEED_10 ? 0 : spd == SPEED_100 ? 1 : spd == SPEED_1000 ? 2 : 6;
 	gig_mode = spd == SPEED_1000 || spd == SPEED_2500;
 	tx_gap = spd == SPEED_1000 ? 4 : fdx ? 6 : 5;
 	hdx_gap_1 = spd == SPEED_1000 ? 0 : spd == SPEED_100 ? 1 : 2;
@@ -939,7 +1195,7 @@ static int sparx5_port_config_low_set(struct sparx5 *sparx5,
 			/* Divide the port clock by three for the two
 			 * phase detection registers.
 			 */
-			spx5_rmw(DEV2G5_PHAD_CTRL_DIV_CFG_SET(3) |
+			spx5_rmw(DEV2G5_PHAD_CTRL_DIV_CFG_SET(SPX5_PHAD_DIV) |
 				 DEV2G5_PHAD_CTRL_PHAD_ENA_SET(1),
 				 DEV2G5_PHAD_CTRL_DIV_CFG |
 				 DEV2G5_PHAD_CTRL_PHAD_ENA,
@@ -1050,6 +1306,9 @@ int sparx5_port_config(struct sparx5 *sparx5,
 		 sparx5,
 		 QFWD_SWITCH_PORT_MODE(port->portno));
 
+	/* Notify TAS about the speed */
+	sparx5_tas_speed(port, conf->speed);
+
 	/* Save the new values */
 	port->conf = *conf;
 
@@ -1144,11 +1403,25 @@ int sparx5_port_init(struct sparx5 *sparx5,
 	}
 	if (conf->portmode == PHY_INTERFACE_MODE_QSGMII) {
 		// All ports must be PCS enabled in QSGMII mode
-		spx5_rmw(DEV2G5_DEV_RST_CTRL_PCS_TX_RST_SET(0),
-			 DEV2G5_DEV_RST_CTRL_PCS_TX_RST,
-			 sparx5,
-			 DEV2G5_DEV_RST_CTRL(port->portno));
+		u16 base_port = (port->portno / 4) * 4;
+		for (u16 p = 0; p < 4; ++p) {
+			spx5_rmw(DEV2G5_DEV_RST_CTRL_PCS_TX_RST_SET(0),
+				 DEV2G5_DEV_RST_CTRL_PCS_TX_RST,
+				 sparx5,
+				 DEV2G5_DEV_RST_CTRL(base_port + p));
+		}
 	}
+
+	if (conf->portmode == PHY_INTERFACE_MODE_10G_QXGMII) {
+		for (u16 i = 0; i < 4; ++i) {
+			int idx  = ops->port_get_10g_qxgmii_idx(sparx5, port, i);
+			spx5_rmw(DEV2G5_DEV_RST_CTRL_USX_PCS_TX_RST_SET(0),
+				 DEV2G5_DEV_RST_CTRL_USX_PCS_TX_RST,
+				 sparx5,
+				 DEV2G5_DEV_RST_CTRL(idx));
+		}
+	}
+
 	/* Default IFGs for 1G */
 	spx5_wr(DEV2G5_MAC_IFG_CFG_TX_IFG_SET(6) |
 		DEV2G5_MAC_IFG_CFG_RX_IFG1_SET(0) |

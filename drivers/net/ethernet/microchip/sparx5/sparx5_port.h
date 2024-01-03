@@ -100,6 +100,8 @@ int sparx5_serdes_set(struct sparx5 *sparx5,
 		      struct sparx5_port *spx5_port,
 		      struct sparx5_port_config *conf);
 
+struct net_device *sparx5_port_get_ndev(struct sparx5 *sparx5);
+
 struct sparx5_port_status {
 	bool link;
 	bool link_down;
@@ -187,5 +189,46 @@ int sparx5_port_qos_dscp_rewr_set(const struct sparx5_port *port,
 
 int sparx5_port_qos_default_set(const struct sparx5_port *port,
 				const struct sparx5_port_qos *qos);
+
+u32 sparx5_port_dev_mapping(struct sparx5 *sparx5, int port);
+int sparx5_get_internal_port(struct sparx5 *sparx5, int port);
+
+/* Macros to read/write to both 2G5 and 5G/10G/25G device  */
+#define SPX5_DEV_RD(value, port, name)								\
+	{											\
+		u32 pix = sparx5_port_dev_index(port->sparx5, port->portno);			\
+		u32 dev = sparx5_to_high_dev(port->sparx5, port->portno);			\
+		void __iomem *devinst;								\
+		if (sparx5_is_baser(port->conf.portmode)) {					\
+			devinst = spx5_inst_get(port->sparx5, dev, pix);			\
+			value = spx5_inst_rd(devinst, DEV10G_##name(0));			\
+		} else {									\
+			value = spx5_rd(port->sparx5, DEV2G5_##name(port->portno)); 		\
+		}										\
+	}
+
+#define SPX5_DEV_WR(value, port, name)								\
+	{											\
+		u32 pix = sparx5_port_dev_index(port->sparx5, port->portno);			\
+		u32 dev = sparx5_to_high_dev(port->sparx5, port->portno);			\
+		void __iomem *devinst;								\
+		spx5_wr(value, port->sparx5, DEV2G5_##name(port->portno));			\
+		if (sparx5_is_baser(port->conf.portmode)) {					\
+			devinst = spx5_inst_get(port->sparx5, dev, pix);			\
+			spx5_inst_wr(value, devinst, DEV10G_##name(0));				\
+		}										\
+	}
+
+#define SPX5_DEV_RMW(value, mask, port, name)							\
+	{											\
+		u32 pix = sparx5_port_dev_index(port->sparx5, port->portno);			\
+		u32 dev = sparx5_to_high_dev(port->sparx5, port->portno);			\
+		void __iomem *devinst;								\
+		spx5_rmw(value, mask, port->sparx5, DEV2G5_##name(port->portno));		\
+		if (sparx5_is_baser(port->conf.portmode)) {					\
+			devinst = spx5_inst_get(port->sparx5, dev, pix);			\
+			spx5_inst_rmw(value, mask, devinst, DEV10G_##name(0));			\
+		}										\
+	}
 
 #endif	/* __SPARX5_PORT_H__ */

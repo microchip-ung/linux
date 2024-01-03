@@ -40,6 +40,7 @@ struct hsr_tag {
 
 #if IS_ENABLED(CONFIG_HSR)
 extern bool is_hsr_master(struct net_device *dev);
+extern bool is_hsr_redbox(struct net_device *dev);
 extern int hsr_get_version(struct net_device *dev, enum hsr_version *ver);
 struct net_device *hsr_get_port_ndev(struct net_device *ndev,
 				     enum hsr_port_type pt);
@@ -47,6 +48,10 @@ int hsr_get_port_type(struct net_device *hsr_dev, struct net_device *dev,
 		      enum hsr_port_type *type);
 #else
 static inline bool is_hsr_master(struct net_device *dev)
+{
+	return false;
+}
+static inline bool is_hsr_redbox(struct net_device *dev)
 {
 	return false;
 }

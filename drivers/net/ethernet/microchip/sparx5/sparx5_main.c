@@ -32,6 +32,7 @@
 #include "sparx5_qos.h"
 #include "sparx5_vcap_ag_api.h"
 #include "sparx5_vcap_impl.h"
+#include "sparx5_mrp.h"
 
 const struct sparx5_regs *regs;
 
@@ -200,6 +201,7 @@ static const struct sparx5_main_io_resource sparx5_main_iomap[] =  {
 	{ TARGET_VCAP_ES0,           0x110e0000, 2 }, /* 0x6110e0000 */
 	{ TARGET_CLKGEN,             0x11100000, 2 }, /* 0x611100000 */
 	{ TARGET_ANA_AC_POL,         0x11200000, 2 }, /* 0x611200000 */
+	{ TARGET_AFI,                0x11240000, 2 }, /* 0x611240000 */
 	{ TARGET_QRES,               0x11280000, 2 }, /* 0x611280000 */
 	{ TARGET_EACL,               0x112c0000, 2 }, /* 0x6112c0000 */
 	{ TARGET_ANA_CL,             0x11400000, 2 }, /* 0x611400000 */
@@ -244,16 +246,37 @@ static void sparx5_init_features(struct sparx5 *sparx5)
 	case SPX5_TARGET_CT_7552TSN:
 	case SPX5_TARGET_CT_7556TSN:
 	case SPX5_TARGET_CT_7558TSN:
-	case SPX5_TARGET_CT_LAN9691VAO:
-	case SPX5_TARGET_CT_LAN9694TSN:
-	case SPX5_TARGET_CT_LAN9694RED:
-	case SPX5_TARGET_CT_LAN9692VAO:
-	case SPX5_TARGET_CT_LAN9696TSN:
-	case SPX5_TARGET_CT_LAN9696RED:
-	case SPX5_TARGET_CT_LAN9693VAO:
-	case SPX5_TARGET_CT_LAN9698TSN:
-	case SPX5_TARGET_CT_LAN9698RED:
 		sparx5->features = (SPX5_FEATURE_PSFP | SPX5_FEATURE_PTP);
+		break;
+	case SPX5_TARGET_CT_LAN9691VAO:
+		sparx5->features = (SPX5_FEATURE_PSFP | SPX5_FEATURE_PTP);
+		break;
+	case SPX5_TARGET_CT_LAN9694TSN:
+		sparx5->features = (SPX5_FEATURE_PSFP | SPX5_FEATURE_PTP);
+		break;
+	case SPX5_TARGET_CT_LAN9694RED:
+		sparx5->features = (SPX5_FEATURE_PSFP | SPX5_FEATURE_PTP |
+				    SPX5_FEATURE_REDBOX);
+		break;
+	case SPX5_TARGET_CT_LAN9692VAO:
+		sparx5->features = (SPX5_FEATURE_PSFP | SPX5_FEATURE_PTP);
+		break;
+	case SPX5_TARGET_CT_LAN9696TSN:
+		sparx5->features = (SPX5_FEATURE_PSFP | SPX5_FEATURE_PTP);
+		break;
+	case SPX5_TARGET_CT_LAN9696RED:
+		sparx5->features = (SPX5_FEATURE_PSFP | SPX5_FEATURE_PTP |
+				    SPX5_FEATURE_REDBOX);
+		break;
+	case SPX5_TARGET_CT_LAN9693VAO:
+		sparx5->features = (SPX5_FEATURE_PSFP | SPX5_FEATURE_PTP);
+		break;
+	case SPX5_TARGET_CT_LAN9698TSN:
+			sparx5->features = (SPX5_FEATURE_PSFP | SPX5_FEATURE_PTP);
+		break;
+	case SPX5_TARGET_CT_LAN9698RED:
+		sparx5->features = (SPX5_FEATURE_PSFP | SPX5_FEATURE_PTP |
+				    SPX5_FEATURE_REDBOX);
 		break;
 	default:
 		break;
@@ -330,8 +353,8 @@ static int sparx5_create_port(struct sparx5 *sparx5,
 	spx5_port->of_node = config->node;
 	spx5_port->serdes = config->serdes;
 	spx5_port->pvid = NULL_VID;
-	spx5_port->signd_internal = true;
-	spx5_port->signd_active_high = true;
+	spx5_port->signd_internal = config->conf.sd_sgpio == ~0 ? true : false;
+	spx5_port->signd_active_high = config->conf.sd_sgpio == ~0 ? true : false;
 	spx5_port->signd_enable = true;
 	spx5_port->max_vlan_tags = SPX5_PORT_MAX_TAGS_NONE;
 	spx5_port->vlan_type = SPX5_VLAN_PORT_TYPE_UNAWARE;
@@ -352,6 +375,12 @@ static int sparx5_create_port(struct sparx5 *sparx5,
 	/* Setup VLAN */
 	sparx5_vlan_port_setup(sparx5, spx5_port->portno);
 
+	/* Setup QoS */
+	sparx5_qos_port_setup(sparx5, spx5_port->portno);
+
+	/* Setup XDP */
+	sparx5_xdp_port_init(spx5_port);
+
 	/* Create a phylink for PHY management.  Also handles SFPs */
 	spx5_port->phylink_config.dev = &spx5_port->ndev->dev;
 	spx5_port->phylink_config.type = PHYLINK_NETDEV;
@@ -369,6 +398,8 @@ static int sparx5_create_port(struct sparx5 *sparx5,
 	__set_bit(PHY_INTERFACE_MODE_1000BASEX,
 		  spx5_port->phylink_config.supported_interfaces);
 	__set_bit(PHY_INTERFACE_MODE_2500BASEX,
+		  spx5_port->phylink_config.supported_interfaces);
+	__set_bit(PHY_INTERFACE_MODE_10G_QXGMII,
 		  spx5_port->phylink_config.supported_interfaces);
 
 	if (spx5_port->conf.bandwidth == SPEED_5000 ||
@@ -479,6 +510,7 @@ static int sparx5_init_coreclock(struct sparx5 *sparx5)
 {
 	enum sparx5_core_clockfreq freq = sparx5->coreclock;
 	u32 clk_div, clk_period, pol_upd_int, idx;
+	enum sparx5_core_clockref ref;
 
 	/* Verify if core clock frequency is supported on target.
 	 * If 'VTSS_CORE_CLOCK_DEFAULT' then the highest supported
@@ -531,6 +563,7 @@ static int sparx5_init_coreclock(struct sparx5 *sparx5)
 	case SPX5_TARGET_CT_LAN9698TSN:
 	case SPX5_TARGET_CT_LAN9698RED:
 		freq = SPX5_CORE_CLOCK_328MHZ;
+		ref = SPX5_CORE_CLOCK_REF_39MHZ;
 		break;
 	default:
 		dev_err(sparx5->dev, "Target (%#04x) not supported\n",
@@ -579,6 +612,7 @@ static int sparx5_init_coreclock(struct sparx5 *sparx5)
 
 	/* Update state with chosen frequency */
 	sparx5->coreclock = freq;
+	sparx5->coreclockref = ref;
 	clk_period = sparx5_clk_period(freq);
 
 	if (is_sparx5(sparx5))
@@ -681,12 +715,21 @@ static void sparx5_board_init(struct sparx5 *sparx5)
 					GCB_HW_SGPIO_TO_SD_MAP_CFG(idx));
 }
 
+static irqreturn_t sparx5_oam_vop_handler(int irq, void *_sparx5)
+{
+	struct sparx5 *sparx5 = _sparx5;
+
+	sparx5_mrp_ring_open(sparx5);
+	sparx5_mrp_in_open(sparx5);
+
+	return IRQ_HANDLED;
+}
+
 static int sparx5_start(struct sparx5 *sparx5)
 {
 	u8 broadcast[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 	const struct sparx5_consts *consts = sparx5->data->consts;
 	const struct sparx5_ops *ops = sparx5->data->ops;
-	char queue_name[32];
 	u32 idx;
 	int err;
 
@@ -708,16 +751,11 @@ static int sparx5_start(struct sparx5 *sparx5)
 	/* Init masks */
 	sparx5_update_fwd(sparx5);
 
-	/* Init flood masks */
-	for (int pgid = sparx5_get_pgid(sparx5, PGID_UC_FLOOD);
-	     pgid <= sparx5_get_pgid(sparx5, PGID_BCAST); pgid++)
-		sparx5_pgid_clear(sparx5, pgid);
-
 	/* CPU copy CPU pgids */
-	spx5_wr(ANA_AC_PGID_MISC_CFG_PGID_CPU_COPY_ENA_SET(1), sparx5,
-		ANA_AC_PGID_MISC_CFG(sparx5_get_pgid(sparx5, PGID_CPU)));
-	spx5_wr(ANA_AC_PGID_MISC_CFG_PGID_CPU_COPY_ENA_SET(1), sparx5,
-		ANA_AC_PGID_MISC_CFG(sparx5_get_pgid(sparx5, PGID_BCAST)));
+	sparx5_pgid_cpu_copy_ena(sparx5,
+				 sparx5_get_pgid_index(sparx5, PGID_CPU), true);
+	sparx5_pgid_cpu_copy_ena(sparx5,
+				 sparx5_get_pgid_index(sparx5, PGID_BCAST), true);
 
 	/* Recalc injected frame FCS */
 	for (idx = sparx5_get_internal_port(sparx5, SPX5_PORT_CPU_0);
@@ -726,15 +764,6 @@ static int sparx5_start(struct sparx5 *sparx5)
 			 ANA_CL_FILTER_CTRL_FORCE_FCS_UPDATE_ENA,
 			 sparx5, ANA_CL_FILTER_CTRL(idx));
 
-	/* Init MAC table, ageing */
-	sparx5_mact_init(sparx5);
-
-	/* Init PGID table arbitrator */
-	sparx5_pgid_init(sparx5);
-
-	/* Setup VLANs */
-	sparx5_vlan_init(sparx5);
-
 	/* Add host mode BC address (points only to CPU) */
 	sparx5_mact_learn(sparx5, sparx5_get_pgid(sparx5, PGID_CPU), broadcast,
 			  NULL_VID);
@@ -742,55 +771,13 @@ static int sparx5_start(struct sparx5 *sparx5)
 	/* Enable queue limitation watermarks */
 	sparx5_qlim_set(sparx5);
 
-	err = sparx5_config_auto_calendar(sparx5);
-	if (err)
-		return err;
-
-	err = sparx5_config_dsm_calendar(sparx5);
-	if (err)
-		return err;
-
-	/* Init stats */
-	err = sparx_stats_init(sparx5);
-	if (err)
-		return err;
-
-	/* Init mact_sw struct */
-	mutex_init(&sparx5->mact_lock);
-	INIT_LIST_HEAD(&sparx5->mact_entries);
-	snprintf(queue_name, sizeof(queue_name), "%s-mact",
-		 dev_name(sparx5->dev));
-	sparx5->mact_queue = create_singlethread_workqueue(queue_name);
-	if (!sparx5->mact_queue)
-		return -ENOMEM;
-
-	INIT_DELAYED_WORK(&sparx5->mact_work, sparx5_mact_pull_work);
-	queue_delayed_work(sparx5->mact_queue, &sparx5->mact_work,
-			   SPX5_MACT_PULL_DELAY);
-
 	mutex_init(&sparx5->mdb_lock);
 	INIT_LIST_HEAD(&sparx5->mdb_entries);
-
-	err = sparx5_register_netdevs(sparx5);
-	if (err)
-		return err;
-
-	sparx5_board_init(sparx5);
-	err = sparx5_register_notifier_blocks(sparx5);
-	if (err)
-		return err;
-
-	err = sparx5_vcap_init(sparx5);
-	if (err) {
-		sparx5_unregister_notifier_blocks(sparx5);
-		return err;
-	}
 
 	/* Start Frame DMA with fallback to register based INJ/XTR */
 	err = -ENXIO;
 	if (sparx5->fdma_irq >= 0) {
-		if (GCB_CHIP_ID_REV_ID_GET(sparx5->chip_id) > 0 ||
-		    !is_sparx5(sparx5))
+		if (GCB_CHIP_ID_REV_ID_GET(sparx5->chip_id) > 0 || !is_sparx5(sparx5))
 			err = devm_request_irq(sparx5->dev,
 					       sparx5->fdma_irq,
 					       sparx5_fdma_handler,
@@ -818,25 +805,72 @@ static int sparx5_start(struct sparx5 *sparx5)
 		sparx5->xtr_irq = -ENXIO;
 	}
 
-	if (sparx5->ptp_irq >= 0 &&
-	    sparx5_has_feature(sparx5, SPX5_FEATURE_PTP)) {
-		err = devm_request_threaded_irq(sparx5->dev, sparx5->ptp_irq,
-						NULL, ops->ptp_irq_handler,
-						IRQF_ONESHOT, "sparx5-ptp",
-						sparx5);
+	if (sparx5->oam_vop_irq >= 0) {
+		err = devm_request_threaded_irq(sparx5->dev, sparx5->oam_vop_irq,
+						NULL, sparx5_oam_vop_handler,
+						IRQF_ONESHOT, "oam_vop", sparx5);
 		if (err)
-			sparx5->ptp_irq = -ENXIO;
-
-		sparx5->ptp = 1;
+			sparx5->oam_vop_irq = -ENXIO;
 	}
+
+	sparx5_debugfs(sparx5);
 
 	return err;
 }
 
-static void sparx5_cleanup_ports(struct sparx5 *sparx5)
+static bool sparx5_is_pcie_device(struct sparx5 *sparx5)
+ {
+	struct device_node *parent = of_get_parent(sparx5->dev->of_node);
+	struct property *prop;
+	const char *name;
+
+	if (parent == NULL)
+		return false;
+	prop = of_find_property(parent, "compatible", NULL);
+	if (prop == NULL)
+		return false;
+	name = of_prop_next_string(prop, NULL);
+	if (name == NULL)
+		return false;
+	return strncmp(name, "pci", 3) == 0;
+}
+
+/* There are some sparx5 chips that were fused with hex encoded BCD digits
+ * meaning that they will have a different partid than what is expected. The
+ * only difference between these chips and the other one is just the partid
+ * number, so not to add new targets which just confuse more then make sure to
+ * change the target_chiptype to the correct one.
+ */
+static enum spx5_target_chiptype sparx5_fix_target_ct(struct sparx5 *sparx5)
 {
-	sparx5_unregister_netdevs(sparx5);
-	sparx5_destroy_netdevs(sparx5);
+	/* If the target is already known then there is nothing to do and just
+	 * return the current target chiptype.
+	 */
+	if (is_sparx5(sparx5))
+		return sparx5->target_ct;
+
+	/* Now check for the partids that have the wrong value and correct them
+	 * with the correct value
+	 */
+	switch ((u16)sparx5->target_ct) {
+	case 0x052e:
+		return SPX5_TARGET_CT_7546;
+	case 0x0531:
+		return SPX5_TARGET_CT_7549;
+	case 0x0534:
+		return SPX5_TARGET_CT_7552;
+	case 0x0538:
+		return SPX5_TARGET_CT_7556;
+	case 0x053a:
+		return SPX5_TARGET_CT_7558;
+	default:
+		/* This means that is an unknown partid or it is a lan969x part
+		 * id. In this case just return the current value as later in
+		 * the code will check if it is a lan969x target chiptype or is
+		 * something totally wrong and then it would bailed out.
+		 */
+		return sparx5->target_ct;
+	}
 }
 
 static int mchp_sparx5_probe(struct platform_device *pdev)
@@ -860,6 +894,8 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 	sparx5->pdev = pdev;
 	sparx5->dev = &pdev->dev;
 	spin_lock_init(&sparx5->tx_lock);
+
+	sparx5->is_pcie_device = sparx5_is_pcie_device(sparx5);
 
 	sparx5->data = device_get_match_data(sparx5->dev);
 	if (!sparx5->data)
@@ -927,15 +963,19 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		else
 			sparx5->sd_sgpio_remapping = true;
 		/* There is no SerDes node for RGMII ports. */
-		if (!ops->is_port_rgmii(portno)) {
-			serdes = devm_of_phy_get(sparx5->dev, portnp, NULL);
-			if (IS_ERR(serdes)) {
-				err = dev_err_probe(sparx5->dev,
-						    PTR_ERR(serdes),
-						    "port %u: missing serdes\n",
-						    portno);
+		serdes = devm_of_phy_get(sparx5->dev, portnp, NULL);
+		if (IS_ERR(serdes)) {
+			if (!phy_interface_mode_is_rgmii(conf->phy_mode)) {
+				err = dev_err_probe(sparx5->dev, PTR_ERR(serdes),
+					    "port %u: missing serdes\n",
+					    portno);
 				of_node_put(portnp);
 				goto cleanup_config;
+			} else {
+				/* Clear the error from the serdes as this is
+				* used to check if there is serdes or not
+				*/
+				serdes = NULL;
 			}
 		}
 		config->portno = portno;
@@ -946,6 +986,13 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		conf->serdes_reset = true;
 		conf->portmode = conf->phy_mode;
 		conf->power_down = true;
+
+		/* In case the link between MAC and PHY is 10G_QXGMII, the
+		 * serdes on the MAC side doesn't need to be reseted it is OK to
+		 * just apply the needed configuration,
+		 */
+		if (conf->portmode == PHY_INTERFACE_MODE_10G_QXGMII)
+			conf->serdes_reset = false;
 		idx++;
 	}
 
@@ -962,12 +1009,16 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 	sparx5->fdma_irq = platform_get_irq_byname(sparx5->pdev, "fdma");
 	sparx5->xtr_irq = platform_get_irq_byname(sparx5->pdev, "xtr");
 	sparx5->ptp_irq = platform_get_irq_byname(sparx5->pdev, "ptp");
+	sparx5->ptp_ext_irq = platform_get_irq_byname(sparx5->pdev, "ptp-ext");
+	sparx5->oam_vop_irq = platform_get_irq_byname(sparx5->pdev, "oam-vop");
 
 	/* Read chip ID to check CPU interface */
 	sparx5->chip_id = spx5_rd(sparx5, GCB_CHIP_ID);
 
 	sparx5->target_ct = (enum spx5_target_chiptype)
 		GCB_CHIP_ID_PART_ID_GET(sparx5->chip_id);
+
+	sparx5->target_ct = sparx5_fix_target_ct(sparx5);
 
 	/* Initialize the features based on the target */
 	sparx5_init_features(sparx5);
@@ -998,9 +1049,17 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		}
 	}
 
-	err = sparx5_start(sparx5);
+	INIT_LIST_HEAD(&sparx5->mall_entries);
+
+	sparx5_pgid_init(sparx5);
+	sparx5_vlan_init(sparx5);
+	sparx5_board_init(sparx5);
+	sparx5_netlink_fp_init();
+	sparx5_netlink_qos_init(sparx5);
+
+	err = sparx5_calendar_init(sparx5);
 	if (err) {
-		dev_err(sparx5->dev, "Start failed\n");
+		dev_err(sparx5->dev, "Failed to initialize calendar\n");
 		goto cleanup_ports;
 	}
 
@@ -1012,18 +1071,90 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 
 	err = sparx5_ptp_init(sparx5);
 	if (err) {
-		dev_err(sparx5->dev, "PTP failed\n");
+		dev_err(sparx5->dev, "Failed to initialize PTP\n");
 		goto cleanup_ports;
 	}
 
-	INIT_LIST_HEAD(&sparx5->mall_entries);
+	err = sparx5_afi_init(sparx5);
+	if (err) {
+		dev_err(sparx5->dev, "AFI initialization failed\n");
+		goto cleanup_ptp;
+	}
+
+	err = sparx5_mrp_init(sparx5);
+	if (err) {
+		dev_err(sparx5->dev, "MRP initialization failed\n");
+		goto cleanup_afi;
+	}
+
+	err = sparx5_vcap_init(sparx5);
+	if (err) {
+		dev_err(sparx5->dev, "Failed to initialize VCAP\n");
+		goto cleanup_mrp;
+	}
+
+	err = sparx5_mact_init(sparx5);
+	if (err) {
+		dev_err(sparx5->dev, "Failed to initialize MAC table\n");
+		goto cleanup_vcap;
+	}
+
+	err = sparx5_stats_init(sparx5);
+	if (err) {
+		dev_err(sparx5->dev, "Failed to initialize stats\n");
+		goto cleanup_mact;
+	}
+
+	err = sparx5_rr_router_init(sparx5);
+	if (err) {
+		dev_err(sparx5->dev, "Failed to initialize router\n");
+		goto cleanup_stats;
+	}
+
+	err = sparx5_register_notifier_blocks(sparx5);
+	if (err) {
+		dev_err(sparx5->dev, "Failed to register notifier blocks\n");
+		goto cleanup_router;
+	}
+
+	err = sparx5_register_netdevs(sparx5);
+	if (err) {
+		dev_err(sparx5->dev, "Failed to register net devices\n");
+		goto cleanup_notifiers;
+	}
+
+	/* Initialize the rest of the hardware and start the IRQ handlers.
+	 * Only initialization that does not require cleanup should be inside
+	 * this function.
+	 */
+	err = sparx5_start(sparx5);
+	if (err) {
+		dev_err(sparx5->dev, "Start failed\n");
+		goto cleanup_netdevs;
+	}
 
 	goto cleanup_config;
 
+cleanup_netdevs:
+	sparx5_unregister_netdevs(sparx5);
+cleanup_notifiers:
+	sparx5_unregister_notifier_blocks(sparx5);
+cleanup_router:
+	sparx5_rr_router_deinit(sparx5);
+cleanup_stats:
+	sparx5_stats_deinit(sparx5);
+cleanup_mact:
+	sparx5_mact_deinit(sparx5);
+cleanup_vcap:
+	sparx5_vcap_destroy(sparx5);
+cleanup_mrp:
+	sparx5_mrp_deinit(sparx5);
+cleanup_afi:
+	sparx5_afi_deinit(sparx5);
+cleanup_ptp:
+	sparx5_ptp_deinit(sparx5);
 cleanup_ports:
-	sparx5_cleanup_ports(sparx5);
-	if (sparx5->mact_queue)
-		destroy_workqueue(sparx5->mact_queue);
+	sparx5_destroy_netdevs(sparx5);
 cleanup_config:
 	kfree(configs);
 cleanup_pnode:
@@ -1045,13 +1176,30 @@ static void mchp_sparx5_remove(struct platform_device *pdev)
 		disable_irq(sparx5->fdma_irq);
 		sparx5->fdma_irq = -ENXIO;
 	}
+	if (sparx5->ptp_irq) {
+		disable_irq(sparx5->ptp_irq);
+		sparx5->ptp_irq = -ENXIO;
+	}
+	if (sparx5->ptp_ext_irq) {
+		disable_irq(sparx5->ptp_ext_irq);
+		sparx5->ptp_ext_irq = -ENXIO;
+	}
+	if (sparx5->oam_vop_irq) {
+		disable_irq(sparx5->oam_vop_irq);
+		sparx5->oam_vop_irq = -ENXIO;
+	}
+
+	sparx5_unregister_netdevs(sparx5);
+	sparx5_unregister_notifier_blocks(sparx5);
+	sparx5_rr_router_deinit(sparx5);
+	sparx5_stats_deinit(sparx5);
+	sparx5_mact_deinit(sparx5);
+	sparx5_vcap_destroy(sparx5);
+	sparx5_mrp_deinit(sparx5);
+	sparx5_afi_deinit(sparx5);
 	sparx5_ptp_deinit(sparx5);
 	ops->fdma_deinit(sparx5);
-	sparx5_cleanup_ports(sparx5);
-	sparx5_vcap_destroy(sparx5);
-	/* Unregister netdevs */
-	sparx5_unregister_notifier_blocks(sparx5);
-	destroy_workqueue(sparx5->mact_queue);
+	sparx5_destroy_netdevs(sparx5);
 }
 
 static const struct sparx5_regs sparx5_regs = {
@@ -1079,6 +1227,7 @@ static const struct sparx5_consts sparx5_consts = {
 	.n_gates             = 1024,
 	.n_sdlbs             = 4096,
 	.n_dsm_cal_taxis     = 8,
+	.n_pol_acl           = 64,
 	.buf_size            = 4194280,
 	.qres_max_prio_idx   = 630,
 	.qres_max_colour_idx = 638,
@@ -1086,6 +1235,10 @@ static const struct sparx5_consts sparx5_consts = {
 	.vcaps               = sparx5_vcaps,
 	.vcaps_cfg           = sparx5_vcap_inst_cfg,
 	.vcap_stats          = &sparx5_vcap_stats,
+	.ptp_pins            = 4,
+	.bum_slb_cnt         = 1024,
+	.isdx_cnt            = 4096,
+	.vmid_cnt = 511,
 };
 
 static const struct sparx5_ops sparx5_ops = {
@@ -1099,12 +1252,15 @@ static const struct sparx5_ops sparx5_ops = {
 	.get_hsch_max_group_rate = &sparx5_get_hsch_max_group_rate,
 	.get_sdlb_group          = &sparx5_get_sdlb_group,
 	.set_port_mux            = &sparx5_port_mux_set,
+	.get_mtu                 = &sparx5_mtu_max,
 	.ptp_irq_handler         = &sparx5_ptp_irq_handler,
 	.dsm_calendar_calc       = &sparx5_dsm_calendar_calc,
 	.fdma_init               = &sparx5_fdma_init,
+	.fdma_resize             = &sparx5_fdma_resize,
 	.fdma_deinit             = &sparx5_fdma_deinit,
 	.fdma_poll               = &sparx5_fdma_napi_callback,
 	.fdma_xmit               = &sparx5_fdma_xmit,
+	.port_get_10g_qxgmii_idx = &sparx5_port_get_10g_qxgmii_idx,
 };
 
 static const struct sparx5_match_data sparx5_desc = {

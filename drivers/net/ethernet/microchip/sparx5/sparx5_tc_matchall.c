@@ -43,6 +43,17 @@ sparx5_tc_matchall_parse_mirror_action(struct sparx5_mall_entry *entry,
 	entry->mirror.port = netdev_priv(action->dev);
 }
 
+static void
+sparx5_tc_matchall_parse_port_policer_action(struct sparx5_mall_entry *entry,
+					     struct flow_action_entry *action)
+{
+	/* Sort of a hack for now. This should probably be changed for
+	 * assignments of the individual fields that are actually needed to
+	 * configure the port policers.
+	 */
+	entry->port_policer.action = *action;
+}
+
 static int sparx5_tc_matchall_replace(struct net_device *ndev,
 				      struct tc_cls_matchall_offload *tmo,
 				      bool ingress)
@@ -99,6 +110,40 @@ static int sparx5_tc_matchall_replace(struct net_device *ndev,
 		/* Get baseline stats for this port */
 		sparx5_mirror_stats(mall_entry, &tmo->stats);
 		break;
+	case FLOW_ACTION_POLICE:
+		sparx5_tc_matchall_parse_port_policer_action(mall_entry,
+							     action);
+		err = sparx5_add_port_policer(mall_entry);
+		if (err) {
+			switch (err) {
+			case -EINVAL:
+				NL_SET_ERR_MSG_MOD(tmo->common.extack,
+						   "Policer is not supported on egress");
+				break;
+			case -ENOKEY:
+				NL_SET_ERR_MSG_MOD(tmo->common.extack,
+						   "Policer is not supported on shared ingress blocks");
+				break;
+			case -EOPNOTSUPP:
+				NL_SET_ERR_MSG_MOD(tmo->common.extack,
+						   "Policer parameters are not supported");
+				break;
+			case -ENOENT:
+				NL_SET_ERR_MSG_MOD(tmo->common.extack,
+						   "No more port policers available");
+				break;
+			case -ENOSYS:
+				NL_SET_ERR_MSG_MOD(tmo->common.extack,
+						   "Offload only supports exceed action drop");
+				break;
+			default:
+				NL_SET_ERR_MSG_MOD(tmo->common.extack,
+						   "Could not add policer");
+				break;
+			}
+			return err;
+		}
+		break;
 	case FLOW_ACTION_GOTO:
 		err = vcap_enable_lookups(sparx5->vcap_ctrl, ndev,
 					  tmo->common.chain_index,
@@ -141,16 +186,24 @@ static int sparx5_tc_matchall_destroy(struct net_device *ndev,
 {
 	struct sparx5_port *port = netdev_priv(ndev);
 	struct sparx5 *sparx5 = port->sparx5;
+	struct flow_action_entry *action;
 	struct sparx5_mall_entry *entry;
-	int err = 0;
+	int err;
 
 	entry = sparx5_tc_matchall_entry_find(&sparx5->mall_entries,
 					      tmo->cookie);
 	if (!entry)
 		return -ENOENT;
 
+	action = &tmo->rule->action.entries[0];
+
 	if (entry->type == FLOW_ACTION_MIRRED) {
 		sparx5_mirror_del(entry);
+	} else if (entry->type == FLOW_ACTION_POLICE) {
+		err = sparx5_delete_port_policer(entry);
+		if (err)
+			NL_SET_ERR_MSG_MOD(tmo->common.extack,
+					   "Could not delete port policer");
 	} else if (entry->type == FLOW_ACTION_GOTO) {
 		err = vcap_enable_lookups(sparx5->vcap_ctrl, ndev,
 					  0, 0, tmo->cookie, false);
@@ -179,6 +232,8 @@ static int sparx5_tc_matchall_stats(struct net_device *ndev,
 
 	if (entry->type == FLOW_ACTION_MIRRED) {
 		sparx5_mirror_stats(entry, &tmo->stats);
+	} else if (entry->type == FLOW_ACTION_POLICE) {
+		sparx5_update_port_policer_stats(ndev, tmo);
 	} else {
 		NL_SET_ERR_MSG_MOD(tmo->common.extack, "Unsupported action");
 		return -EOPNOTSUPP;

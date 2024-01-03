@@ -4,8 +4,13 @@
  * Copyright (c) 2021 Microchip Technology Inc. and its subsidiaries.
  */
 
+#include <net/addrconf.h>
+#include <net/switchdev.h>
+
 #include "sparx5_main_regs.h"
 #include "sparx5_main.h"
+
+#include "lan969x/lan969x.h"
 
 #define XTR_EOF_0     ntohl((__force __be32)0x80000000u)
 #define XTR_EOF_1     ntohl((__force __be32)0x80000001u)
@@ -19,6 +24,52 @@
 #define XTR_VALID_BYTES(x)      (4 - ((x) & 3))
 
 #define INJ_TIMEOUT_NS 50000
+
+void sparx5_consume_skb(struct sk_buff *skb)
+{
+	bool ptp = false;
+
+	if (skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP &&
+	    SPARX5_SKB_CB(skb)->rew_op == IFH_REW_OP_TWO_STEP_PTP)
+		ptp = true;
+
+	if (!ptp)
+		dev_consume_skb_any(skb);
+}
+
+bool sparx5_skb_offloaded(struct sparx5 *sparx5, u32 port, struct sk_buff *skb)
+{
+	u32 val;
+
+	/* IGMP and MLD frames are not forwarded by hardware when
+	 * multicast snooping is enabled. Therefore, do not mark these
+	 * frames as offloaded, allowing the software to forward them
+	 * as needed.
+	 */
+
+	val = spx5_rd(sparx5, ANA_CL_CAPTURE_CFG(port));
+	if (!(val & (ANA_CL_CAPTURE_CFG_CPU_IGMP_REDIR_ENA |
+		     ANA_CL_CAPTURE_CFG_CPU_MLD_REDIR_ENA)))
+		return true;
+
+	if (eth_type_vlan(skb->protocol)) {
+		skb = skb_vlan_untag(skb);
+		if (unlikely(!skb))
+			return false;
+	}
+
+	if (skb->protocol == htons(ETH_P_IP) &&
+	    ip_hdr(skb)->protocol == IPPROTO_IGMP)
+		return false;
+
+	if (IS_ENABLED(CONFIG_IPV6) &&
+	    skb->protocol == htons(ETH_P_IPV6) &&
+	    ipv6_addr_is_multicast(&ipv6_hdr(skb)->daddr) &&
+	    !ipv6_mc_check_mld(skb))
+		return false;
+
+	return true;
+}
 
 void sparx5_xtr_flush(struct sparx5 *sparx5, u8 grp)
 {
@@ -56,6 +107,7 @@ void sparx5_ifh_parse(struct sparx5 *sparx5, u32 *ifh, struct frame_info *info)
 		((u64)xtr_hdr[4] <<  8) |
 		((u64)xtr_hdr[5] <<  0);
 }
+EXPORT_SYMBOL_GPL(sparx5_ifh_parse);
 
 static void sparx5_xtr_grp(struct sparx5 *sparx5, u8 grp, bool byte_swap)
 {
@@ -151,13 +203,17 @@ static void sparx5_xtr_grp(struct sparx5 *sparx5, u8 grp, bool byte_swap)
 	/* Everything we see on an interface that is in the HW bridge
 	 * has already been forwarded
 	 */
-	if (test_bit(port->portno, sparx5->bridge_mask))
+	if (test_bit(port->portno, sparx5->bridge_mask)) {
 		skb->offload_fwd_mark = 1;
+
+		if (!sparx5_skb_offloaded(sparx5, fi.src_port, skb))
+			skb->offload_fwd_mark = 0;
+	}
 
 	/* Finish up skb */
 	skb_put(skb, byte_cnt - ETH_FCS_LEN);
 	eth_skb_pad(skb);
-	sparx5_ptp_rxtstamp(sparx5, skb, fi.timestamp);
+	sparx5_ptp_rxtstamp(sparx5, skb, fi.src_port, fi.timestamp);
 	skb->protocol = eth_type_trans(skb, netdev);
 	netdev->stats.rx_bytes += skb->len;
 	netdev->stats.rx_packets++;
@@ -177,7 +233,7 @@ static int sparx5_inject(struct sparx5 *sparx5,
 	if (!(QS_INJ_STATUS_FIFO_RDY_GET(val) & BIT(grp))) {
 		pr_err_ratelimited("Injection: Queue not ready: 0x%lx\n",
 				   QS_INJ_STATUS_FIFO_RDY_GET(val));
-		return -EBUSY;
+		return NETDEV_TX_BUSY;
 	}
 
 	/* Indicate SOF */
@@ -224,6 +280,8 @@ static int sparx5_inject(struct sparx5 *sparx5,
 			      HRTIMER_MODE_REL);
 	}
 
+	sparx5_consume_skb(skb);
+
 	return NETDEV_TX_OK;
 }
 
@@ -239,6 +297,8 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 	ops = sparx5->data->ops;
 
 	memset(ifh, 0, IFH_LEN * 4);
+
+#ifndef CONFIG_SPARX5_SWITCH_APPL
 	sparx5_set_port_ifh(sparx5, ifh, port->portno);
 
 	if (sparx5->ptp && skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP) {
@@ -253,6 +313,11 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 		sparx5_set_port_ifh_timestamp(sparx5, ifh,
 					      SPARX5_SKB_CB(skb)->ts_id);
 	}
+#else
+	skb_pull_inline(skb, IFH_ENCAP_LEN);
+	memcpy(ifh, skb->data, IFH_LEN * 4);
+	skb_pull_inline(skb, IFH_LEN * 4);
+#endif
 
 	skb_tx_timestamp(skb);
 	spin_lock(&sparx5->tx_lock);
@@ -262,7 +327,7 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 		ret = sparx5_inject(sparx5, ifh, skb, dev);
 	spin_unlock(&sparx5->tx_lock);
 
-	if (ret == -EBUSY)
+	if (ret == NETDEV_TX_BUSY)
 		goto busy;
 	if (ret < 0)
 		goto drop;
@@ -277,11 +342,6 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 	stats->tx_packets++;
 	sparx5->tx.packets++;
 
-	if (skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP &&
-	    SPARX5_SKB_CB(skb)->rew_op == IFH_REW_OP_TWO_STEP_PTP)
-		return NETDEV_TX_OK;
-
-	dev_consume_skb_any(skb);
 	return NETDEV_TX_OK;
 drop:
 	stats->tx_dropped++;
@@ -293,6 +353,25 @@ busy:
 	    SPARX5_SKB_CB(skb)->rew_op == IFH_REW_OP_TWO_STEP_PTP)
 		sparx5_ptp_txtstamp_release(port, skb);
 	return NETDEV_TX_BUSY;
+}
+
+netdev_tx_t sparx5_port_xmit_mrp(struct sparx5_port *port, struct sk_buff *skb,
+			     u32 ifh[IFH_LEN])
+{
+	struct sparx5 *sparx5 = port->sparx5;
+	const struct sparx5_ops *ops;
+	netdev_tx_t ret;
+
+	ops = sparx5->data->ops;
+
+	spin_lock(&sparx5->tx_lock);
+	if (sparx5->fdma_irq > 0)
+		ret = ops->fdma_xmit(sparx5, ifh, skb, port->ndev);
+	else
+		ret = sparx5_inject(sparx5, ifh, skb, port->ndev);
+	spin_unlock(&sparx5->tx_lock);
+
+	return ret;
 }
 
 static enum hrtimer_restart sparx5_injection_timeout(struct hrtimer *tmr)

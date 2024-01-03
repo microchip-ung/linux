@@ -20,6 +20,7 @@
 #define SPARX5_IS0_LOOKUPS 6
 #define SPARX5_ES0_LOOKUPS 1
 #define SPARX5_ES2_LOOKUPS 2
+#define SPARX5_LPM_LOOKUPS 1
 
 #define SPARX5_VCAP_CID_IS0_L0 VCAP_CID_INGRESS_L0 /* IS0/CLM lookup 0 */
 #define SPARX5_VCAP_CID_IS0_L1 VCAP_CID_INGRESS_L1 /* IS0/CLM lookup 1 */
@@ -29,6 +30,10 @@
 #define SPARX5_VCAP_CID_IS0_L5 VCAP_CID_INGRESS_L5 /* IS0/CLM lookup 5 */
 #define SPARX5_VCAP_CID_IS0_MAX \
 	(VCAP_CID_INGRESS_L5 + VCAP_CID_LOOKUP_SIZE - 1) /* IS0/CLM Max */
+
+#define SPARX5_VCAP_CID_LPM_L0 VCAP_CID_PREROUTING_L0 /* LPM lookup 0 */
+#define SPARX5_VCAP_CID_LPM_MAX \
+	(VCAP_CID_PREROUTING_L0 + VCAP_CID_LOOKUP_SIZE - 1) /* LPM Max */
 
 #define SPARX5_VCAP_CID_IS2_L0 VCAP_CID_INGRESS_STAGE2_L0 /* IS2 lookup 0 */
 #define SPARX5_VCAP_CID_IS2_L1 VCAP_CID_INGRESS_STAGE2_L1 /* IS2 lookup 1 */
@@ -44,6 +49,13 @@
 #define SPARX5_VCAP_CID_ES2_L1 VCAP_CID_EGRESS_STAGE2_L1 /* ES2 lookup 1 */
 #define SPARX5_VCAP_CID_ES2_MAX \
 	(VCAP_CID_EGRESS_STAGE2_L1 + VCAP_CID_LOOKUP_SIZE - 1) /* ES2 Max */
+
+struct sparx5;
+struct vcap_admin;
+struct net_device;
+struct vcap_keyset_list;
+enum vcap_keyfield_set;
+enum vcap_key_field;
 
 struct sparx5_vcap_inst {
 	enum vcap_type vtype; /* type of vcap */

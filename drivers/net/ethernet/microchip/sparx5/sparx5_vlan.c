@@ -6,6 +6,7 @@
 
 #include "sparx5_main_regs.h"
 #include "sparx5_main.h"
+#include "lan969x/lan969x.h"
 
 static int sparx5_vlant_set_mask(struct sparx5 *sparx5, u16 vid)
 {
@@ -117,6 +118,13 @@ int sparx5_vlan_vid_del(struct sparx5_port *port, u16 vid)
 	return 0;
 }
 
+void sparx5_pgid_cpu_copy_ena(struct sparx5 *spx5, u16 pgid, bool enable)
+{
+	spx5_rmw(ANA_AC_PGID_MISC_CFG_PGID_CPU_COPY_ENA_SET(enable),
+		 ANA_AC_PGID_MISC_CFG_PGID_CPU_COPY_ENA, spx5,
+		 ANA_AC_PGID_MISC_CFG(pgid));
+}
+
 void sparx5_pgid_update_mask(struct sparx5_port *port, int pgid, bool enable)
 {
 	struct sparx5 *sparx5 = port->sparx5;
@@ -158,47 +166,199 @@ void sparx5_pgid_read_mask(struct sparx5 *spx5, int pgid, u32 portmask[3])
 	}
 }
 
-void sparx5_update_fwd(struct sparx5 *sparx5)
+static void sparx5_update_src_fwd(struct sparx5 *sparx5,
+				  unsigned long *fwdmask)
 {
 	DECLARE_BITMAP(workmask, SPX5_PORTS);
-	u32 mask[3];
-	int port;
+	DECLARE_BITMAP(lagmask, SPX5_PORTS);
+	struct sparx5_port *port;
+	u32 mask[3] = {0};
 
-	/* Divide up fwd mask in 32 bit words */
-	bitmap_to_arr32(mask, sparx5->bridge_fwd_mask, SPX5_PORTS);
+	for (int i = 0; i < sparx5->data->consts->n_ports; i++) {
+		if (!test_bit(i, fwdmask))
+			continue;
 
-	/* Update SRC masks */
-	for (port = 0; port < sparx5->data->consts->n_ports; port++) {
-		if (test_bit(port, sparx5->bridge_fwd_mask)) {
-			/* Allow to send to all bridged but self */
-			bitmap_copy(workmask, sparx5->bridge_fwd_mask, SPX5_PORTS);
-			clear_bit(port, workmask);
-			bitmap_to_arr32(mask, workmask, SPX5_PORTS);
-			spx5_wr(mask[0], sparx5, ANA_AC_SRC_CFG(port));
-			if (is_sparx5(sparx5)) {
-				spx5_wr(mask[1], sparx5, ANA_AC_SRC_CFG1(port));
-				spx5_wr(mask[2], sparx5, ANA_AC_SRC_CFG2(port));
-			}
-		} else {
-			spx5_wr(0, sparx5, ANA_AC_SRC_CFG(port));
-			if (is_sparx5(sparx5)) {
-				spx5_wr(0, sparx5, ANA_AC_SRC_CFG1(port));
-				spx5_wr(0, sparx5, ANA_AC_SRC_CFG2(port));
-			}
+		/* Allow to send to all bridged but self */
+		bitmap_copy(workmask, fwdmask, SPX5_PORTS);
+		clear_bit(i, workmask);
+
+		port = sparx5->ports[i];
+
+		spin_lock(&sparx5->lock);
+		if (port->lag_master) {
+			/* Do not send frames back on the LAG they were
+			 * received on.
+			 */
+			sparx5_lag_mask_get(sparx5, port->lag_master, lagmask);
+			bitmap_andnot(workmask, workmask, lagmask, SPX5_PORTS);
+		}
+		spin_unlock(&sparx5->lock);
+
+		bitmap_to_arr32(mask, workmask, SPX5_PORTS);
+		spx5_wr(mask[0], sparx5, ANA_AC_SRC_CFG(i));
+		if (is_sparx5(sparx5)) {
+			spx5_wr(mask[1], sparx5, ANA_AC_SRC_CFG1(i));
+			spx5_wr(mask[2], sparx5, ANA_AC_SRC_CFG2(i));
 		}
 	}
+}
 
-	/* Learning enabled only for bridged ports */
-	bitmap_and(workmask, sparx5->bridge_fwd_mask,
-		   sparx5->bridge_lrn_mask, SPX5_PORTS);
-	bitmap_to_arr32(mask, workmask, SPX5_PORTS);
+void sparx5_update_dst_fwd(struct sparx5 *sparx5)
+{
+	DECLARE_BITMAP(dstmask, SPX5_PORTS);
+	struct sparx5_port *port;
+	u32 mask[3] = {0};
 
-	/* Apply learning mask */
+	for (int i = 0; i < sparx5->data->consts->n_ports; i++) {
+		port = sparx5->ports[i];
+		if (!port)
+			continue;
+
+		bitmap_zero(dstmask, SPX5_PORTS);
+
+		if (port->lag_master)
+			sparx5_lag_mask_get(sparx5, port->lag_master, dstmask);
+		else
+			set_bit(i, dstmask);
+
+		bitmap_to_arr32(mask, dstmask, SPX5_PORTS);
+
+		spx5_wr(mask[0], sparx5, ANA_AC_PGID_CFG(i));
+		if (is_sparx5(sparx5))
+			spx5_wr(mask[1], sparx5, ANA_AC_PGID_CFG1(i));
+	}
+}
+
+static void sparx5_update_clear_fwd(struct sparx5 *sparx5,
+				    unsigned long *fwdmask)
+{
+	for (int port = 0; port < sparx5->data->consts->n_ports; port++) {
+		if (test_bit(port, fwdmask))
+			continue;
+
+		spx5_wr(0, sparx5, ANA_AC_SRC_CFG(port));
+		if (is_sparx5(sparx5)) {
+			spx5_wr(0, sparx5, ANA_AC_SRC_CFG1(port));
+			spx5_wr(0, sparx5, ANA_AC_SRC_CFG2(port));
+		}
+	}
+}
+
+static void sparx5_update_flood_fwd(struct sparx5 *sparx5,
+				    unsigned long *floodmask)
+{
+	u32 mask[3] = {0};
+
+	/* Divide up fwd mask in 32 bit words. */
+	bitmap_to_arr32(mask, floodmask, SPX5_PORTS);
+
+	/* Update flood masks. */
+	for (int port = sparx5_get_pgid_index(sparx5, PGID_UC_FLOOD);
+	     port <= sparx5_get_pgid_index(sparx5, PGID_BCAST); port++) {
+		spx5_wr(mask[0], sparx5, ANA_AC_PGID_CFG(port));
+		if (is_sparx5(sparx5)) {
+			spx5_wr(mask[1], sparx5, ANA_AC_PGID_CFG1(port));
+			spx5_wr(mask[2], sparx5, ANA_AC_PGID_CFG2(port));
+		}
+	}
+}
+
+static void sparx5_update_auto_learn(struct sparx5 *sparx5,
+				     unsigned long *learnmask)
+{
+	u32 mask[3] = {0};
+
+	bitmap_to_arr32(mask, learnmask, SPX5_PORTS);
+
+	/* Apply learning mask. */
 	spx5_wr(mask[0], sparx5, ANA_L2_AUTO_LRN_CFG);
 	if (is_sparx5(sparx5)) {
 		spx5_wr(mask[1], sparx5, ANA_L2_AUTO_LRN_CFG1);
 		spx5_wr(mask[2], sparx5, ANA_L2_AUTO_LRN_CFG2);
 	}
+}
+
+static void sparx5_update_psec_learn(struct sparx5 *sparx5,
+				    unsigned long *secmask)
+{
+	u32 mask[BITS_TO_U32(SPX5_PORTS)] = {0};
+
+	bitmap_to_arr32(mask, secmask, SPX5_PORTS);
+
+	/* Apply learning mask. */
+	spx5_wr(mask[0], sparx5, ANA_L2_LRN_SECUR_CFG);
+	if (is_sparx5(sparx5)) {
+		spx5_wr(mask[1], sparx5, ANA_L2_LRN_SECUR_CFG1);
+		spx5_wr(mask[2], sparx5, ANA_L2_LRN_SECUR_CFG2);
+	}
+}
+
+void sparx5_update_fwd(struct sparx5 *sparx5)
+{
+#ifdef CONFIG_LAN969X_SWITCH
+	const struct sparx5_consts *consts = sparx5->data->consts;
+	DECLARE_BITMAP(redbox_floodmask, SPX5_PORTS) = {0};
+#endif
+	DECLARE_BITMAP(floodmask, SPX5_PORTS) = {0};
+	DECLARE_BITMAP(learnmask, SPX5_PORTS) = {0};
+	DECLARE_BITMAP(fwdmask, SPX5_PORTS) = {0};
+	DECLARE_BITMAP(psecmask, SPX5_PORTS) = {0};
+	DECLARE_BITMAP(clearmask, SPX5_PORTS) = {0};
+
+#ifdef CONFIG_LAN969X_SWITCH
+	/* We have to take redbox ports: LREA and LREC into account, when
+	 * writing the src- and, flood masks. This is only applicable when
+	 * the redbox is operating in HSR-SAN mode.
+	 */
+
+	for (int rb = 0; rb < LAN969X_RB_REDBOX_CNT; rb++) {
+		DECLARE_BITMAP(redbox_fwdmask, SPX5_PORTS) = {0};
+
+		/* Retrieve the LREA and LREC port mask for each redbox. */
+		if (sparx5_has_feature(sparx5, SPX5_FEATURE_REDBOX))
+			lan969x_rb_fwd_mask_get(redbox_fwdmask, rb);
+
+		/* Update src port forwarding. */
+		sparx5_update_src_fwd(sparx5, redbox_fwdmask);
+
+		/* Build a floodmask for all redbox ports. */
+		for (int port = 0; port < consts->n_ports; port++)
+			if (test_bit(port, redbox_fwdmask))
+				set_bit(port, redbox_floodmask);
+	}
+
+	/* Bitwise OR the redbox ports with the bridged ports. This is going to
+	 * be our floodmask.
+	 */
+	bitmap_or(floodmask,
+		  sparx5->bridge_fwd_mask,
+		  redbox_floodmask,
+		  SPX5_PORTS);
+#else
+	bitmap_copy(floodmask, sparx5->bridge_fwd_mask, SPX5_PORTS);
+#endif
+	bitmap_copy(fwdmask, sparx5->bridge_fwd_mask, SPX5_PORTS);
+	bitmap_copy(psecmask, sparx5->bridge_psec_mask, SPX5_PORTS);
+	/* Clear any forwarding for ports that are not part of the bridge, or
+	 * not part of a redbox. Note that the clearmask but be set before the
+	 * floodmask is altered by the psecmask.
+	 */
+	bitmap_copy(clearmask, floodmask, SPX5_PORTS);
+
+	bitmap_and(learnmask,
+		   sparx5->bridge_fwd_mask,
+		   sparx5->bridge_lrn_mask,
+		   SPX5_PORTS);
+
+	/* Disable learning and flooding on locked ports. */
+	bitmap_andnot(learnmask, learnmask, psecmask, SPX5_PORTS);
+	bitmap_andnot(floodmask, floodmask, psecmask, SPX5_PORTS);
+
+	sparx5_update_flood_fwd(sparx5, floodmask);
+	sparx5_update_src_fwd(sparx5, fwdmask);
+	sparx5_update_auto_learn(sparx5, learnmask);
+	sparx5_update_psec_learn(sparx5, psecmask);
+	sparx5_update_clear_fwd(sparx5, clearmask);
 }
 
 void sparx5_vlan_port_apply(struct sparx5 *sparx5,
