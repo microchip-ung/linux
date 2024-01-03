@@ -1,0 +1,106 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2023 Microchip Technology Inc. and its subsidiaries.
+ */
+
+#include "sparx5_appl.dtsi"
+
+&psci {
+	status = "disabled";
+};
+
+&cpu0 {
+	enable-method = "spin-table";
+	cpu-release-addr = <0x0 0x0000fff8>;
+};
+
+&cpu1 {
+	enable-method = "spin-table";
+	cpu-release-addr = <0x0 0x0000fff8>;
+};
+
+&ifh0 {
+	status = "okay";
+};
+
+&ifmux {
+	status = "okay";
+};
+
+// SGPIO IRQ's are forwarded to WEBSTAX for the *time being*. On
+// longer term individual IRQ's should be forwarded iff they cannot be
+// handled in kernel drivers. If forwarded, they *must* use the IRQ
+// mux enable/disable method, and *NOT* do direct register writes.
+
+&sgpio_in0 {
+	/delete-property/ interrupts;
+	/delete-property/ interrupt-controller;
+	/delete-property/ #interrupt-cells;
+};
+
+&sgpio_in1 {
+	/delete-property/ interrupts;
+	/delete-property/ interrupt-controller;
+	/delete-property/ #interrupt-cells;
+};
+
+&sgpio_in2 {
+	/delete-property/ interrupts;
+	/delete-property/ interrupt-controller;
+	/delete-property/ #interrupt-cells;
+};
+
+&gpio {
+	pushbtn_pins: pushbutton-pins {
+		pins = "GPIO_2";
+		function = "gpio";
+		input-schmitt-enable;
+		bias-pull-down;
+	};
+};
+
+&uio0 {
+	status = "okay";
+	pinctrl-0 = <&pushbtn_pins>;
+	pinctrl-names = "default";
+	interrupts-extended =
+			<&gic GIC_SPI 37 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 17 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 18 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 19 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 27 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 28 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 33 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 47 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 48 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 49 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 50 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 51 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 52 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 53 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 54 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 55 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 56 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 57 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 58 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 59 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 60 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 61 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 62 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 63 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 64 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 65 IRQ_TYPE_LEVEL_HIGH>,
+			<&gic GIC_SPI 66 IRQ_TYPE_LEVEL_HIGH>,
+			<&gpio 2 IRQ_TYPE_EDGE_BOTH>;
+	interrupt-names = "master",
+			"sgpio0", "sgpio1", "sgpio2",
+			"ptp_rdy", "ptp_sync", "oam_vop",
+			"sd10g_kr0", "sd10g_kr1", "sd10g_kr2",
+			"sd10g_kr3", "sd10g_kr4", "sd10g_kr5",
+			"sd10g_kr6", "sd10g_kr7", "sd10g_kr8",
+			"sd10g_kr9", "sd10g_kr10", "sd10g_kr11",
+			"sd10g_kr12", "sd10g_kr13", "sd10g_kr14",
+			"sd10g_kr15", "sd10g_kr16", "sd10g_kr17",
+			"sd10g_kr18", "sd10g_kr19",
+			"pushbutton";
+};

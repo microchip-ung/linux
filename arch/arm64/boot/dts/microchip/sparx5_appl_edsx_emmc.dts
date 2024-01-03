@@ -1,0 +1,164 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2023 Microchip Technology Inc. and its subsidiaries.
+ */
+
+#include "sparx5_pcb134_board.dtsi"
+#include "sparx5_appl_pcb_common.dtsi"
+
+/{
+	aliases {
+		i2c0   = &i2c0;
+	};
+	/delete-node/ leds;
+	/delete-node/ gpio-restart;
+	gpio-restart {
+		compatible = "gpio-restart";
+		gpios = <&gpio 37 GPIO_ACTIVE_LOW>;
+		open-source;
+		priority = <200>;
+	};
+};
+
+&mux {
+	mux@0 {
+		reg = <0>;
+		microchip,bus-interface = <0>;
+	};
+	mux@1 {
+		reg = <1>;
+		microchip,bus-interface = <1>;
+	};
+	mux@2 {
+		reg = <2>;
+		microchip,bus-interface = <1>;
+	};
+};
+
+&gpio {
+	/delete-node/ i2cmux-pins-i;
+	/delete-node/ i2cmux-0;
+	/delete-node/ i2cmux-1;
+	i2cmux_pins_edsx: i2cmux-pins-edsx {
+		pins = "GPIO_50", "GPIO_51";
+		function = "twi_scl_m";
+		output-low;
+	};
+	i2cmux_edsx_0: i2cmux-edsx-0 {
+		pins = "GPIO_50";
+		function = "twi_scl_m";
+		output-high;
+	};
+	i2cmux_edsx_1: i2cmux-edsx-1 {
+		pins = "GPIO_51";
+		function = "twi_scl_m";
+		output-high;
+	};
+	emmc_pins: emmc-pins {
+		/* NB: No "GPIO_35", "GPIO_36", "GPIO_37"
+		* (N/A: CARD_nDETECT, CARD_WP, CARD_LED)
+		*/
+		pins = "GPIO_34", "GPIO_38", "GPIO_39",
+			"GPIO_40", "GPIO_41", "GPIO_42",
+			"GPIO_43", "GPIO_44", "GPIO_45",
+			"GPIO_46", "GPIO_47";
+		drive-strength = <3>;
+		function = "emmc";
+	};
+};
+
+&spi0 {
+	mux-controls = <&mux>;
+	pinctrl-names = "default";
+	spi@1 {
+			compatible = "spidev";
+			mux-controls = <&mux>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <1>;
+			pinctrl-0 = <&cs1_pins>;
+			pinctrl-names = "default";
+			spi-max-frequency = <8000000>;
+	};
+	spi@2 {
+			compatible = "spidev";
+			mux-controls = <&mux>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <2>;
+			pinctrl-0 = <&cs2_pins>;
+			pinctrl-names = "default";
+			spi-max-frequency = <8000000>;
+	};
+};
+
+&switch {
+	status = "disabled";
+	/delete-property/ resets;
+	/delete-property/ reset-names;
+	/delete-node/ ethernet-ports;
+};
+
+&axi {
+	/delete-node/ sfp-eth12;
+	/delete-node/ sfp-eth13;
+	/delete-node/ sfp-eth14;
+	/delete-node/ sfp-eth15;
+	/delete-node/ sfp-eth48;
+	/delete-node/ sfp-eth49;
+	/delete-node/ sfp-eth50;
+	/delete-node/ sfp-eth51;
+	/delete-node/ sfp-eth52;
+	/delete-node/ sfp-eth53;
+	/delete-node/ sfp-eth54;
+	/delete-node/ sfp-eth55;
+	/delete-node/ sfp-eth56;
+	/delete-node/ sfp-eth57;
+	/delete-node/ sfp-eth58;
+	/delete-node/ sfp-eth59;
+	/delete-node/ sfp-eth60;
+	/delete-node/ sfp-eth61;
+	/delete-node/ sfp-eth62;
+	/delete-node/ sfp-eth63;
+	/delete-node/ gpio@61101036c;
+	/delete-node/ gpio@611010484;
+	/delete-node/ gpio@61101059c;
+	/delete-node/ i2c0-imux@0;
+	/delete-node/ i2c0-emux@0;
+	i2c0_edsx_imux: i2c0-edsx-imux@0 {
+		compatible = "i2c-mux-pinctrl";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c-parent = <&i2c0>;
+	};
+};
+
+&i2c0_edsx_imux {
+	pinctrl-names = "i2c_temp_sensor" , "i2c_eeprom";
+	pinctrl-0 = <&i2cmux_edsx_0>;
+	pinctrl-1 = <&i2cmux_edsx_1>;
+	i2c_temp_sensor: i2c_temp_sensor {
+		reg = <0x4c>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+	};
+	i2c_eeprom: i2c_eeprom {
+		reg = <0x57>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+	};
+};
+
+&mdio3 {
+	status = "disabled";
+	/delete-node/ ethernet-phy@64;
+};
+
+&sdhci0 {
+	status = "okay";
+	pinctrl-0 = <&emmc_pins>;
+	non-removable;
+	max-frequency = <52000000>;
+	bus-width = <8>;
+	microchip,clock-delay = <10>;
+};

@@ -19,13 +19,13 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 		reg = <14>; /* CS14 */
+		rx-sample-delay-ns = <7>;  /* Tune for speed */
 		flash@6 {
 			compatible = "spi-nand";
 			pinctrl-0 = <&cs14_pins>;
 			pinctrl-names = "default";
 			reg = <0x6>; /* SPI2 */
 			spi-max-frequency = <42000000>;
-			rx-sample-delay-ns = <7>;  /* Tune for speed */
 		};
 	};
 };

@@ -267,9 +267,19 @@
 				function = "twi";
 			};
 
+			i2c_gpio_pins: i2c-gpio-pins {
+				pins = "GPIO_14", "GPIO_15";
+				function = "gpio";
+			};
+
 			i2c2_pins: i2c2-pins {
 				pins = "GPIO_28", "GPIO_29";
 				function = "twi2";
+			};
+
+			i2c2_gpio_pins: i2c2-gpio-pins {
+				pins = "GPIO_28", "GPIO_29";
+				function = "gpio";
 			};
 
 			emmc_pins: emmc-pins {
@@ -391,7 +401,9 @@
 			compatible = "snps,designware-i2c";
 			status = "disabled";
 			pinctrl-0 = <&i2c_pins>;
-			pinctrl-names = "default";
+			pinctrl-1 = <&i2c_gpio_pins>;
+			pinctrl-names = "default", "gpio";
+			scl-gpios = <&gpio 14 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
 			reg = <0x6 0x00101000 0x100>;
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -405,7 +417,9 @@
 			compatible = "snps,designware-i2c";
 			status = "disabled";
 			pinctrl-0 = <&i2c2_pins>;
-			pinctrl-names = "default";
+			pinctrl-1 = <&i2c2_gpio_pins>;
+			pinctrl-names = "default", "gpio";
+			scl-gpios = <&gpio 28 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
 			reg = <0x6 0x00103000 0x100>;
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -479,6 +493,14 @@
 				     <GIC_SPI 27 IRQ_TYPE_LEVEL_HIGH>;
 			resets = <&reset 0>;
 			reset-names = "switch";
+		};
+
+		/* Used by symreg tool, DO NOT upstream */
+		uio0: vcoreiii_switch@600000000 {
+			compatible = "microchip,uio_sparx5_irqmux";
+			reg = <0x6 0x00000000 0x12000000>;
+			reg-names = "origin1_2";
+			status = "disabled";
 		};
 	};
 };
