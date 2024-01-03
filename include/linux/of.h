@@ -1585,6 +1585,11 @@ enum of_reconfig_change {
 struct notifier_block;
 
 #ifdef CONFIG_OF_DYNAMIC
+struct device_node *of_node_alloc(const char *name, gfp_t allocflags);
+struct property *of_property_alloc(const char *name, const void *value,
+				   size_t len, gfp_t allocflags);
+void of_property_free(const struct property *prop);
+
 extern int of_reconfig_notifier_register(struct notifier_block *);
 extern int of_reconfig_notifier_unregister(struct notifier_block *);
 extern int of_reconfig_notify(unsigned long, struct of_reconfig_data *rd);
@@ -1655,6 +1660,20 @@ int of_changeset_add_prop_bool(struct of_changeset *ocs, struct device_node *np,
 			       const char *prop_name);
 
 #else /* CONFIG_OF_DYNAMIC */
+static inline struct device_node *of_node_alloc(const char *name,
+						gfp_t allocflags)
+{
+	return NULL;
+}
+
+static inline
+struct property *of_property_alloc(const char *name, const void *value,
+				   size_t len, gfp_t allocflags)
+{
+	return NULL;
+}
+
+static inline  void of_property_free(const struct property *prop) {}
 static inline int of_reconfig_notifier_register(struct notifier_block *nb)
 {
 	return -EINVAL;

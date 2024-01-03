@@ -18,6 +18,91 @@
 #include "pci.h"
 
 #ifdef CONFIG_PCI
+static int of_pci_add_property(struct of_changeset *ocs, struct device_node *np,
+			       const char *name, const void *value, int length)
+{
+	int ret;
+	struct property *prop = of_property_alloc(name, value, length,
+						  GFP_KERNEL);
+	if (!prop)
+		return -ENOMEM;
+
+	ret = of_changeset_add_property(ocs, np, prop);
+	if (ret)
+		of_property_free(prop);
+
+	return ret;
+}
+
+static int of_pci_add_cells_props(struct device_node *node,
+				  struct of_changeset *cs, int n_addr_cells,
+				  int n_size_cells)
+{
+	__be32 val;
+	int ret;
+
+	ret = of_pci_add_property(cs, node, "ranges", NULL, 0);
+	if (ret)
+		return ret;
+
+	val = __cpu_to_be32(n_addr_cells);
+	ret = of_pci_add_property(cs, node, "#address-cells", &val,
+				  sizeof(__be32));
+	if (ret)
+		return ret;
+
+	val = __cpu_to_be32(n_size_cells);
+	return of_pci_add_property(cs, node, "#size-cells", &val,
+				   sizeof(__be32));
+}
+
+static int of_pci_add_pci_bus_props(struct device_node *node,
+				    struct of_changeset *cs)
+{
+	int ret;
+
+	ret = of_pci_add_property(cs, node, "device_type", "pci",
+				  strlen("pci") + 1);
+	if (ret)
+		return ret;
+
+	return of_pci_add_cells_props(node, cs, 3, 2);
+}
+
+static struct device_node *of_pci_create_root_bus_node(struct pci_bus *bus)
+{
+	static struct of_changeset cs;
+	struct device_node *node;
+	int ret;
+
+	node = of_node_alloc("pci", GFP_KERNEL);
+	if (!node)
+		return NULL;
+
+	node->parent = of_root;
+
+	of_changeset_init(&cs);
+	ret = of_pci_add_pci_bus_props(node, &cs);
+	if (ret)
+		goto changeset_destroy;
+
+	ret = of_changeset_attach_node(&cs, node);
+	if (ret)
+		goto changeset_destroy;
+
+	ret = of_changeset_apply(&cs);
+	if (ret)
+		goto changeset_destroy;
+
+	return node;
+
+changeset_destroy:
+	of_changeset_destroy(&cs);
+	kfree(node);
+
+	return NULL;
+}
+
 /**
  * pci_set_of_node - Find and set device's DT device_node
  * @dev: the PCI device structure to fill
@@ -40,6 +125,9 @@ int pci_set_of_node(struct pci_dev *dev)
 	if (pdev)
 		dev->bus->dev.of_node_reused = true;
 
+	if (!dev->dev.of_node)
+		of_pci_make_dev_node(dev);
+
 	device_set_node(&dev->dev, of_fwnode_handle(no_free_ptr(node)));
 	return 0;
 }
@@ -56,6 +144,8 @@ void pci_set_bus_of_node(struct pci_bus *bus)
 
 	if (bus->self == NULL) {
 		node = pcibios_get_phb_of_node(bus);
+		if (!node)
+			node = of_pci_create_root_bus_node(bus);
 	} else {
 		node = of_node_get(bus->self->dev.of_node);
 		if (node && of_property_read_bool(node, "external-facing"))
