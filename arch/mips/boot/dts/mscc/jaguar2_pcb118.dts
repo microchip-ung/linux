@@ -14,26 +14,20 @@
 		i2c150  = &i2c150;
 		i2c151  = &i2c151;
 	};
+};
 
-	i2c0_imux: i2c0-imux {
-		compatible = "i2c-mux-pinctrl";
+&pi_nand {
+	status = "okay";
+	chip-delay = <100>; // MX30LF1GE8AB with internal ECC has 45-70 us tR_ECC
+	waitcc = <8>;       // Slow down NAND CS via waitcc - appx 77ns
+	partitions {
+		compatible = "fixed-partitions";
 		#address-cells = <1>;
-		#size-cells = <0>;
-		i2c-parent = <&i2c0>;
-		pinctrl-names =
-			"i2c150", "i2c151", "idle";
-		pinctrl-0 = <&i2cmux_0>;
-		pinctrl-1 = <&i2cmux_1>;
-		pinctrl-2 = <&i2cmux_pins_i>;
-		i2c150: i2c@0 {
-			reg = <0>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-		};
-		i2c151: i2c@1 {
-			reg = <1>;
-			#address-cells = <1>;
-			#size-cells = <0>;
+		#size-cells = <1>;
+		/* 256MiB */
+		partition@0 {
+			    label = "rootfs_nand_data";
+			    reg = <0x0000000 0x10000000>;
 		};
 	};
 };
@@ -53,5 +47,29 @@
 		pins = "GPIO_16";
 		function = "twi_scl_m";
 		output-high;
+	};
+};
+
+&ahb {
+	i2c0_imux: i2c0-imux@0 {
+		compatible = "i2c-mux-pinctrl";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c-parent = <&i2c0>;
+		pinctrl-names =
+			"i2c150", "i2c151", "idle";
+		pinctrl-0 = <&i2cmux_0>;
+		pinctrl-1 = <&i2cmux_1>;
+		pinctrl-2 = <&i2cmux_pins_i>;
+		i2c150: i2c_sfp_plus_a {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c151: i2c_sfp_plus_b {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
 	};
 };
