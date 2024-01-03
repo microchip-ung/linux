@@ -6,7 +6,7 @@
 
 #include "lan966x_main.h"
 
-static int lan966x_xdp_setup(struct net_device *dev, struct netdev_bpf *xdp)
+int lan966x_xdp_setup(struct net_device *dev, struct netdev_bpf *xdp)
 {
 	struct lan966x_port *port = netdev_priv(dev);
 	struct lan966x *lan966x = port->lan966x;
@@ -42,9 +42,14 @@ out:
 
 int lan966x_xdp(struct net_device *dev, struct netdev_bpf *xdp)
 {
+	struct lan966x_port *port = netdev_priv(dev);
+	const struct lan966x_ops *ops;
+
+	ops = &port->lan966x->data->ops;
+
 	switch (xdp->command) {
 	case XDP_SETUP_PROG:
-		return lan966x_xdp_setup(dev, xdp);
+		return ops->xdp_setup(dev, xdp);
 	default:
 		return -EINVAL;
 	}

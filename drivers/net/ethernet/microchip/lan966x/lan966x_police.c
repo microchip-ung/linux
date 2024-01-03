@@ -8,16 +8,9 @@
 /* Policer order: Serial (QoS -> Port -> VCAP) */
 #define POL_ORDER	0x1d3
 
-struct lan966x_tc_policer {
-	/* kilobit per second */
-	u32 rate;
-	/* bytes */
-	u32 burst;
-};
-
-static int lan966x_police_add(struct lan966x_port *port,
-			      struct lan966x_tc_policer *pol,
-			      u16 pol_idx)
+int lan966x_police_add(struct lan966x_port *port,
+		       struct lan966x_tc_policer *pol,
+		       u16 pol_idx)
 {
 	struct lan966x *lan966x = port->lan966x;
 

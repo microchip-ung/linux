@@ -5,6 +5,9 @@
 
 #include "lan966x_main.h"
 
+#include "lan966x_mrp.h"
+#include "lan966x_cfm.h"
+
 static struct notifier_block lan966x_netdevice_nb __read_mostly;
 
 static void lan966x_port_set_mcast_ip_flood(struct lan966x_port *port,
@@ -235,6 +238,9 @@ static int lan966x_port_attr_set(struct net_device *dev, const void *ctx,
 	case SWITCHDEV_ATTR_ID_BRIDGE_MC_DISABLED:
 		lan966x_port_mc_set(port, !attr->u.mc_disabled);
 		break;
+	case SWITCHDEV_ATTR_ID_MRP_PORT_ROLE:
+		lan966x_handle_mrp_port_role(port, attr->u.mrp_port_role);
+		break;
 	default:
 		err = -EOPNOTSUPP;
 		break;
@@ -297,6 +303,7 @@ static void lan966x_port_bridge_leave(struct lan966x_port *port,
 	lan966x_vlan_port_set_vlan_aware(port, false);
 	lan966x_vlan_port_set_vid(port, HOST_PVID, false, false);
 	lan966x_vlan_port_apply(port);
+	lan966x_vlan_port_rew_host(port);
 }
 
 int lan966x_port_changeupper(struct net_device *dev,
@@ -422,6 +429,25 @@ static int lan966x_bridge_check(struct net_device *dev,
 					      info->info.extack);
 }
 
+static void lan966x_bridge_change_addr(struct net_device *dev)
+{
+	struct net_device *lower;
+	struct list_head *iter;
+
+	if (!netif_is_bridge_master(dev))
+		return;
+
+	netdev_for_each_lower_dev(dev, lower, iter) {
+		struct lan966x_port *port;
+
+		if (!lan966x_netdevice_check(lower))
+			continue;
+
+		port = netdev_priv(lower);
+		lan966x_mrp_port_update_mrp_mac(port, dev->dev_addr);
+	}
+}
+
 static int lan966x_netdevice_port_event(struct net_device *dev,
 					struct notifier_block *nb,
 					unsigned long event, void *ptr)
@@ -446,6 +472,9 @@ static int lan966x_netdevice_port_event(struct net_device *dev,
 
 				return err;
 			}
+			break;
+		case NETDEV_CHANGEADDR:
+			lan966x_bridge_change_addr(dev);
 			break;
 		default:
 			return 0;
@@ -504,6 +533,28 @@ static bool lan966x_foreign_dev_check(const struct net_device *dev,
 	return true;
 }
 
+static int lan966x_port_attr_get(struct net_device *dev, const void *ctx,
+				 const struct switchdev_attr *attr,
+				 struct netlink_ext_ack *extack)
+{
+	struct lan966x_port *port = netdev_priv(dev);
+
+	switch (attr->id) {
+	case SWITCHDEV_ATTR_ID_CFM_CC_PEER_STATUS_GET:
+		lan966x_handle_cfm_cc_peer_status_get(port,
+						      attr->u.cfm_cc_peer_status);
+		break;
+	case SWITCHDEV_ATTR_ID_CFM_MEP_STATUS_GET:
+		lan966x_handle_cfm_mep_status_get(port,
+						  attr->u.cfm_mep_status);
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	return 0;
+}
+
 static int lan966x_switchdev_event(struct notifier_block *nb,
 				   unsigned long event, void *ptr)
 {
@@ -522,6 +573,11 @@ static int lan966x_switchdev_event(struct notifier_block *nb,
 							   lan966x_netdevice_check,
 							   lan966x_foreign_dev_check,
 							   lan966x_handle_fdb);
+		return notifier_from_errno(err);
+	case SWITCHDEV_PORT_ATTR_GET:
+		err = switchdev_handle_port_attr_get(dev, ptr,
+						     lan966x_netdevice_check,
+						     lan966x_port_attr_get);
 		return notifier_from_errno(err);
 	}
 
@@ -562,6 +618,51 @@ static int lan966x_handle_port_obj_add(struct net_device *dev, const void *ctx,
 	case SWITCHDEV_OBJ_ID_HOST_MDB:
 		err = lan966x_handle_port_mdb_add(port, obj);
 		break;
+	case SWITCHDEV_OBJ_ID_MRP:
+		err = lan966x_handle_mrp_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_RING_TEST_MRP:
+		err = lan966x_handle_mrp_ring_test_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_RING_ROLE_MRP:
+		err = lan966x_handle_mrp_ring_role_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_RING_STATE_MRP:
+		err = lan966x_handle_mrp_ring_state_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_IN_TEST_MRP:
+		err = lan966x_handle_mrp_in_test_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_IN_ROLE_MRP:
+		err = lan966x_handle_mrp_in_role_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_IN_STATE_MRP:
+		err = lan966x_handle_mrp_in_state_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_MEP_CFM:
+		err = lan966x_handle_cfm_mep_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_MEP_CONFIG_CFM:
+		err = lan966x_handle_cfm_mep_config_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_CC_PEER_MEP_CFM:
+		err = lan966x_handle_cfm_cc_peer_mep_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_CC_CONFIG_CFM:
+		err = lan966x_handle_cfm_cc_config_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_CC_RDI_CFM:
+		err = lan966x_handle_cfm_cc_rdi_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_CC_CCM_TX_CFM:
+		err = lan966x_handle_cfm_cc_ccm_tx_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_MIP_CFM:
+		err = lan966x_handle_cfm_mip_add(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_MIP_CONFIG_CFM:
+		err = lan966x_handle_cfm_mip_config_add(port, obj);
+		break;
 	default:
 		err = -EOPNOTSUPP;
 		break;
@@ -601,6 +702,30 @@ static int lan966x_handle_port_obj_del(struct net_device *dev, const void *ctx,
 	case SWITCHDEV_OBJ_ID_HOST_MDB:
 		err = lan966x_handle_port_mdb_del(port, obj);
 		break;
+	case SWITCHDEV_OBJ_ID_MRP:
+		err = lan966x_handle_mrp_del(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_RING_TEST_MRP:
+		err = lan966x_handle_mrp_ring_test_del(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_RING_ROLE_MRP:
+		err = lan966x_handle_mrp_ring_role_del(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_IN_TEST_MRP:
+		err = lan966x_handle_mrp_in_test_del(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_IN_ROLE_MRP:
+		err = lan966x_handle_mrp_in_role_del(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_MEP_CFM:
+		err = lan966x_handle_cfm_mep_del(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_CC_PEER_MEP_CFM:
+		err = lan966x_handle_cfm_cc_peer_mep_del(port, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_MIP_CFM:
+		err = lan966x_handle_cfm_mip_del(port, obj);
+		break;
 	default:
 		err = -EOPNOTSUPP;
 		break;
@@ -631,6 +756,11 @@ static int lan966x_switchdev_blocking_event(struct notifier_block *nb,
 		err = switchdev_handle_port_attr_set(dev, ptr,
 						     lan966x_netdevice_check,
 						     lan966x_port_attr_set);
+		return notifier_from_errno(err);
+	case SWITCHDEV_PORT_ATTR_GET:
+		err = switchdev_handle_port_attr_get(dev, ptr,
+						     lan966x_netdevice_check,
+						     lan966x_port_attr_get);
 		return notifier_from_errno(err);
 	}
 

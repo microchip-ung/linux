@@ -16,12 +16,20 @@
 #include <net/switchdev.h>
 #include <net/xdp.h>
 
-#include <fdma_api.h>
 #include <vcap_api.h>
 #include <vcap_api_client.h>
 
 #include "lan966x_regs.h"
 #include "lan966x_ifh.h"
+
+#include <linux/debugfs.h>
+#include "lan966x_qos.h"
+#include <uapi/linux/mrp_bridge.h>
+
+#include <vcap_api.h>
+#include <vcap_api_client.h>
+
+#include <fdma_api.h>
 
 #define TABLE_UPDATE_SLEEP_US		10
 #define TABLE_UPDATE_TIMEOUT_US		100000
@@ -50,6 +58,7 @@
 #define NUM_PRIO_QUEUES			8
 
 /* Reserved PGIDs */
+#define PGID_MRP			(PGID_AGGR - 7)
 #define PGID_CPU			(PGID_AGGR - 6)
 #define PGID_UC				(PGID_AGGR - 5)
 #define PGID_BC				(PGID_AGGR - 4)
@@ -57,8 +66,11 @@
 #define PGID_MCIPV4			(PGID_AGGR - 2)
 #define PGID_MCIPV6			(PGID_AGGR - 1)
 
+#define PGID_PMAC_START			(CPU_PORT + 1)
+#define PGID_PMAC_END			(50)
+
 /* Non-reserved PGIDs, used for general purpose */
-#define PGID_GP_START			(CPU_PORT + 1)
+#define PGID_GP_START			(PGID_PMAC_END + 1)
 #define PGID_GP_END			PGID_CPU
 
 #define LAN966X_SPEED_NONE		0
@@ -75,12 +87,16 @@
 #define IFH_REW_OP_ONE_STEP_PTP		0x3
 #define IFH_REW_OP_TWO_STEP_PTP		0x4
 
+#define IFH_PDU_TYPE_NONE		0
+#define IFH_PDU_TYPE_IPV4		7
+#define IFH_PDU_TYPE_IPV6		8
+
 #define FDMA_RX_DCB_MAX_DBS		1
 #define FDMA_TX_DCB_MAX_DBS		1
 
 #define FDMA_XTR_CHANNEL		6
 #define FDMA_INJ_CHANNEL		0
-#define FDMA_DCB_MAX			512
+#define FDMA_DCB_MAX			512 /* Must be a power of 2 */
 
 #define SE_IDX_QUEUE			0  /* 0-79 : Queue scheduler elements */
 #define SE_IDX_PORT			80 /* 80-89 : Port schedular elements */
@@ -96,6 +112,13 @@
 
 #define LAN966X_VCAP_CID_ES0_L0 VCAP_CID_EGRESS_L0 /* ES0 lookup 0 */
 #define LAN966X_VCAP_CID_ES0_MAX (VCAP_CID_EGRESS_L1 - 1) /* ES0 Max */
+
+#define LAN966X_VLAN_SRC_CHK		0x01
+#define LAN966X_VLAN_MIRROR		0x02
+#define LAN966X_VLAN_LEARN_DISABLED	0x04
+#define LAN966X_VLAN_PRIV_VLAN		0x08
+#define LAN966X_VLAN_FLOOD_DIS		0x10
+#define LAN966X_VLAN_SEC_FWD_ENA	0x20
 
 #define LAN966X_PORT_QOS_PCP_COUNT	8
 #define LAN966X_PORT_QOS_DEI_COUNT	8
@@ -189,12 +212,35 @@ enum vcap_is1_port_sel_rt {
 	VCAP_IS1_PS_RT_FOLLOW_OTHER = 7,
 };
 
+#ifdef CONFIG_MFD_LAN966X_PCI
+
+#define PCIE_ATU_REGION_MAX  6
+
+struct lan966x_pci_atu_region {
+	u64 base_addr;  /* Base addr of the OB windows */
+	u64 limit_addr; /* Limit addr of the OB window */
+	u64 target_addr /* Target addr */;
+	int idx;
+};
+
+void lan966x_pci_atu_init(struct lan966x *lan966x);
+int lan966x_pci_atu_region_unmap(struct lan966x *lan966x,
+				 struct lan966x_pci_atu_region *region);
+struct lan966x_pci_atu_region *
+lan966x_pci_atu_region_map(struct lan966x *lan966x, u64 target_addr, int size);
+u64 lan966x_pci_atu_get_mapped_addr(struct lan966x_pci_atu_region *region,
+				    u64 addr);
+
+int lan966x_xdp_pci_setup(struct net_device *dev, struct netdev_bpf *xdp);
+int lan966x_xdp_pci_run(struct lan966x_port *port, void *data, u32 data_len);
+#endif
+
 struct lan966x_port;
 
 struct lan966x_rx {
 	struct lan966x *lan966x;
 
-	struct fdma fdma;
+	struct fdma *fdma;
 
 	/* For each DB, there is a page */
 	struct page *page[FDMA_DCB_MAX][FDMA_RX_DCB_MAX_DBS];
@@ -210,6 +256,10 @@ struct lan966x_rx {
 	u32 max_mtu;
 
 	struct page_pool *page_pool;
+
+#ifdef CONFIG_MFD_LAN966X_PCI
+	struct fdma_pci_atu_region *atu_region;
+#endif
 };
 
 struct lan966x_tx_dcb_buf {
@@ -230,8 +280,11 @@ struct lan966x_tx_dcb_buf {
 struct lan966x_tx {
 	struct lan966x *lan966x;
 
-	struct fdma fdma;
+	struct fdma *fdma;
 
+#ifdef CONFIG_MFD_LAN966X_PCI
+	struct fdma_pci_atu_region *atu_region;
+#endif
 	/* Array of dcbs that are given to the HW */
 	struct lan966x_tx_dcb_buf *dcbs_buf;
 
@@ -254,6 +307,7 @@ struct lan966x_phc {
 
 struct lan966x_skb_cb {
 	u8 rew_op;
+	u8 pdu_type;
 	u16 ts_id;
 	unsigned long jiffies;
 };
@@ -261,6 +315,88 @@ struct lan966x_skb_cb {
 #define LAN966X_PTP_TIMEOUT		msecs_to_jiffies(10)
 #define LAN966X_SKB_CB(skb) \
 	((struct lan966x_skb_cb *)((skb)->cb))
+
+struct lan966x_tc_policer {
+	/* kilobit per second */
+	u32 rate;
+	/* bytes */
+	u32 burst;
+};
+
+struct lan966x_path_delay {
+	struct list_head list;
+	u32 rx_delay;
+	u32 tx_delay;
+	u32 speed;
+};
+
+#define MEP_AFI_ID_NONE 0xFFFFFFFF
+struct lan966x_mep {
+	struct hlist_node head;
+	u32 instance;
+	u32 voe_idx;
+	u32 afi_id;
+	struct lan966x_port *port;
+};
+
+struct lan966x_mip {
+	struct hlist_node head;
+	u32 instance;
+	struct lan966x_port *port;
+};
+
+#define LAN966X_PMAC_VLAN_ENTRIES		4
+#define LAN966X_PMAC_ENTRIES_PER_VLAN		2048
+
+#define PMACACCESS_CMD_IDLE			0
+#define PMACACCESS_CMD_READ			1
+#define PMACACCESS_CMD_WRITE			2
+#define PMACACCESS_CMD_INIT			3
+
+struct lan966x_pmac_pgid_entry {
+	refcount_t refcount;
+	struct list_head list;
+	int index;
+	u16 ports;
+};
+
+struct lan966x_pmac_vlan_entry {
+	refcount_t refcount;
+	u16 vlan;
+	u8 index;
+	bool enabled;
+};
+
+struct lan966x_pmac_entry {
+	struct lan966x_pmac_pgid_entry *pgid;
+	struct lan966x_pmac_vlan_entry *vlan;
+	struct list_head list;
+	u16 index;
+	u16 ports;
+};
+
+struct lan966x_pmac {
+	/* a negative value means that nothing is set */
+	int oui;
+
+	struct list_head pgid_entries;
+	struct list_head pmac_entries;
+	struct lan966x_pmac_vlan_entry vlan_entries[LAN966X_PMAC_VLAN_ENTRIES];
+};
+
+struct lan966x_ops {
+	int (*fdma_init)(struct lan966x *lan966x);
+	void (*fdma_deinit)(struct lan966x *lan966x);
+	int (*fdma_xmit)(struct sk_buff *skb, __be32 *ifh,
+			 struct net_device *dev);
+	int (*fdma_poll)(struct napi_struct *napi, int weight);
+	int (*fdma_mtu)(struct lan966x *lan966x);
+	int (*xdp_setup)(struct net_device *dev, struct netdev_bpf *xdp);
+};
+
+struct lan966x_match_data {
+	const struct lan966x_ops ops;
+};
 
 struct lan966x {
 	struct device *dev;
@@ -274,7 +410,7 @@ struct lan966x {
 
 	u8 base_mac[ETH_ALEN];
 
-	spinlock_t tx_lock; /* lock for frame transmission */
+	spinlock_t tx_lock; /* lock for frame transmition */
 
 	struct net_device *bridge;
 	u16 bridge_mask;
@@ -285,6 +421,7 @@ struct lan966x {
 
 	u16 vlan_mask[VLAN_N_VID];
 	DECLARE_BITMAP(cpu_vlan_mask, VLAN_N_VID);
+	u8 vlan_flags[VLAN_N_VID];
 
 	/* stats */
 	const struct lan966x_stat_layout *stats_layout;
@@ -326,6 +463,11 @@ struct lan966x {
 	struct lan966x_tx tx;
 	struct napi_struct napi;
 
+#ifdef CONFIG_MFD_LAN966X_PCI
+	/* fdma pci */
+	struct fdma_pci_atu atu;
+#endif
+
 	/* Mirror */
 	struct lan966x_port *mirror_monitor;
 	u32 mirror_mask[2];
@@ -336,6 +478,27 @@ struct lan966x {
 
 	/* debugfs */
 	struct dentry *debugfs_root;
+
+	struct afi_control *afi_ctrl;
+
+	struct mrp_control *mrp_ctrl;
+
+	/* QoS configuration and state */
+	struct lan966x_qos_conf qos;
+
+	/* PSFP configuration and state */
+	struct lan966x_psfp_conf psfp;
+
+	/* FRER configuration and state */
+	struct lan966x_frer_conf frer;
+
+	/* PMAC configuration */
+	struct lan966x_pmac pmac;
+
+	struct hlist_head mep_list;
+	struct hlist_head mip_list;
+
+	const struct lan966x_match_data *data;
 };
 
 struct lan966x_port_config {
@@ -348,6 +511,7 @@ struct lan966x_port_config {
 	bool autoneg;
 };
 
+#define LAN966X_VCAP_LOOKUP_MAX (3+2+1) /* IS1, IS2, ES0 */
 struct lan966x_port_tc {
 	bool ingress_shared_block;
 	unsigned long police_id;
@@ -355,6 +519,10 @@ struct lan966x_port_tc {
 	unsigned long egress_mirror_id;
 	struct flow_stats police_stat;
 	struct flow_stats mirror_stat;
+
+	u16 flower_template_proto[LAN966X_VCAP_LOOKUP_MAX];
+	/* list of flower templates for this port */
+	struct list_head templates;
 };
 
 struct lan966x_port_qos_pcp {
@@ -417,6 +585,21 @@ struct lan966x_port {
 
 	struct bpf_prog *xdp_prog;
 	struct xdp_rxq_info xdp_rxq;
+
+	struct mchp_qos_port_conf qos_port_conf;
+	struct lan966x_fp_port_conf fp;
+
+	struct list_head path_delays;
+	u32 rx_delay;
+
+	struct mrp_port *mrp_port;
+
+	int mrp_is1_p_port_rule_id;
+	int mrp_is1_s_port_rule_id;
+	int mrp_is1_i_port_rule_id;
+
+	/* IS1 rule ID for RAPS frames */
+	int raps_is1_rule_id;
 };
 
 extern const struct phylink_mac_ops lan966x_phylink_mac_ops;
@@ -424,6 +607,8 @@ extern const struct phylink_pcs_ops lan966x_phylink_pcs_ops;
 extern const struct ethtool_ops lan966x_ethtool_ops;
 extern struct notifier_block lan966x_switchdev_nb __read_mostly;
 extern struct notifier_block lan966x_switchdev_blocking_nb __read_mostly;
+
+void lan966x_add_cnt(u64 *cnt, u32 val);
 
 bool lan966x_netdevice_check(const struct net_device *dev);
 
@@ -492,6 +677,7 @@ void lan966x_vlan_port_apply(struct lan966x_port *port);
 bool lan966x_vlan_cpu_member_cpu_vlan_mask(struct lan966x *lan966x, u16 vid);
 void lan966x_vlan_port_set_vlan_aware(struct lan966x_port *port,
 				      bool vlan_aware);
+void lan966x_vlan_port_rew_host(struct lan966x_port *port);
 int lan966x_vlan_port_set_vid(struct lan966x_port *port,
 			      u16 vid,
 			      bool pvid,
@@ -503,6 +689,7 @@ void lan966x_vlan_port_add_vlan(struct lan966x_port *port,
 void lan966x_vlan_port_del_vlan(struct lan966x_port *port, u16 vid);
 void lan966x_vlan_cpu_add_vlan(struct lan966x *lan966x, u16 vid);
 void lan966x_vlan_cpu_del_vlan(struct lan966x *lan966x, u16 vid);
+void lan966x_vlan_set_mask(struct lan966x *lan966x, u16 vid);
 
 void lan966x_fdb_write_entries(struct lan966x *lan966x, u16 vid);
 void lan966x_fdb_erase_entries(struct lan966x *lan966x, u16 vid);
@@ -555,6 +742,24 @@ int lan966x_fdma_init(struct lan966x *lan966x);
 void lan966x_fdma_deinit(struct lan966x *lan966x);
 irqreturn_t lan966x_fdma_irq_handler(int irq, void *args);
 int lan966x_fdma_reload_page_pool(struct lan966x *lan966x);
+void lan966x_fdma_wakeup_netdev(struct lan966x *lan966x);
+void lan966x_fdma_rx_reload(struct lan966x_rx *rx);
+int lan966x_fdma_get_max_frame(struct lan966x *lan966x);
+void lan966x_fdma_rx_start(struct lan966x_rx *rx);
+void lan966x_fdma_rx_disable(struct lan966x_rx *rx);
+void lan966x_fdma_tx_disable(struct lan966x_tx *tx);
+void lan966x_fdma_llp_configure(struct lan966x *lan966x, u64 addr,
+				u8 channel_id);
+void lan966x_fdma_stop_netdev(struct lan966x *lan966x);
+int lan966x_qsys_sw_status(struct lan966x *lan966x);
+void lan966x_fdma_tx_reload(struct lan966x_tx *tx);
+void lan966x_fdma_tx_activate(struct lan966x_tx *tx);
+int lan966x_fdma_napi_poll(struct napi_struct *napi, int weight);
+void lan966x_fdma_tx_start(struct lan966x_tx *tx);
+
+#ifdef CONFIG_MFD_LAN966X_PCI
+extern const struct lan966x_match_data lan966x_pci_desc;
+#endif
 
 int lan966x_lag_port_join(struct lan966x_port *port,
 			  struct net_device *brport_dev,
@@ -639,6 +844,7 @@ void lan966x_mirror_port_stats(struct lan966x_port *port,
 			       struct flow_stats *stats,
 			       bool ingress);
 
+int lan966x_xdp_setup(struct net_device *dev, struct netdev_bpf *xdp);
 int lan966x_xdp_port_init(struct lan966x_port *port);
 void lan966x_xdp_port_deinit(struct lan966x_port *port);
 int lan966x_xdp(struct net_device *dev, struct netdev_bpf *xdp);
@@ -689,6 +895,56 @@ static inline void lan966x_dcb_init(struct lan966x *lan966x)
 {
 }
 #endif
+
+int lan966x_police_add(struct lan966x_port *port,
+		       struct lan966x_tc_policer *pol,
+		       u16 pol_idx);
+
+void lan966x_qos_port_init(struct lan966x_port *port);
+
+int lan966x_mirror_vcap_add(const struct lan966x_port *port,
+			    struct lan966x_port *monitor_port);
+void lan966x_mirror_vcap_del(struct lan966x *lan966x);
+
+int lan966x_netlink_fp_init(void);
+void lan966x_netlink_fp_uninit(void);
+int lan966x_netlink_frer_init(struct lan966x *lan966x);
+void lan966x_netlink_frer_uninit(void);
+int lan966x_netlink_qos_init(struct lan966x *lan966x);
+void lan966x_netlink_qos_uninit(void);
+int lan966x_netlink_pmac_init(struct lan966x *lan966x);
+void lan966x_netlink_pmac_uninit(void);
+
+netdev_tx_t lan966x_xmit(struct lan966x_port *port,
+			 struct sk_buff *skb,
+			 __be32 ifh[IFH_LEN]);
+
+void lan966x_ifh_set_rew_op(void *ifh, u64 rew_op);
+void lan966x_ifh_set_timestamp(void *ifh, u64 timestamp);
+void lan966x_ifh_set_afi(void *ifh, u64 afi);
+void lan966x_ifh_set_rew_oam(void *ifh, u64 rew_oam);
+void lan966x_ifh_set_oam_type(void *ifh, u64 oam_type);
+void lan966x_ifh_set_seq_num(void *ifh, u64 seq_num);
+
+int lan966x_pmac_add(struct lan966x_port *port, u8 *mac, u16 vlan);
+int lan966x_pmac_del(struct lan966x_port *port, u8 *mac, u16 vlan);
+int lan966x_pmac_purge(struct lan966x *lan966x);
+void lan966x_pmac_init(struct lan966x *lan966x);
+void lan966x_pmac_deinit(struct lan966x *lan966x);
+
+int lan966x_vcap_get_port_keyset(struct net_device *ndev,
+				 struct vcap_admin *admin, int cid,
+				 u16 l3_proto,
+				 struct vcap_keyset_list *keysetlist);
+const char *lan966x_vcap_keyset_name(struct net_device *ndev,
+				     enum vcap_keyfield_set keyset);
+void lan966x_vcap_set_port_keyset(struct net_device *ndev,
+				  struct vcap_admin *admin, int cid,
+				  u16 l3_proto, enum vcap_keyfield_set keyset,
+				  struct vcap_keyset_list *orig);
+
+int lan966x_afi_init(struct lan966x *lan966x);
+void lan966x_afi_deinit(struct lan966x *lan966x);
 
 static inline void __iomem *lan_addr(void __iomem *base[],
 				     int id, int tinst, int tcnt,

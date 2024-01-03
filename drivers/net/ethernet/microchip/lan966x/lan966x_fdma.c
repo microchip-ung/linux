@@ -6,8 +6,28 @@
 
 #include "lan966x_main.h"
 
-static int lan966x_fdma_rx_dataptr_cb(struct fdma *fdma, int dcb, int db,
-				      u64 *dataptr)
+static inline int lan966x_fdma_tx_dataptr_cb(struct fdma *fdma, int dcb, int db,
+					     u64 *dataptr)
+{
+	struct lan966x *lan966x = (struct lan966x *)fdma->priv;
+
+	*dataptr = lan966x->tx.dcbs_buf[dcb].dma_addr;
+
+	return 0;
+}
+
+static inline int lan966x_fdma_xdp_tx_dataptr_cb(struct fdma *fdma, int dcb,
+						 int db, u64 *dataptr)
+{
+	struct lan966x *lan966x = (struct lan966x *)fdma->priv;
+
+	*dataptr = lan966x->tx.dcbs_buf[dcb].dma_addr + XDP_PACKET_HEADROOM;
+
+	return 0;
+}
+
+static inline int lan966x_fdma_rx_dataptr_cb(struct fdma *fdma, int dcb, int db,
+					     u64 *dataptr)
 {
 	struct lan966x *lan966x = (struct lan966x *)fdma->priv;
 	struct lan966x_rx *rx = &lan966x->rx;
@@ -23,24 +43,11 @@ static int lan966x_fdma_rx_dataptr_cb(struct fdma *fdma, int dcb, int db,
 	return 0;
 }
 
-static int lan966x_fdma_tx_dataptr_cb(struct fdma *fdma, int dcb, int db,
-				      u64 *dataptr)
+void lan966x_fdma_llp_configure(struct lan966x *lan966x, u64 addr,
+				u8 channel_id)
 {
-	struct lan966x *lan966x = (struct lan966x *)fdma->priv;
-
-	*dataptr = lan966x->tx.dcbs_buf[dcb].dma_addr;
-
-	return 0;
-}
-
-static int lan966x_fdma_xdp_tx_dataptr_cb(struct fdma *fdma, int dcb, int db,
-					  u64 *dataptr)
-{
-	struct lan966x *lan966x = (struct lan966x *)fdma->priv;
-
-	*dataptr = lan966x->tx.dcbs_buf[dcb].dma_addr + XDP_PACKET_HEADROOM;
-
-	return 0;
+	lan_wr(lower_32_bits(addr), lan966x, FDMA_DCB_LLP(channel_id));
+	lan_wr(upper_32_bits(addr), lan966x, FDMA_DCB_LLP1(channel_id));
 }
 
 static int lan966x_fdma_channel_active(struct lan966x *lan966x)
@@ -50,7 +57,7 @@ static int lan966x_fdma_channel_active(struct lan966x *lan966x)
 
 static void lan966x_fdma_rx_free_pages(struct lan966x_rx *rx)
 {
-	struct fdma *fdma = &rx->fdma;
+	struct fdma *fdma = rx->fdma;
 	int i, j;
 
 	for (i = 0; i < fdma->n_dcbs; ++i) {
@@ -62,7 +69,7 @@ static void lan966x_fdma_rx_free_pages(struct lan966x_rx *rx)
 
 static void lan966x_fdma_rx_free_page(struct lan966x_rx *rx)
 {
-	struct fdma *fdma = &rx->fdma;
+	struct fdma *fdma = rx->fdma;
 	struct page *page;
 
 	page = rx->page[fdma->dcb_index][fdma->db_index];
@@ -78,7 +85,7 @@ static int lan966x_fdma_rx_alloc_page_pool(struct lan966x_rx *rx)
 	struct page_pool_params pp_params = {
 		.order = rx->page_order,
 		.flags = PP_FLAG_DMA_MAP | PP_FLAG_DMA_SYNC_DEV,
-		.pool_size = rx->fdma.n_dcbs,
+		.pool_size = rx->fdma->n_dcbs,
 		.nid = NUMA_NO_NODE,
 		.dev = lan966x->dev,
 		.dma_dir = DMA_FROM_DEVICE,
@@ -110,7 +117,7 @@ static int lan966x_fdma_rx_alloc_page_pool(struct lan966x_rx *rx)
 static int lan966x_fdma_rx_alloc(struct lan966x_rx *rx)
 {
 	struct lan966x *lan966x = rx->lan966x;
-	struct fdma *fdma = &rx->fdma;
+	struct fdma *fdma = rx->fdma;
 	int err;
 
 	if (lan966x_fdma_rx_alloc_page_pool(rx))
@@ -120,25 +127,20 @@ static int lan966x_fdma_rx_alloc(struct lan966x_rx *rx)
 	if (err)
 		return err;
 
-	fdma_dcbs_init(fdma, FDMA_DCB_INFO_DATAL(fdma->db_size),
+	fdma_dcbs_init(fdma,
+		       FDMA_DCB_INFO_DATAL(fdma->db_size),
 		       FDMA_DCB_STATUS_INTR);
+
+	lan966x_fdma_llp_configure(lan966x, fdma->dma, fdma->channel_id);
 
 	return 0;
 }
 
-static void lan966x_fdma_rx_start(struct lan966x_rx *rx)
+void lan966x_fdma_rx_start(struct lan966x_rx *rx)
 {
 	struct lan966x *lan966x = rx->lan966x;
-	struct fdma *fdma = &rx->fdma;
+	struct fdma *fdma = rx->fdma;
 	u32 mask;
-
-	/* When activating a channel, first is required to write the first DCB
-	 * address and then to activate it
-	 */
-	lan_wr(lower_32_bits((u64)fdma->dma), lan966x,
-	       FDMA_DCB_LLP(fdma->channel_id));
-	lan_wr(upper_32_bits((u64)fdma->dma), lan966x,
-	       FDMA_DCB_LLP1(fdma->channel_id));
 
 	lan_wr(FDMA_CH_CFG_CH_DCB_DB_CNT_SET(fdma->n_dbs) |
 	       FDMA_CH_CFG_CH_INTR_DB_EOF_ONLY_SET(1) |
@@ -165,10 +167,10 @@ static void lan966x_fdma_rx_start(struct lan966x_rx *rx)
 		lan966x, FDMA_CH_ACTIVATE);
 }
 
-static void lan966x_fdma_rx_disable(struct lan966x_rx *rx)
+void lan966x_fdma_rx_disable(struct lan966x_rx *rx)
 {
 	struct lan966x *lan966x = rx->lan966x;
-	struct fdma *fdma = &rx->fdma;
+	struct fdma *fdma = rx->fdma;
 	u32 val;
 
 	/* Disable the channel */
@@ -185,11 +187,11 @@ static void lan966x_fdma_rx_disable(struct lan966x_rx *rx)
 		lan966x, FDMA_CH_DB_DISCARD);
 }
 
-static void lan966x_fdma_rx_reload(struct lan966x_rx *rx)
+void lan966x_fdma_rx_reload(struct lan966x_rx *rx)
 {
 	struct lan966x *lan966x = rx->lan966x;
 
-	lan_rmw(FDMA_CH_RELOAD_CH_RELOAD_SET(BIT(rx->fdma.channel_id)),
+	lan_rmw(FDMA_CH_RELOAD_CH_RELOAD_SET(BIT(rx->fdma->channel_id)),
 		FDMA_CH_RELOAD_CH_RELOAD,
 		lan966x, FDMA_CH_RELOAD);
 }
@@ -197,7 +199,7 @@ static void lan966x_fdma_rx_reload(struct lan966x_rx *rx)
 static int lan966x_fdma_tx_alloc(struct lan966x_tx *tx)
 {
 	struct lan966x *lan966x = tx->lan966x;
-	struct fdma *fdma = &tx->fdma;
+	struct fdma *fdma = tx->fdma;
 	int err;
 
 	tx->dcbs_buf = kcalloc(fdma->n_dcbs, sizeof(struct lan966x_tx_dcb_buf),
@@ -211,6 +213,8 @@ static int lan966x_fdma_tx_alloc(struct lan966x_tx *tx)
 
 	fdma_dcbs_init(fdma, 0, 0);
 
+	lan966x_fdma_llp_configure(lan966x, fdma->dma, fdma->channel_id);
+
 	return 0;
 
 out:
@@ -223,24 +227,16 @@ static void lan966x_fdma_tx_free(struct lan966x_tx *tx)
 	struct lan966x *lan966x = tx->lan966x;
 
 	kfree(tx->dcbs_buf);
-	fdma_free_coherent(lan966x->dev, &tx->fdma);
+	fdma_free_coherent(lan966x->dev, tx->fdma);
 }
 
-static void lan966x_fdma_tx_activate(struct lan966x_tx *tx)
+void lan966x_fdma_tx_activate(struct lan966x_tx *tx)
 {
 	struct lan966x *lan966x = tx->lan966x;
-	struct fdma *fdma = &tx->fdma;
+	struct fdma *fdma = tx->fdma;
 	u32 mask;
 
-	/* When activating a channel, first is required to write the first DCB
-	 * address and then to activate it
-	 */
-	lan_wr(lower_32_bits((u64)fdma->dma), lan966x,
-	       FDMA_DCB_LLP(fdma->channel_id));
-	lan_wr(upper_32_bits((u64)fdma->dma), lan966x,
-	       FDMA_DCB_LLP1(fdma->channel_id));
-
-	lan_wr(FDMA_CH_CFG_CH_DCB_DB_CNT_SET(fdma->n_dbs) |
+	lan_wr(FDMA_CH_CFG_CH_DCB_DB_CNT_SET(FDMA_TX_DCB_MAX_DBS) |
 	       FDMA_CH_CFG_CH_INTR_DB_EOF_ONLY_SET(1) |
 	       FDMA_CH_CFG_CH_INJ_PORT_SET(0) |
 	       FDMA_CH_CFG_CH_MEM_SET(1),
@@ -265,10 +261,10 @@ static void lan966x_fdma_tx_activate(struct lan966x_tx *tx)
 		lan966x, FDMA_CH_ACTIVATE);
 }
 
-static void lan966x_fdma_tx_disable(struct lan966x_tx *tx)
+void lan966x_fdma_tx_disable(struct lan966x_tx *tx)
 {
 	struct lan966x *lan966x = tx->lan966x;
-	struct fdma *fdma = &tx->fdma;
+	struct fdma *fdma = tx->fdma;
 	u32 val;
 
 	/* Disable the channel */
@@ -287,17 +283,17 @@ static void lan966x_fdma_tx_disable(struct lan966x_tx *tx)
 	tx->activated = false;
 }
 
-static void lan966x_fdma_tx_reload(struct lan966x_tx *tx)
+void lan966x_fdma_tx_reload(struct lan966x_tx *tx)
 {
 	struct lan966x *lan966x = tx->lan966x;
 
 	/* Write the registers to reload the channel */
-	lan_rmw(FDMA_CH_RELOAD_CH_RELOAD_SET(BIT(tx->fdma.channel_id)),
+	lan_rmw(FDMA_CH_RELOAD_CH_RELOAD_SET(BIT(tx->fdma->channel_id)),
 		FDMA_CH_RELOAD_CH_RELOAD,
 		lan966x, FDMA_CH_RELOAD);
 }
 
-static void lan966x_fdma_wakeup_netdev(struct lan966x *lan966x)
+void lan966x_fdma_wakeup_netdev(struct lan966x *lan966x)
 {
 	struct lan966x_port *port;
 	int i;
@@ -312,7 +308,7 @@ static void lan966x_fdma_wakeup_netdev(struct lan966x *lan966x)
 	}
 }
 
-static void lan966x_fdma_stop_netdev(struct lan966x *lan966x)
+void lan966x_fdma_stop_netdev(struct lan966x *lan966x)
 {
 	struct lan966x_port *port;
 	int i;
@@ -331,11 +327,11 @@ static void lan966x_fdma_tx_clear_buf(struct lan966x *lan966x, int weight)
 	struct lan966x_tx *tx = &lan966x->tx;
 	struct lan966x_rx *rx = &lan966x->rx;
 	struct lan966x_tx_dcb_buf *dcb_buf;
-	struct fdma *fdma = &tx->fdma;
+	struct fdma *fdma = tx->fdma;
 	struct xdp_frame_bulk bq;
+	struct fdma_db *db;
 	unsigned long flags;
 	bool clear = false;
-	struct fdma_db *db;
 	int i;
 
 	xdp_frame_bulk_init(&bq);
@@ -347,7 +343,7 @@ static void lan966x_fdma_tx_clear_buf(struct lan966x *lan966x, int weight)
 		if (!dcb_buf->used)
 			continue;
 
-		db = fdma_db_get(fdma, i, 0);
+		db = &fdma->dcbs[i].db[0];
 		if (!fdma_db_is_done(db))
 			continue;
 
@@ -391,7 +387,7 @@ static void lan966x_fdma_tx_clear_buf(struct lan966x *lan966x, int weight)
 static int lan966x_fdma_rx_check_frame(struct lan966x_rx *rx, u64 *src_port)
 {
 	struct lan966x *lan966x = rx->lan966x;
-	struct fdma *fdma = &rx->fdma;
+	struct fdma *fdma = rx->fdma;
 	struct lan966x_port *port;
 	struct fdma_db *db;
 	struct page *page;
@@ -422,9 +418,9 @@ static struct sk_buff *lan966x_fdma_rx_get_frame(struct lan966x_rx *rx,
 						 u64 src_port)
 {
 	struct lan966x *lan966x = rx->lan966x;
-	struct fdma *fdma = &rx->fdma;
-	struct sk_buff *skb;
+	struct fdma *fdma = rx->fdma;
 	struct fdma_db *db;
+	struct sk_buff *skb;
 	struct page *page;
 	u64 timestamp;
 
@@ -471,12 +467,12 @@ free_page:
 	return NULL;
 }
 
-static int lan966x_fdma_napi_poll(struct napi_struct *napi, int weight)
+int lan966x_fdma_napi_poll(struct napi_struct *napi, int weight)
 {
 	struct lan966x *lan966x = container_of(napi, struct lan966x, napi);
 	struct lan966x_rx *rx = &lan966x->rx;
-	int old_dcb, dcb_reload, counter = 0;
-	struct fdma *fdma = &rx->fdma;
+	int dcb_reload, old_dcb, counter = 0;
+	struct fdma *fdma = rx->fdma;
 	bool redirect = false;
 	struct sk_buff *skb;
 	u64 src_port;
@@ -526,7 +522,9 @@ allocate_new:
 		dcb_reload++;
 		dcb_reload &= fdma->n_dcbs - 1;
 
-		fdma_dcb_add(fdma, old_dcb, FDMA_DCB_INFO_DATAL(fdma->db_size),
+		fdma_dcb_add(fdma,
+			     old_dcb,
+			     FDMA_DCB_INFO_DATAL(fdma->db_size),
 			     FDMA_DCB_STATUS_INTR);
 
 		lan966x_fdma_rx_reload(rx);
@@ -571,20 +569,19 @@ irqreturn_t lan966x_fdma_irq_handler(int irq, void *args)
 static int lan966x_fdma_get_next_dcb(struct lan966x_tx *tx)
 {
 	struct lan966x_tx_dcb_buf *dcb_buf;
-	struct fdma *fdma = &tx->fdma;
 	int i;
 
-	for (i = 0; i < fdma->n_dcbs; ++i) {
+	for (i = 0; i < tx->fdma->n_dcbs; ++i) {
 		dcb_buf = &tx->dcbs_buf[i];
 		if (!dcb_buf->used &&
-		    !fdma_is_last(&tx->fdma, &tx->fdma.dcbs[i]))
+		    !fdma_is_last(tx->fdma, &tx->fdma->dcbs[i]))
 			return i;
 	}
 
 	return -1;
 }
 
-static void lan966x_fdma_tx_start(struct lan966x_tx *tx)
+void lan966x_fdma_tx_start(struct lan966x_tx *tx)
 {
 	struct lan966x *lan966x = tx->lan966x;
 
@@ -608,6 +605,7 @@ int lan966x_fdma_xmit_xdpf(struct lan966x_port *port, void *ptr, u32 len)
 	int next_to_use;
 	__be32 *ifh;
 	int ret = 0;
+	u64 status;
 
 	spin_lock(&lan966x->tx_lock);
 
@@ -673,14 +671,20 @@ int lan966x_fdma_xmit_xdpf(struct lan966x_port *port, void *ptr, u32 len)
 	next_dcb_buf->ptp = false;
 	next_dcb_buf->dev = port->dev;
 
-	__fdma_dcb_add(&tx->fdma,
+	status = FDMA_DCB_STATUS_SOF |
+		 FDMA_DCB_STATUS_EOF |
+		 FDMA_DCB_STATUS_BLOCKO(0) |
+		 FDMA_DCB_STATUS_BLOCKL(next_dcb_buf->len);
+
+	/* Only require an interrupt for every other tx DCB */
+	fdma_dcb_advance(tx->fdma);
+	if (tx->fdma->dcb_index % 2)
+		status |= FDMA_DCB_STATUS_INTR;
+
+	__fdma_dcb_add(tx->fdma,
 		       next_to_use,
 		       0,
-		       FDMA_DCB_STATUS_INTR |
-		       FDMA_DCB_STATUS_SOF |
-		       FDMA_DCB_STATUS_EOF |
-		       FDMA_DCB_STATUS_BLOCKO(0) |
-		       FDMA_DCB_STATUS_BLOCKL(next_dcb_buf->len),
+		       status,
 		       &fdma_nextptr_cb,
 		       &lan966x_fdma_xdp_tx_dataptr_cb);
 
@@ -703,6 +707,7 @@ int lan966x_fdma_xmit(struct sk_buff *skb, __be32 *ifh, struct net_device *dev)
 	int needed_tailroom;
 	dma_addr_t dma_addr;
 	int next_to_use;
+	u64 status;
 	int err;
 
 	/* Get next index */
@@ -754,18 +759,21 @@ int lan966x_fdma_xmit(struct sk_buff *skb, __be32 *ifh, struct net_device *dev)
 	next_dcb_buf->ptp = false;
 	next_dcb_buf->dev = dev;
 
-	fdma_dcb_add(&tx->fdma,
-		     next_to_use,
-		     0,
-		     FDMA_DCB_STATUS_INTR |
-		     FDMA_DCB_STATUS_SOF |
-		     FDMA_DCB_STATUS_EOF |
-		     FDMA_DCB_STATUS_BLOCKO(0) |
-		     FDMA_DCB_STATUS_BLOCKL(skb->len));
-
 	if (skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP &&
 	    LAN966X_SKB_CB(skb)->rew_op == IFH_REW_OP_TWO_STEP_PTP)
 		next_dcb_buf->ptp = true;
+
+	status = FDMA_DCB_STATUS_SOF |
+		 FDMA_DCB_STATUS_EOF |
+		 FDMA_DCB_STATUS_BLOCKO(0) |
+		 FDMA_DCB_STATUS_BLOCKL(skb->len);
+
+	/* Only require an interrupt for every other tx DCB */
+	fdma_dcb_advance(tx->fdma);
+	if (tx->fdma->dcb_index % 2)
+		status |= FDMA_DCB_STATUS_INTR;
+
+	fdma_dcb_add(tx->fdma, next_to_use, 0, status);
 
 	/* Start the transmission */
 	lan966x_fdma_tx_start(tx);
@@ -802,7 +810,7 @@ static int lan966x_fdma_get_max_mtu(struct lan966x *lan966x)
 	return max_mtu;
 }
 
-static int lan966x_qsys_sw_status(struct lan966x *lan966x)
+int lan966x_qsys_sw_status(struct lan966x *lan966x)
 {
 	return lan_rd(lan966x, QSYS_SW_STATUS(CPU_PORT));
 }
@@ -810,11 +818,10 @@ static int lan966x_qsys_sw_status(struct lan966x *lan966x)
 static int lan966x_fdma_reload(struct lan966x *lan966x, int new_mtu)
 {
 	struct page_pool *page_pool;
-	struct fdma fdma_rx_old;
 	int err;
 
 	/* Store these for later to free them */
-	memcpy(&fdma_rx_old, &lan966x->rx.fdma, sizeof(struct fdma));
+	struct fdma fdma_rx_old = *lan966x->rx.fdma;
 	page_pool = lan966x->rx.page_pool;
 
 	napi_synchronize(&lan966x->napi);
@@ -825,13 +832,13 @@ static int lan966x_fdma_reload(struct lan966x *lan966x, int new_mtu)
 	lan966x_fdma_rx_free_pages(&lan966x->rx);
 	lan966x->rx.page_order = round_up(new_mtu, PAGE_SIZE) / PAGE_SIZE - 1;
 	lan966x->rx.max_mtu = new_mtu;
+	lan966x->rx.fdma->db_size = PAGE_SIZE << lan966x->rx.page_order;
 	err = lan966x_fdma_rx_alloc(&lan966x->rx);
 	if (err)
 		goto restore;
 	lan966x_fdma_rx_start(&lan966x->rx);
 
 	fdma_free_coherent(lan966x->dev, &fdma_rx_old);
-
 	page_pool_destroy(page_pool);
 
 	lan966x_fdma_wakeup_netdev(lan966x);
@@ -840,13 +847,13 @@ static int lan966x_fdma_reload(struct lan966x *lan966x, int new_mtu)
 	return err;
 restore:
 	lan966x->rx.page_pool = page_pool;
-	memcpy(&lan966x->rx.fdma, &fdma_rx_old, sizeof(struct fdma));
+	memcpy(lan966x->rx.fdma, &fdma_rx_old, sizeof(struct fdma));
 	lan966x_fdma_rx_start(&lan966x->rx);
 
 	return err;
 }
 
-static int lan966x_fdma_get_max_frame(struct lan966x *lan966x)
+int lan966x_fdma_get_max_frame(struct lan966x *lan966x)
 {
 	return lan966x_fdma_get_max_mtu(lan966x) +
 	       IFH_LEN_BYTES +
@@ -906,11 +913,13 @@ int lan966x_fdma_reload_page_pool(struct lan966x *lan966x)
 
 void lan966x_fdma_netdev_init(struct lan966x *lan966x, struct net_device *dev)
 {
+	const struct lan966x_ops *ops = &lan966x->data->ops;
+
 	if (lan966x->fdma_ndev)
 		return;
 
 	lan966x->fdma_ndev = dev;
-	netif_napi_add(dev, &lan966x->napi, lan966x_fdma_napi_poll);
+	netif_napi_add(dev, &lan966x->napi, ops->fdma_poll);
 	napi_enable(&lan966x->napi);
 }
 
@@ -922,6 +931,26 @@ void lan966x_fdma_netdev_deinit(struct lan966x *lan966x, struct net_device *dev)
 	}
 }
 
+static struct fdma lan966x_fdma_tx = {
+	.channel_id = FDMA_INJ_CHANNEL,
+	.n_dcbs = 512,
+	.n_dbs = 1,
+	.ops = {
+		.dataptr_cb = &lan966x_fdma_tx_dataptr_cb,
+		.nextptr_cb = &fdma_nextptr_cb,
+	},
+};
+
+static struct fdma lan966x_fdma_rx = {
+	.channel_id = FDMA_XTR_CHANNEL,
+	.n_dcbs = 512,
+	.n_dbs = 1,
+	.ops = {
+		.dataptr_cb = &lan966x_fdma_rx_dataptr_cb,
+		.nextptr_cb = &fdma_nextptr_cb,
+	},
+};
+
 int lan966x_fdma_init(struct lan966x *lan966x)
 {
 	int err;
@@ -930,24 +959,17 @@ int lan966x_fdma_init(struct lan966x *lan966x)
 		return 0;
 
 	lan966x->rx.lan966x = lan966x;
-	lan966x->rx.fdma.channel_id = FDMA_XTR_CHANNEL;
-	lan966x->rx.fdma.n_dcbs = FDMA_DCB_MAX;
-	lan966x->rx.fdma.n_dbs = FDMA_RX_DCB_MAX_DBS;
-	lan966x->rx.fdma.priv = lan966x;
-	lan966x->rx.fdma.size = fdma_get_size(&lan966x->rx.fdma);
-	lan966x->rx.fdma.db_size = PAGE_SIZE << lan966x->rx.page_order;
-	lan966x->rx.fdma.ops.nextptr_cb = &fdma_nextptr_cb;
-	lan966x->rx.fdma.ops.dataptr_cb = &lan966x_fdma_rx_dataptr_cb;
 	lan966x->rx.max_mtu = lan966x_fdma_get_max_frame(lan966x);
+	lan966x->rx.fdma = &lan966x_fdma_rx;
+	lan966x->rx.fdma->priv = lan966x;
+	lan966x->rx.fdma->size = fdma_get_size(lan966x->rx.fdma);
+	lan966x->rx.fdma->db_size = PAGE_SIZE << lan966x->rx.page_order;
+
 	lan966x->tx.lan966x = lan966x;
-	lan966x->tx.fdma.channel_id = FDMA_INJ_CHANNEL;
-	lan966x->tx.fdma.n_dcbs = FDMA_DCB_MAX;
-	lan966x->tx.fdma.n_dbs = FDMA_TX_DCB_MAX_DBS;
-	lan966x->tx.fdma.priv = lan966x;
-	lan966x->tx.fdma.size = fdma_get_size(&lan966x->tx.fdma);
-	lan966x->tx.fdma.db_size = PAGE_SIZE << lan966x->rx.page_order;
-	lan966x->tx.fdma.ops.nextptr_cb = &fdma_nextptr_cb;
-	lan966x->tx.fdma.ops.dataptr_cb = &lan966x_fdma_tx_dataptr_cb;
+	lan966x->tx.fdma = &lan966x_fdma_tx;
+	lan966x->tx.fdma->priv = lan966x;
+	lan966x->tx.fdma->size = fdma_get_size(lan966x->tx.fdma);
+	lan966x->tx.fdma->db_size = PAGE_SIZE << lan966x->rx.page_order;
 
 	err = lan966x_fdma_rx_alloc(&lan966x->rx);
 	if (err)
@@ -955,7 +977,7 @@ int lan966x_fdma_init(struct lan966x *lan966x)
 
 	err = lan966x_fdma_tx_alloc(&lan966x->tx);
 	if (err) {
-		fdma_free_coherent(lan966x->dev, &lan966x->rx.fdma);
+		fdma_free_coherent(lan966x->dev, lan966x->rx.fdma);
 		return err;
 	}
 
@@ -976,7 +998,7 @@ void lan966x_fdma_deinit(struct lan966x *lan966x)
 	napi_disable(&lan966x->napi);
 
 	lan966x_fdma_rx_free_pages(&lan966x->rx);
-	fdma_free_coherent(lan966x->dev, &lan966x->rx.fdma);
+	fdma_free_coherent(lan966x->dev, lan966x->rx.fdma);
 	page_pool_destroy(lan966x->rx.page_pool);
 	lan966x_fdma_tx_free(&lan966x->tx);
 }

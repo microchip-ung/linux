@@ -2,6 +2,38 @@
 
 #include "lan966x_main.h"
 
+int lan966x_mirror_vcap_add(const struct lan966x_port *port,
+			    struct lan966x_port *monitor_port)
+{
+	struct lan966x *lan966x = port->lan966x;
+
+	if (lan966x->mirror_monitor && (lan966x->mirror_monitor != monitor_port))
+		return -EBUSY;
+
+	if (port == monitor_port)
+		return -EINVAL;
+
+	lan966x->mirror_monitor = monitor_port;
+	lan_wr(BIT(monitor_port->chip_port), lan966x, ANA_MIRRORPORTS);
+
+	lan966x->mirror_count++;
+	return 0;
+}
+
+void lan966x_mirror_vcap_del(struct lan966x *lan966x)
+{
+
+	if (lan966x->mirror_count == 0)
+		dev_err(lan966x->dev,"ERROR: mirror_count is zero\n");
+	else
+		lan966x->mirror_count--;
+
+	if (lan966x->mirror_count == 0) {
+		lan966x->mirror_monitor = NULL;
+		lan_wr(0, lan966x, ANA_MIRRORPORTS);
+	}
+}
+
 int lan966x_mirror_port_add(struct lan966x_port *port,
 			    struct flow_action_entry *action,
 			    unsigned long mirror_id,
