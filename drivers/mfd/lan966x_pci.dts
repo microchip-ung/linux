@@ -1,0 +1,369 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Copyright (C) 2022 Microchip UNG
+ */
+
+#include <dt-bindings/clock/microchip,lan966x.h>
+#include <dt-bindings/mfd/atmel-flexcom.h>
+#include <dt-bindings/phy/phy-lan966x-serdes.h>
+#include <dt-bindings/gpio/gpio.h>
+
+/dts-v1/;
+/plugin/;
+
+&{/pcidev} {
+	compatible = "simple-bus";
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	itc: itc {
+		#interrupt-cells = <1>;
+		interrupt-controller;
+		interrupt-parent = <&itc>;
+	};
+
+	cpu_clk: cpu_clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <600000000>;  // CPU clock = 600MHz
+	};
+
+	fabric_clk: fabric_clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <30000000>;  // Fabric clock = 30MHz
+	};
+
+	sys_clk: sys_clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <15625000>;  // System clock = 15.625MHz
+	};
+
+	nic_clk: nic_clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <200000000>;  // NIC clock = 200MHz
+	};
+
+	clks: clock-controller@e00c00a8 {
+		compatible = "microchip,lan966x-gck";
+		#clock-cells = <1>;
+		clocks = <&cpu_clk>, <&fabric_clk>, <&sys_clk>;
+		reg = <0xe00c00a8 0x00000038>, <0xe00c02cc 0x4>;
+	};
+
+	cpu_ctrl: syscon@e00c0000 {
+		compatible = "microchip,lan966x-cpu-syscon", "syscon";
+		reg = <0xe00c0000 0x00000350>;
+	};
+
+	switch_ctrl: syscon@e200400c {
+		compatible = "microchip,lan966x-switch-syscon", "syscon";
+		reg = <0xe2004000 0x4>;
+	};
+
+	chip_ctrl: syscon@e2010000 {
+		compatible = "microchip,lan966x-chip-syscon", "syscon";
+		reg = <0xe2010010 0xe2010010>;
+	};
+
+	switch_reset: switch_reset@0 {
+		compatible = "microchip,lan966x-switch-reset";
+		#reset-cells = <1>;
+		cpu-syscon = <&cpu_ctrl>;
+		switch-syscon = <&switch_ctrl>;
+		chip-syscon = <&chip_ctrl>;
+	};
+
+	lan966x_gpio: pinctrl@e2004070 {
+		compatible = "microchip,lan966x-pinctrl";
+		reg = <0xe2004064 0x000000b4>, <0xe2010024 0x00000138>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		gpio-ranges = <&lan966x_gpio 0 0 78>;
+		interrupt-parent = <&itc>;
+		interrupt-controller;
+		interrupts = <17>;
+		#interrupt-cells = <1>;
+
+		tod_pins: tod_pins {
+			pins = "GPIO_36";
+			function = "ptpsync_1";
+		};
+
+		fc0_a_rx_pins: fc0-a-rx-pins {
+			pins = "GPIO_9";
+			function = "fc0_a";
+		};
+
+		fc0_a_tx_pins: fc0-a-tx-pins {
+			pins = "GPIO_10";
+			function = "fc0_a";
+		};
+
+		i2cmux_pins: i2cmux-pins {
+			pins = "GPIO_76", "GPIO_77";
+			function = "twi_slc_gate";
+			output-low;
+		};
+
+		i2cmux_0: i2cmux-0 {
+			pins = "GPIO_76";
+			function = "twi_slc_gate";
+			output-high;
+		};
+
+		i2cmux_1: i2cmux-1 {
+			pins = "GPIO_77";
+			function = "twi_slc_gate";
+			output-high;
+		};
+	};
+
+	flx0: flexcom@e0070000 {
+		compatible = "atmel,sama5d2-flexcom";
+		reg = <0xe0040000 0x00000100>;
+		clocks = <&fabric_clk>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges = <0x0 0xe0040000 0x800>;
+
+		atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_TWI>;
+
+		i2c_lan966x: i2c@600 {
+			compatible = "microchip,sam9x60-i2c";
+			reg = <0x600 0x200>;
+			interrupt-parent = <&itc>;
+			interrupts = <48>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			clocks = <&nic_clk>;
+			pinctrl-0 = <&fc0_a_rx_pins>, <&fc0_a_tx_pins>;
+			pinctrl-names = "default";
+			i2c-analog-filter;
+			i2c-digital-filter;
+			i2c-digital-filter-width-ns = <35>;
+			i2c-sda-hold-time-ns = <1500>;
+		};
+	};
+
+	i2c0_emux: i2c0-emux@0 {
+		compatible = "i2c-mux-pinctrl";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c-parent = <&i2c_lan966x>;
+		pinctrl-names = "i2c102", "i2c103", "idle";
+		pinctrl-0 = <&i2cmux_0>;
+		pinctrl-1 = <&i2cmux_1>;
+		pinctrl-2 = <&i2cmux_pins>;
+
+		i2c102: i2c_sfp1 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+
+		i2c103: i2c_sfp2 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+	};
+
+	sfp_eth2: sfp-eth2 {
+		compatible       = "sff,sfp";
+		i2c-bus          = <&i2c102>;
+		tx-disable-gpios = <&lan966x_gpio  0 GPIO_ACTIVE_HIGH>;
+		los-gpios        = <&lan966x_gpio 25 GPIO_ACTIVE_HIGH>;
+		mod-def0-gpios   = <&lan966x_gpio 18 GPIO_ACTIVE_LOW>;
+		tx-fault-gpios   = <&lan966x_gpio  2 GPIO_ACTIVE_HIGH>;
+	};
+
+	sfp_eth3: sfp-eth3 {
+		compatible       = "sff,sfp";
+		i2c-bus          = <&i2c103>;
+		tx-disable-gpios = <&lan966x_gpio  1 GPIO_ACTIVE_HIGH>;
+		los-gpios        = <&lan966x_gpio 26 GPIO_ACTIVE_HIGH>;
+		mod-def0-gpios   = <&lan966x_gpio 19 GPIO_ACTIVE_LOW>;
+		tx-fault-gpios   = <&lan966x_gpio  3 GPIO_ACTIVE_HIGH>;
+	};
+
+	hsio: syscon@710d0000 {
+		compatible = "microchip,lan966x-hsio", "syscon", "simple-mfd";
+		reg = <0xe202c000 0x0000009c>;
+
+		serdes: serdes {
+			compatible = "microchip,lan966x-serdes";
+			#phy-cells = <2>;
+		};
+	};
+
+	lan966x_mdio1: mdio@413c {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		compatible = "mscc,ocelot-miim";
+		reg = <0xe200413c 0x00000024>;
+
+		resets = <&switch_reset 0>;
+		reset-names = "switch";
+
+		lan966x_phy0: ethernet-lan966x_phy@1 {
+			reg = <1>;
+		};
+
+		lan966x_phy1: ethernet-lan966x_phy@2 {
+			reg = <2>;
+		};
+	};
+
+	lan966x_switch: switch@0 {
+		compatible = "microchip,lan966x-switch";
+		reg = <0x00000000 0x0100000>,
+		      <0x02000000 0x0800000>;
+		reg-names = "cpu", "gcb";
+
+		interrupt-parent = <&itc>;
+		interrupts = <10 11 12 9>;
+		interrupt-names = "ptp-sync", "ptp", "xtr", "ana";
+
+		resets = <&switch_reset 0>;
+		reset-names = "switch";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&tod_pins>;
+
+		ethernet-ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port0: port@0 {
+				phy-handle = <&lan966x_phy0>;
+
+				reg = <0>;
+				phy-mode = "gmii";
+				phys = <&serdes 0 CU(0)>;
+
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				delay0 {
+					reg = <0>;
+					speed = <1000>;
+					rx_delay = <0x25000>;
+					tx_delay = <0x25000>;
+				};
+
+				delay1 {
+					reg = <0>;
+					speed = <100>;
+					rx_delay = <0x8f050>;
+					tx_delay = <0x8f050>;
+				};
+
+				delay2 {
+					reg = <0>;
+					speed = <10>;
+					rx_delay = <0x4b8000>;
+					tx_delay = <0x4b8000>;
+				};
+			};
+
+			port1: port@1 {
+				phy-handle = <&lan966x_phy1>;
+
+				reg = <1>;
+				phy-mode = "gmii";
+				phys = <&serdes 1 CU(1)>;
+
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				delay0 {
+					reg = <0>;
+					speed = <1000>;
+					rx_delay = <0x25000>;
+					tx_delay = <0x25000>;
+				};
+
+				delay1 {
+					reg = <0>;
+					speed = <100>;
+					rx_delay = <0x8f050>;
+					tx_delay = <0x8f050>;
+				};
+
+				delay2 {
+					reg = <0>;
+					speed = <10>;
+					rx_delay = <0x4b8000>;
+					tx_delay = <0x4b8000>;
+				};
+			};
+
+			port2: port@2 {
+				reg = <2>;
+				phy-mode = "sgmii";
+				phys = <&serdes 2 SERDES6G(0)>;
+				sfp = <&sfp_eth2>;
+				managed = "in-band-status";
+
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				delay0 {
+					reg = <0>;
+					speed = <1000>;
+					rx_delay = <0x25000>;
+					tx_delay = <0x25000>;
+				};
+
+				delay1 {
+					reg = <0>;
+					speed = <100>;
+					rx_delay = <0x8f050>;
+					tx_delay = <0x8f050>;
+				};
+
+				delay2 {
+					reg = <0>;
+					speed = <10>;
+					rx_delay = <0x4b8000>;
+					tx_delay = <0x4b8000>;
+				};
+			};
+
+			port3: port@3 {
+				reg = <3>;
+				phy-mode = "sgmii";
+				phys = <&serdes 3 SERDES6G(1)>;
+				sfp = <&sfp_eth3>;
+				managed = "in-band-status";
+
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				delay0 {
+					reg = <0>;
+					speed = <1000>;
+					rx_delay = <0x25000>;
+					tx_delay = <0x25000>;
+				};
+
+				delay1 {
+					reg = <0>;
+					speed = <100>;
+					rx_delay = <0x8f050>;
+					tx_delay = <0x8f050>;
+				};
+
+				delay2 {
+					reg = <0>;
+					speed = <10>;
+					rx_delay = <0x4b8000>;
+					tx_delay = <0x4b8000>;
+				};
+			};
+		};
+	};
+};

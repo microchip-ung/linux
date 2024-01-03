@@ -296,3 +296,8 @@ obj-$(CONFIG_MFD_ATC260X_I2C)	+= atc260x-i2c.o
 
 obj-$(CONFIG_MFD_RSMU_I2C)	+= rsmu_i2c.o rsmu_core.o
 obj-$(CONFIG_MFD_RSMU_SPI)	+= rsmu_spi.o rsmu_core.o
+
+lan966x-pci-of-objs			:= lan966x_pci_of.o lan966x_pci_irq.o
+lan966x-pci-of-objs			+= lan966x_pci.dtb.o
+
+obj-$(CONFIG_MFD_LAN966X_PCI_OF)	+= lan966x-pci-of.o
