@@ -212,4 +212,30 @@ static inline clock_t br_get_ageing_time(const struct net_device *br_dev)
 }
 #endif
 
+
+#define BR_CFM_EVENT_CCM_DEFECT (1<<0)
+#define BR_CFM_EVENT_CCM_INTERVAL (1<<1)
+#define BR_CFM_EVENT_CCM_ZERO_INTERVAL (1<<2)
+#define BR_CFM_EVENT_CCM_RDI (1<<3)
+#define BR_CFM_EVENT_CCM_PRIO (1<<4)
+#define BR_CFM_EVENT_CCM_MEPID (1<<5)
+#define BR_CFM_EVENT_CCM_MEGID (1<<6)
+#define BR_CFM_EVENT_CCM_LEVEL (1<<7)
+
+struct br_cfm_notif_info {
+	u32 instance;
+	u32 peer_mepid;
+	u32 events;
+	bool ccm_defect;
+};
+
+#if IS_ENABLED(CONFIG_BRIDGE_CFM)
+void br_cfm_notification(struct net_device *dev, const struct br_cfm_notif_info *const notif_info);
+#else
+static inline void
+br_cfm_notification(struct net_device *dev, const struct br_cfm_notif_info *const notif_info)
+{
+}
+#endif
+
 #endif
