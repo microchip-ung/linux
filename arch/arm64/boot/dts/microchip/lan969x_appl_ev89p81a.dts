@@ -1,0 +1,306 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+
+/*
+ * Copyright (c) 2022 Microchip Technology Inc. and its subsidiaries.
+ */
+
+/dts-v1/;
+
+#include "lan969x.dtsi"
+
+/ {
+	model = "lan969x appl ev89p81a (ung8422)";
+	aliases {
+		serial0 = &usart0;
+		i2c100 = &i2c_sfp0;
+		i2c101 = &i2c_sfp1;
+		i2c102 = &i2c_sfp2;
+		i2c103 = &i2c_sfp3;
+		i2c104 = &i2c_sfp4;
+		i2c105 = &i2c_sfp5;
+		i2c106 = &i2c_sfp6;
+		i2c107 = &i2c_sfp7;
+		i2c108 = &i2c_sfp8;
+		i2c109 = &i2c_sfp9;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	gpio-restart {
+		compatible = "gpio-restart";
+		gpios = <&gpio 60 GPIO_ACTIVE_LOW>;
+		open-source;
+		priority = <200>;
+	};
+
+	i2c-mux {
+		compatible = "i2c-mux-gpio";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c-parent = <&i2c3>;
+
+		settle-time-us = <100>; /* The signal needs to get stabilized */
+
+		mux-gpios = <&sgpio_out 28 0 GPIO_ACTIVE_HIGH
+			     &sgpio_out 28 1 GPIO_ACTIVE_HIGH
+			     &sgpio_out 28 2 GPIO_ACTIVE_HIGH
+			     &sgpio_out 28 3 GPIO_ACTIVE_HIGH>;
+		idle-state = <0x10>;
+
+		i2c_sfp0: i2c-sfp0 {
+			reg = <0x0>;
+		};
+
+		i2c_sfp1: i2c-sfp1 {
+			reg = <0x1>;
+		};
+
+		i2c_sfp2: i2c-sfp2 {
+			reg = <0x2>;
+		};
+
+		i2c_sfp3: i2c-sfp3 {
+			reg = <0x3>;
+		};
+
+		i2c_sfp4: i2c-sfp4 {
+			reg = <0x4>;
+		};
+
+		i2c_sfp5: i2c-sfp5 {
+			reg = <0x5>;
+		};
+
+		i2c_sfp6: i2c-sfp6 {
+			reg = <0x6>;
+		};
+
+		i2c_sfp7: i2c-sfp7 {
+			reg = <0x7>;
+		};
+
+		i2c_sfp8: i2c-sfp8 {
+			reg = <0x8>;
+		};
+
+		i2c_sfp9: i2c-sfp9 {
+			reg = <0x9>;
+		};
+	};
+
+	switch_vtss: switch_vtss@e0000000 {
+		compatible = "mchp,lan969x-switch-appl";
+		reg = <0xe00c0000 0x0010000>,
+		      <0xe2010000 0x1410000>;
+		reg-names = "cpu", "dev";
+
+		interrupts = <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 88 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "xtr", "fdma";
+	};
+
+	switch_ifmux {
+		compatible = "microchip,lan969x-ifmux";
+		status = "okay";
+	};
+};
+
+&flx0 {
+	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_USART>;
+	status = "okay";
+
+	usart0: serial@200 {
+		pinctrl-0 = <&fc0_pins>;
+		pinctrl-names = "default";
+		status = "okay";
+	};
+};
+
+&flx1 {
+	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_USART>;
+	status = "okay";
+
+	usart1: serial@200 {
+		pinctrl-0 = <&fc1_pins>;
+		pinctrl-names = "default";
+		status = "okay";
+	};
+};
+
+&flx2 {
+	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_SPI>;
+	status = "okay";
+
+	spi2: spi@400 {
+		pinctrl-0 = <&fc2_pins>;
+		pinctrl-names = "default";
+		cs-gpios = <&gpio 63 GPIO_ACTIVE_LOW>;
+		status = "okay";
+
+		spi@0 {
+			compatible = "mchp,synce_dpll";
+			reg = <0>;
+			spi-max-frequency = <8000000>;
+		};
+	};
+};
+
+&flx3 {
+	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_TWI>;
+	status = "okay";
+
+	i2c3: i2c@600 {
+		pinctrl-0 = <&fc3_pins>;
+		pinctrl-names = "default";
+		i2c-analog-filter;
+		i2c-digital-filter;
+		i2c-digital-filter-width-ns = <35>;
+		i2c-sda-hold-time-ns = <1500>;
+		status = "okay";
+	};
+};
+
+&gpio {
+	emmc_sd_pins: emmc-sd-pins {
+		/* eMMC_SD - CMD, CLK, D0, D1, D2, D3, D4, D5, D6, D7, RSTN */
+		pins = "GPIO_14", "GPIO_15", "GPIO_16", "GPIO_17",
+		       "GPIO_18", "GPIO_19", "GPIO_20", "GPIO_21",
+		       "GPIO_22", "GPIO_23", "GPIO_24";
+		function = "emmc_sd";
+	};
+
+	fc0_pins: fc0-pins {
+		pins = "GPIO_3", "GPIO_4";
+		function = "fc";
+	};
+
+	fc1_pins: fc1-pins {
+		pins = "GPIO_28", "GPIO_29";
+		function = "fc";
+	};
+
+	fc2_pins: fc2-pins {
+		pins = "GPIO_64", "GPIO_65", "GPIO_66";
+		function = "fc";
+	};
+
+	fc3_pins: fc3-pins {
+		pins = "GPIO_55", "GPIO_56";
+		function = "fc";
+	};
+
+	sgpio_pins: sgpio-pins {
+		/* SCK, D0, D1, LD */
+		pins = "GPIO_5", "GPIO_6", "GPIO_7", "GPIO_8";
+		function = "sgpio_a";
+	};
+
+	usb_ulpi_pins: usb-ulpi-pins {
+		pins = "GPIO_30", "GPIO_31", "GPIO_32", "GPIO_33",
+		"GPIO_34", "GPIO_35", "GPIO_36", "GPIO_37",
+		"GPIO_38", "GPIO_39", "GPIO_40", "GPIO_41";
+		function = "usb_ulpi";
+	};
+
+	usb_rst_pins: usb-rst-pins {
+		pins = "GPIO_12";
+		function = "usb2phy_rst";
+	};
+
+	usb_over_pins: usb-over-pins {
+		pins = "GPIO_13";
+		function = "usb_over_detect";
+	};
+
+	usb_power_pins: usb-power-pins {
+		pins = "GPIO_1";
+		function = "usb_power";
+	};
+};
+
+&gpio {
+	/delete-property/ interrupts;
+	/delete-property/ interrupt-controller;
+	/delete-property/ #interrupt-cells;
+};
+
+&qspi0 {
+	status = "okay";
+
+	spi-flash@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <104000000>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+		spi-tx-bus-width = <1>;
+		spi-rx-bus-width = <4>;
+		m25p,fast-read;
+	};
+};
+
+&sdmmc0 {
+	pinctrl-0 = <&emmc_sd_pins>;
+	pinctrl-names = "default";
+	max-frequency = <100000000>;
+	bus-width = <8>;
+	mmc-ddr-1_8v;
+	mmc-hs200-1_8v;
+	non-removable;
+	disable-wp;
+	status = "okay";
+};
+
+&sgpio_in {
+	/delete-property/ interrupts;
+	/delete-property/ interrupt-controller;
+	/delete-property/ #interrupt-cells;
+};
+
+&sgpio {
+	pinctrl-0 = <&sgpio_pins>;
+	pinctrl-names = "default";
+
+	microchip,sgpio-port-ranges = <0 28>;
+	bus-frequency = <3000000>;
+	status = "okay";
+
+	gpio@0 {
+		ngpios = <128>;
+	};
+	gpio@1 {
+		ngpios = <128>;
+	};
+};
+
+&uio0 {
+	interrupts = <GIC_SPI 17 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI  8 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI  9 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 74 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 16 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 15 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 111 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 112 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 113 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 114 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 115 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 116 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 117 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 118 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 119 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 120 IRQ_TYPE_LEVEL_HIGH>;
+	interrupt-names = "master", "ptp_sync", "ptp_rdy", "oam_vop",
+			  "sgpio", "gpio", "sd10g_kr0", "sd10g_kr1",
+			  "sd10g_kr2", "sd10g_kr3", "sd10g_kr4",
+			  "sd10g_kr5", "sd10g_kr6", "sd10g_kr7",
+			  "sd10g_kr8", "sd10g_kr9";
+};
+
+&usb0 {
+	status = "okay";
+	pinctrl-0 = <&usb_ulpi_pins>, <&usb_rst_pins>, <&usb_over_pins>, <&usb_power_pins>;
+	pinctrl-names = "default";
+};

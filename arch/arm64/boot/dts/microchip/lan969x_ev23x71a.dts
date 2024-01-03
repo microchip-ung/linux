@@ -1,292 +1,209 @@
-// SPDX-License-Identifier: GPL-2.0
-/dts-v1/;
-#include "../../../../arm/boot/dts/broadcom/bcm2711-rpi-cm4-pci.dtsi"
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 
-#include <dt-bindings/mfd/atmel-flexcom.h>
-#include <dt-bindings/clock/microchip,lan966x.h>
+/*
+ * Copyright (c) 2022 Microchip Technology Inc. and its subsidiaries.
+ */
+
+/dts-v1/;
+
+#include "lan969x.dtsi"
 
 / {
+	model = "lan969x ev23x71a (pcb8398)";
 	aliases {
+		serial0 = &usart0;
 	};
-};
 
-&emmc2 {
-	status = "okay";
-};
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
 
-&pcie0 {
-	/* root bus resource [mem 0x600000000-0x63fffffff] (bus address [0xc0000000-0xffffffff])
-	 * CSR:  BAR 0: [0x600000000-0x601ffffff]: 32MB => [0xc0000000-0xc01ffffff] => 0xe2000000
-	 * CPU:  BAR 1: [0x602000000-0x602ffffff]: 16MB => [0xc0200000-0xc02ffffff] => 0xe0000000
-	 * SRAM: BAR 4: [0x603000000-0x60301ffff]: 128KB
-	 * ATU:  BAR 5: [0x603020000-0x603021fff]: 8KB
-	 * sbc does the last mapping:
-	 *   ranges = <0x02000000 0x0 0xc0000000 0x6 0x00000000 0x0 0x40000000>;
-	 */
+	gpio-restart {
+		compatible = "gpio-restart";
+		gpios = <&gpio 60 GPIO_ACTIVE_LOW>;
+		open-source;
+		priority = <200>;
+	};
 
-	pci@0,0 {
-		#address-cells = <3>;
-		#size-cells = <2>;
-		device_type = "pci";
+	i2c-mux {
+		compatible = "i2c-mux-gpio";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c-parent = <&i2c3>;
 
-		reg = <0 0 0 0 0>;
-		ranges = <0x02000000 0x0 0xc0000000 0x02000000 0x0 0xc0000000 0x0 0x40000000>;
+		mux-gpios = <&sgpio_out 0 1 GPIO_ACTIVE_HIGH
+			     &sgpio_out 0 2 GPIO_ACTIVE_HIGH
+			     &sgpio_out 0 3 GPIO_ACTIVE_HIGH>;
+		idle-state = <0x8>;
 
-		lan969x: ep_lan969x@0,0 {
-			compatible = "pci1055,9690";
+		i2c_sfp0: i2c-sfp0 {
+			reg = <0x0>;
+		};
 
-			reg = <0 0 0 0 0>;
-			#address-cells = <1>;
-			#size-cells = <1>;
+		i2c_sfp1: i2c-sfp1 {
+			reg = <0x1>;
+		};
 
-			ranges = <0xe2000000 0x02000000 0x0 0xc0000000 0x02000000>,
-			         <0xe0000000 0x02000000 0x0 0xc2000000 0x01000000>;
+		i2c_sfp2: i2c-sfp2 {
+			reg = <0x2>;
+		};
 
-			#interrupt-cells = <2>;
-			interrupt-controller;
-			interrupt-parent = <&lan969x>;
+		i2c_sfp3: i2c-sfp3 {
+			reg = <0x3>;
+		};
 
-			clocks {
-				fx100_clk: fx100-clk {
-					compatible = "fixed-clock";
-					#clock-cells = <0>;
-					clock-frequency = <320000000>;
-				};
-
-				fabric_clk: fabric-clk {
-					compatible = "fixed-clock";
-					#clock-cells = <0>;
-					clock-frequency = <250000000>;
-				};
-			};
-
-			cpu_ctrl: syscon@e00c0000 {
-				compatible = "microchip,lan966x-cpu-syscon", "syscon";
-				reg = <0xe00c0000 0x350>;
-			};
-
-			lan969x_gpio: pinctrl@e20100d4 {
-				compatible = "microchip,lan969x-pinctrl";
-				reg = <0xe20100d4 0xd4>,
-				      <0xe2010370 0xa8>;
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-ranges = <&lan969x_gpio 0 0 66>;
-				interrupt-controller;
-				interrupts = <15 IRQ_TYPE_LEVEL_HIGH>;
-				#interrupt-cells = <2>;
-				#address-cells = <1>;
-			};
-
-			mdio0: mdio@e20101a8 {
-				compatible = "mscc,ocelot-miim";
-				#address-cells = <1>;
-				#size-cells = <0>;
-				reg = <0xe20101a8 0x24>;
-				clocks = <&fx100_clk>;
-				status = "disabled";
-			};
-
-			sgpio: gpio@e2010230 {
-				compatible = "microchip,sparx5-sgpio";
-				reg = <0xe2010230 0x118>;
-				clocks = <&fx100_clk>;
-				#address-cells = <1>;
-				#size-cells = <0>;
-				status = "disabled";
-
-				sgpio_in: gpio@0 {
-					compatible = "microchip,sparx5-sgpio-bank";
-					reg = <0>;
-					gpio-controller;
-					#gpio-cells = <3>;
-					interrupts = <16 IRQ_TYPE_LEVEL_HIGH>;
-					interrupt-controller;
-					#interrupt-cells = <3>;
-					#adress-cells = <0>;
-				};
-
-				sgpio_out: gpio@1 {
-					compatible = "microchip,sparx5-sgpio-bank";
-					reg = <1>;
-					gpio-controller;
-					#gpio-cells = <3>;
-				};
-			};
-
-			lan969x_flx3: flexcom@e0064000 {
-				compatible = "atmel,sama5d2-flexcom";
-				reg = <0xe0064000 0x100>;
-				clocks = <&fabric_clk>;
-				#address-cells = <1>;
-				#size-cells = <1>;
-				ranges = <0x0 0xe0064000 0x800>;
-
-				atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_TWI>;
-				status = "okay";
-
-				lan969x_i2c3: i2c@600 {
-					compatible = "microchip,sam9x60-i2c";
-					reg = <0x600 0x200>;
-					interrupts = <49 IRQ_TYPE_LEVEL_HIGH>;
-					clocks = <&fabric_clk>;
-					#address-cells = <1>;
-					#size-cells = <0>;
-					pinctrl-0 = <&fc3_pins>;
-					pinctrl-names = "default";
-					i2c-analog-filter;
-					i2c-digital-filter;
-					i2c-digital-filter-width-ns = <35>;
-					i2c-sda-hold-time-ns = <1500>;
-					status = "okay";
-				};
-			};
-
-			i2c-mux {
-				compatible = "i2c-mux-gpio";
-				#address-cells = <1>;
-				#size-cells = <0>;
-				i2c-parent = <&lan969x_i2c3>;
-
-				mux-gpios = <&sgpio_out 0 1 GPIO_ACTIVE_HIGH
-					     &sgpio_out 0 2 GPIO_ACTIVE_HIGH
-					     &sgpio_out 0 3 GPIO_ACTIVE_HIGH>;
-				idle-state = <0x8>;
-
-				i2c_sfp0: i2c-sfp0 {
-					reg = <0x0>;
-				};
-
-				i2c_sfp1: i2c-sfp1 {
-					reg = <0x1>;
-				};
-
-				i2c_sfp2: i2c-sfp2 {
-					reg = <0x2>;
-				};
-
-				i2c_sfp3: i2c-sfp3 {
-					reg = <0x3>;
-				};
-			};
-
-			sfp0: sfp0 {
-				compatible = "sff,sfp";
-				i2c-bus = <&i2c_sfp0>;
-				tx-disable-gpios = <&sgpio_out 6 2 GPIO_ACTIVE_HIGH>;
-				los-gpios = <&sgpio_in 6 0 GPIO_ACTIVE_HIGH>;
-				mod-def0-gpios = <&sgpio_in 6 1 GPIO_ACTIVE_LOW>;
-				tx-fault-gpios = <&sgpio_in 6 2 GPIO_ACTIVE_HIGH>;
-			};
-
-			sfp1: sfp1 {
-				compatible = "sff,sfp";
-				i2c-bus = <&i2c_sfp1>;
-				tx-disable-gpios = <&sgpio_out 7 2 GPIO_ACTIVE_HIGH>;
-				los-gpios = <&sgpio_in 7 0 GPIO_ACTIVE_HIGH>;
-				mod-def0-gpios = <&sgpio_in 7 1 GPIO_ACTIVE_LOW>;
-				tx-fault-gpios = <&sgpio_in 7 2 GPIO_ACTIVE_HIGH>;
-			};
-
-			sfp2: sfp2 {
-				compatible = "sff,sfp";
-				i2c-bus = <&i2c_sfp2>;
-				tx-disable-gpios = <&sgpio_out 8 2 GPIO_ACTIVE_HIGH>;
-				los-gpios = <&sgpio_in 8 0 GPIO_ACTIVE_HIGH>;
-				mod-def0-gpios = <&sgpio_in 8 1 GPIO_ACTIVE_LOW>;
-				tx-fault-gpios = <&sgpio_in 8 2 GPIO_ACTIVE_HIGH>;
-			};
-
-			sfp3: sfp3 {
-				compatible = "sff,sfp";
-				i2c-bus = <&i2c_sfp3>;
-				tx-disable-gpios = <&sgpio_out 9 2 GPIO_ACTIVE_HIGH>;
-				los-gpios = <&sgpio_in 9 0 GPIO_ACTIVE_HIGH>;
-				mod-def0-gpios = <&sgpio_in 9 1 GPIO_ACTIVE_LOW>;
-				tx-fault-gpios = <&sgpio_in 9 2 GPIO_ACTIVE_HIGH>;
-			};
-
-			lan969x_switch: switch@e0000000 {
-				compatible = "microchip,lan969x-switch";
-				reg = <0xe00c0000 0x800000>,
-				      <0xe2010000 0x1410000>;
-				reg-names = "cpu", "dev";
-				interrupt-names = "xtr", "fdma", "ptp", "ptp-ext";
-				interrupts = <10 IRQ_TYPE_LEVEL_HIGH>,
-					     <88 IRQ_TYPE_LEVEL_HIGH>,
-					     <9 IRQ_TYPE_LEVEL_HIGH>,
-					     <8 IRQ_TYPE_LEVEL_HIGH>;
-			};
-
-			serdes: serdes@e3410000 {
-				compatible = "microchip,lan969x-serdes";
-				#phy-cells = <1>;
-				clocks = <&fabric_clk>;
-				reg = <0xe3410000 0x150000>;
-			};
-
-			leds {
-				compatible = "gpio-leds";
-
-				led-s6-green {
-					label = "s6:green";
-					gpios = <&sgpio_out 6 0 GPIO_ACTIVE_LOW>;
-					default-state = "off";
-				};
-
-				led-s6-yellow {
-					label = "s6:yellow";
-					gpios = <&sgpio_out 6 1 GPIO_ACTIVE_LOW>;
-					default-state = "off";
-				};
-
-				led-s7-green {
-					label = "s7:green";
-					gpios = <&sgpio_out 7 0 GPIO_ACTIVE_LOW>;
-					default-state = "off";
-				};
-
-				led-s7-yellow {
-					label = "s7:yellow";
-					gpios = <&sgpio_out 7 1 GPIO_ACTIVE_LOW>;
-					default-state = "off";
-				};
-
-				led-s8-green {
-					label = "s8:green";
-					gpios = <&sgpio_out 8 0 GPIO_ACTIVE_LOW>;
-					default-state = "off";
-				};
-
-				led-s8-yellow {
-					label = "s8:yellow";
-					gpios = <&sgpio_out 8 1 GPIO_ACTIVE_LOW>;
-					default-state = "off";
-				};
-
-				led-s9-green {
-					label = "s9:green";
-					gpios = <&sgpio_out 9 0 GPIO_ACTIVE_LOW>;
-					default-state = "off";
-				};
-
-				led-s9-yellow {
-					label = "s9:yellow";
-					gpios = <&sgpio_out 9 1 GPIO_ACTIVE_LOW>;
-					default-state = "off";
-				};
-			};
+		i2c_poe: i2c-poe {
+			reg = <0x7>;
 		};
 	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		led-s6-green {
+			label = "s6:green";
+			gpios = <&sgpio_out 6 0 GPIO_ACTIVE_LOW>;
+			default-state = "off";
+		};
+
+		led-s6-yellow {
+			label = "s6:yellow";
+			gpios = <&sgpio_out 6 1 GPIO_ACTIVE_LOW>;
+			default-state = "off";
+		};
+
+		led-s7-green {
+			label = "s7:green";
+			gpios = <&sgpio_out 7 0 GPIO_ACTIVE_LOW>;
+			default-state = "off";
+		};
+
+		led-s7-yellow {
+			label = "s7:yellow";
+			gpios = <&sgpio_out 7 1 GPIO_ACTIVE_LOW>;
+			default-state = "off";
+		};
+
+		led-s8-green {
+			label = "s8:green";
+			gpios = <&sgpio_out 8 0 GPIO_ACTIVE_LOW>;
+			default-state = "off";
+		};
+
+		led-s8-yellow {
+			label = "s8:yellow";
+			gpios = <&sgpio_out 8 1 GPIO_ACTIVE_LOW>;
+			default-state = "off";
+		};
+
+		led-s9-green {
+			label = "s9:green";
+			gpios = <&sgpio_out 9 0 GPIO_ACTIVE_LOW>;
+			default-state = "off";
+		};
+
+		led-s9-yellow {
+			label = "s9:yellow";
+			gpios = <&sgpio_out 9 1 GPIO_ACTIVE_LOW>;
+			default-state = "off";
+		};
+	};
+
+	mux-controller {
+		compatible = "gpio-mux";
+		#mux-control-cells = <0>;
+
+		mux-gpios = <&sgpio_out 1 2 GPIO_ACTIVE_LOW>,
+			    <&sgpio_out 1 3 GPIO_ACTIVE_LOW>;
+	};
+
+	sfp0: sfp0 {
+		compatible = "sff,sfp";
+		i2c-bus = <&i2c_sfp0>;
+		tx-disable-gpios = <&sgpio_out 6 2 GPIO_ACTIVE_HIGH>;
+		los-gpios = <&sgpio_in 6 0 GPIO_ACTIVE_HIGH>;
+		mod-def0-gpios = <&sgpio_in 6 1 GPIO_ACTIVE_LOW>;
+		tx-fault-gpios = <&sgpio_in 6 2 GPIO_ACTIVE_HIGH>;
+	};
+
+	sfp1: sfp1 {
+		compatible = "sff,sfp";
+		i2c-bus = <&i2c_sfp1>;
+		tx-disable-gpios = <&sgpio_out 7 2 GPIO_ACTIVE_HIGH>;
+		los-gpios = <&sgpio_in 7 0 GPIO_ACTIVE_HIGH>;
+		mod-def0-gpios = <&sgpio_in 7 1 GPIO_ACTIVE_LOW>;
+		tx-fault-gpios = <&sgpio_in 7 2 GPIO_ACTIVE_HIGH>;
+	};
+
+	sfp2: sfp2 {
+		compatible = "sff,sfp";
+		i2c-bus = <&i2c_sfp2>;
+		tx-disable-gpios = <&sgpio_out 8 2 GPIO_ACTIVE_HIGH>;
+		los-gpios = <&sgpio_in 8 0 GPIO_ACTIVE_HIGH>;
+		mod-def0-gpios = <&sgpio_in 8 1 GPIO_ACTIVE_LOW>;
+		tx-fault-gpios = <&sgpio_in 8 2 GPIO_ACTIVE_HIGH>;
+	};
+
+	sfp3: sfp3 {
+		compatible = "sff,sfp";
+		i2c-bus = <&i2c_sfp3>;
+		tx-disable-gpios = <&sgpio_out 9 2 GPIO_ACTIVE_HIGH>;
+		los-gpios = <&sgpio_in 9 0 GPIO_ACTIVE_HIGH>;
+		mod-def0-gpios = <&sgpio_in 9 1 GPIO_ACTIVE_LOW>;
+		tx-fault-gpios = <&sgpio_in 9 2 GPIO_ACTIVE_HIGH>;
+	};
 };
 
-&lan969x_gpio {
+&flx0 {
+	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_USART>;
+	status = "okay";
+
+	usart0: serial@200 {
+		pinctrl-0 = <&fc0_pins>;
+		pinctrl-names = "default";
+		status = "okay";
+	};
+};
+
+&flx2 {
+	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_SPI>;
+	status = "okay";
+
+	spi2: spi@400 {
+		pinctrl-0 = <&fc2_pins>;
+		pinctrl-names = "default";
+		cs-gpios = <&gpio 63 GPIO_ACTIVE_LOW>;
+		status = "okay";
+	};
+};
+
+&flx3 {
+	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_TWI>;
+	status = "okay";
+
+	i2c3: i2c@600 {
+		pinctrl-0 = <&fc3_pins>;
+		pinctrl-names = "default";
+		i2c-analog-filter;
+		i2c-digital-filter;
+		i2c-digital-filter-width-ns = <35>;
+		i2c-sda-hold-time-ns = <1500>;
+		status = "okay";
+	};
+};
+
+&gpio {
 	emmc_sd_pins: emmc-sd-pins {
 		/* eMMC_SD - CMD, CLK, D0, D1, D2, D3, D4, D5, D6, D7, RSTN */
 		pins = "GPIO_14", "GPIO_15", "GPIO_16", "GPIO_17",
 		       "GPIO_18", "GPIO_19", "GPIO_20", "GPIO_21",
 		       "GPIO_22", "GPIO_23", "GPIO_24";
 		function = "emmc_sd";
+	};
+
+	fan_pins: fan-pins {
+		pins = "GPIO_25", "GPIO_26";
+		function = "fan";
 	};
 
 	fc0_pins: fc0-pins {
@@ -353,161 +270,196 @@
 	};
 };
 
+&hwmon {
+	pinctrl-0 = <&fan_pins>;
+	pinctrl-names = "default";
+};
+
 &mdio0 {
 	pinctrl-0 = <&mdio_pins>, <&mdio_irq_pins>;
 	pinctrl-names = "default";
-	reset-gpios = <&lan969x_gpio 62 GPIO_ACTIVE_LOW>;
+	reset-gpios = <&gpio 62 GPIO_ACTIVE_LOW>;
 	status = "okay";
 
 	phy3: phy@3 {
 		reg = <3>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy4: phy@4 {
 		reg = <4>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy5: phy@5 {
 		reg = <5>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy6: phy@6 {
 		reg = <6>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy7: phy@7 {
 		reg = <7>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy8: phy@8 {
 		reg = <8>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy9: phy@9 {
 		reg = <9>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy10: phy@10 {
 		reg = <10>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy11: phy@11 {
 		reg = <11>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy12: phy@12 {
 		reg = <12>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy13: phy@13 {
 		reg = <13>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy14: phy@14 {
 		reg = <14>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy15: phy@15 {
 		reg = <15>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy16: phy@16 {
 		reg = <16>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy17: phy@17 {
 		reg = <17>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy18: phy@18 {
 		reg = <18>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy19: phy@19 {
 		reg = <19>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy20: phy@20 {
 		reg = <20>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy21: phy@21 {
 		reg = <21>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy22: phy@22 {
 		reg = <22>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy23: phy@23 {
 		reg = <23>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy24: phy@24 {
 		reg = <24>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy25: phy@25 {
 		reg = <25>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy26: phy@26 {
 		reg = <26>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
 
 	phy27: phy@27 {
 		reg = <27>;
 		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		interrupt-parent = <&lan969x_gpio>;
+		interrupt-parent = <&gpio>;
 	};
+};
+
+&qspi0 {
+	status = "okay";
+
+	spi-flash@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <104000000>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+		spi-tx-bus-width = <1>;
+		spi-rx-bus-width = <4>;
+		m25p,fast-read;
+	};
+};
+
+&serdes {
+	status = "okay";
+};
+
+&sdmmc0 {
+	pinctrl-0 = <&emmc_sd_pins>;
+	pinctrl-names = "default";
+	max-frequency = <100000000>;
+	bus-width = <8>;
+	non-removable;
+	no-1-8-v;
+	disable-wp;
+	status = "okay";
 };
 
 &sgpio {
@@ -525,11 +477,7 @@
 	};
 };
 
-&serdes {
-	status = "okay";
-};
-
-&lan969x_switch {
+&switch {
 	pinctrl-0 = <&ptp_out_pins>, <&ptp_ext_pins>;
 	pinctrl-names = "default";
 
@@ -736,7 +684,7 @@
 			phys = <&serdes 6>;
 			phy-mode = "10gbase-r";
 			sfp = <&sfp0>;
-			microchip,sd-sgpio = <365>;
+			microchip,sd-sgpio = <24>;
 			managed = "in-band-status";
 		};
 
@@ -746,7 +694,7 @@
 			phys = <&serdes 7>;
 			phy-mode = "10gbase-r";
 			sfp = <&sfp1>;
-			microchip,sd-sgpio = <369>;
+			microchip,sd-sgpio = <28>;
 			managed = "in-band-status";
 		};
 
@@ -756,7 +704,7 @@
 			phys = <&serdes 8>;
 			phy-mode = "10gbase-r";
 			sfp = <&sfp2>;
-			microchip,sd-sgpio = <373>;
+			microchip,sd-sgpio = <32>;
 			managed = "in-band-status";
 		};
 
@@ -766,10 +714,9 @@
 			phys = <&serdes 9>;
 			phy-mode = "10gbase-r";
 			sfp = <&sfp3>;
-			microchip,sd-sgpio = <377>;
+			microchip,sd-sgpio = <36>;
 			managed = "in-band-status";
 		};
-
 		port29: port@29 {
 			reg = <29>;
 			microchip,bandwidth = <1000>;
@@ -777,4 +724,10 @@
 			phy-mode = "rgmii";
 		};
 	};
+};
+
+&usb0 {
+	status = "okay";
+	pinctrl-0 = <&usb_ulpi_pins>, <&usb_rst_pins>, <&usb_over_pins>, <&usb_power_pins>;
+	pinctrl-names = "default";
 };
