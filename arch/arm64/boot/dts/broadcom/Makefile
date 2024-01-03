@@ -6,6 +6,8 @@ DTC_FLAGS := -@
 dtb-$(CONFIG_ARCH_BCM2835) += bcm2711-rpi-400.dtb \
 			      bcm2711-rpi-4-b.dtb \
 			      bcm2711-rpi-cm4-io.dtb \
+			      bcm2711-rpi-cm4-lan966x.dtb \
+			      bcm2711-rpi-cm4-lan969x.dtb \
 			      bcm2712-rpi-5-b.dtb \
 			      bcm2712-rpi-5-b-ovl-rp1.dtb \
 			      bcm2712-d-rpi-5-b.dtb \
@@ -20,3 +22,4 @@ dtb-$(CONFIG_ARCH_BCM2835) += bcm2711-rpi-400.dtb \
 subdir-y	+= bcmbca
 subdir-y	+= northstar2
 subdir-y	+= stingray
+subdir-y	+= microchip

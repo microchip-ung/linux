@@ -1,0 +1,459 @@
+// SPDX-License-Identifier: GPL-2.0
+/dts-v1/;
+#include "bcm2711-rpi-cm4-pci.dtsi"
+
+#include <dt-bindings/phy/phy-lan966x-serdes.h>
+#include <dt-bindings/mfd/atmel-flexcom.h>
+#include <dt-bindings/clock/microchip,lan966x.h>
+
+/ {
+	aliases {
+		i2c102 = &i2c102;
+		i2c103 = &i2c103;
+	};
+};
+
+&emmc2 {
+	status = "okay";
+};
+
+&pcie0 {
+	pci@0,0 {
+		#address-cells = <3>;
+		#size-cells = <2>;
+		device_type = "pci";
+
+		reg = <0 0 0 0 0>;
+		ranges = <0x00000000 0x6 0x00000000  0x02000000 0x0 0xc0000000  0x0 0x40000000>;
+
+		lan966x: switch@0,0 {
+			compatible = "pci1055,9660";
+
+			reg = <0x0000 0 0 0 0>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			ranges = <0x00000000 0x0000000 0x6 0x00000000 0x40000000>;
+
+			#interrupt-cells = <1>;
+			interrupt-controller;
+			interrupt-parent = <&lan966x>;
+
+			leds {
+				compatible = "gpio-leds";
+				led@0 {
+					label = "s0:green";
+					gpios = <&sgpio_out0 2 0 GPIO_ACTIVE_LOW>;
+					default-state = "off";
+				};
+				led@1 {
+					label = "s0:red";
+					gpios = <&sgpio_out0 2 1 GPIO_ACTIVE_LOW>;
+					default-state = "off";
+				};
+				led@2 {
+					label = "s1:green";
+					gpios = <&sgpio_out0 3 0 GPIO_ACTIVE_LOW>;
+					default-state = "off";
+				};
+				led@3 {
+					label = "s1:red";
+					gpios = <&sgpio_out0 3 1 GPIO_ACTIVE_LOW>;
+					default-state = "off";
+				};
+				led@4 {
+					label = "cu0:green";
+					gpios = <&sgpio_out0 0 0 GPIO_ACTIVE_LOW>;
+					default-state = "off";
+					linux,default-trigger = "60000413c.mdio-mii:01:link";
+				};
+				led@5 {
+					label = "cu0:red";
+					gpios = <&sgpio_out0 0 1 GPIO_ACTIVE_LOW>;
+					default-state = "off";
+				};
+				led@6 {
+					label = "cu1:green";
+					gpios = <&sgpio_out0 1 0 GPIO_ACTIVE_LOW>;
+					default-state = "off";
+					linux,default-trigger = "60000413c.mdio-mii:02:link";
+				};
+				led@7 {
+					label = "cu1:red";
+					gpios = <&sgpio_out0 1 1 GPIO_ACTIVE_LOW>;
+					default-state = "off";
+				};
+			};
+
+			clocks {
+				cpu_clk: cpu_clk {
+					compatible = "fixed-clock";
+					#clock-cells = <0>;
+					clock-frequency = <600000000>;  // CPU clock = 600MHz
+				};
+
+				fabric_clk: fabric_clk {
+					compatible = "fixed-clock";
+					#clock-cells = <0>;
+					clock-frequency = <30000000>;  // Fabric clock = 30MHz
+				};
+
+				sys_clk: sys_clk {
+					compatible = "fixed-clock";
+					#clock-cells = <0>;
+					clock-frequency = <15625000>;  // System clock = 15.625MHz
+				};
+
+				nic_clk: nic_clk {
+					compatible = "fixed-clock";
+					#clock-cells = <0>;
+					clock-frequency = <200000000>;  // NIC clock = 200MHz
+				};
+			};
+
+			cpu_ctrl: syscon@e00c0000 {
+				compatible = "microchip,lan966x-cpu-syscon", "syscon";
+				reg = <0x20c0000 0x350>;
+			};
+
+			switch_reset: reset-controller@e200400c {
+				compatible = "microchip,lan966x-switch-reset";
+				reg = <0x400c 0x4>;
+				reg-names = "gcb";
+				#reset-cells = <1>;
+				cpu-syscon = <&cpu_ctrl>;
+			};
+
+			flx0: flexcom@e0070000 {
+				compatible = "atmel,sama5d2-flexcom";
+				reg = <0x02040000 0x00000100>;
+				clocks = <&fabric_clk>;
+				#address-cells = <1>;
+				#size-cells = <1>;
+				ranges = <0x0 0x02040000 0x800>;
+
+				atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_TWI>;
+				status = "okay";
+
+				i2c_lan966x: i2c@600 {
+					compatible = "microchip,sam9x60-i2c";
+					reg = <0x600 0x200>;
+					interrupts = <48>;
+					#address-cells = <1>;
+					#size-cells = <0>;
+					clocks = <&nic_clk>;
+					pinctrl-0 = <&fc0_a_rx_pins>, <&fc0_a_tx_pins>;
+					pinctrl-names = "default";
+					i2c-analog-filter;
+					i2c-digital-filter;
+					i2c-digital-filter-width-ns = <35>;
+					i2c-sda-hold-time-ns = <1500>;
+					status = "okay";
+				};
+			};
+
+			sgpio0: gpio@61101036c {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				compatible = "microchip,sparx5-sgpio";
+				clocks = <&fabric_clk>;
+				pinctrl-0 = <&sgpio_a_pins>;
+				pinctrl-names = "default";
+				bus-frequency = <6000000>;
+				resets = <&switch_reset 0>;
+				reset-names = "switch";
+				reg = <0x00004190 0x00000118>;
+				microchip,sgpio-port-ranges = <0 3>, <8 11>;
+				sgpio_in0: gpio@0 {
+					compatible = "microchip,sparx5-sgpio-bank";
+					reg = <0>;
+					gpio-controller;
+					#gpio-cells = <3>;
+					ngpios = <64>;
+					interrupts = <GIC_SPI 18 IRQ_TYPE_LEVEL_HIGH>;
+					interrupt-controller;
+					#interrupt-cells = <3>;
+				};
+				sgpio_out0: gpio@1 {
+					compatible = "microchip,sparx5-sgpio-bank";
+					reg = <1>;
+					gpio-controller;
+					#gpio-cells = <3>;
+					ngpios = <64>;
+				};
+			};
+
+			lan966x_gpio: pinctrl@e2004070 {
+				compatible = "microchip,lan966x-pinctrl";
+				reg = <0x00004064 0x000000b4>,
+				      <0x00010024 0x00000138>;
+				gpio-controller;
+				#gpio-cells = <2>;
+				gpio-ranges = <&lan966x_gpio 0 0 78>;
+				status = "okay";
+
+				tod_pins: tod_pins {
+					pins = "GPIO_36";
+					function = "ptpsync_1";
+				};
+
+				fc0_a_rx_pins: fc0-a-rx-pins {
+					pins = "GPIO_9";
+					function = "fc0_a";
+				};
+
+				fc0_a_tx_pins: fc0-a-tx-pins {
+					pins = "GPIO_10";
+					function = "fc0_a";
+				};
+
+				i2cmux_pins: i2cmux-pins {
+					pins = "GPIO_76", "GPIO_77";
+					function = "twi_slc_gate";
+					output-low;
+				};
+
+				i2cmux_0: i2cmux-0 {
+					pins = "GPIO_76";
+					function = "twi_slc_gate";
+					output-high;
+				};
+
+				i2cmux_1: i2cmux-1 {
+					pins = "GPIO_77";
+					function = "twi_slc_gate";
+					output-high;
+				};
+
+				sgpio_a_pins: sgpio-pins {
+					pins = "GPIO_32", "GPIO_33";
+					function = "sgpio_a";
+				};
+			};
+
+			i2c0_emux: i2c0-emux@0 {
+				compatible = "i2c-mux-pinctrl";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				i2c-parent = <&i2c_lan966x>;
+				pinctrl-names = "i2c102", "i2c103", "idle";
+				pinctrl-0 = <&i2cmux_0>;
+				pinctrl-1 = <&i2cmux_1>;
+				pinctrl-2 = <&i2cmux_pins>;
+
+				i2c102: i2c_sfp1 {
+					reg = <0>;
+					#address-cells = <1>;
+					#size-cells = <0>;
+				};
+
+				i2c103: i2c_sfp2 {
+					reg = <1>;
+					#address-cells = <1>;
+					#size-cells = <0>;
+				};
+			};
+
+			sfp_eth2: sfp-eth2 {
+				compatible       = "sff,sfp";
+				i2c-bus          = <&i2c102>;
+				tx-disable-gpios = <&lan966x_gpio  0 GPIO_ACTIVE_HIGH>;
+				los-gpios        = <&lan966x_gpio 25 GPIO_ACTIVE_HIGH>;
+				mod-def0-gpios   = <&lan966x_gpio 18 GPIO_ACTIVE_LOW>;
+				tx-fault-gpios   = <&lan966x_gpio  2 GPIO_ACTIVE_HIGH>;
+			};
+
+			sfp_eth3: sfp-eth3 {
+				compatible       = "sff,sfp";
+				i2c-bus          = <&i2c103>;
+				tx-disable-gpios = <&lan966x_gpio  1 GPIO_ACTIVE_HIGH>;
+				los-gpios        = <&lan966x_gpio 26 GPIO_ACTIVE_HIGH>;
+				mod-def0-gpios   = <&lan966x_gpio 19 GPIO_ACTIVE_LOW>;
+				tx-fault-gpios   = <&lan966x_gpio  3 GPIO_ACTIVE_HIGH>;
+			};
+
+			serdes: serdes@e202c000 {
+				compatible = "microchip,lan966x-serdes";
+				reg = <0x0002c000 0x0000009c>,
+				      <0x00004010 0x00000004>;
+				#phy-cells = <2>;
+			};
+
+			lan966x_mdio1: mdio@413c {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				compatible = "microchip,lan966x-miim";
+				reg = <0x0000413c 0x00000024>,
+				      <0x10020 0x4>;
+				status = "okay";
+
+				resets = <&switch_reset 0>;
+				reset-names = "switch";
+
+				lan966x_phy0: ethernet-lan966x_phy@0 {
+					reg = <1>;
+				};
+
+				lan966x_phy1: ethernet-lan966x_phy@1 {
+					reg = <2>;
+				};
+			};
+
+			lan966x_switch: switch@0 {
+				compatible = "microchip,lan966x-switch";
+				reg = <0x02000000 0x02000000>, /* BAR0: CSR */
+				      <0x00000000 0x01000000>; /* BAR1: CPU */
+				reg-names = "gcb", "cpu";
+				interrupts = <10 11 12 9>;
+				interrupt-names = "ptp-ext", "ptp", "xtr", "ana";
+
+				resets = <&switch_reset 0>;
+				reset-names = "switch";
+
+				pinctrl-0 = <&tod_pins>;
+				pinctrl-names = "default";
+
+				status = "okay";
+
+				ethernet-ports {
+					#address-cells = <1>;
+					#size-cells = <0>;
+
+					port0: port@0 {
+						status = "okay";
+						phy-handle = <&lan966x_phy0>;
+
+						reg = <0>;
+						phy-mode = "gmii";
+						phys = <&serdes 0 CU(0)>;
+
+						#address-cells = <1>;
+						#size-cells = <0>;
+
+						delay0 {
+							reg = <0>;
+							speed = <1000>;
+							rx_delay = <0x25000>;
+							tx_delay = <0x25000>;
+						};
+
+						delay1 {
+							reg = <0>;
+							speed = <100>;
+							rx_delay = <0x8f050>;
+							tx_delay = <0x8f050>;
+						};
+
+						delay2 {
+							reg = <0>;
+							speed = <10>;
+							rx_delay = <0x4b8000>;
+							tx_delay = <0x4b8000>;
+						};
+					};
+
+					port1: port@1 {
+						status = "okay";
+						phy-handle = <&lan966x_phy1>;
+
+						reg = <1>;
+						phy-mode = "gmii";
+						phys = <&serdes 1 CU(1)>;
+
+						#address-cells = <1>;
+						#size-cells = <0>;
+
+						delay0 {
+							reg = <0>;
+							speed = <1000>;
+							rx_delay = <0x25000>;
+							tx_delay = <0x25000>;
+						};
+
+						delay1 {
+							reg = <0>;
+							speed = <100>;
+							rx_delay = <0x8f050>;
+							tx_delay = <0x8f050>;
+						};
+
+						delay2 {
+							reg = <0>;
+							speed = <10>;
+							rx_delay = <0x4b8000>;
+							tx_delay = <0x4b8000>;
+						};
+					};
+
+					port2: port@2 {
+						status = "okay";
+
+						reg = <2>;
+						phy-mode = "sgmii";
+						phys = <&serdes 2 SERDES6G(0)>;
+						sfp = <&sfp_eth2>;
+						managed = "in-band-status";
+
+						#address-cells = <1>;
+						#size-cells = <0>;
+
+						delay0 {
+							reg = <0>;
+							speed = <1000>;
+							rx_delay = <0x25000>;
+							tx_delay = <0x25000>;
+						};
+
+						delay1 {
+							reg = <0>;
+							speed = <100>;
+							rx_delay = <0x8f050>;
+							tx_delay = <0x8f050>;
+						};
+
+						delay2 {
+							reg = <0>;
+							speed = <10>;
+							rx_delay = <0x4b8000>;
+							tx_delay = <0x4b8000>;
+						};
+					};
+
+					port3: port@3 {
+						status = "okay";
+
+						reg = <3>;
+						phy-mode = "sgmii";
+						phys = <&serdes 3 SERDES6G(1)>;
+						sfp = <&sfp_eth3>;
+						managed = "in-band-status";
+
+						#address-cells = <1>;
+						#size-cells = <0>;
+
+						delay0 {
+							reg = <0>;
+							speed = <1000>;
+							rx_delay = <0x25000>;
+							tx_delay = <0x25000>;
+						};
+
+						delay1 {
+							reg = <0>;
+							speed = <100>;
+							rx_delay = <0x8f050>;
+							tx_delay = <0x8f050>;
+						};
+
+						delay2 {
+							reg = <0>;
+							speed = <10>;
+							rx_delay = <0x4b8000>;
+							tx_delay = <0x4b8000>;
+						};
+					};
+				};
+			};
+		};
+	};
+};
