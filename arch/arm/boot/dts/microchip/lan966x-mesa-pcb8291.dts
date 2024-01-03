@@ -1,0 +1,76 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * lan966x-mesa-pcb8291.dts - Device Tree file for PCB8291
+ */
+/dts-v1/;
+#include "lan966x.dtsi"
+
+/ {
+	model = "Microchip LAN966X";
+	compatible = "microchip,lan966x-sunrise", "microchip,lan966x";
+
+	gpio-restart {
+		compatible = "gpio-restart";
+		gpios = <&gpio 56 GPIO_ACTIVE_LOW>;
+		priority = <200>;
+	};
+};
+
+&aes {
+	status = "disabled"; /* Reserved by secure OS */
+};
+
+&flx3 {
+	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_USART>;
+	status = "okay";
+
+	usart3: serial@200 {
+		pinctrl-0 = <&fc3_b_pins>;
+		pinctrl-names = "default";
+		status = "okay";
+	};
+};
+
+&gpio {
+	fc3_b_pins: fc3-b-pins {
+		/* RX, TX */
+		pins = "GPIO_52", "GPIO_53";
+		function = "fc3_b";
+	};
+};
+
+&reset {
+	phy0-syscon = <&phy0_ctrl>;
+	phy1-syscon = <&phy1_ctrl>;
+	chip-syscon = <&chip_ctrl>;
+};
+
+&soc {
+	chip_ctrl: syscon@e2010000 {
+		compatible = "microchip,lan966x-chip-syscon", "syscon";
+		reg = <0xe2010010 0x00000014>;
+	};
+
+	phy0_ctrl: syscon@e00a0600 {
+		compatible = "microchip,lan966x-switch-syscon", "syscon";
+		reg = <0xe00a0600 0x00000080>;
+	};
+
+	phy1_ctrl: syscon@e00a0a00 {
+		compatible = "microchip,lan966x-switch-syscon", "syscon";
+		reg = <0xe00a0a00 0x00000080>;
+	};
+};
+
+&uio0 {
+	interrupts = <GIC_SPI 19 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 11 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI  9 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 80 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 81 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 18 IRQ_TYPE_LEVEL_HIGH>;
+	interrupt-names = "master", "ptp_sync", "ptp_rdy",
+			  "oam_vop", "cu_phy0", "cu_phy1",
+			  "sgpio";
+};

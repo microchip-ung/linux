@@ -300,12 +300,12 @@
 			};
 
 			lan966x_switch: switch@0 {
-				compatible = "microchip,lan966x-switch";
+				compatible = "microchip,lan966x-pci-switch";
 				reg = <0x02000000 0x02000000>, /* BAR0: CSR */
 				      <0x00000000 0x01000000>; /* BAR1: CPU */
 				reg-names = "gcb", "cpu";
-				interrupts = <10 11 12 9>;
-				interrupt-names = "ptp-ext", "ptp", "xtr", "ana";
+				interrupts = <10 11 12 9 14>;
+				interrupt-names = "ptp-ext", "ptp", "xtr", "ana", "fdma";
 
 				resets = <&switch_reset 0>;
 				reset-names = "switch";

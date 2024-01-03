@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * lan966x_pcb8281.dts - Device Tree file for PCB8281
+ */
+/dts-v1/;
+
+#include "lan966x-pcb8281.dtsi"

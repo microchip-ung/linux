@@ -1,0 +1,64 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * lan966x_pcb8281.dts - Device Tree file for PCB8281
+ */
+/dts-v1/;
+
+#include "lan966x-pcb8281.dtsi"
+
+&aes {
+	status = "disabled";
+};
+
+&gpio {
+	miim_a_pins: mdio-pins {
+		/* MDC, MDIO */
+		pins =  "GPIO_28", "GPIO_29";
+		function = "miim_a";
+		drive-strength = <0>;
+	};
+
+	fc3_b_pins: fc3-b-pins {
+		/* RX, TX */
+		pins = "GPIO_52", "GPIO_53";
+		function = "fc3_b";
+	};
+};
+
+&mdio0 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&miim_a_pins>;
+
+	phy3: ethernet-phy@3 {
+		reg = <3>;
+	};
+};
+
+&miim_a_pins {
+	drive-strength = <0>;
+};
+
+&port3 {
+	status = "okay";
+	phy-handle = <&phy3>;
+	phy-mode = "rgmii-id";
+	phys = <&serdes 3 RGMII(1)>;
+};
+
+&flx3 {
+	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_USART>;
+	status = "okay";
+
+	usart3: serial@200 {
+		compatible = "atmel,at91sam9260-usart";
+		reg = <0x200 0x200>;
+		interrupts = <GIC_SPI 51 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&nic_clk>;
+		clock-names = "usart";
+		pinctrl-0 = <&fc3_b_pins>;
+		pinctrl-names = "default";
+		atmel,fifo-size = <32>;
+		status = "okay";
+	};
+};

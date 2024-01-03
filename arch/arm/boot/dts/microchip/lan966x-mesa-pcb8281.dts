@@ -1,0 +1,54 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * lan966x-mesa-pcb8281.dts - Device Tree file for PCB8281
+ */
+/dts-v1/;
+#include "lan966x.dtsi"
+
+/ {
+	model = "Microchip LAN966X";
+	compatible = "microchip,lan966x-sunrise", "microchip,lan966x";
+};
+
+&gpio {
+	fc0_b_pins: usart-pins {
+		/* SCK, RXD, TXD */
+		pins = "GPIO_24", "GPIO_25", "GPIO_26";
+		function = "fc0_b";
+	};
+};
+
+&flx0 {
+	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_USART>;
+	status = "okay";
+
+	usart0: serial@200 {
+		compatible = "atmel,at91sam9260-usart";
+		reg = <0x200 0x200>;
+		interrupts = <GIC_SPI 48 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&nic_clk>;
+		clock-names = "usart";
+		pinctrl-0 = <&fc0_b_pins>;
+		pinctrl-names = "default";
+		dmas = <&dma0 AT91_XDMAC_DT_PERID(2)>,
+		       <&dma0 AT91_XDMAC_DT_PERID(3)>;
+		dma-names = "rx", "tx";
+		atmel,use-dma-rx;
+		atmel,use-dma-tx;
+		atmel,fifo-size = <32>;
+		status = "okay";
+	};
+};
+
+&uio0 {
+	interrupts = <GIC_SPI 19 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 11 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI  9 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 80 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 81 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 18 IRQ_TYPE_LEVEL_HIGH>;
+	interrupt-names = "master", "ptp_sync", "ptp_rdy",
+			  "oam_vop", "cu_phy0", "cu_phy1",
+			  "sgpio";
+};
