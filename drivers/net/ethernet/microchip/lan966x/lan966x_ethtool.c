@@ -282,7 +282,7 @@ static const struct lan966x_stat_layout lan966x_stats_layout[] = {
 #define SYS_COUNT_DR_GREEN_PRIO_7	131
 
 /* Add a possibly wrapping 32 bit value to a 64 bit counter */
-static void lan966x_add_cnt(u64 *cnt, u32 val)
+void lan966x_add_cnt(u64 *cnt, u32 val)
 {
 	if (val < (*cnt & U32_MAX))
 		*cnt += (u64)1 << 32; /* value has wrapped */
@@ -382,14 +382,15 @@ static void lan966x_get_eth_mac_stats(struct net_device *dev,
 		lan966x->stats[idx + SYS_COUNT_RX_BC];
 	mac_stats->FrameCheckSequenceErrors =
 		lan966x->stats[idx + SYS_COUNT_RX_CRC] +
-		lan966x->stats[idx + SYS_COUNT_RX_CRC];
+		lan966x->stats[idx + SYS_COUNT_RX_PMAC_CRC];
 	mac_stats->OctetsTransmittedOK =
 		lan966x->stats[idx + SYS_COUNT_TX_OCT] +
 		lan966x->stats[idx + SYS_COUNT_TX_PMAC_OCT];
 	mac_stats->FramesWithDeferredXmissions =
 		lan966x->stats[idx + SYS_COUNT_TX_MM_HOLD];
 	mac_stats->OctetsReceivedOK =
-		lan966x->stats[idx + SYS_COUNT_RX_OCT];
+		lan966x->stats[idx + SYS_COUNT_RX_OCT] +
+		lan966x->stats[idx + SYS_COUNT_RX_PMAC_OCT];
 	mac_stats->MulticastFramesXmittedOK =
 		lan966x->stats[idx + SYS_COUNT_TX_MC] +
 		lan966x->stats[idx + SYS_COUNT_TX_PMAC_MC];
@@ -420,13 +421,13 @@ static void lan966x_get_eth_mac_stats(struct net_device *dev,
 }
 
 static const struct ethtool_rmon_hist_range lan966x_rmon_ranges[] = {
-	{    0,    64 },
-	{   65,   127 },
-	{  128,   255 },
-	{  256,   511 },
-	{  512,  1023 },
-	{ 1024,  1518 },
-	{ 1519, 10239 },
+	{    0,     64 },
+	{   65,    127 },
+	{  128,    255 },
+	{  256,    511 },
+	{  512,   1023 },
+	{ 1024,   1526 },
+	{ 1527, 0xffff },
 	{}
 };
 
@@ -475,8 +476,8 @@ static void lan966x_get_eth_rmon_stats(struct net_device *dev,
 		lan966x->stats[idx + SYS_COUNT_RX_SZ_1024_1526] +
 		lan966x->stats[idx + SYS_COUNT_RX_PMAC_SZ_1024_1526];
 	rmon_stats->hist[6] =
-		lan966x->stats[idx + SYS_COUNT_RX_SZ_1024_1526] +
-		lan966x->stats[idx + SYS_COUNT_RX_PMAC_SZ_1024_1526];
+		lan966x->stats[idx + SYS_COUNT_RX_SZ_JUMBO] +
+		lan966x->stats[idx + SYS_COUNT_RX_PMAC_SZ_JUMBO];
 
 	rmon_stats->hist_tx[0] =
 		lan966x->stats[idx + SYS_COUNT_TX_SZ_64] +
@@ -497,8 +498,8 @@ static void lan966x_get_eth_rmon_stats(struct net_device *dev,
 		lan966x->stats[idx + SYS_COUNT_TX_SZ_1024_1526] +
 		lan966x->stats[idx + SYS_COUNT_TX_PMAC_SZ_1024_1526];
 	rmon_stats->hist_tx[6] =
-		lan966x->stats[idx + SYS_COUNT_TX_SZ_1024_1526] +
-		lan966x->stats[idx + SYS_COUNT_TX_PMAC_SZ_1024_1526];
+		lan966x->stats[idx + SYS_COUNT_TX_SZ_JUMBO] +
+		lan966x->stats[idx + SYS_COUNT_TX_PMAC_SZ_JUMBO];
 
 	spin_unlock(&lan966x->stats_lock);
 
@@ -567,6 +568,77 @@ static int lan966x_get_ts_info(struct net_device *dev,
 	return 0;
 }
 
+static int lan966x_get_eee(struct net_device *dev, struct ethtool_keee *eee)
+{
+	struct lan966x_port *port = netdev_priv(dev);
+	struct lan966x *lan966x = port->lan966x;
+	struct phylink *phylink = port->phylink;
+	u32 val;
+	int ret;
+
+	if (!phylink)
+		return -EIO;
+
+	ret = phylink_ethtool_get_eee(phylink, eee);
+	if (ret < 0)
+		return ret;
+
+	val = lan_rd(lan966x, DEV_EEE_CFG(port->chip_port));
+	if (DEV_EEE_CFG_EEE_ENA_GET(val)) {
+		eee->eee_enabled = true;
+		eee->eee_active = true;
+		eee->tx_lpi_enabled = true;
+
+		eee->tx_lpi_timer = DEV_EEE_CFG_EEE_TIMER_WAKEUP_GET(val);
+	} else {
+		eee->eee_enabled = false;
+		eee->eee_active = false;
+		eee->tx_lpi_enabled = false;
+		eee->tx_lpi_timer = 0;
+	}
+
+	return 0;
+}
+
+static int lan966x_set_eee(struct net_device *dev, struct ethtool_keee *eee)
+{
+	struct lan966x_port *port;
+	struct phylink *phylink;
+	struct lan966x *lan966x;
+	int ret;
+
+	if (!dev)
+		return -EINVAL;
+
+	port = netdev_priv(dev);
+	if (!port)
+		return -EINVAL;
+
+	lan966x = port->lan966x;
+	phylink = port->phylink;
+
+	if (!phylink)
+		return -EIO;
+
+	if (eee->eee_enabled) {
+		ret = phylink_init_eee(phylink, 0);
+		if (ret)
+			return ret;
+
+		lan_rmw(DEV_EEE_CFG_EEE_ENA_SET(1) |
+			DEV_EEE_CFG_EEE_TIMER_WAKEUP_SET(eee->tx_lpi_timer),
+			DEV_EEE_CFG_EEE_ENA |
+			DEV_EEE_CFG_EEE_TIMER_WAKEUP,
+			lan966x, DEV_EEE_CFG(port->chip_port));
+	} else {
+		lan_rmw(DEV_EEE_CFG_EEE_ENA_SET(0),
+			DEV_EEE_CFG_EEE_ENA,
+			lan966x, DEV_EEE_CFG(port->chip_port));
+	}
+
+	return 0;
+}
+
 const struct ethtool_ops lan966x_ethtool_ops = {
 	.get_link_ksettings     = lan966x_get_link_ksettings,
 	.set_link_ksettings     = lan966x_set_link_ksettings,
@@ -579,6 +651,8 @@ const struct ethtool_ops lan966x_ethtool_ops = {
 	.get_rmon_stats		= lan966x_get_eth_rmon_stats,
 	.get_link		= ethtool_op_get_link,
 	.get_ts_info		= lan966x_get_ts_info,
+	.get_eee		= lan966x_get_eee,
+	.set_eee		= lan966x_set_eee,
 };
 
 static void lan966x_check_stats_work(struct work_struct *work)
@@ -588,6 +662,7 @@ static void lan966x_check_stats_work(struct work_struct *work)
 					       stats_work);
 
 	lan966x_stats_update(lan966x);
+	lan966x_qos_update_stats(lan966x);
 
 	queue_delayed_work(lan966x->stats_queue, &lan966x->stats_work,
 			   LAN966X_STATS_CHECK_DELAY);
@@ -640,10 +715,17 @@ void lan966x_stats_get(struct net_device *dev,
 		lan966x->stats[idx + SYS_COUNT_RX_JABBER] +
 		lan966x->stats[idx + SYS_COUNT_RX_CRC] +
 		lan966x->stats[idx + SYS_COUNT_RX_SYMBOL_ERR] +
-		lan966x->stats[idx + SYS_COUNT_RX_LONG];
+		lan966x->stats[idx + SYS_COUNT_RX_LONG] +
+		lan966x->stats[idx + SYS_COUNT_RX_PMAC_SHORT] +
+		lan966x->stats[idx + SYS_COUNT_RX_PMAC_FRAG] +
+		lan966x->stats[idx + SYS_COUNT_RX_PMAC_JABBER] +
+		lan966x->stats[idx + SYS_COUNT_RX_PMAC_CRC] +
+		lan966x->stats[idx + SYS_COUNT_RX_PMAC_SYMBOL_ERR] +
+		lan966x->stats[idx + SYS_COUNT_RX_PMAC_LONG];
 
 	stats->rx_dropped = dev->stats.rx_dropped +
 		lan966x->stats[idx + SYS_COUNT_RX_LONG] +
+		lan966x->stats[idx + SYS_COUNT_RX_CAT_DROP] +
 		lan966x->stats[idx + SYS_COUNT_DR_LOCAL] +
 		lan966x->stats[idx + SYS_COUNT_DR_TAIL] +
 		lan966x->stats[idx + SYS_COUNT_RX_RED_PRIO_0] +

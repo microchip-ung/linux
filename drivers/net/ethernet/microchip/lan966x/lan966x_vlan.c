@@ -23,19 +23,24 @@ static int lan966x_vlan_wait_for_completion(struct lan966x *lan966x)
 		TABLE_UPDATE_SLEEP_US, TABLE_UPDATE_TIMEOUT_US);
 }
 
-static void lan966x_vlan_set_mask(struct lan966x *lan966x, u16 vid)
+void lan966x_vlan_set_mask(struct lan966x *lan966x, u16 vid)
 {
+	u8 flags = lan966x->vlan_flags[vid];
 	u16 mask = lan966x->vlan_mask[vid];
 	bool cpu_dis;
 
 	cpu_dis = !(mask & BIT(CPU_PORT));
 
 	/* Set flags and the VID to configure */
-	lan_rmw(ANA_VLANTIDX_VLAN_PGID_CPU_DIS_SET(cpu_dis) |
-		ANA_VLANTIDX_V_INDEX_SET(vid),
-		ANA_VLANTIDX_VLAN_PGID_CPU_DIS |
-		ANA_VLANTIDX_V_INDEX,
-		lan966x, ANA_VLANTIDX);
+	lan_wr(ANA_VLANTIDX_VLAN_PGID_CPU_DIS_SET(cpu_dis) |
+	       ANA_VLANTIDX_V_INDEX_SET(vid) |
+	       ANA_VLANTIDX_VLAN_SEC_FWD_ENA_SET(!!(flags & LAN966X_VLAN_SEC_FWD_ENA)) |
+	       ANA_VLANTIDX_VLAN_FLOOD_DIS_SET(!!(flags & LAN966X_VLAN_FLOOD_DIS)) |
+	       ANA_VLANTIDX_VLAN_PRIV_VLAN_SET(!!(flags & LAN966X_VLAN_PRIV_VLAN)) |
+	       ANA_VLANTIDX_VLAN_LEARN_DISABLED_SET(!!(flags & LAN966X_VLAN_LEARN_DISABLED)) |
+	       ANA_VLANTIDX_VLAN_MIRROR_SET(!!(flags & LAN966X_VLAN_MIRROR)) |
+	       ANA_VLANTIDX_VLAN_SRC_CHK_SET(!!(flags & LAN966X_VLAN_SRC_CHK)),
+	       lan966x, ANA_VLANTIDX);
 
 	/* Set the vlan port members mask */
 	lan_rmw(ANA_VLAN_PORT_MASK_VLAN_PORT_MASK_SET(mask),

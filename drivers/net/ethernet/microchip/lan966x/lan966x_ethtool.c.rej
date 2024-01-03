@@ -1,0 +1,12 @@
+diff a/drivers/net/ethernet/microchip/lan966x/lan966x_ethtool.c b/drivers/net/ethernet/microchip/lan966x/lan966x_ethtool.c	(rejected hunks)
+@@ -497,8 +498,8 @@ static void lan966x_get_eth_rmon_stats(struct net_device *dev,
+ 		lan966x->stats[idx + SYS_COUNT_TX_SZ_1024_1526] +
+ 		lan966x->stats[idx + SYS_COUNT_TX_PMAC_SZ_1024_1526];
+ 	rmon_stats->hist_tx[6] =
+-		lan966x->stats[idx + SYS_COUNT_TX_SZ_1024_1526] +
+-		lan966x->stats[idx + SYS_COUNT_TX_PMAC_SZ_1024_1526];
++		lan966x->stats[idx + SYS_COUNT_TX_SZ_JUMBO] +
++		lan966x->stats[idx + SYS_COUNT_TX_PMAC_SZ_JUMBO];
+ 
+ 	mutex_unlock(&lan966x->stats_lock);
+ 

@@ -402,6 +402,16 @@ int lan966x_ptp_txtstamp_request(struct lan966x_port *port,
 	u8 rew_op;
 
 	lan966x_ptp_classify(port, skb, &rew_op, &pdu_type);
+
+	/* If the packet is not a ptp packet, ptp_classify will return
+	 * IFH_REW_OP_NOOP. However if a socket option is used to enable
+	 * hardware tx timestamping, we still want to timestamp the packet,
+	 * regardless of the packet type.
+	 */
+	if (rew_op == IFH_REW_OP_NOOP &&
+	    port->ptp_tx_cmd == IFH_REW_OP_TWO_STEP_PTP)
+		rew_op = IFH_REW_OP_TWO_STEP_PTP;
+
 	LAN966X_SKB_CB(skb)->rew_op = rew_op;
 	LAN966X_SKB_CB(skb)->pdu_type = pdu_type;
 

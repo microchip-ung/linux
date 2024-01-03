@@ -145,22 +145,29 @@ static void lan966x_port_link_up(struct lan966x_port *port)
 {
 	struct lan966x_port_config *config = &port->config;
 	struct lan966x *lan966x = port->lan966x;
+	struct lan966x_path_delay *path_delay;
 	int speed = 0, mode = 0;
+	int fc_speed = 0;
 	int atop_wm = 0;
+	u8 tweaks = 5;
 
 	switch (config->speed) {
 	case SPEED_10:
 		speed = LAN966X_SPEED_10;
+		fc_speed = LAN966X_FC_SPEED_10;
 		break;
 	case SPEED_100:
 		speed = LAN966X_SPEED_100;
+		fc_speed = LAN966X_FC_SPEED_100;
 		break;
 	case SPEED_1000:
 		speed = LAN966X_SPEED_1000;
+		fc_speed = LAN966X_FC_SPEED_1000;
 		mode = DEV_MAC_MODE_CFG_GIGA_MODE_ENA_SET(1);
 		break;
 	case SPEED_2500:
 		speed = LAN966X_SPEED_2500;
+		fc_speed = LAN966X_SPEED_2500;
 		mode = DEV_MAC_MODE_CFG_GIGA_MODE_ENA_SET(1);
 		break;
 	}
@@ -205,7 +212,7 @@ static void lan966x_port_link_up(struct lan966x_port *port)
 	}
 
 	/* No PFC */
-	lan_wr(ANA_PFC_CFG_FC_LINK_SPEED_SET(speed),
+	lan_wr(ANA_PFC_CFG_FC_LINK_SPEED_SET(fc_speed),
 	       lan966x, ANA_PFC_CFG(port->chip_port));
 
 	lan_rmw(DEV_PCS1G_CFG_PCS_ENA_SET(1),
@@ -227,7 +234,7 @@ static void lan966x_port_link_up(struct lan966x_port *port)
 	lan_wr(0, lan966x, DEV_FC_MAC_HIGH_CFG(port->chip_port));
 
 	/* Flow control */
-	lan_rmw(SYS_MAC_FC_CFG_FC_LINK_SPEED_SET(speed) |
+	lan_rmw(SYS_MAC_FC_CFG_FC_LINK_SPEED_SET(fc_speed) |
 		SYS_MAC_FC_CFG_FC_LATENCY_CFG_SET(7) |
 		SYS_MAC_FC_CFG_ZERO_PAUSE_ENA_SET(1) |
 		SYS_MAC_FC_CFG_PAUSE_VAL_CFG_SET(0xffff) |
@@ -251,6 +258,16 @@ static void lan966x_port_link_up(struct lan966x_port *port)
 	       SYS_ATOP(port->chip_port));
 	lan_wr(lan966x_wm_enc(atop_wm), lan966x, SYS_ATOP_TOT_CFG);
 
+	/* Update RX/TX delay */
+	list_for_each_entry(path_delay, &port->path_delays, list) {
+		if (path_delay->speed == config->speed) {
+			lan_wr(path_delay->rx_delay + port->rx_delay,
+			       lan966x, SYS_PTP_RXDLY_CFG(port->chip_port));
+			lan_wr(path_delay->tx_delay,
+			       lan966x, SYS_PTP_TXDLY_CFG(port->chip_port));
+		}
+	}
+
 	/* This needs to be at the end */
 	/* Enable MAC module */
 	lan_wr(DEV_MAC_ENA_CFG_RX_ENA_SET(1) |
@@ -260,6 +277,45 @@ static void lan966x_port_link_up(struct lan966x_port *port)
 	/* Take out the clock from reset */
 	lan_wr(DEV_CLOCK_CFG_LINK_SPEED_SET(speed),
 	       lan966x, DEV_CLOCK_CFG(port->chip_port));
+
+	/* When running at 10 these tweaks need to be set */
+	if (speed == LAN966X_SPEED_10)
+		tweaks = 7;
+	else
+		tweaks = 5;
+
+	/* Enable phase detector */
+	/* First it is needed to disable and then enable it and after that it
+	 * needed to clear the failed bit which is set by default. Also there
+	 * are 2 phase detector ctrl one for TX and one for RX
+	 */
+	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(0),
+		DEV_PHAD_CTRL_PHAD_ENA,
+		lan966x, DEV_PHAD_CTRL(port->chip_port, 0));
+
+	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(0),
+		DEV_PHAD_CTRL_PHAD_ENA,
+		lan966x, DEV_PHAD_CTRL(port->chip_port, 1));
+
+	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(1) |
+		DEV_PHAD_CTRL_TWEAKS_SET(tweaks) |
+		DEV_PHAD_CTRL_PHAD_FAILED_SET(1) |
+		DEV_PHAD_CTRL_LOCK_ACC_SET(0),
+		DEV_PHAD_CTRL_PHAD_ENA |
+		DEV_PHAD_CTRL_TWEAKS |
+		DEV_PHAD_CTRL_PHAD_FAILED |
+		DEV_PHAD_CTRL_LOCK_ACC,
+		lan966x, DEV_PHAD_CTRL(port->chip_port, 0));
+
+	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(1) |
+		DEV_PHAD_CTRL_TWEAKS_SET(tweaks) |
+		DEV_PHAD_CTRL_PHAD_FAILED_SET(1) |
+		DEV_PHAD_CTRL_LOCK_ACC_SET(0),
+		DEV_PHAD_CTRL_PHAD_ENA |
+		DEV_PHAD_CTRL_TWEAKS |
+		DEV_PHAD_CTRL_PHAD_FAILED |
+		DEV_PHAD_CTRL_LOCK_ACC,
+		lan966x, DEV_PHAD_CTRL(port->chip_port, 1));
 
 	/* Core: Enable port for frame transfer */
 	lan_wr(QSYS_SW_PORT_MODE_PORT_ENA_SET(1) |
@@ -288,32 +344,32 @@ void lan966x_port_status_get(struct lan966x_port *port, unsigned int neg_mode,
 			     struct phylink_link_state *state)
 {
 	struct lan966x *lan966x = port->lan966x;
+	u32 stky, ls, as;
 	bool link_down;
 	u16 bmsr = 0;
 	u16 lp_adv;
-	u32 val;
 
-	val = lan_rd(lan966x, DEV_PCS1G_STICKY(port->chip_port));
-	link_down = DEV_PCS1G_STICKY_LINK_DOWN_STICKY_GET(val);
+	stky = lan_rd(lan966x, DEV_PCS1G_STICKY(port->chip_port));
+	link_down = DEV_PCS1G_STICKY_LINK_DOWN_STICKY_GET(stky);
 	if (link_down)
-		lan_wr(val, lan966x, DEV_PCS1G_STICKY(port->chip_port));
+		lan_wr(stky, lan966x, DEV_PCS1G_STICKY(port->chip_port));
 
 	/* Get both current Link and Sync status */
-	val = lan_rd(lan966x, DEV_PCS1G_LINK_STATUS(port->chip_port));
-	state->link = DEV_PCS1G_LINK_STATUS_LINK_STATUS_GET(val) &&
-		      DEV_PCS1G_LINK_STATUS_SYNC_STATUS_GET(val);
+	ls = lan_rd(lan966x, DEV_PCS1G_LINK_STATUS(port->chip_port));
+	state->link = DEV_PCS1G_LINK_STATUS_LINK_STATUS_GET(ls) &&
+		      DEV_PCS1G_LINK_STATUS_SYNC_STATUS_GET(ls);
 	state->link &= !link_down;
 
 	/* Get PCS ANEG status register */
-	val = lan_rd(lan966x, DEV_PCS1G_ANEG_STATUS(port->chip_port));
+	as = lan_rd(lan966x, DEV_PCS1G_ANEG_STATUS(port->chip_port));
 	/* Aneg complete provides more information  */
-	if (DEV_PCS1G_ANEG_STATUS_ANEG_COMPLETE_GET(val)) {
+	if (DEV_PCS1G_ANEG_STATUS_ANEG_COMPLETE_GET(as)) {
 		state->an_complete = true;
 
 		bmsr |= state->link ? BMSR_LSTATUS : 0;
 		bmsr |= BMSR_ANEGCOMPLETE;
 
-		lp_adv = DEV_PCS1G_ANEG_STATUS_LP_ADV_GET(val);
+		lp_adv = DEV_PCS1G_ANEG_STATUS_LP_ADV_GET(as);
 		phylink_mii_c22_pcs_decode_state(state, neg_mode, bmsr, lp_adv);
 	} else {
 		if (!state->link)
@@ -325,6 +381,20 @@ void lan966x_port_status_get(struct lan966x_port *port, unsigned int neg_mode,
 			state->speed = SPEED_2500;
 
 		state->duplex = DUPLEX_FULL;
+	}
+
+	/* RX latency register is 2^8, so LSB = 1/(2^8)ns ~ 3.90625ps
+	 * So for 1G we need to add 800ps per barrel shifter delay: 800 /
+	 * 3.90625 = 0xCD
+	 * So for 2.5G we need to add 320ps per barrel shifter delay: 320 /
+	 * 3.90625 = 0x52
+	 */
+	if (state->link && state->speed == SPEED_1000) {
+		port->rx_delay = DEV_PCS1G_LINK_STATUS_DELAY_VAR_GET(ls) * 0xcd;
+	} else if (state->link && state->speed == SPEED_2500) {
+		port->rx_delay = DEV_PCS1G_LINK_STATUS_DELAY_VAR_GET(ls) * 0x52;
+	} else {
+		port->rx_delay = 0;
 	}
 }
 
