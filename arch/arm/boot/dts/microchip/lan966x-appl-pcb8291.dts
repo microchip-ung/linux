@@ -1,0 +1,120 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * lan966x-appl-pcb8291.dts - Device Tree file for PCB8291
+ */
+/dts-v1/;
+#include "lan966x.dtsi"
+
+/ {
+	model = "Microchip LAN966X";
+	compatible = "microchip,lan9662-pcb8291", "microchip,lan9662", "microchip,lan966";
+
+	aliases {
+		serial0 = &usart3;
+	};
+
+	gpio-restart {
+		compatible = "gpio-restart";
+		gpios = <&gpio 56 GPIO_ACTIVE_LOW>;
+		priority = <200>;
+	};
+};
+
+&aes {
+	status = "disabled"; /* Reserved by secure OS */
+};
+
+&flx3 {
+	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_USART>;
+	status = "okay";
+
+	usart3: serial@200 {
+		pinctrl-0 = <&fc3_b_pins>;
+		pinctrl-names = "default";
+		status = "okay";
+	};
+};
+
+&gpio {
+	fc3_b_pins: fc3-b-pins {
+		/* RXD, TXD */
+		pins = "GPIO_52", "GPIO_53";
+		function = "fc3_b";
+	};
+
+	emmc_sd_pins: emmc-sd-pins {
+		/* eMMC_SD - CMD, CLK, D0, D1, D2, D3, RSTN */
+		pins = "GPIO_67", "GPIO_68", "GPIO_69", "GPIO_70",
+			"GPIO_71", "GPIO_72", "GPIO_77";
+		function = "emmc_sd";
+	};
+
+	emmc_pins: emmc-pins {
+		/* eMMC - D4, D5, D6, D7 */
+		pins = "GPIO_73", "GPIO_74", "GPIO_75", "GPIO_76";
+		function = "emmc";
+	};
+};
+
+&gpio {
+	/delete-property/ interrupts;
+	/delete-property/ interrupt-controller;
+	/delete-property/ #interrupt-cells;
+};
+
+&qspi0 {
+	status = "okay";
+
+	spi-flash@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <104000000>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+		spi-tx-bus-width = <4>;
+		spi-rx-bus-width = <4>;
+		m25p,fast-read;
+	};
+};
+
+&sdmmc0 {
+	bus-width = <8>;
+	cap-mmc-highspeed;
+	cap-mmc-hw-reset;
+	non-removable;
+	pinctrl-0 = <&emmc_sd_pins>, <&emmc_pins>;
+	pinctrl-names = "default";
+	no-1-8-v;
+	tx-phase = <0>; /* 180 degrees phase shift */
+	status = "okay";
+};
+
+&soc {
+	lan966x_switch_vtss: switch_vtss@0 {
+		compatible = "mchp,lan966x-switch-appl";
+		reg = <0xe2008000 0x0000004c>;
+		reg-names = "qs";
+
+		interrupts = <GIC_SPI 12 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "xtr";
+	};
+
+	ifmux: switch_ifmux@0 {
+		compatible = "microchip,lan966x-ifmux";
+		status = "okay";
+	};
+};
+
+&uio0 {
+	interrupts = <GIC_SPI 19 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 11 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI  9 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 80 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 81 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 18 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 17 IRQ_TYPE_LEVEL_HIGH>;
+	interrupt-names = "master", "ptp_sync", "ptp_rdy",
+			  "oam_vop", "cu_phy0", "cu_phy1",
+			  "sgpio", "gpio";
+};

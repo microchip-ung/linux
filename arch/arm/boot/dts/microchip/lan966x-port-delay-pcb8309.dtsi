@@ -1,0 +1,103 @@
+&port0 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	delay0 {
+		reg = <0>;
+		speed = <1000>;
+		rx_delay = <0x12700>;
+		tx_delay = <0x12700>;
+	};
+
+	delay1 {
+		reg = <0>;
+		speed = <100>;
+		rx_delay = <0x3e100>;
+		tx_delay = <0x3e100>;
+	};
+
+	delay2 {
+		reg = <0>;
+		speed = <10>;
+		rx_delay = <0x2c3300>;
+		tx_delay = <0x2c3300>;
+	};
+};
+
+&port1 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	delay0 {
+		reg = <0>;
+		speed = <1000>;
+		rx_delay = <0x12700>;
+		tx_delay = <0x12700>;
+	};
+
+	delay1 {
+		reg = <0>;
+		speed = <100>;
+		rx_delay = <0x3e100>;
+		tx_delay = <0x3e100>;
+	};
+
+	delay2 {
+		reg = <0>;
+		speed = <10>;
+		rx_delay = <0x2c3300>;
+		tx_delay = <0x2c3300>;
+	};
+};
+
+&port2 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	delay0 {
+		reg = <0>;
+		speed = <1000>;
+		rx_delay = <0x25000>;
+		tx_delay = <0x25000>;
+	};
+
+	delay1 {
+		reg = <0>;
+		speed = <100>;
+		rx_delay = <0x8f050>;
+		tx_delay = <0x8f050>;
+	};
+
+	delay2 {
+		reg = <0>;
+		speed = <10>;
+		rx_delay = <0x4b8000>;
+		tx_delay = <0x4b8000>;
+	};
+};
+
+&port3 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	delay0 {
+		reg = <0>;
+		speed = <1000>;
+		rx_delay = <0x25000>;
+		tx_delay = <0x25000>;
+	};
+
+	delay1 {
+		reg = <0>;
+		speed = <100>;
+		rx_delay = <0x8f050>;
+		tx_delay = <0x8f050>;
+	};
+
+	delay2 {
+		reg = <0>;
+		speed = <10>;
+		rx_delay = <0x4b8000>;
+		tx_delay = <0x4b8000>;
+	};
+};

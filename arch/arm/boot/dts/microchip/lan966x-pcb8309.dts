@@ -4,6 +4,7 @@
  */
 /dts-v1/;
 #include "lan966x.dtsi"
+#include "lan966x-port-delay-pcb8309.dtsi"
 #include "dt-bindings/phy/phy-lan966x-serdes.h"
 
 / {
@@ -68,6 +69,20 @@
 			gpios = <&sgpio_out 3 1 GPIO_ACTIVE_LOW>;
 			default-state = "off";
 		};
+
+		led-p1-green {
+			label = "cu0:green";
+			gpios = <&sgpio_out 0 0 GPIO_ACTIVE_LOW>;
+			default-state = "off";
+			linux,default-trigger = "e200413c.mdio-mii:01:link";
+		};
+
+		led-p2-green {
+			label = "cu1:green";
+			gpios = <&sgpio_out 1 0 GPIO_ACTIVE_LOW>;
+			default-state = "off";
+			linux,default-trigger = "e200413c.mdio-mii:02:link";
+		};
 	};
 
 	mux: mux-controller {
@@ -122,7 +137,10 @@
 		interrupts = <GIC_SPI 52 IRQ_TYPE_LEVEL_HIGH>;
 		clocks = <&nic_clk>;
 		pinctrl-0 = <&fc4_b_pins>;
-		pinctrl-names = "default";
+		pinctrl-1 = <&fc4_b_pins_gpio>;
+		pinctrl-names = "default", "gpio";
+		sda-gpios = <&gpio 58 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		scl-gpios = <&gpio 57 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
 		i2c-analog-filter;
 		i2c-digital-filter;
 		i2c-digital-filter-width-ns = <35>;
@@ -132,6 +150,19 @@
 };
 
 &gpio {
+	emmc_sd_pins: emmc-sd-pins {
+		/* eMMC_SD - CMD, CLK, D0, D1, D2, D3, RSTN */
+		pins = "GPIO_67", "GPIO_68", "GPIO_69", "GPIO_70",
+			"GPIO_71", "GPIO_72", "GPIO_77";
+		function = "emmc_sd";
+	};
+
+	emmc_pins: emmc-pins {
+		/* eMMC - D4, D5, D6, D7 */
+		pins = "GPIO_73", "GPIO_74", "GPIO_75", "GPIO_76";
+		function = "emmc";
+	};
+
 	fc3_b_pins: fc3-b-pins {
 		/* RXD, TXD */
 		pins = "GPIO_52", "GPIO_53";
@@ -142,6 +173,12 @@
 		/* SCL, SDA */
 		pins = "GPIO_57", "GPIO_58";
 		function = "fc4_b";
+	};
+
+	fc4_b_pins_gpio: fcb4-i2c-pins-gpio {
+		/* RXD, TXD */
+		pins = "GPIO_57", "GPIO_58";
+		function = "gpio";
 	};
 
 	pps_out_pins: pps-out-pins {
@@ -160,6 +197,11 @@
 		/* SCK, D0, D1, LD */
 		pins = "GPIO_32", "GPIO_33", "GPIO_34", "GPIO_35";
 		function = "sgpio_a";
+	};
+
+	usb_host_a_pins: usb_host_a_pins {
+		pins = "GPIO_65", "GPIO_66";
+		function = "usb_host_a";
 	};
 };
 
@@ -205,6 +247,33 @@
 	status = "okay";
 };
 
+&qspi0 {
+	status = "okay";
+
+	spi-flash@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <20000000>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+		spi-tx-bus-width = <4>;
+		spi-rx-bus-width = <4>;
+		m25p,fast-read;
+	};
+};
+
+&sdmmc0 {
+	bus-width = <8>;
+	cap-mmc-highspeed;
+	cap-mmc-hw-reset;
+	non-removable;
+	pinctrl-0 = <&emmc_sd_pins>, <&emmc_pins>;
+	pinctrl-names = "default";
+	no-1-8-v;
+	tx-phase = <0>; /* 180 degrees phase shift */
+	status = "okay";
+};
+
 &serdes {
 	status = "okay";
 };
@@ -221,6 +290,13 @@
 	gpio@1 {
 		ngpios = <64>;
 	};
+};
+
+&usb {
+	dr_mode = "host";
+	pinctrl-0 = <&usb_host_a_pins>;
+	pinctrl-names = "default";
+	status = "okay";
 };
 
 &switch {

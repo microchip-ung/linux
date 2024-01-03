@@ -1,0 +1,207 @@
+&port0 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	delay0 {
+		reg = <0>;
+		speed = <1000>;
+		rx_delay = <0x2be00>;
+		tx_delay = <0x2be00>;
+	};
+
+	delay1 {
+		reg = <0>;
+		speed = <100>;
+		rx_delay = <0xb3e00>;
+		tx_delay = <0xb3e00>;
+	};
+
+	delay2 {
+		reg = <0>;
+		speed = <10>;
+		rx_delay = <0x6bcf00>;
+		tx_delay = <0x6bcf00>;
+	};
+};
+
+&port1 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	delay0 {
+		reg = <0>;
+		speed = <1000>;
+		rx_delay = <0x2be00>;
+		tx_delay = <0x2be00>;
+	};
+
+	delay1 {
+		reg = <0>;
+		speed = <100>;
+		rx_delay = <0xb3e00>;
+		tx_delay = <0xb3e00>;
+	};
+
+	delay2 {
+		reg = <0>;
+		speed = <10>;
+		rx_delay = <0x6bcf00>;
+		tx_delay = <0x6bcf00>;
+	};
+};
+
+&port2 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	delay0 {
+		reg = <0>;
+		speed = <1000>;
+		rx_delay = <0x2be00>;
+		tx_delay = <0x2be00>;
+	};
+
+	delay1 {
+		reg = <0>;
+		speed = <100>;
+		rx_delay = <0xb3e00>;
+		tx_delay = <0xb3e00>;
+	};
+
+	delay2 {
+		reg = <0>;
+		speed = <10>;
+		rx_delay = <0x6bcf00>;
+		tx_delay = <0x6bcf00>;
+	};
+};
+
+&port3 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	delay0 {
+		reg = <0>;
+		speed = <1000>;
+		rx_delay = <0x2be00>;
+		tx_delay = <0x2be00>;
+	};
+
+	delay1 {
+		reg = <0>;
+		speed = <100>;
+		rx_delay = <0xb3e00>;
+		tx_delay = <0xb3e00>;
+	};
+
+	delay2 {
+		reg = <0>;
+		speed = <10>;
+		rx_delay = <0x6bcf00>;
+		tx_delay = <0x6bcf00>;
+	};
+};
+
+&port4 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	delay0 {
+		reg = <0>;
+		speed = <1000>;
+		rx_delay = <0x2be00>;
+		tx_delay = <0x2be00>;
+	};
+
+	delay1 {
+		reg = <0>;
+		speed = <100>;
+		rx_delay = <0xb3e00>;
+		tx_delay = <0xb3e00>;
+	};
+
+	delay2 {
+		reg = <0>;
+		speed = <10>;
+		rx_delay = <0x6bcf00>;
+		tx_delay = <0x6bcf00>;
+	};
+};
+
+&port5 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	delay0 {
+		reg = <0>;
+		speed = <1000>;
+		rx_delay = <0x2be00>;
+		tx_delay = <0x2be00>;
+	};
+
+	delay1 {
+		reg = <0>;
+		speed = <100>;
+		rx_delay = <0xb3e00>;
+		tx_delay = <0xb3e00>;
+	};
+
+	delay2 {
+		reg = <0>;
+		speed = <10>;
+		rx_delay = <0x6bcf00>;
+		tx_delay = <0x6bcf00>;
+	};
+};
+
+&port6 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	delay0 {
+		reg = <0>;
+		speed = <1000>;
+		rx_delay = <0x2be00>;
+		tx_delay = <0x2be00>;
+	};
+
+	delay1 {
+		reg = <0>;
+		speed = <100>;
+		rx_delay = <0xb3e00>;
+		tx_delay = <0xb3e00>;
+	};
+
+	delay2 {
+		reg = <0>;
+		speed = <10>;
+		rx_delay = <0x6bcf00>;
+		tx_delay = <0x6bcf00>;
+	};
+};
+
+&port7 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	delay0 {
+		reg = <0>;
+		speed = <1000>;
+		rx_delay = <0x2be00>;
+		tx_delay = <0x2be00>;
+	};
+
+	delay1 {
+		reg = <0>;
+		speed = <100>;
+		rx_delay = <0xb3e00>;
+		tx_delay = <0xb3e00>;
+	};
+
+	delay2 {
+		reg = <0>;
+		speed = <10>;
+		rx_delay = <0x6bcf00>;
+		tx_delay = <0x6bcf00>;
+	};
+};

@@ -1,0 +1,25 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+
+&port0 {
+	reg = <0>;
+	phy-mode = "gmii";
+	phys = <&serdes 0 CU(0)>;
+};
+
+&port1 {
+	reg = <1>;
+	phy-mode = "gmii";
+	phys = <&serdes 1 CU(1)>;
+};
+
+&port2 {
+	reg = <2>;
+	phy-mode = "sgmii";
+	phys = <&serdes 2 SERDES6G(0)>;
+};
+
+&port3 {
+	reg = <3>;
+	phy-mode = "sgmii";
+	phys = <&serdes 3 SERDES6G(1)>;
+};
