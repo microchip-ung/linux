@@ -14,6 +14,7 @@ properties:
   compatible:
     oneOf:
       - enum:
+          - microchip,lan9645x-pinctrl
           - microchip,lan966x-pinctrl
           - microchip,lan9691-pinctrl
           - microchip,sparx5-pinctrl
