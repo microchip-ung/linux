@@ -310,3 +310,8 @@ obj-$(CONFIG_MFD_RSMU_SPI)	+= rsmu_spi.o rsmu_core.o
 obj-$(CONFIG_MFD_UPBOARD_FPGA)	+= upboard-fpga.o
 
 obj-$(CONFIG_MFD_LOONGSON_SE)	+= loongson-se.o
+
+lan966x-pci-of-objs			:= lan966x_pci_of.o lan966x_pci_irq.o
+lan966x-pci-of-objs			+= lan966x_pci.dtb.o
+
+obj-$(CONFIG_MFD_LAN966X_PCI_OF)	+= lan966x-pci-of.o
