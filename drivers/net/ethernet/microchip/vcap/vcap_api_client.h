@@ -148,6 +148,11 @@ struct vcap_counter {
 	bool sticky;
 };
 
+struct vcap_address {
+	u32 start;
+	u8 size;
+};
+
 /* Enable/Disable the VCAP instance lookups */
 int vcap_enable_lookups(struct vcap_control *vctrl, struct net_device *ndev,
 			int from_cid, int to_cid, unsigned long cookie,
@@ -192,16 +197,32 @@ int vcap_rule_add_key_u32(struct vcap_rule *rule, enum vcap_key_field key,
 			  u32 value, u32 mask);
 int vcap_rule_add_key_u48(struct vcap_rule *rule, enum vcap_key_field key,
 			  struct vcap_u48_key *fieldval);
+int vcap_rule_add_key_u56(struct vcap_rule *rule, enum vcap_key_field key,
+			  struct vcap_u56_key *fieldval);
+int vcap_rule_add_key_u64(struct vcap_rule *rule, enum vcap_key_field key,
+			  struct vcap_u64_key *fieldval);
 int vcap_rule_add_key_u72(struct vcap_rule *rule, enum vcap_key_field key,
 			  struct vcap_u72_key *fieldval);
+int vcap_rule_add_key_u112(struct vcap_rule *rule, enum vcap_key_field key,
+			   struct vcap_u112_key *fieldval);
 int vcap_rule_add_key_u128(struct vcap_rule *rule, enum vcap_key_field key,
 			   struct vcap_u128_key *fieldval);
 int vcap_rule_add_action_bit(struct vcap_rule *rule,
 			     enum vcap_action_field action, enum vcap_bit val);
 int vcap_rule_add_action_u32(struct vcap_rule *rule,
 			     enum vcap_action_field action, u32 value);
+int vcap_rule_add_action_u48(struct vcap_rule *rule, enum vcap_action_field action,
+			     struct vcap_u48_action *fieldval);
+int vcap_rule_add_action_u56(struct vcap_rule *rule, enum vcap_action_field action,
+			     struct vcap_u56_action *fieldval);
+int vcap_rule_add_action_u64(struct vcap_rule *rule, enum vcap_action_field action,
+			     struct vcap_u64_action *fieldval);
 int vcap_rule_add_action_u72(struct vcap_rule *rule, enum vcap_action_field action,
 			     struct vcap_u72_action *fieldval);
+int vcap_rule_add_action_u112(struct vcap_rule *rule, enum vcap_action_field action,
+			     struct vcap_u112_action *fieldval);
+int vcap_rule_add_action_u128(struct vcap_rule *rule, enum vcap_action_field action,
+			     struct vcap_u128_action *fieldval);
 
 /* Get number of rules in a vcap instance lookup chain id range */
 int vcap_admin_rule_count(struct vcap_admin *admin, int cid);
@@ -212,17 +233,30 @@ int vcap_get_rule_count_by_cookie(struct vcap_control *vctrl,
 int vcap_rule_set_counter(struct vcap_rule *rule, struct vcap_counter *ctr);
 int vcap_rule_get_counter(struct vcap_rule *rule, struct vcap_counter *ctr);
 
+/* Find vcap type instance count */
+int vcap_admin_type_count(struct vcap_control *vctrl, enum vcap_type vt);
+
 /* VCAP lookup operations */
+/* Convert a VCAP lookup index to a chain id */
+int vcap_lookup_to_chain_id(struct vcap_admin *admin, int lookup);
 /* Convert a chain id to a VCAP lookup index */
 int vcap_chain_id_to_lookup(struct vcap_admin *admin, int cur_cid);
+/* Find a vcap instance and chain id using vcap type and lookup index */
+struct vcap_admin *vcap_find_admin_with_lookup(struct vcap_control *vctrl,
+					       enum vcap_type vt, int lookup,
+					       int *cid);
 /* Lookup a vcap instance using chain id */
 struct vcap_admin *vcap_find_admin(struct vcap_control *vctrl, int cid);
 /* Find information on a key field in a rule */
 const struct vcap_field *vcap_lookup_keyfield(struct vcap_rule *rule,
 					      enum vcap_key_field key);
+/* Find a rule with a provided rule id */
+struct vcap_rule_internal *vcap_lookup_rule(struct vcap_control *vctrl, u32 id);
 /* Find a rule id with a provided cookie */
 int vcap_lookup_rule_by_cookie(struct vcap_control *vctrl, u64 cookie);
 /* Calculate the value used for chaining VCAP rules */
+int vcap_rule_iter(struct vcap_control *vctrl,
+		   int (*callback)(void *, struct vcap_rule *), void *arg);
 int vcap_chain_offset(struct vcap_control *vctrl, int from_cid, int to_cid);
 /* Is the next chain id in the following lookup, possible in another VCAP */
 bool vcap_is_next_lookup(struct vcap_control *vctrl, int cur_cid, int next_cid);
@@ -244,6 +278,9 @@ void vcap_set_tc_exterr(struct flow_cls_offload *fco, struct vcap_rule *vrule);
 /* Cleanup a VCAP instance */
 int vcap_del_rules(struct vcap_control *vctrl, struct vcap_admin *admin);
 
+int vcap_rule_get_address(struct vcap_control *vctrl, u32 id,
+			  struct vcap_address *addr);
+
 /* Add a keyset to a keyset list */
 bool vcap_keyset_list_add(struct vcap_keyset_list *keysetlist,
 			  enum vcap_keyfield_set keyset);
@@ -259,17 +296,54 @@ const char *vcap_keyset_name(struct vcap_control *vctrl,
 const char *vcap_keyfield_name(struct vcap_control *vctrl,
 			       enum vcap_key_field key);
 
+int vcap_rule_mod_key_bit(struct vcap_rule *rule, enum vcap_key_field key,
+			  enum vcap_bit val);
 /* Modify a 32 bit key field with value and mask in the rule */
 int vcap_rule_mod_key_u32(struct vcap_rule *rule, enum vcap_key_field key,
 			  u32 value, u32 mask);
+int vcap_rule_mod_key_u48(struct vcap_rule *rule, enum vcap_key_field key,
+			  struct vcap_u48_key *fieldval);
+int vcap_rule_mod_key_u56(struct vcap_rule *rule, enum vcap_key_field key,
+			  struct vcap_u56_key *fieldval);
+int vcap_rule_mod_key_u64(struct vcap_rule *rule, enum vcap_key_field key,
+			  struct vcap_u64_key *fieldval);
+int vcap_rule_mod_key_u72(struct vcap_rule *rule, enum vcap_key_field key,
+			  struct vcap_u72_key *fieldval);
+int vcap_rule_mod_key_u112(struct vcap_rule *rule, enum vcap_key_field key,
+			   struct vcap_u112_key *fieldval);
+int vcap_rule_mod_key_u128(struct vcap_rule *rule, enum vcap_key_field key,
+			   struct vcap_u128_key *fieldval);
+
+int vcap_rule_mod_action_bit(struct vcap_rule *rule,
+			     enum vcap_action_field action, enum vcap_bit val);
 /* Modify a 32 bit action field with value in the rule */
 int vcap_rule_mod_action_u32(struct vcap_rule *rule,
 			     enum vcap_action_field action,
 			     u32 value);
+int vcap_rule_mod_action_u48(struct vcap_rule *rule,
+			     enum vcap_action_field action,
+			     struct vcap_u48_action *fieldval);
+int vcap_rule_mod_action_u56(struct vcap_rule *rule,
+			     enum vcap_action_field action,
+			     struct vcap_u56_action *fieldval);
+int vcap_rule_mod_action_u64(struct vcap_rule *rule,
+			     enum vcap_action_field action,
+			     struct vcap_u64_action *fieldval);
+int vcap_rule_mod_action_u72(struct vcap_rule *rule,
+			     enum vcap_action_field action,
+			     struct vcap_u72_action *fieldval);
+int vcap_rule_mod_action_u112(struct vcap_rule *rule,
+			      enum vcap_action_field action,
+			      struct vcap_u112_action *fieldval);
+int vcap_rule_mod_action_u128(struct vcap_rule *rule,
+			      enum vcap_action_field action,
+			      struct vcap_u128_action *fieldval);
 
 /* Get a 32 bit key field value and mask from the rule */
 int vcap_rule_get_key_u32(struct vcap_rule *rule, enum vcap_key_field key,
 			  u32 *value, u32 *mask);
+
+bool vcap_contains_key(struct vcap_rule *rule, enum vcap_key_field key);
 
 /* Remove a key field with value and mask in the rule */
 int vcap_rule_rem_key(struct vcap_rule *rule, enum vcap_key_field key);

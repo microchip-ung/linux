@@ -12,6 +12,8 @@
 
 #include "vcap_api.h"
 
+#define MSB_32_MASK 0x80000000
+
 #if defined(CONFIG_DEBUG_FS)
 
 void vcap_port_debugfs(struct device *dev, struct dentry *parent,
@@ -38,4 +40,9 @@ static inline struct dentry *vcap_debugfs(struct device *dev,
 }
 
 #endif
+
+void vcap_show_admin_info(struct vcap_control *vctrl,
+			  struct vcap_admin *admin,
+			  struct vcap_output_print *out);
+
 #endif /* __VCAP_API_DEBUGFS__ */

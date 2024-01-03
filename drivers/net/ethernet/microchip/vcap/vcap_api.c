@@ -4,7 +4,9 @@
  * Copyright (c) 2022 Microchip Technology Inc. and its subsidiaries.
  */
 
+#include <linux/lcm.h>
 #include <linux/types.h>
+#include <linux/minmax.h>
 
 #include "vcap_api_private.h"
 
@@ -254,9 +256,9 @@ static bool vcap_verify_keystream_keyset(struct vcap_control *vctrl,
 	typefld = &fields[VCAP_KF_TYPE];
 	vcap_iter_init(&iter, vcap->sw_width, tgt, typefld->offset);
 	vcap_decode_field(mskstream, &iter, typefld->width, (u8 *)&mask);
-	/* no type info if there are no mask bits */
+	/* all type info if there are no mask bits */
 	if (vcap_bitarray_zero(typefld->width, (u8 *)&mask))
-		return false;
+		return true;
 
 	/* Get the value of the type field in the stream and compare to the
 	 * one define in the vcap keyset
@@ -326,6 +328,45 @@ static int vcap_find_keystream_typegroup_sw(struct vcap_control *vctrl,
 	return -EINVAL;
 }
 
+static u8 vcap_find_stream_type_id(struct vcap_control *vctrl,
+				   enum vcap_type vt, u32 *stream,
+				   const struct vcap_typegroup_hdr *tg_hdr)
+{
+	u8 type_id;
+
+	if (vctrl->vcaps[vt].sw_count <= 0)
+		return ~0;
+
+	if (tg_hdr && tg_hdr->type_width > 0) {
+		type_id = (stream[0] >> tg_hdr->tg_width) &
+			  GENMASK(tg_hdr->type_width - 1, 0);
+		return type_id;
+	}
+	return ~0;
+}
+
+static u8 vcap_find_keystream_type_id(struct vcap_control *vctrl,
+				      enum vcap_type vt, u32 *stream,
+				      enum vcap_keyfield_set keyset)
+{
+	const struct vcap_typegroup_hdr *tg_hdr;
+
+	tg_hdr = vcap_keyfield_typegroup_hdr(vctrl, vt, keyset);
+
+	return vcap_find_stream_type_id(vctrl, vt, stream, tg_hdr);
+}
+
+static u8 vcap_find_actionstream_type_id(struct vcap_control *vctrl,
+					 enum vcap_type vt, u32 *stream,
+					 enum vcap_actionfield_set actionset)
+{
+	const struct vcap_typegroup_hdr *tg_hdr;
+
+	tg_hdr = vcap_actionfield_typegroup_hdr(vctrl, vt, actionset);
+
+	return vcap_find_stream_type_id(vctrl, vt, stream, tg_hdr);
+}
+
 /* Verify that the typegroup information, subword count, keyset and type id
  * are in sync and correct, return the list of matching keysets
  */
@@ -339,6 +380,7 @@ vcap_find_keystream_keysets(struct vcap_control *vctrl,
 {
 	const struct vcap_set *keyfield_set;
 	int sw_count, idx;
+	u8 type_id;
 
 	sw_count = vcap_find_keystream_typegroup_sw(vctrl, vt, keystream, mask,
 						    sw_max);
@@ -348,6 +390,11 @@ vcap_find_keystream_keysets(struct vcap_control *vctrl,
 	keyfield_set = vctrl->vcaps[vt].keyfield_set;
 	for (idx = 0; idx < vctrl->vcaps[vt].keyfield_set_size; ++idx) {
 		if (keyfield_set[idx].sw_per_item != sw_count)
+			continue;
+
+		type_id =
+			vcap_find_keystream_type_id(vctrl, vt, keystream, idx);
+		if (keyfield_set[idx].type_id != type_id)
 			continue;
 
 		if (vcap_verify_keystream_keyset(vctrl, vt, keystream,
@@ -360,6 +407,48 @@ vcap_find_keystream_keysets(struct vcap_control *vctrl,
 }
 EXPORT_SYMBOL_GPL(vcap_find_keystream_keysets);
 
+
+/* Detect if first keyset address in streams is uninitialized */
+bool vcap_detect_uninit_keyset_addr(struct vcap_control *vctrl,
+					   struct vcap_admin *admin,
+					   u32 *keystream, u32 *maskstream)
+{
+	u32 key = 0, mask = 0, sw_width_mask, rem_mask;
+	enum vcap_type vt = admin->vtype;
+	int keyset_sw_regs, idx;
+	u16 vcap_sw_width;
+
+	vcap_sw_width = vctrl->vcaps[vt].sw_width;
+	keyset_sw_regs = DIV_ROUND_UP(vcap_sw_width, 32);
+	rem_mask = (1 << (vcap_sw_width % 32)) - 1;
+	for (idx = 0; idx < keyset_sw_regs; ++idx) {
+		/* Only the last subword is masked with rem_mask, ignoring spare
+		 * bits */
+		sw_width_mask = idx == keyset_sw_regs - 1 ? rem_mask :
+							    GENMASK(31, 0);
+		key |= ~keystream[idx] & sw_width_mask;
+		mask |= maskstream[idx] & sw_width_mask;
+	}
+	return key == 0 && mask == 0;
+}
+
+/* Read a single address into key, mask and actionstreams. */
+void vcap_read_addr(struct vcap_control *vctrl, struct net_device *ndev,
+			   struct vcap_admin *admin, int addr)
+{
+	int keyset_sw_regs, actionset_sw_regs;
+	enum vcap_type vt = admin->vtype;
+
+	/* Read the cache at the specified address */
+	keyset_sw_regs = DIV_ROUND_UP(vctrl->vcaps[vt].sw_width, 32);
+	actionset_sw_regs = DIV_ROUND_UP(vctrl->vcaps[vt].act_width, 32);
+	vctrl->ops->update(ndev, admin, VCAP_CMD_READ, VCAP_SEL_ALL, addr);
+	vctrl->ops->cache_read(ndev, admin, VCAP_SEL_ENTRY, 0, keyset_sw_regs);
+	vctrl->ops->cache_read(ndev, admin, VCAP_SEL_ACTION, 0,
+			       actionset_sw_regs);
+	return;
+}
+
 /* Read key data from a VCAP address and discover if there are any rule keysets
  * here
  */
@@ -370,24 +459,16 @@ int vcap_addr_keysets(struct vcap_control *vctrl,
 		      struct vcap_keyset_list *kslist)
 {
 	enum vcap_type vt = admin->vtype;
-	int keyset_sw_regs, idx;
-	u32 key = 0, mask = 0;
 
 	/* Read the cache at the specified address */
-	keyset_sw_regs = DIV_ROUND_UP(vctrl->vcaps[vt].sw_width, 32);
-	vctrl->ops->update(ndev, admin, VCAP_CMD_READ, VCAP_SEL_ALL, addr);
-	vctrl->ops->cache_read(ndev, admin, VCAP_SEL_ENTRY, 0,
-			       keyset_sw_regs);
+	vcap_read_addr(vctrl, ndev, admin, addr);
 	/* Skip uninitialized key/mask entries */
-	for (idx = 0; idx < keyset_sw_regs; ++idx) {
-		key |= ~admin->cache.keystream[idx];
-		mask |= admin->cache.maskstream[idx];
-	}
-	if (key == 0 && mask == 0)
+	if (vcap_detect_uninit_keyset_addr(vctrl, admin, admin->cache.keystream,
+					   admin->cache.keystream))
 		return -EINVAL;
 	/* Decode and locate the keysets */
 	return vcap_find_keystream_keysets(vctrl, vt, admin->cache.keystream,
-					   admin->cache.maskstream, false, 0,
+					   admin->cache.maskstream, false, 1,
 					   kslist);
 }
 EXPORT_SYMBOL_GPL(vcap_addr_keysets);
@@ -419,6 +500,19 @@ const struct vcap_set *vcap_keyfieldset(struct vcap_control *vctrl,
 	return kset;
 }
 EXPORT_SYMBOL_GPL(vcap_keyfieldset);
+
+/* Return the typegroup header for the matching keyset (using subword size) */
+const struct vcap_typegroup_hdr *
+vcap_keyfield_typegroup_hdr(struct vcap_control *vctrl, enum vcap_type vt,
+			    enum vcap_keyfield_set keyset)
+{
+	const struct vcap_set *kset = vcap_keyfieldset(vctrl, vt, keyset);
+
+	/* Check that the keyset is valid */
+	if (!kset)
+		return NULL;
+	return &vctrl->vcaps[vt].keyfield_set_typegroup_hdrs[kset->sw_per_item];
+}
 
 /* Return the typegroup table for the matching keyset (using subword size) */
 const struct vcap_typegroup *
@@ -712,6 +806,21 @@ vcap_actionfieldset(struct vcap_control *vctrl,
 	return aset;
 }
 
+/* Return the typegroup header for the matching actionset (using subword size)
+ */
+const struct vcap_typegroup_hdr *
+vcap_actionfield_typegroup_hdr(struct vcap_control *vctrl, enum vcap_type vt,
+			       enum vcap_actionfield_set actionset)
+{
+	const struct vcap_set *aset = vcap_actionfieldset(vctrl, vt, actionset);
+
+	/* Check that the actionset is valid */
+	if (!aset)
+		return NULL;
+	return &vctrl->vcaps[vt]
+		.actionfield_set_typegroup_hdrs[aset->sw_per_item];
+}
+
 /* Return the typegroup table for the matching actionset (using subword size) */
 const struct vcap_typegroup *
 vcap_actionfield_typegroup(struct vcap_control *vctrl,
@@ -951,6 +1060,45 @@ vcap_get_locked_rule(struct vcap_control *vctrl, u32 id)
 	}
 	return NULL;
 }
+
+/* Provide all rules via a callback interface */
+int vcap_rule_iter(struct vcap_control *vctrl,
+		   int (*callback)(void *, struct vcap_rule *), void *arg)
+{
+	struct vcap_rule_internal *ri;
+	struct vcap_admin *admin;
+	int ret;
+
+	ret = vcap_api_check(vctrl);
+	if (ret)
+		return ret;
+	list_for_each_entry(admin, &vctrl->list, list) {
+		list_for_each_entry(ri, &admin->rules, list) {
+			ret = callback(arg, &ri->data);
+			if (ret)
+				return ret;
+		}
+	}
+	return 0;
+}
+EXPORT_SYMBOL_GPL(vcap_rule_iter);
+
+/* Find a rule with a provided rule id */
+struct vcap_rule_internal *vcap_lookup_rule(struct vcap_control *vctrl, u32 id)
+{
+	struct vcap_rule_internal *ri;
+	struct vcap_admin *admin;
+
+	/* Look for the rule id in all vcaps */
+	list_for_each_entry(admin, &vctrl->list, list) {
+		list_for_each_entry(ri, &admin->rules, list) {
+			if (ri->data.id == id)
+				return ri;
+		}
+	}
+	return NULL;
+}
+EXPORT_SYMBOL_GPL(vcap_lookup_rule);
 
 /* Find a rule id with a provided cookie */
 int vcap_lookup_rule_by_cookie(struct vcap_control *vctrl, u64 cookie)
@@ -1382,7 +1530,7 @@ static int vcap_find_actionstream_typegroup_sw(struct vcap_control *vctrl,
 /* Verify that the typegroup information, subword count, actionset and type id
  * are in sync and correct, return the actionset
  */
-static enum vcap_actionfield_set
+enum vcap_actionfield_set
 vcap_find_actionstream_actionset(struct vcap_control *vctrl,
 				 enum vcap_type vt,
 				 u32 *stream,
@@ -1390,6 +1538,7 @@ vcap_find_actionstream_actionset(struct vcap_control *vctrl,
 {
 	const struct vcap_set *actionfield_set;
 	int sw_count, idx;
+	u8 type_id;
 	bool res;
 
 	sw_count = vcap_find_actionstream_typegroup_sw(vctrl, vt, stream,
@@ -1402,6 +1551,9 @@ vcap_find_actionstream_actionset(struct vcap_control *vctrl,
 		if (actionfield_set[idx].sw_per_item != sw_count)
 			continue;
 
+		type_id = vcap_find_actionstream_type_id(vctrl, vt, stream, idx);
+		if (actionfield_set[idx].type_id != type_id)
+			continue;
 		res = vcap_verify_actionstream_actionset(vctrl, vt,
 							 stream, idx);
 		if (res)
@@ -1598,8 +1750,35 @@ static int vcap_write_counter(struct vcap_rule_internal *ri,
 				    ri->counter_id, 0);
 	ri->vctrl->ops->update(ri->ndev, admin, VCAP_CMD_WRITE,
 			       VCAP_SEL_COUNTER, ri->addr);
+	ri->counter = *ctr;
 	return 0;
 }
+
+/* Find vcap type instance count */
+int vcap_admin_type_count(struct vcap_control *vctrl, enum vcap_type vt)
+{
+	struct vcap_admin *admin;
+	int res = 0;
+
+	list_for_each_entry(admin, &vctrl->list, list)
+		if (vt == admin->vtype)
+			++res;
+	return res;
+}
+EXPORT_SYMBOL_GPL(vcap_admin_type_count);
+
+/* Convert a VCAP lookup index to a chain id */
+int vcap_lookup_to_chain_id(struct vcap_admin *admin, int lookup)
+{
+	int lookup_first = admin->vinst * admin->lookups_per_instance;
+	int lookup_next = lookup_first + admin->lookups_per_instance;
+
+	if (lookup >= lookup_first && lookup < lookup_next)
+		return admin->first_cid + (lookup - lookup_first) *
+			VCAP_CID_LOOKUP_SIZE;
+	return 0;
+}
+EXPORT_SYMBOL_GPL(vcap_lookup_to_chain_id);
 
 /* Convert a chain id to a VCAP lookup index */
 int vcap_chain_id_to_lookup(struct vcap_admin *admin, int cur_cid)
@@ -1633,6 +1812,28 @@ struct vcap_admin *vcap_find_admin(struct vcap_control *vctrl, int cid)
 	return NULL;
 }
 EXPORT_SYMBOL_GPL(vcap_find_admin);
+
+/* Find a vcap instance and chain id using vcap type and lookup index */
+struct vcap_admin *vcap_find_admin_with_lookup(struct vcap_control *vctrl,
+					       enum vcap_type vt, int lookup,
+					       int *cid)
+{
+	struct vcap_admin *admin;
+	int chain;
+
+	list_for_each_entry(admin, &vctrl->list, list) {
+		if (vt == admin->vtype) {
+			chain = vcap_lookup_to_chain_id(admin, lookup);
+			if (chain) {
+				if (cid)
+					*cid = chain;
+				return admin;
+			}
+		}
+	}
+	return 0;
+}
+EXPORT_SYMBOL_GPL(vcap_find_admin_with_lookup);
 
 /* Is this the last admin instance ordered by chain id and direction */
 static bool vcap_admin_is_last(struct vcap_control *vctrl,
@@ -1699,6 +1900,11 @@ EXPORT_SYMBOL_GPL(vcap_is_next_lookup);
 /* Check if there is room for a new rule */
 static int vcap_rule_space(struct vcap_admin *admin, int size)
 {
+	/* NOTE: this is an approximation, even if maximum rule size is
+	 * used, due to potential alignment padding.
+	 * See vcap_insert_rule for the work necessary to determine if rule fits
+	 * exactly.
+	 */
 	if (admin->last_used_addr - size < admin->first_valid_addr) {
 		pr_err("%s:%d: No room for rule size: %u, %u\n",
 		       __func__, __LINE__, size, admin->first_valid_addr);
@@ -2096,12 +2302,64 @@ static u32 vcap_set_rule_id(struct vcap_rule_internal *ri)
 	return ri->data.id;
 }
 
+static void vcap_move_from_block(u32 base_addr,
+				 struct vcap_rule_internal *block_first,
+				 struct vcap_rule_internal *block_last,
+				 int block_lcm, struct vcap_rule_move *move)
+
+{
+	int unaligned_offset;
+
+	if (!block_first || !block_last)
+		return;
+
+	move->addr = block_last->addr;
+	move->count = block_first->addr + block_first->size - block_last->addr;
+	/* Integer division rounds toward zero. We want to round toward -inf.
+	 * So we handle negative case different */
+	unaligned_offset = base_addr - (block_first->addr + block_first->size);
+	if (unaligned_offset < 0)
+		move->offset = ((unaligned_offset - (block_lcm - 1)) / block_lcm) * block_lcm;
+	else
+		move->offset = (unaligned_offset / block_lcm) * block_lcm;
+	return;
+}
+
+static void vcap_move_rules_sw(struct vcap_admin *admin,
+			       struct vcap_rule_internal *pos,
+			       struct vcap_rule_move const *move)
+{
+	if (move->count == 0 || move->offset == 0)
+		return;
+
+	list_for_each_entry_continue(pos, &admin->rules, list) {
+		pos->addr += move->offset;
+		WARN_ON_ONCE(pos->addr % pos->size);
+	}
+}
+
+static int vcap_find_move_block_lcm(struct vcap_admin *admin,
+				    struct vcap_rule_internal *pos)
+{
+	int block_lcm = 1;
+
+	list_for_each_entry_continue(pos, &admin->rules, list) {
+		block_lcm = lcm(block_lcm, pos->size);
+		if (pos->size <= 2)
+			break;
+	}
+
+	return block_lcm;
+}
+
 static int vcap_insert_rule(struct vcap_rule_internal *ri,
 			    struct vcap_rule_move *move)
 {
+	struct vcap_rule_internal *duprule, *iter, *block_first = NULL,
+						   *block_last;
 	int sw_count = ri->vctrl->vcaps[ri->admin->vtype].sw_count;
-	struct vcap_rule_internal *duprule, *iter, *elem = NULL;
 	struct vcap_admin *admin = ri->admin;
+	int block_lcm;
 	u32 addr;
 
 	ri->sort_key = vcap_sort_key(sw_count, ri->size, ri->data.user,
@@ -2114,12 +2372,12 @@ static int vcap_insert_rule(struct vcap_rule_internal *ri,
 	 */
 	list_for_each_entry(iter, &admin->rules, list) {
 		if (ri->sort_key < iter->sort_key) {
-			elem = iter;
+			block_first = iter;
 			break;
 		}
 	}
 
-	if (!elem) {
+	if (!block_first) {
 		ri->addr = vcap_next_rule_addr(admin->last_used_addr, ri);
 		admin->last_used_addr = ri->addr;
 
@@ -2132,10 +2390,13 @@ static int vcap_insert_rule(struct vcap_rule_internal *ri,
 		return 0;
 	}
 
-	/* Reuse the space of the current rule */
-	addr = elem->addr + elem->size;
+	block_last = list_last_entry(&admin->rules, typeof(*ri), list);
+
+	/* Reuse the space and padding of the current rule */
+	addr = admin->last_valid_addr + 1;
+	if (!list_is_first(&block_first->list, &admin->rules))
+		addr = list_prev_entry(block_first, list)->addr;
 	ri->addr = vcap_next_rule_addr(addr, ri);
-	addr = ri->addr;
 
 	/* Add a copy of the rule to the VCAP list */
 	duprule = vcap_dup_rule(ri, ri->state == VCAP_RS_DISABLED);
@@ -2143,29 +2404,33 @@ static int vcap_insert_rule(struct vcap_rule_internal *ri,
 		return PTR_ERR(duprule);
 
 	/* Add before the current entry */
-	list_add_tail(&duprule->list, &elem->list);
+	list_add_tail(&duprule->list, &block_first->list);
 
-	/* Update the current rule */
-	elem->addr = vcap_next_rule_addr(addr, elem);
-	addr = elem->addr;
+	/* Collect block move info in struct move, to update VCAP HW later */
+	block_lcm = vcap_find_move_block_lcm(admin, duprule);
+	vcap_move_from_block(ri->addr, block_first, block_last, block_lcm,
+			     move);
 
-	/* Update the address in the remaining rules in the list */
-	list_for_each_entry_continue(elem, &admin->rules, list) {
-		elem->addr = vcap_next_rule_addr(addr, elem);
-		addr = elem->addr;
+	if (block_last->addr + move->offset < admin->first_valid_addr) {
+		pr_err("%s:%d: No room for rule size: %u, %u\n", __func__,
+		       __LINE__, duprule->size, admin->first_valid_addr);
+		list_del(&duprule->list);
+		vcap_free_rule(&duprule->data);
+		return -ENOSPC;
 	}
 
-	/* Update the move info */
-	move->addr = admin->last_used_addr;
-	move->count = ri->addr - addr;
-	move->offset = admin->last_used_addr - addr;
-	admin->last_used_addr = addr;
+	/* Apply move to SW */
+	vcap_move_rules_sw(admin, duprule, move);
+	admin->last_used_addr =
+		list_last_entry(&admin->rules, typeof(*ri), list)->addr;
 	return 0;
 }
 
 static void vcap_move_rules(struct vcap_rule_internal *ri,
 			    struct vcap_rule_move *move)
 {
+	if (move->count == 0 || move->offset == 0)
+		return;
 	ri->vctrl->ops->move(ri->ndev, ri->admin, move->addr,
 			 move->offset, move->count);
 }
@@ -2246,7 +2511,7 @@ static bool vcap_path_exist(struct vcap_control *vctrl, struct net_device *ndev,
  */
 static void vcap_rule_set_state(struct vcap_rule_internal *ri)
 {
-	if (ri->data.user <= VCAP_USER_QOS)
+	if (ri->data.user <= VCAP_USER_VCAP_UTIL)
 		ri->state = VCAP_RS_PERMANENT;
 	else if (vcap_path_exist(ri->vctrl, ri->ndev, ri->data.vcap_chain_id))
 		ri->state = VCAP_RS_ENABLED;
@@ -2275,8 +2540,7 @@ int vcap_add_rule(struct vcap_rule *rule)
 		       __func__, __LINE__, ret);
 		goto out;
 	}
-	if (move.count > 0)
-		vcap_move_rules(ri, &move);
+	vcap_move_rules(ri, &move);
 
 	/* Set the counter to zero */
 	ret = vcap_write_counter(ri, &ctr);
@@ -2431,6 +2695,7 @@ out:
 	return &ri->data;
 }
 
+/* Get a copy of the rule. */
 struct vcap_rule *vcap_get_rule(struct vcap_control *vctrl, u32 id)
 {
 	struct vcap_rule_internal *elem;
@@ -2488,59 +2753,49 @@ out:
 }
 EXPORT_SYMBOL_GPL(vcap_mod_rule);
 
-/* Return the alignment offset for a new rule address */
-static int vcap_valid_rule_move(struct vcap_rule_internal *el, int offset)
-{
-	return (el->addr + offset) % el->size;
-}
-
-/* Update the rule address with an offset */
-static void vcap_adjust_rule_addr(struct vcap_rule_internal *el, int offset)
-{
-	el->addr += offset;
-}
-
 /* Rules needs to be moved to fill the gap of the deleted rule */
 static int vcap_fill_rule_gap(struct vcap_rule_internal *ri)
 {
+	struct vcap_rule_internal *block_first = NULL, *block_last = NULL;
 	struct vcap_admin *admin = ri->admin;
-	struct vcap_rule_internal *elem;
-	struct vcap_rule_move move;
-	int gap = 0, offset = 0;
+	struct net_device *ndev = ri->ndev;
+	struct vcap_rule_move move = { 0 };
+	int block_lcm, addr;
 
-	/* If the first rule is deleted: Move other rules to the top */
-	if (list_is_first(&ri->list, &admin->rules))
-		offset = admin->last_valid_addr + 1 - ri->addr - ri->size;
+	if (!list_is_last(&ri->list, &admin->rules)) {
+		block_first = list_next_entry(ri, list);
+		block_last = list_last_entry(&admin->rules, typeof(*ri), list);
+	}
 
-	/* Locate gaps between odd size rules and adjust the move */
-	elem = ri;
-	list_for_each_entry_continue(elem, &admin->rules, list)
-		gap += vcap_valid_rule_move(elem, ri->size);
+	addr = admin->last_valid_addr + 1;
+	if (!list_is_first(&ri->list, &admin->rules))
+		addr = list_prev_entry(ri, list)->addr;
 
-	/* Update the address in the remaining rules in the list */
-	elem = ri;
-	list_for_each_entry_continue(elem, &admin->rules, list)
-		vcap_adjust_rule_addr(elem, ri->size + gap + offset);
+	block_lcm = vcap_find_move_block_lcm(admin, ri);
+	vcap_move_from_block(addr, block_first, block_last, block_lcm, &move);
 
-	/* Update the move info */
-	move.addr = admin->last_used_addr;
-	move.count = ri->addr - admin->last_used_addr - gap;
-	move.offset = -(ri->size + gap + offset);
+	/* Apply move to SW representation */
+	vcap_move_rules_sw(admin, ri, &move);
 
-	/* Do the actual move operation */
+	/* Initialize space used by ri, as it may not be overwritten by move */
+	ri->vctrl->ops->init(ndev, admin, ri->addr, ri->size);
+
+	/* Apply move to HW */
 	vcap_move_rules(ri, &move);
 
-	return gap + offset;
+	if (block_last)
+		return block_last->addr;
+
+	return addr;
 }
 
 /* Delete rule in a VCAP instance */
 int vcap_del_rule(struct vcap_control *vctrl, struct net_device *ndev, u32 id)
 {
-	struct vcap_rule_internal *ri, *elem;
+	struct vcap_rule_internal *ri;
 	struct vcap_admin *admin;
-	int gap = 0, err;
+	int err;
 
-	/* This will later also handle rule moving */
 	if (!ndev)
 		return -ENODEV;
 	err = vcap_api_check(vctrl);
@@ -2553,22 +2808,11 @@ int vcap_del_rule(struct vcap_control *vctrl, struct net_device *ndev, u32 id)
 
 	admin = ri->admin;
 
-	if (ri->addr > admin->last_used_addr)
-		gap = vcap_fill_rule_gap(ri);
+	admin->last_used_addr = vcap_fill_rule_gap(ri);
 
 	/* Delete the rule from the list of rules and the cache */
 	list_del(&ri->list);
-	vctrl->ops->init(ndev, admin, admin->last_used_addr, ri->size + gap);
 	vcap_free_rule(&ri->data);
-
-	/* Update the last used address, set to default when no rules */
-	if (list_empty(&admin->rules)) {
-		admin->last_used_addr = admin->last_valid_addr + 1;
-	} else {
-		elem = list_last_entry(&admin->rules, struct vcap_rule_internal,
-				       list);
-		admin->last_used_addr = elem->addr;
-	}
 
 	mutex_unlock(&admin->lock);
 	return err;
@@ -2615,6 +2859,11 @@ vcap_find_keyfield(struct vcap_rule *rule, enum vcap_key_field key)
 		if (ckf->ctrl.key == key)
 			return ckf;
 	return NULL;
+}
+
+bool vcap_contains_key(struct vcap_rule *rule, enum vcap_key_field key)
+{
+	return vcap_find_keyfield(rule, key) != NULL;
 }
 
 /* Find information on a key field in a rule */
@@ -2751,6 +3000,28 @@ int vcap_rule_add_key_u48(struct vcap_rule *rule, enum vcap_key_field key,
 }
 EXPORT_SYMBOL_GPL(vcap_rule_add_key_u48);
 
+/* Add a 56 bit key with value and mask to the rule */
+int vcap_rule_add_key_u56(struct vcap_rule *rule, enum vcap_key_field key,
+			  struct vcap_u56_key *fieldval)
+{
+	struct vcap_client_keyfield_data data;
+
+	memcpy(&data.u56, fieldval, sizeof(data.u56));
+	return vcap_rule_add_key(rule, key, VCAP_FIELD_U56, &data);
+}
+EXPORT_SYMBOL_GPL(vcap_rule_add_key_u56);
+
+/* Add a 64 bit key with value and mask to the rule */
+int vcap_rule_add_key_u64(struct vcap_rule *rule, enum vcap_key_field key,
+			  struct vcap_u64_key *fieldval)
+{
+	struct vcap_client_keyfield_data data;
+
+	memcpy(&data.u64, fieldval, sizeof(data.u64));
+	return vcap_rule_add_key(rule, key, VCAP_FIELD_U64, &data);
+}
+EXPORT_SYMBOL_GPL(vcap_rule_add_key_u64);
+
 /* Add a 72 bit key with value and mask to the rule */
 int vcap_rule_add_key_u72(struct vcap_rule *rule, enum vcap_key_field key,
 			  struct vcap_u72_key *fieldval)
@@ -2761,6 +3032,17 @@ int vcap_rule_add_key_u72(struct vcap_rule *rule, enum vcap_key_field key,
 	return vcap_rule_add_key(rule, key, VCAP_FIELD_U72, &data);
 }
 EXPORT_SYMBOL_GPL(vcap_rule_add_key_u72);
+
+/* Add a 112 bit key with value and mask to the rule */
+int vcap_rule_add_key_u112(struct vcap_rule *rule, enum vcap_key_field key,
+			  struct vcap_u112_key *fieldval)
+{
+	struct vcap_client_keyfield_data data;
+
+	memcpy(&data.u112, fieldval, sizeof(data.u112));
+	return vcap_rule_add_key(rule, key, VCAP_FIELD_U112, &data);
+}
+EXPORT_SYMBOL_GPL(vcap_rule_add_key_u112);
 
 /* Add a 128 bit key with value and mask to the rule */
 int vcap_rule_add_key_u128(struct vcap_rule *rule, enum vcap_key_field key,
@@ -2907,7 +3189,40 @@ int vcap_rule_add_action_u32(struct vcap_rule *rule,
 }
 EXPORT_SYMBOL_GPL(vcap_rule_add_action_u32);
 
-/* Add a 72 bit action field with value to the rule */
+/* Add a 48 bit action with value to the rule */
+int vcap_rule_add_action_u48(struct vcap_rule *rule, enum vcap_action_field action,
+			     struct vcap_u48_action *fieldval)
+{
+	struct vcap_client_actionfield_data data;
+
+	memcpy(&data.u48, fieldval, sizeof(data.u48));
+	return vcap_rule_add_action(rule, action, VCAP_FIELD_U48, &data);
+}
+EXPORT_SYMBOL_GPL(vcap_rule_add_action_u48);
+
+/* Add a 56 bit action with value to the rule */
+int vcap_rule_add_action_u56(struct vcap_rule *rule, enum vcap_action_field action,
+			     struct vcap_u56_action *fieldval)
+{
+	struct vcap_client_actionfield_data data;
+
+	memcpy(&data.u56, fieldval, sizeof(data.u56));
+	return vcap_rule_add_action(rule, action, VCAP_FIELD_U56, &data);
+}
+EXPORT_SYMBOL_GPL(vcap_rule_add_action_u56);
+
+/* Add a 64 bit action with value to the rule */
+int vcap_rule_add_action_u64(struct vcap_rule *rule, enum vcap_action_field action,
+			     struct vcap_u64_action *fieldval)
+{
+	struct vcap_client_actionfield_data data;
+
+	memcpy(&data.u64, fieldval, sizeof(data.u64));
+	return vcap_rule_add_action(rule, action, VCAP_FIELD_U64, &data);
+}
+EXPORT_SYMBOL_GPL(vcap_rule_add_action_u64);
+
+/* Add a 72 bit action with value to the rule */
 int vcap_rule_add_action_u72(struct vcap_rule *rule,
 			     enum vcap_action_field action,
 			     struct vcap_u72_action *fieldval)
@@ -2918,6 +3233,28 @@ int vcap_rule_add_action_u72(struct vcap_rule *rule,
 	return vcap_rule_add_action(rule, action, VCAP_FIELD_U72, &data);
 }
 EXPORT_SYMBOL_GPL(vcap_rule_add_action_u72);
+
+/* Add a 112 bit action with value to the rule */
+int vcap_rule_add_action_u112(struct vcap_rule *rule, enum vcap_action_field action,
+			      struct vcap_u112_action *fieldval)
+{
+	struct vcap_client_actionfield_data data;
+
+	memcpy(&data.u112, fieldval, sizeof(data.u112));
+	return vcap_rule_add_action(rule, action, VCAP_FIELD_U112, &data);
+}
+EXPORT_SYMBOL_GPL(vcap_rule_add_action_u112);
+
+/* Add a 128 bit action with value to the rule */
+int vcap_rule_add_action_u128(struct vcap_rule *rule, enum vcap_action_field action,
+			      struct vcap_u128_action *fieldval)
+{
+	struct vcap_client_actionfield_data data;
+
+	memcpy(&data.u128, fieldval, sizeof(data.u128));
+	return vcap_rule_add_action(rule, action, VCAP_FIELD_U128, &data);
+}
+EXPORT_SYMBOL_GPL(vcap_rule_add_action_u128);
 
 static int vcap_read_counter(struct vcap_rule_internal *ri,
 			     struct vcap_counter *ctr)
@@ -3044,6 +3381,7 @@ static int vcap_enable_rules(struct vcap_control *vctrl,
 /* Read and erase a rule from VCAP HW to disable it */
 static int vcap_disable_rule(struct vcap_rule_internal *ri)
 {
+	struct vcap_counter zero = {};
 	int err;
 
 	err = vcap_read_rule(ri);
@@ -3053,6 +3391,10 @@ static int vcap_disable_rule(struct vcap_rule_internal *ri)
 	if (err)
 		return err;
 	err = vcap_decode_actionset(ri);
+	if (err)
+		return err;
+
+	err = vcap_write_counter(ri, &zero);
 	if (err)
 		return err;
 
@@ -3259,7 +3601,7 @@ EXPORT_SYMBOL_GPL(vcap_rule_set_counter_id);
 
 int vcap_rule_set_counter(struct vcap_rule *rule, struct vcap_counter *ctr)
 {
-	struct vcap_rule_internal *ri = to_intrule(rule);
+	struct vcap_rule_internal *ri = to_intrule(rule), *orig;
 	int err;
 
 	err = vcap_api_check(ri->vctrl);
@@ -3270,8 +3612,15 @@ int vcap_rule_set_counter(struct vcap_rule *rule, struct vcap_counter *ctr)
 		return -EINVAL;
 	}
 
-	mutex_lock(&ri->admin->lock);
-	err = vcap_write_counter(ri, ctr);
+	/* When rule is obtained from vcap_get_rule, we have a copy. To be sure
+	 * that we can update the counter sw cache, we need to find the original.
+	 */
+	orig = vcap_get_locked_rule(ri->vctrl, rule->id);
+	if (!orig)
+		return -ENOENT;
+
+	err = vcap_write_counter(orig, ctr);
+	ri->counter = *ctr;
 	mutex_unlock(&ri->admin->lock);
 
 	return err;
@@ -3403,14 +3752,26 @@ int vcap_get_rule_count_by_cookie(struct vcap_control *vctrl,
 			err = vcap_read_counter(ri, &temp);
 			if (err)
 				goto unlock;
-			ctr->value += temp.value;
 
-			/* Reset the rule counter */
-			temp.value = 0;
-			temp.sticky = 0;
-			err = vcap_write_counter(ri, &temp);
-			if (err)
-				goto unlock;
+			/* The HW counters are either 1-bit saturating or 32bit
+			 * overflowing counters. We must report counts since
+			 * previous tc read, but we prefer not to change the
+			 * counter state in HW.
+			 * Instead of reset the counter in HW, update the
+			 * counter in SW with the last read value and then next
+			 * time when calculating the number of packets just
+			 * subtract from what HW says the last read value
+			 * In this way the HW counters will not be ever erased
+			 */
+			if (temp.value >= ri->counter.value) {
+				ctr->value += temp.value - ri->counter.value;
+			} else {
+				/* Either HW counter is 32bit and overflowed, or
+				 * we have a bug with HW and SW out of sync.
+				 */
+				ctr->value += temp.value;
+			}
+			ri->counter = temp;
 		}
 		mutex_unlock(&admin->lock);
 	}
@@ -3436,6 +3797,17 @@ static int vcap_rule_mod_key(struct vcap_rule *rule,
 	return 0;
 }
 
+/* Modify a bit key with value and mask in the rule */
+int vcap_rule_mod_key_bit(struct vcap_rule *rule, enum vcap_key_field key,
+			  enum vcap_bit val)
+{
+	struct vcap_client_keyfield_data data;
+
+	vcap_rule_set_key_bitsize(&data.u1, val);
+	return vcap_rule_mod_key(rule, key, VCAP_FIELD_BIT, &data);
+}
+EXPORT_SYMBOL_GPL(vcap_rule_mod_key_bit);
+
 /* Modify a 32 bit key field with value and mask in the rule */
 int vcap_rule_mod_key_u32(struct vcap_rule *rule, enum vcap_key_field key,
 			  u32 value, u32 mask)
@@ -3447,6 +3819,72 @@ int vcap_rule_mod_key_u32(struct vcap_rule *rule, enum vcap_key_field key,
 	return vcap_rule_mod_key(rule, key, VCAP_FIELD_U32, &data);
 }
 EXPORT_SYMBOL_GPL(vcap_rule_mod_key_u32);
+
+/* Modify a 48 bit key with value and mask in the rule */
+int vcap_rule_mod_key_u48(struct vcap_rule *rule, enum vcap_key_field key,
+			  struct vcap_u48_key *fieldval)
+{
+	struct vcap_client_keyfield_data data;
+
+	memcpy(&data.u48, fieldval, sizeof(data.u48));
+	return vcap_rule_mod_key(rule, key, VCAP_FIELD_U48, &data);
+}
+EXPORT_SYMBOL_GPL(vcap_rule_mod_key_u48);
+
+/* Modify a 56 bit key with value and mask in the rule */
+int vcap_rule_mod_key_u56(struct vcap_rule *rule, enum vcap_key_field key,
+			  struct vcap_u56_key *fieldval)
+{
+	struct vcap_client_keyfield_data data;
+
+	memcpy(&data.u56, fieldval, sizeof(data.u56));
+	return vcap_rule_mod_key(rule, key, VCAP_FIELD_U56, &data);
+}
+EXPORT_SYMBOL_GPL(vcap_rule_mod_key_u56);
+
+/* Modify a 64 bit key with value and mask in the rule */
+int vcap_rule_mod_key_u64(struct vcap_rule *rule, enum vcap_key_field key,
+			  struct vcap_u64_key *fieldval)
+{
+	struct vcap_client_keyfield_data data;
+
+	memcpy(&data.u64, fieldval, sizeof(data.u64));
+	return vcap_rule_mod_key(rule, key, VCAP_FIELD_U64, &data);
+}
+EXPORT_SYMBOL_GPL(vcap_rule_mod_key_u64);
+
+/* Modify a 72 bit key with value and mask in the rule */
+int vcap_rule_mod_key_u72(struct vcap_rule *rule, enum vcap_key_field key,
+			  struct vcap_u72_key *fieldval)
+{
+	struct vcap_client_keyfield_data data;
+
+	memcpy(&data.u72, fieldval, sizeof(data.u72));
+	return vcap_rule_mod_key(rule, key, VCAP_FIELD_U72, &data);
+}
+EXPORT_SYMBOL_GPL(vcap_rule_mod_key_u72);
+
+/* Modify a 112 bit key with value and mask in the rule */
+int vcap_rule_mod_key_u112(struct vcap_rule *rule, enum vcap_key_field key,
+			   struct vcap_u112_key *fieldval)
+{
+	struct vcap_client_keyfield_data data;
+
+	memcpy(&data.u112, fieldval, sizeof(data.u112));
+	return vcap_rule_mod_key(rule, key, VCAP_FIELD_U112, &data);
+}
+EXPORT_SYMBOL_GPL(vcap_rule_mod_key_u112);
+
+/* Modify a 128 bit key with value and mask in the rule */
+int vcap_rule_mod_key_u128(struct vcap_rule *rule, enum vcap_key_field key,
+			   struct vcap_u128_key *fieldval)
+{
+	struct vcap_client_keyfield_data data;
+
+	memcpy(&data.u128, fieldval, sizeof(data.u128));
+	return vcap_rule_mod_key(rule, key, VCAP_FIELD_U128, &data);
+}
+EXPORT_SYMBOL_GPL(vcap_rule_mod_key_u128);
 
 /* Remove a key field with value and mask in the rule */
 int vcap_rule_rem_key(struct vcap_rule *rule, enum vcap_key_field key)
@@ -3481,6 +3919,17 @@ static int vcap_rule_mod_action(struct vcap_rule *rule,
 	return 0;
 }
 
+/* Modify a bit action with value in the rule */
+int vcap_rule_mod_action_bit(struct vcap_rule *rule, enum vcap_action_field action,
+			     enum vcap_bit val)
+{
+	struct vcap_client_actionfield_data data;
+
+	vcap_rule_set_action_bitsize(&data.u1, val);
+	return vcap_rule_mod_action(rule, action, VCAP_FIELD_BIT, &data);
+}
+EXPORT_SYMBOL_GPL(vcap_rule_mod_action_bit);
+
 /* Modify a 32 bit action field with value in the rule */
 int vcap_rule_mod_action_u32(struct vcap_rule *rule,
 			     enum vcap_action_field action,
@@ -3492,6 +3941,72 @@ int vcap_rule_mod_action_u32(struct vcap_rule *rule,
 	return vcap_rule_mod_action(rule, action, VCAP_FIELD_U32, &data);
 }
 EXPORT_SYMBOL_GPL(vcap_rule_mod_action_u32);
+
+/* Modify a 48 bit action with value in the rule */
+int vcap_rule_mod_action_u48(struct vcap_rule *rule, enum vcap_action_field action,
+			     struct vcap_u48_action *fieldval)
+{
+	struct vcap_client_actionfield_data data;
+
+	memcpy(&data.u48, fieldval, sizeof(data.u48));
+	return vcap_rule_mod_action(rule, action, VCAP_FIELD_U48, &data);
+}
+EXPORT_SYMBOL_GPL(vcap_rule_mod_action_u48);
+
+/* Modify a 56 bit action with value in the rule */
+int vcap_rule_mod_action_u56(struct vcap_rule *rule, enum vcap_action_field action,
+			     struct vcap_u56_action *fieldval)
+{
+	struct vcap_client_actionfield_data data;
+
+	memcpy(&data.u56, fieldval, sizeof(data.u56));
+	return vcap_rule_mod_action(rule, action, VCAP_FIELD_U56, &data);
+}
+EXPORT_SYMBOL_GPL(vcap_rule_mod_action_u56);
+
+/* Modify a 64 bit action with value in the rule */
+int vcap_rule_mod_action_u64(struct vcap_rule *rule, enum vcap_action_field action,
+			     struct vcap_u64_action *fieldval)
+{
+	struct vcap_client_actionfield_data data;
+
+	memcpy(&data.u64, fieldval, sizeof(data.u64));
+	return vcap_rule_mod_action(rule, action, VCAP_FIELD_U64, &data);
+}
+EXPORT_SYMBOL_GPL(vcap_rule_mod_action_u64);
+
+/* Modify a 72 bit action with value in the rule */
+int vcap_rule_mod_action_u72(struct vcap_rule *rule, enum vcap_action_field action,
+			     struct vcap_u72_action *fieldval)
+{
+	struct vcap_client_actionfield_data data;
+
+	memcpy(&data.u72, fieldval, sizeof(data.u72));
+	return vcap_rule_mod_action(rule, action, VCAP_FIELD_U72, &data);
+}
+EXPORT_SYMBOL_GPL(vcap_rule_mod_action_u72);
+
+/* Modify a 112 bit action with value in the rule */
+int vcap_rule_mod_action_u112(struct vcap_rule *rule, enum vcap_action_field action,
+			      struct vcap_u112_action *fieldval)
+{
+	struct vcap_client_actionfield_data data;
+
+	memcpy(&data.u112, fieldval, sizeof(data.u112));
+	return vcap_rule_mod_action(rule, action, VCAP_FIELD_U112, &data);
+}
+EXPORT_SYMBOL_GPL(vcap_rule_mod_action_u112);
+
+/* Modify a 128 bit action with value in the rule */
+int vcap_rule_mod_action_u128(struct vcap_rule *rule, enum vcap_action_field action,
+			      struct vcap_u128_action *fieldval)
+{
+	struct vcap_client_actionfield_data data;
+
+	memcpy(&data.u128, fieldval, sizeof(data.u128));
+	return vcap_rule_mod_action(rule, action, VCAP_FIELD_U128, &data);
+}
+EXPORT_SYMBOL_GPL(vcap_rule_mod_action_u128);
 
 /* Drop keys in a keylist and any keys that are not supported by the keyset */
 int vcap_filter_rule_keys(struct vcap_rule *rule,
@@ -3605,6 +4120,27 @@ err:
 	return ERR_PTR(err);
 }
 EXPORT_SYMBOL_GPL(vcap_copy_rule);
+
+int vcap_rule_get_address(struct vcap_control *vctrl, u32 id,
+			  struct vcap_address *addr)
+{
+	struct vcap_rule_internal *ri;
+	int ret = vcap_api_check(vctrl);
+
+	if (ret)
+		return ret;
+
+	/* Look for the rule id in all vcaps */
+	ri = vcap_lookup_rule(vctrl, id);
+	if (!ri || !addr) {
+		pr_err("%s:%d: could not find rule: %u\n", __func__, __LINE__, id);
+		return -EINVAL;
+	}
+	addr->start = ri->addr;
+	addr->size = ri->size;
+	return 0;
+}
+EXPORT_SYMBOL_GPL(vcap_rule_get_address);
 
 #ifdef CONFIG_VCAP_KUNIT_TEST
 #include "vcap_api_kunit.c"

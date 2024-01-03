@@ -22,7 +22,7 @@
 #define VCAP_CID_INGRESS_L5          1500000 /* Ingress Stage 1 Lookup 5 */
 
 #define VCAP_CID_PREROUTING_IPV6     3000000 /* Prerouting Stage */
-#define VCAP_CID_PREROUTING          6000000 /* Prerouting Stage */
+#define VCAP_CID_PREROUTING_L0       6000000 /* Prerouting Stage Lookup 0 */
 
 #define VCAP_CID_INGRESS_STAGE2_L0   8000000 /* Ingress Stage 2 Lookup 0 */
 #define VCAP_CID_INGRESS_STAGE2_L1   8100000 /* Ingress Stage 2 Lookup 1 */
@@ -42,6 +42,7 @@ enum vcap_user {
 	VCAP_USER_CFM,
 	VCAP_USER_VLAN,
 	VCAP_USER_QOS,
+	VCAP_USER_L3,
 	VCAP_USER_VCAP_UTIL,
 	VCAP_USER_TC,
 	VCAP_USER_TC_EXTRA,
@@ -75,6 +76,12 @@ struct vcap_set {
 	u8 type_id;
 	u8 sw_per_item;
 	u8 sw_cnt;
+};
+
+/* VCAP typegroup header data */
+struct vcap_typegroup_hdr {
+	u16 tg_width;
+	u16 type_width;
 };
 
 /* VCAP typegroup position and bitvalue */
@@ -111,6 +118,10 @@ struct vcap_info {
 	const struct vcap_typegroup **keyfield_set_typegroups;
 	/* map of actionset typegroups per subword size */
 	const struct vcap_typegroup **actionfield_set_typegroups;
+	/* map of keyset typegroup header data per subword size */
+	const struct vcap_typegroup_hdr *keyfield_set_typegroup_hdrs;
+	/* map of actionfield typegroup header data per subword size */
+	const struct vcap_typegroup_hdr *actionfield_set_typegroup_hdrs;
 };
 
 enum vcap_field_type {

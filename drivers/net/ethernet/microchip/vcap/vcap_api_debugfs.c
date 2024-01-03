@@ -5,6 +5,9 @@
  *
  */
 
+#include <linux/kernel.h>
+#include <linux/seq_buf.h>
+
 #include "vcap_api_private.h"
 #include "vcap_api_debugfs.h"
 
@@ -16,6 +19,96 @@ struct vcap_admin_debugfs_info {
 struct vcap_port_debugfs_info {
 	struct vcap_control *vctrl;
 	struct net_device *ndev;
+};
+
+/* Write binary representation of word to s */
+static int vcap_debugfs_word_to_bin(struct seq_buf *s, u32 word)
+{
+	u32 mask = MSB_32_MASK;
+	int err;
+
+	if (seq_buf_buffer_left(s) < 35)
+		return -1;
+
+	err = seq_buf_puts(s, "0b");
+	if (err < 0)
+		return err;
+
+	while (mask != 0) {
+		err = seq_buf_putc(s, (word & mask) == 0 ? '0' : '1');
+		if (err < 0)
+			return err;
+		mask >>= 1;
+	}
+
+	seq_buf_str(s);
+
+	return 0;
+};
+
+static void vcap_debugfs_raw_stream_fmt(struct seq_buf *dst, u32 *stream,
+					u32 words)
+{
+	struct seq_buf binstr;
+	char binbuf[35];
+	char *fmtstr;
+	int err;
+
+	if (words <= 0)
+		return;
+
+	seq_buf_init(&binstr, binbuf, ARRAY_SIZE(binbuf));
+
+	err = seq_buf_printf(dst, "[");
+	if (err < 0)
+		return;
+
+	for (int idx = 0; idx < words; idx++) {
+		if (vcap_debugfs_word_to_bin(&binstr, stream[idx]) < 0)
+			break;
+		fmtstr = idx == (words - 1) ? "%s]" : "%s,";
+		err = seq_buf_printf(dst, fmtstr, binstr.buffer);
+		if (err < 0)
+			return;
+		seq_buf_clear(&binstr);
+	}
+	return;
+};
+
+static void vcap_debugfs_show_raw_streams(struct vcap_control *vctrl,
+					  struct vcap_admin *admin,
+					  struct vcap_output_print *out)
+{
+	int keyset_sw_regs, actionset_sw_regs;
+	enum vcap_type vt = admin->vtype;
+	struct seq_buf streambufs;
+	char streambuf[256];
+
+	seq_buf_init(&streambufs, streambuf, ARRAY_SIZE(streambuf));
+	keyset_sw_regs = DIV_ROUND_UP(vctrl->vcaps[vt].sw_width, 32);
+	actionset_sw_regs = DIV_ROUND_UP(vctrl->vcaps[vt].act_width, 32);
+
+	vcap_debugfs_raw_stream_fmt(&streambufs, admin->cache.keystream,
+				    keyset_sw_regs);
+	seq_buf_str(&streambufs);
+	out->prf(out->dst, "\n%22.s=%s", "keystream[0,...]", streambufs.buffer);
+	seq_buf_clear(&streambufs);
+
+	vcap_debugfs_raw_stream_fmt(&streambufs, admin->cache.maskstream,
+				    keyset_sw_regs);
+	seq_buf_str(&streambufs);
+	out->prf(out->dst, "\n%22.s=%s", "maskstream[0,...]",
+		 streambufs.buffer);
+	seq_buf_clear(&streambufs);
+
+	vcap_debugfs_raw_stream_fmt(&streambufs, admin->cache.actionstream,
+				    actionset_sw_regs);
+	seq_buf_str(&streambufs);
+	out->prf(out->dst, "\n%22.s=%s", "actionstream[0,...]",
+		 streambufs.buffer);
+	seq_buf_clear(&streambufs);
+
+	return;
 };
 
 /* Dump the keyfields value and mask values */
@@ -40,7 +133,8 @@ static void vcap_debugfs_show_rule_keyfield(struct vcap_control *vctrl,
 		value = (u8 *)(&data->u32.value);
 		mask = (u8 *)(&data->u32.mask);
 
-		if (key == VCAP_KF_L3_IP4_SIP || key == VCAP_KF_L3_IP4_DIP) {
+		if (key == VCAP_KF_L3_IP4_SIP || key == VCAP_KF_L3_IP4_DIP ||
+		    key == VCAP_KF_IP4_XIP) {
 			out->prf(out->dst, "%pI4h/%pI4h", &data->u32.value,
 				 &data->u32.mask);
 		} else if (key == VCAP_KF_ETYPE ||
@@ -88,7 +182,8 @@ static void vcap_debugfs_show_rule_keyfield(struct vcap_control *vctrl,
 	case VCAP_FIELD_U128:
 		value = data->u128.value;
 		mask = data->u128.mask;
-		if (key == VCAP_KF_L3_IP6_SIP || key == VCAP_KF_L3_IP6_DIP) {
+		if (key == VCAP_KF_L3_IP6_SIP || key == VCAP_KF_L3_IP6_DIP ||
+		    key == VCAP_KF_IP6_XIP) {
 			u8 nvalue[16], nmask[16];
 
 			vcap_netbytes_copy(nvalue, data->u128.value,
@@ -133,7 +228,11 @@ vcap_debugfs_show_rule_actionfield(struct vcap_control *vctrl,
 		out->prf(out->dst, "%d", value[0]);
 		break;
 	case VCAP_FIELD_U32:
-		fmsk = (1 << actionfield[action].width) - 1;
+		if (action == VCAP_AF_MAC_LSB || action == VCAP_AF_MAC_MSB) {
+			hex = true;
+			break;
+		}
+		fmsk = GENMASK(actionfield[action].width - 1, 0);
 		val = *(u32 *)value;
 		out->prf(out->dst, "%u", val & fmsk);
 		break;
@@ -238,12 +337,10 @@ static void vcap_show_admin_rule(struct vcap_control *vctrl,
 				 struct vcap_output_print *out,
 				 struct vcap_rule_internal *ri)
 {
-	ri->counter.value = admin->cache.counter;
-	ri->counter.sticky = admin->cache.sticky;
 	out->prf(out->dst,
 		 "rule: %u, addr: [%d,%d], X%d, ctr[%d]: %d, hit: %d\n",
 		 ri->data.id, ri->addr, ri->addr + ri->size - 1, ri->size,
-		 ri->counter_id, ri->counter.value, ri->counter.sticky);
+		 ri->counter_id, admin->cache.counter, admin->cache.sticky);
 	out->prf(out->dst, "  chain_id: %d\n", ri->data.vcap_chain_id);
 	out->prf(out->dst, "  user: %d\n", ri->data.user);
 	out->prf(out->dst, "  priority: %d\n", ri->data.priority);
@@ -263,9 +360,9 @@ static void vcap_show_admin_rule(struct vcap_control *vctrl,
 	vcap_debugfs_show_rule_actionset(ri, out);
 }
 
-static void vcap_show_admin_info(struct vcap_control *vctrl,
-				 struct vcap_admin *admin,
-				 struct vcap_output_print *out)
+void vcap_show_admin_info(struct vcap_control *vctrl,
+			  struct vcap_admin *admin,
+			  struct vcap_output_print *out)
 {
 	const struct vcap_info *vcap = &vctrl->vcaps[admin->vtype];
 
@@ -316,6 +413,7 @@ static int vcap_show_admin_raw(struct vcap_control *vctrl,
 			       struct vcap_admin *admin,
 			       struct vcap_output_print *out)
 {
+	enum vcap_actionfield_set actionset;
 	enum vcap_keyfield_set keysets[10];
 	enum vcap_type vt = admin->vtype;
 	struct vcap_keyset_list kslist;
@@ -339,27 +437,46 @@ static int vcap_show_admin_raw(struct vcap_control *vctrl,
 	for (addr = admin->last_valid_addr; addr >= admin->first_valid_addr;
 	     --addr) {
 		kslist.cnt = 0;
-		ret = vcap_addr_keysets(vctrl, ri->ndev, admin, addr, &kslist);
-		if (ret < 0)
+
+		vcap_read_addr(vctrl, ri->ndev, admin, addr);
+
+		if (vcap_detect_uninit_keyset_addr(vctrl, admin,
+						   admin->cache.keystream,
+						   admin->cache.maskstream))
 			continue;
+
+		/* Decode and locate the keysets */
+		ret = vcap_find_keystream_keysets(vctrl, vt,
+						  admin->cache.keystream,
+						  admin->cache.maskstream,
+						  false, 1, &kslist);
+		if (ret < 0)
+			goto continue_prt_streams;
+
 		info = vcap_keyfieldset(vctrl, vt, kslist.keysets[0]);
 		if (!info)
-			continue;
-		if (addr % info->sw_per_item) {
-			pr_info("addr: %d X%d error rule, keyset: %s\n",
-				addr,
-				info->sw_per_item,
-				vcap_keyset_name(vctrl, kslist.keysets[0]));
-		} else {
-			out->prf(out->dst, "  addr: %d, X%d rule, keysets:",
-				 addr,
+			goto continue_prt_streams;
+
+		if ((addr % info->sw_per_item) == 0) {
+			actionset = vcap_find_actionstream_actionset(
+				vctrl, vt, admin->cache.actionstream, 0);
+			out->prf(out->dst,
+				 "  addr: %d, X%d rule, keysets:", addr,
 				 info->sw_per_item);
 			for (idx = 0; idx < kslist.cnt; ++idx)
 				out->prf(out->dst, " %s",
 					 vcap_keyset_name(vctrl,
 							  kslist.keysets[idx]));
+			out->prf(out->dst, ", actionset: %s",
+				 vcap_actionset_name(vctrl, actionset));
+			vcap_debugfs_show_raw_streams(vctrl, admin, out);
 			out->prf(out->dst, "\n");
+			continue;
 		}
+continue_prt_streams:
+		out->prf(out->dst, "  addr: %d", addr);
+		vcap_debugfs_show_raw_streams(vctrl, admin, out);
+		out->prf(out->dst, "\n");
 	}
 	return 0;
 }
