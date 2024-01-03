@@ -200,6 +200,7 @@ br_mrp_start_test_policy[IFLA_BRIDGE_MRP_START_TEST_MAX + 1] = {
 	[IFLA_BRIDGE_MRP_START_TEST_MAX_MISS]	= { .type = NLA_U32 },
 	[IFLA_BRIDGE_MRP_START_TEST_PERIOD]	= { .type = NLA_U32 },
 	[IFLA_BRIDGE_MRP_START_TEST_MONITOR]	= { .type = NLA_U32 },
+	[IFLA_BRIDGE_MRP_START_TEST_BEST_MAC]	= NLA_POLICY_ETH_ADDR,
 };
 
 static int br_mrp_start_test_parse(struct net_bridge *br, struct nlattr *attr,
@@ -234,6 +235,11 @@ static int br_mrp_start_test_parse(struct net_bridge *br, struct nlattr *attr,
 	if (tb[IFLA_BRIDGE_MRP_START_TEST_MONITOR])
 		test.monitor =
 			nla_get_u32(tb[IFLA_BRIDGE_MRP_START_TEST_MONITOR]);
+
+	if (tb[IFLA_BRIDGE_MRP_START_TEST_BEST_MAC])
+		nla_memcpy(&test.best_mac,
+			   tb[IFLA_BRIDGE_MRP_START_TEST_BEST_MAC],
+			   sizeof(test.best_mac));
 
 	return br_mrp_start_test(br, &test);
 }
@@ -547,6 +553,7 @@ int br_mrp_ring_port_open(struct net_device *dev, u8 loc)
 out:
 	return err;
 }
+EXPORT_SYMBOL(br_mrp_ring_port_open);
 
 int br_mrp_in_port_open(struct net_device *dev, u8 loc)
 {
@@ -569,3 +576,4 @@ int br_mrp_in_port_open(struct net_device *dev, u8 loc)
 out:
 	return err;
 }
+EXPORT_SYMBOL(br_mrp_in_port_open);

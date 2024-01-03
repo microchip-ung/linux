@@ -179,6 +179,41 @@ static void br_mrp_skb_common(struct sk_buff *skb, struct br_mrp *mrp)
 	memset(hdr->domain, 0xff, MRP_DOMAIN_UUID_LENGTH);
 }
 
+struct sk_buff *br_mrp_alloc_test(struct net_device *dev, u32 port_role)
+{
+	struct net_bridge_port *p = br_port_get_rtnl(dev);
+	struct br_mrp_ring_test_hdr *hdr = NULL;
+	struct sk_buff *skb = NULL;
+	struct br_mrp *mrp = NULL;
+
+	if (!p)
+		return NULL;
+
+	mrp = br_mrp_find_port(p->br, p);
+	if (!mrp)
+		return NULL;
+
+	skb = br_mrp_skb_alloc(p, p->dev->dev_addr, mrp_test_dmac);
+	if (!skb)
+		return NULL;
+
+	br_mrp_skb_tlv(skb, BR_MRP_TLV_HEADER_RING_TEST, sizeof(*hdr));
+	hdr = skb_put(skb, sizeof(*hdr));
+
+	hdr->prio = cpu_to_be16(mrp->prio);
+	ether_addr_copy(hdr->sa, p->br->dev->dev_addr);
+	hdr->port_role = cpu_to_be16(port_role);
+	hdr->state = cpu_to_be16(mrp->ring_state);
+	hdr->transitions = cpu_to_be16(mrp->ring_transitions);
+	hdr->timestamp = cpu_to_be32(jiffies_to_msecs(jiffies));
+
+	br_mrp_skb_common(skb, mrp);
+	br_mrp_skb_tlv(skb, BR_MRP_TLV_HEADER_END, 0x0);
+
+	return skb;
+}
+EXPORT_SYMBOL(br_mrp_alloc_test);
+
 static struct sk_buff *br_mrp_alloc_test_skb(struct br_mrp *mrp,
 					     struct net_bridge_port *p,
 					     enum br_mrp_port_role_type port_role)
@@ -235,6 +270,41 @@ static struct sk_buff *br_mrp_alloc_test_skb(struct br_mrp *mrp,
 
 	return skb;
 }
+
+struct sk_buff *br_mrp_alloc_in_test(struct net_device *dev, u32 port_role)
+{
+	struct net_bridge_port *p = br_port_get_rtnl(dev);
+	struct br_mrp_in_test_hdr *hdr = NULL;
+	struct sk_buff *skb = NULL;
+	struct br_mrp *mrp = NULL;
+
+	if (!p)
+		return NULL;
+
+	mrp = br_mrp_find_port(p->br, p);
+	if (!mrp)
+		return NULL;
+
+	skb = br_mrp_skb_alloc(p, p->dev->dev_addr, mrp_in_test_dmac);
+	if (!skb)
+		return NULL;
+
+	br_mrp_skb_tlv(skb, BR_MRP_TLV_HEADER_IN_TEST, sizeof(*hdr));
+	hdr = skb_put(skb, sizeof(*hdr));
+
+	hdr->id = cpu_to_be16(mrp->in_id);
+	ether_addr_copy(hdr->sa, p->br->dev->dev_addr);
+	hdr->port_role = cpu_to_be16(port_role);
+	hdr->state = cpu_to_be16(mrp->in_state);
+	hdr->transitions = cpu_to_be16(mrp->in_transitions);
+	hdr->timestamp = cpu_to_be32(jiffies_to_msecs(jiffies));
+
+	br_mrp_skb_common(skb, mrp);
+	br_mrp_skb_tlv(skb, BR_MRP_TLV_HEADER_END, 0x0);
+
+	return skb;
+}
+EXPORT_SYMBOL(br_mrp_alloc_in_test);
 
 static struct sk_buff *br_mrp_alloc_in_test_skb(struct br_mrp *mrp,
 						struct net_bridge_port *p,
@@ -432,7 +502,8 @@ static void br_mrp_del_impl(struct net_bridge *br, struct br_mrp *mrp)
 
 	/* Stop sending MRP_Test frames */
 	cancel_delayed_work_sync(&mrp->test_work);
-	br_mrp_switchdev_send_ring_test(br, mrp, 0, 0, 0, 0);
+	br_mrp_switchdev_send_ring_test(br, mrp, 0, 0, 0, 0,
+					mrp->test_best_mac);
 
 	/* Stop sending MRP_InTest frames if has an interconnect role */
 	cancel_delayed_work_sync(&mrp->in_test_work);
@@ -713,7 +784,7 @@ int br_mrp_start_test(struct net_bridge *br,
 	 */
 	support = br_mrp_switchdev_send_ring_test(br, mrp, test->interval,
 						  test->max_miss, test->period,
-						  test->monitor);
+						  test->monitor, test->best_mac);
 	if (support == BR_MRP_NONE)
 		return -EOPNOTSUPP;
 
@@ -725,6 +796,7 @@ int br_mrp_start_test(struct net_bridge *br,
 	mrp->test_max_miss = test->max_miss;
 	mrp->test_monitor = test->monitor;
 	mrp->test_count_miss = 0;
+	ether_addr_copy(mrp->test_best_mac, test->best_mac);
 	queue_delayed_work(system_wq, &mrp->test_work,
 			   usecs_to_jiffies(test->interval));
 
