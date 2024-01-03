@@ -11,6 +11,11 @@
 
 #define SPX5_SERDES_MAX       33
 
+enum sparx5_target {
+	SPX5_TARGET_SPARX5,
+	SPX5_TARGET_LAN969X,
+};
+
 enum sparx5_serdes_type {
 	SPX5_SDT_6G  = 6,
 	SPX5_SDT_10G = 10,
@@ -24,6 +29,7 @@ enum sparx5_serdes_mode {
 	SPX5_SD_MODE_100FX,
 	SPX5_SD_MODE_1000BASEX,
 	SPX5_SD_MODE_SFI,
+	SPX5_SD_MODE_10G_QSXGMII,
 };
 
 enum sparx5_10g28cmu_mode {
@@ -32,12 +38,6 @@ enum sparx5_10g28cmu_mode {
 	SPX5_SD10G28_CMU_AUX2 = 3,
 	SPX5_SD10G28_CMU_NONE = 4,
 	SPX5_SD10G28_CMU_MAX,
-};
-
-enum sparx5_target {
-	SPX5_TARGET_SPARX5,
-	SPX5_TARGET_LAN969X,
-
 };
 
 struct sparx5_serdes_macro {
@@ -49,6 +49,11 @@ struct sparx5_serdes_macro {
 	phy_interface_t portmode;
 	int speed;
 	enum phy_media media;
+};
+
+struct sparx5_serdes_io_resource {
+	enum sparx5_serdes_target id;
+	phys_addr_t offset;
 };
 
 struct sparx5_serdes_consts {

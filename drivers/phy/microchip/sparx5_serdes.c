@@ -23,9 +23,8 @@
 
 #define SPX5_SERDES_10G_START 13
 #define SPX5_SERDES_25G_START 25
-#define SPX5_SERDES_6G10G_CNT SPX5_SERDES_25G_START
-
 #define LAN969X_SERDES_10G_CNT 10
+#define SPX5_SERDES_25G_CNT   8
 
 /* Optimal power settings from GUC */
 #define SPX5_SERDES_QUIET_MODE_VAL 0x01ef4e0c
@@ -54,6 +53,7 @@ enum sparx5_sd25g28_mode_preset_type {
 	SPX5_SD25G28_MODE_PRESET_5000,
 	SPX5_SD25G28_MODE_PRESET_SD_2G5,
 	SPX5_SD25G28_MODE_PRESET_1000BASEX,
+	SPX5_SD25G28_MODE_PRESET_10G_QSGMII,
 };
 
 enum sparx5_sd10g28_mode_preset_type {
@@ -63,11 +63,7 @@ enum sparx5_sd10g28_mode_preset_type {
 	SPX5_SD10G28_MODE_PRESET_QSGMII,
 	SPX5_SD10G28_MODE_PRESET_SD_2G5,
 	SPX5_SD10G28_MODE_PRESET_1000BASEX,
-};
-
-struct sparx5_serdes_io_resource {
-	enum sparx5_serdes_target id;
-	phys_addr_t offset;
+	SPX5_SD10G28_MODE_PRESET_10G_QSGMII,
 };
 
 struct sparx5_sd25g28_mode_preset {
@@ -519,6 +515,32 @@ static struct sparx5_sd25g28_mode_preset mode_presets_25g[] = {
 		.tx_tap_dly         = 0,
 		.tx_tap_adv         = 0,
 	},
+	{ /* SPX5_SD25G28_MODE_PRESET_10G_QSGMII */
+		.bitwidth           = 32,
+		.tx_pre_div         = 0,
+		.fifo_ck_div        = 1,
+		.pre_divsel         = 0,
+		.vco_div_mode       = 1,
+		.sel_div            = 9,
+		.ck_bitwidth        = 0,
+		.subrate            = 0,
+		.com_txcal_en       = 1,
+		.com_tx_reserve_msb = (0x20 << 1),
+		.com_tx_reserve_lsb = 0x40,
+		.cfg_itx_ipcml_base = 0,
+		.tx_reserve_msb     = 0x4c,
+		.tx_reserve_lsb     = 0x44,
+		.bw                 = 1,
+		.rxterm             = 0,
+		.cfg_pi_bw_3_0      = 0,
+		.dfe_enable         = 1,
+		.dfe_tap            = 0x1f,
+		.txmargin           = 1,
+		.cfg_ctle_rstn      = 1,
+		.r_dfe_rstn         = 1,
+		.tx_tap_dly         = 0,
+		.tx_tap_adv         = 0,
+	},
 };
 
 static struct sparx5_sd10g28_media_preset media_presets_10g[] = {
@@ -563,7 +585,7 @@ static struct sparx5_sd10g28_media_preset media_presets_10g[] = {
 		.cfg_eq_r_byp             = 1,
 		.cfg_eq_c_force_3_0       = 0xf,
 		.cfg_alos_thr_3_0         = 0x0,
-	}
+	},
 };
 
 static struct sparx5_sd10g28_mode_preset mode_presets_10g[] = {
@@ -621,6 +643,15 @@ static struct sparx5_sd10g28_mode_preset mode_presets_10g[] = {
 		.pi_bw_gen1       = 0x7,
 		.duty_cycle       = 0x0,
 	},
+	{ /* SPX5_SD10G28_MODE_PRESET_10G_QSGMII */
+		.bwidth           = 32,
+		.cmu_sel          = SPX5_SD10G28_CMU_MAIN,
+		.rate             = 0x0,
+		.dfe_enable       = 1,
+		.dfe_tap          = 0x1f,
+		.pi_bw_gen1       = 0x0,
+		.duty_cycle       = 0x2,
+	},
 };
 
 /* map from SD25G28 interface width to configuration value */
@@ -674,6 +705,9 @@ static int sparx5_sd10g25_get_mode_preset(struct sparx5_serdes_macro *macro,
 	case SPX5_SD_MODE_1000BASEX:
 		*mode = mode_presets_25g[SPX5_SD25G28_MODE_PRESET_1000BASEX];
 		break;
+	case SPX5_SD_MODE_10G_QSXGMII:
+		*mode = mode_presets_25g[SPX5_SD25G28_MODE_PRESET_10G_QSGMII];
+		break;
 	case SPX5_SD_MODE_100FX:
 		 /* Not supported */
 		return -EINVAL;
@@ -713,6 +747,9 @@ static int sparx5_sd10g28_get_mode_preset(struct sparx5_serdes_macro *macro,
 	case SPX5_SD_MODE_100FX:
 	case SPX5_SD_MODE_1000BASEX:
 		*mode = mode_presets_10g[SPX5_SD10G28_MODE_PRESET_1000BASEX];
+		break;
+	case SPX5_SD_MODE_10G_QSXGMII:
+		*mode = mode_presets_10g[SPX5_SD10G28_MODE_PRESET_10G_QSGMII];
 		break;
 	default:
 		*mode = mode_presets_10g[SPX5_SD10G28_MODE_PRESET_10000];
@@ -1074,7 +1111,7 @@ static int sparx5_cmu_cfg(struct sparx5_serdes_private *priv, u32 cmu_idx)
 
 /* Map of 6G/10G serdes mode and index to CMU index. */
 static const int
-sparx5_serdes_cmu_map[SPX5_SD10G28_CMU_MAX][SPX5_SERDES_6G10G_CNT] = {
+sparx5_serdes_cmu_map[SPX5_SD10G28_CMU_MAX][SPX5_SERDES_25G_START] = {
 	[SPX5_SD10G28_CMU_MAIN] = {  2,  2,  2,  2,  2,
 				     2,  2,  2,  5,  5,
 				     5,  5,  5,  5,  5,
@@ -1157,17 +1194,40 @@ static void sparx5_serdes_cmu_power_off(struct sparx5_serdes_private *priv)
 			      SD_CMU_CMU_08_CFG_CK_TREE_PD, cmu_inst,
 			      SD_CMU_CMU_08(0));
 
-		sdx5_inst_rmw(SD_CMU_CMU_0D_CFG_REFCK_PD_SET(1) |
-			      SD_CMU_CMU_0D_CFG_PD_DIV64_SET(1) |
-			      SD_CMU_CMU_0D_CFG_PD_DIV66_SET(1),
-			      SD_CMU_CMU_0D_CFG_REFCK_PD |
-			      SD_CMU_CMU_0D_CFG_PD_DIV64 |
-			      SD_CMU_CMU_0D_CFG_PD_DIV66, cmu_inst,
-			      SD_CMU_CMU_0D(0));
+		sdx5_inst_rmw(
+			SD_CMU_CMU_0D_CFG_REFCK_PD_SET(1) |
+			SD_CMU_CMU_0D_CFG_PD_DIV64_SET(1) |
+			SD_CMU_CMU_0D_CFG_PD_DIV66_SET(1),
+			SD_CMU_CMU_0D_CFG_REFCK_PD |
+			SD_CMU_CMU_0D_CFG_PD_DIV64 |
+			SD_CMU_CMU_0D_CFG_PD_DIV66,
+			cmu_inst, SD_CMU_CMU_0D(0));
 
 		sdx5_inst_rmw(SD_CMU_CMU_06_CFG_CTRL_LOGIC_PD_SET(1),
 			      SD_CMU_CMU_06_CFG_CTRL_LOGIC_PD, cmu_inst,
 			      SD_CMU_CMU_06(0));
+	}
+
+	for (i = 0; i < SPX5_SERDES_25G_CNT; i++) {
+		sdx5_rmw(SD_LANE_25G_SD_LANE_CFG_EXT_CFG_RST_SET(1),
+			      SD_LANE_25G_SD_LANE_CFG_EXT_CFG_RST,
+			      priv, SD_LANE_25G_SD_LANE_CFG(i));
+
+		sdx5_rmw(SD_LANE_25G_SD_LANE_CFG_EXT_CFG_RST_SET(0),
+			      SD_LANE_25G_SD_LANE_CFG_EXT_CFG_RST,
+			      priv, SD_LANE_25G_SD_LANE_CFG(i));
+
+		sdx5_rmw(SD25G_LANE_CMU_FF_REGISTER_TABLE_INDEX_SET(0xff),
+			      SD25G_LANE_CMU_FF_REGISTER_TABLE_INDEX,
+			      priv, SD25G_LANE_CMU_FF(i));
+
+		sdx5_rmw(SD25G_LANE_CMU_31_CFG_COMMON_RESERVE_7_0_SET(1),
+			      SD25G_LANE_CMU_31_CFG_COMMON_RESERVE_7_0,
+			      priv, SD25G_LANE_CMU_31(i));
+
+		sdx5_rmw(SD25G_LANE_CMU_FF_REGISTER_TABLE_INDEX_SET(0),
+			      SD25G_LANE_CMU_FF_REGISTER_TABLE_INDEX,
+			      priv, SD25G_LANE_CMU_FF(i));
 	}
 }
 
@@ -2143,7 +2203,6 @@ static int sparx5_sd10g28_config(struct sparx5_serdes_macro *macro, bool reset)
 		.rxinvert = 1,
 		.txswing = 240,
 		.reg_rst = reset,
-		.skip_cmu_cfg = reset,
 	};
 	int err;
 
@@ -2159,50 +2218,36 @@ static int sparx5_sd10g28_config(struct sparx5_serdes_macro *macro, bool reset)
 static int sparx5_serdes_power_save(struct sparx5_serdes_macro *macro, u32 pwdn)
 {
 	struct sparx5_serdes_private *priv = macro->priv;
-	void __iomem *sd_inst, *sd_lane_inst;
+	void __iomem *sd_lane_inst;
 
-	if (macro->serdestype == SPX5_SDT_6G)
-		sd_inst = sdx5_inst_get(priv, TARGET_SD6G_LANE, macro->stpidx);
-	else if (macro->serdestype == SPX5_SDT_10G)
-		sd_inst = sdx5_inst_get(priv, TARGET_SD10G_LANE, macro->stpidx);
+	if (macro->serdestype == SPX5_SDT_6G ||
+	    macro->serdestype == SPX5_SDT_10G)
+		sd_lane_inst = sdx5_inst_get(priv, TARGET_SD_LANE,
+					     macro->sidx);
 	else
-		sd_inst = sdx5_inst_get(priv, TARGET_SD25G_LANE, macro->stpidx);
-
-	if (macro->serdestype == SPX5_SDT_25G) {
 		sd_lane_inst = sdx5_inst_get(priv, TARGET_SD_LANE_25G,
 					     macro->stpidx);
+
+	if (macro->serdestype == SPX5_SDT_25G) { /* 25G */
 		/* Take serdes out of reset */
 		sdx5_inst_rmw(SD_LANE_25G_SD_LANE_CFG_EXT_CFG_RST_SET(0),
-			      SD_LANE_25G_SD_LANE_CFG_EXT_CFG_RST, sd_lane_inst,
-			      SD_LANE_25G_SD_LANE_CFG(0));
+			      SD_LANE_25G_SD_LANE_CFG_EXT_CFG_RST,
+			      sd_lane_inst, SD_LANE_25G_SD_LANE_CFG(0));
 
-		/* Configure optimal settings for quiet mode */
+		/* Set power down settings for quiet mode */
 		sdx5_inst_rmw(SD_LANE_25G_QUIET_MODE_6G_QUIET_MODE_SET(SPX5_SERDES_QUIET_MODE_VAL),
 			      SD_LANE_25G_QUIET_MODE_6G_QUIET_MODE,
 			      sd_lane_inst, SD_LANE_25G_QUIET_MODE_6G(0));
-
-		sdx5_inst_rmw(SD25G_LANE_LANE_04_LN_CFG_PD_DRIVER_SET(pwdn),
-			      SD25G_LANE_LANE_04_LN_CFG_PD_DRIVER,
-			      sd_inst,
-			      SD25G_LANE_LANE_04(0));
-	} else {
-		/* 6G and 10G */
-		sd_lane_inst = sdx5_inst_get(priv, TARGET_SD_LANE, macro->sidx);
-
+	} else { /* 6G and 10G */
 		/* Take serdes out of reset */
 		sdx5_inst_rmw(SD_LANE_SD_LANE_CFG_EXT_CFG_RST_SET(0),
-			      SD_LANE_SD_LANE_CFG_EXT_CFG_RST, sd_lane_inst,
-			      SD_LANE_SD_LANE_CFG(0));
+			      SD_LANE_SD_LANE_CFG_EXT_CFG_RST,
+			      sd_lane_inst, SD_LANE_SD_LANE_CFG(0));
 
-		/* Configure optimal settings for quiet mode */
+		/* Set power down settings for quiet mode */
 		sdx5_inst_rmw(SD_LANE_QUIET_MODE_6G_QUIET_MODE_SET(SPX5_SERDES_QUIET_MODE_VAL),
-			      SD_LANE_QUIET_MODE_6G_QUIET_MODE, sd_lane_inst,
-			      SD_LANE_QUIET_MODE_6G(0));
-
-		sdx5_inst_rmw(SD10G_LANE_LANE_06_CFG_PD_DRIVER_SET(pwdn),
-			      SD10G_LANE_LANE_06_CFG_PD_DRIVER,
-			      sd_inst,
-			      SD10G_LANE_LANE_06(0));
+			      SD_LANE_QUIET_MODE_6G_QUIET_MODE,
+			      sd_lane_inst, SD_LANE_QUIET_MODE_6G(0));
 	}
 	return 0;
 }
@@ -2244,6 +2289,8 @@ static int sparx5_serdes_get_serdesmode(phy_interface_t portmode, int speed)
 		return SPX5_SD_MODE_QSGMII;
 	case PHY_INTERFACE_MODE_10GBASER:
 		return SPX5_SD_MODE_SFI;
+	case PHY_INTERFACE_MODE_10G_QXGMII:
+		return SPX5_SD_MODE_10G_QSXGMII;
 	default:
 		return -EINVAL;
 	}
@@ -2304,6 +2351,7 @@ static int sparx5_serdes_set_mode(struct phy *phy, enum phy_mode mode, int submo
 	case PHY_INTERFACE_MODE_SGMII:
 	case PHY_INTERFACE_MODE_QSGMII:
 	case PHY_INTERFACE_MODE_10GBASER:
+	case PHY_INTERFACE_MODE_10G_QXGMII:
 		macro = phy_get_drvdata(phy);
 		macro->portmode = submode;
 		sparx5_serdes_config(macro);

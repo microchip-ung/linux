@@ -3036,4 +3036,4 @@ extern const unsigned int *tsize;
 #define SD_LANE_25G_QUIET_MODE_6G_QUIET_MODE_GET(x)\
 	FIELD_GET(SD_LANE_25G_QUIET_MODE_6G_QUIET_MODE, x)
 
-#endif /* _SPARX5_SERDES_REGS_H_ */
+#endif /* _SPARX5_MAIN_REGS_H_ */
