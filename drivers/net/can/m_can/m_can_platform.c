@@ -5,6 +5,7 @@
 //
 // Copyright (C) 2018-19 Texas Instruments Incorporated - http://www.ti.com/
 
+#include <linux/gpio/consumer.h>
 #include <linux/hrtimer.h>
 #include <linux/phy/phy.h>
 #include <linux/platform_device.h>
@@ -79,6 +80,7 @@ static int m_can_plat_probe(struct platform_device *pdev)
 {
 	struct m_can_classdev *mcan_class;
 	struct m_can_plat_priv *priv;
+	struct gpio_desc *standby;
 	struct resource *res;
 	void __iomem *addr;
 	void __iomem *mram_addr;
@@ -149,6 +151,23 @@ static int m_can_plat_probe(struct platform_device *pdev)
 	mcan_class->is_peripheral = false;
 
 	platform_set_drvdata(pdev, mcan_class);
+
+	/* CAN transceiver has standby line which should be set to low
+	 * for data transfers to happen on bus lines.
+	 */
+	standby = devm_gpiod_get_optional(&pdev->dev, "standby", GPIOD_OUT_HIGH);
+	if (IS_ERR(standby)) {
+		ret = PTR_ERR(standby);
+		if (ret != -EPROBE_DEFER)
+			dev_err(&pdev->dev,
+				"gpio request failed, ret %d\n", ret);
+
+		goto probe_fail;
+	}
+
+	if (gpiod_get_value(standby))
+		gpiod_set_value(standby, 0);
+
 
 	pm_runtime_enable(mcan_class->dev);
 	ret = m_can_class_register(mcan_class);
