@@ -5,6 +5,7 @@
 
 /dts-v1/;
 #include "sparx5_pcb_common.dtsi"
+#include "sparx5_appl_pcb_common.dtsi"
 
 / {
 	model = "Sparx5 PCB125 Reference Board";
@@ -39,33 +40,37 @@
 	microchip,clock-delay = <10>;
 };
 
+&gpio {
+	cs14_pins: cs14-pins {
+		pins = "GPIO_44";
+		function = "si";
+	};
+};
+
+&mux {
+	/* CS14 (NAND) is on SPI2 */
+	mux@e {
+		reg = <14>;
+		microchip,bus-interface = <1>;
+	};
+};
+
 &spi0 {
 	status = "okay";
-	spi@0 {
-		compatible = "spi-mux";
-		mux-controls = <&mux>;
-		#address-cells = <1>;
-		#size-cells = <0>;
-		reg = <0>;	/* CS0 */
-		flash@9 {
-			compatible = "jedec,spi-nor";
-			spi-max-frequency = <8000000>;
-			reg = <0x9>;	/* SPI */
-		};
+	pinctrl-0 = <&si2_pins>;
+	pinctrl-names = "default";
+	spi-flash@0 {
+		compatible = "jedec,spi-nor";
+		spi-max-frequency = <8000000>;
+		reg = <0>;
 	};
-	spi@1 {
-		compatible = "spi-mux";
-		mux-controls = <&mux 0>;
-		#address-cells = <1>;
-		#size-cells = <0>;
-		reg = <1>; /* CS1 */
-		flash@9 {
-			compatible = "spi-nand";
-			pinctrl-0 = <&cs1_pins>;
-			pinctrl-names = "default";
-			spi-max-frequency = <8000000>;
-			reg = <0x9>;	/* SPI */
-		};
+	spi-flash@e {
+		compatible = "spi-nand";
+		pinctrl-0 = <&cs14_pins>;
+		pinctrl-names = "default";
+		spi-max-frequency = <42000000>;
+		reg = <14>;
+		rx-sample-delay-ns = <7>;  /* Tune for speed */
 	};
 };
 
@@ -76,4 +81,11 @@
 
 &i2c1 {
 	status = "okay";
+};
+
+&switch {
+	status = "disabled";
+	/delete-property/ resets;
+	/delete-property/ reset-names;
+	/delete-node/ ethernet-ports;
 };

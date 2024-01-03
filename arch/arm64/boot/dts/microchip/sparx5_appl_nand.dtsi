@@ -1,0 +1,27 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2020 Microchip Technology Inc. and its subsidiaries.
+ */
+
+#include "sparx5_nand.dtsi"
+
+&mux {
+	/* CS14 (NAND) is on SPI2 */
+	mux@e {
+		reg = <14>;
+		microchip,bus-interface = <1>;
+	};
+};
+
+&spi0 {
+	/delete-node/ spi@e;
+
+	flash@e {
+		compatible = "spi-nand";
+		pinctrl-0 = <&cs14_pins>;
+		pinctrl-names = "default";
+		spi-max-frequency = <42000000>;
+		reg = <14>;
+		rx-sample-delay-ns = <7>;  /* Tune for speed */
+	};
+};
