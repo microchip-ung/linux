@@ -72,13 +72,28 @@ static void mall_destroy_hw_filter(struct tcf_proto *tp,
 {
 	struct tc_cls_matchall_offload cls_mall = {};
 	struct tcf_block *block = tp->chain->block;
+	int err;
+
+	cls_mall.rule =	flow_rule_alloc(tcf_exts_num_actions(&head->exts));
+	if (!cls_mall.rule)
+		return;
 
 	tc_cls_common_offload_init(&cls_mall.common, tp, head->flags, extack);
 	cls_mall.command = TC_CLSMATCHALL_DESTROY;
 	cls_mall.cookie = cookie;
 
+	err = tc_setup_offload_action(&cls_mall.rule->action, &head->exts,
+				      cls_mall.common.extack);
+	if (err) {
+		kfree(cls_mall.rule);
+		return;
+	}
+
 	tc_setup_cb_destroy(block, tp, TC_SETUP_CLSMATCHALL, &cls_mall, false,
 			    &head->flags, &head->in_hw_count, true);
+
+	tc_cleanup_offload_action(&cls_mall.rule->action);
+	kfree(cls_mall.rule);
 }
 
 static int mall_replace_hw_filter(struct tcf_proto *tp,
@@ -313,14 +328,29 @@ static void mall_stats_hw_filter(struct tcf_proto *tp,
 {
 	struct tc_cls_matchall_offload cls_mall = {};
 	struct tcf_block *block = tp->chain->block;
+	int err;
+
+	cls_mall.rule = flow_rule_alloc(tcf_exts_num_actions(&head->exts));
+	if (!cls_mall.rule)
+		return;
 
 	tc_cls_common_offload_init(&cls_mall.common, tp, head->flags, NULL);
 	cls_mall.command = TC_CLSMATCHALL_STATS;
 	cls_mall.cookie = cookie;
 
+	err = tc_setup_offload_action(&cls_mall.rule->action, &head->exts,
+				      cls_mall.common.extack);
+	if (err) {
+		kfree(cls_mall.rule);
+		return;
+	}
+
 	tc_setup_cb_call(block, TC_SETUP_CLSMATCHALL, &cls_mall, false, true);
 
 	tcf_exts_hw_stats_update(&head->exts, &cls_mall.stats, cls_mall.use_act_stats);
+
+	tc_cleanup_offload_action(&cls_mall.rule->action);
+	kfree(cls_mall.rule);
 }
 
 static int mall_dump(struct net *net, struct tcf_proto *tp, void *fh,
