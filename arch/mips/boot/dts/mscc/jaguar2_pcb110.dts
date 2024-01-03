@@ -54,28 +54,28 @@
 		pinctrl-2 = <&i2cmux_2>;
 		pinctrl-3 = <&i2cmux_3>;
 		pinctrl-4 = <&i2cmux_pins_i>;
-		i2c149: i2c@0 {
+		i2c149: i2c_sfp_plus_a {
 			reg = <0x0>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
-		i2c150: i2c@1 {
+		i2c150: i2c_sfp_plus_b {
 			reg = <0x1>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
-		i2c151: i2c@2 {
+		i2c151: i2c_sfp_plus_c {
 			reg = <0x2>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
-		i2c152: i2c@3 {
+		i2c152: i2c_sfp_plus_d {
 			reg = <0x3>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
 	};
-	i2c0_emux: i2c0-emux {
+	i2c0_emux: i2c0-emux@0 {
 		compatible = "i2c-mux-gpio";
 		#address-cells = <1>;
 		#size-cells = <0>;
@@ -85,83 +85,83 @@
 			     &gpio 53 GPIO_ACTIVE_HIGH
 			     &gpio 58 GPIO_ACTIVE_HIGH
 			     &gpio 59 GPIO_ACTIVE_HIGH>;
-		idle-state = <0x0>;
-		i2c108: i2c@10 {
+		idle-state = <0x18>;
+		i2c108: i2c_sfp9 {
 			reg = <0x10>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
-		i2c109: i2c@11 {
+		i2c109: i2c_sfp10 {
 			reg = <0x11>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
-		i2c110: i2c@12 {
+		i2c110: i2c_sfp11 {
 			reg = <0x12>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
-		i2c111: i2c@13 {
+		i2c111: i2c_sfp12 {
 			reg = <0x13>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
-		i2c112: i2c@14 {
+		i2c112: i2c_sfp13 {
 			reg = <0x14>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
-		i2c113: i2c@15 {
+		i2c113: i2c_sfp14 {
 			reg = <0x15>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
-		i2c114: i2c@16 {
+		i2c114: i2c_sfp15 {
 			reg = <0x16>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
-		i2c115: i2c@17 {
+		i2c115: i2c_sfp16 {
 			reg = <0x17>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
-		i2c116: i2c@8 {
+		i2c116: i2c_sfp17 {
 			reg = <0x8>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
-		i2c117: i2c@9 {
+		i2c117: i2c_sfp18 {
 			reg = <0x9>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
-		i2c118: i2c@a {
+		i2c118: i2c_sfp19 {
 			reg = <0xa>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
-		i2c119: i2c@b {
+		i2c119: i2c_sfp20 {
 			reg = <0xb>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
-		i2c120: i2c@c {
+		i2c120: i2c_sfp21 {
 			reg = <0xc>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
-		i2c121: i2c@d {
+		i2c121: i2c_sfp22 {
 			reg = <0xd>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
-		i2c122: i2c@e {
+		i2c122: i2c_sfp23 {
 			reg = <0xe>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
-		i2c123: i2c@f {
+		i2c123: i2c_sfp24 {
 			reg = <0xf>;
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -214,23 +214,23 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 		i2c-mux-idle-disconnect;
-		i2c124: i2c@0 {
+		i2c124: i2c_x2sfp_1_a {
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <0>;
 		};
-		i2c125: i2c@1 {
+		i2c125: i2c_x2sfp_1_b {
 			/* FMC B */
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <1>;
 		};
-		i2c126: i2c@2 {
+		i2c126: i2c_x2sfp_1_c {
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <2>;
 		};
-		i2c127: i2c@3 {
+		i2c127: i2c_x2sfp_1_d {
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <3>;
@@ -242,26 +242,74 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 		i2c-mux-idle-disconnect;
-		i2c128: i2c@0 {
+		i2c128: i2c_x2sfp_1_a {
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <0>;
 		};
-		i2c129: i2c@1 {
+		i2c129: i2c_x2sfp_2_b {
 			/* FMC B */
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <1>;
 		};
-		i2c130: i2c@2 {
+		i2c130: i2c_x2sfp_3_c {
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <2>;
 		};
-		i2c131: i2c@3 {
+		i2c131: i2c_x2sfp_4_d {
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <3>;
+		};
+	};
+};
+
+&spi0 {
+	status = "okay";
+	// The first 4 chipselects can be handled properly by the controller
+	// by gating with SPI Master sw_mode.  The rest must use GPIOs directly.
+	cs-gpios = <0>, <0>, <0>, <0>,
+	           <0>, <0>, <0>, <0>,
+	           <0>, <0>, <0>, <0>,
+	           <0>, <&gpio 49 GPIO_ACTIVE_LOW>, <0>, <0>;
+	pinctrl-0 = <&synce_pins>;
+	pinctrl-names = "default";
+	spi-flash@0 {
+		label = "spi_flash";
+		compatible = "macronix,mx25l25635f", "jedec,spi-nor";
+		spi-max-frequency = <18000000>; /* input clock */
+		reg = <0>; /* CS0 */
+	};
+	// synce module
+	spi@1 {
+		// GPIO 16 == SI_nCS1
+		compatible = "mchp,synce_dpll";
+		reg = <0x1>; /* CS1 */
+		spi-max-frequency = <8000000>;
+	};
+	// CPLD for Synce CPLD
+	spi@d {
+		// GPIO 49 == SI_nCS13
+		compatible = "mchp,synce_builtin";
+		reg = <0xd>; /* CS13 */
+		spi-max-frequency = <4000000>;
+	};
+};
+
+&pi_nand {
+	status = "okay";
+	chip-delay = <100>; // MX30LF1GE8AB with internal ECC has 45-70 us tR_ECC
+	waitcc = <8>;       // Slow down NAND CS via waitcc - appx 77ns
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		/* 256MiB */
+		partition@0 {
+			    label = "rootfs_nand_data";
+			    reg = <0x0000000 0x10000000>;
 		};
 	};
 };

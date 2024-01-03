@@ -7,6 +7,7 @@
 
 / {
 	aliases {
+		spi0 = &spi0;
 		serial0 = &uart0;
 		i2c104  = &i2c104;
 		i2c105  = &i2c105;
@@ -19,54 +20,6 @@
 	chosen {
 		stdout-path = "serial0:115200n8";
 	};
-
-	i2c0_imux: i2c0-imux {
-		compatible = "i2c-mux-pinctrl";
-		#address-cells = <1>;
-		#size-cells = <0>;
-		i2c-parent = <&i2c0>;
-		pinctrl-names =
-		"i2c104", "i2c105", "i2c106", "i2c107",
-		"i2c108", "i2c109", "idle";
-		pinctrl-0 = <&i2cmux_0>;
-		pinctrl-1 = <&i2cmux_1>;
-		pinctrl-2 = <&i2cmux_2>;
-		pinctrl-3 = <&i2cmux_3>;
-		pinctrl-4 = <&i2cmux_4>;
-		pinctrl-5 = <&i2cmux_5>;
-		pinctrl-6 = <&i2cmux_pins_i>;
-		i2c104: i2c_sfp0@0 {
-			reg = <0>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-		};
-		i2c105: i2c_sfp1@1 {
-			reg = <1>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-		};
-		i2c106: i2c_sfp2@2 {
-			reg = <2>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-		};
-		i2c107: i2c_sfp3@3 {
-			reg = <3>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-		};
-		i2c108: i2c_sfp4@4 {
-			reg = <4>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-		};
-		i2c109: i2c_sfp5@5 {
-			reg = <5>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-		};
-};
-
 };
 
 &uart0 {
@@ -74,6 +27,10 @@
 };
 
 &uart2 {
+	status = "okay";
+};
+
+&uio0 {
 	status = "okay";
 };
 
@@ -125,3 +82,103 @@
 	i2c-sda-hold-time-ns = <300>;
 };
 
+&ahb {
+	i2c0_imux: i2c0-imux@0 {
+		compatible = "i2c-mux-pinctrl";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c-parent = <&i2c0>;
+		pinctrl-names =
+			"i2c104", "i2c105", "i2c106", "i2c107",
+			"i2c108", "i2c109", "idle";
+		pinctrl-0 = <&i2cmux_0>;
+		pinctrl-1 = <&i2cmux_1>;
+		pinctrl-2 = <&i2cmux_2>;
+		pinctrl-3 = <&i2cmux_3>;
+		pinctrl-4 = <&i2cmux_4>;
+		pinctrl-5 = <&i2cmux_5>;
+		pinctrl-6 = <&i2cmux_pins_i>;
+		i2c104: i2c_sfp0 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c105: i2c_sfp1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c106: i2c_sfp2 {
+			reg = <2>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c107: i2c_sfp3 {
+			reg = <3>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c108: i2c_sfp4 {
+			reg = <4>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c109: i2c_sfp5 {
+			reg = <5>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+	};
+};
+
+&spi0 {
+	status = "okay";
+	cs-gpios = <0>, <0>, <&gpio 6 0>, <&gpio 17 0>;
+	spi-flash@0 {
+		label = "spi_flash";
+		compatible = "jedec,spi-nor";
+		spi-max-frequency = <18000000>; /* input clock */
+		reg = <0>; /* CS0 */
+	};
+	spi-flash@1 {
+		compatible = "spi-nand";
+		pinctrl-0 = <&cs1_pins>;
+		pinctrl-names = "default";
+		spi-max-frequency = <15625000>;
+		reg = <1>; /* CS1 */
+		nand-use-soft-ecc-engine;
+		nand-ecc-algo = "hamming";
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			/* 128MiB */
+			partition@0 {
+				    label = "rootfs_nand_data";
+				    reg = <0x0000000 0x08000000>;
+			};
+		};
+	};
+	// synce module
+	spi@2 {
+		compatible = "mchp,synce_dpll";
+		reg = <2>; /* GPIO6 */
+		spi-max-frequency = <1000000>;
+	};
+	// t1e1j1 module
+	spi@3 {
+		compatible = "mchp,t1e1j1";
+		reg = <3>; /* GPIO17 */
+		spi-max-frequency = <1000000>;
+	};
+};
+
+&ahb {
+	dying_gasp: dying_gasp@0 {
+		compatible = "mscc,dying-gasp";
+		reg = <0 0>;
+		interrupts = <2>;
+		pinctrl-0 = <&irqext1_pins>;
+		pinctrl-names = "default";
+	};
+};

@@ -1,0 +1,81 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+/* Copyright (c) 2017 Microsemi Corporation */
+
+#include "ocelot.dtsi"
+
+/ {
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x0 0x0e000000>;
+	};
+};
+
+&uart0 {
+	status = "okay";
+};
+
+&uart2 {
+	status = "okay";
+};
+
+&mdio0 {
+	status = "okay";
+};
+
+&i2c0 {
+	status = "okay";
+	clock-frequency = <100000>;
+	i2c-sda-hold-time-ns = <300>;
+};
+
+&gpio {
+	synce_pins: synce-pins {
+		// CS2
+		pins = "GPIO_9";
+		function = "si";
+	};
+};
+
+&spi {
+	status = "okay";
+	spi-flash@0 {
+		label = "spi_flash";
+		compatible = "macronix,mx25l25635f", "jedec,spi-nor";
+		spi-max-frequency = <20000000>;
+		reg = <0>;
+	};
+	spi-flash@1 {
+		compatible = "spi-nand";
+		pinctrl-0 = <&cs1_pins>;
+		pinctrl-names = "default";
+		spi-max-frequency = <31000000>;
+		reg = <1>; /* CS1 */
+		nand-use-soft-ecc-engine;
+		nand-ecc-algo = "hamming";
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			/* 256MiB */
+			partition@0 {
+				    label = "rootfs_nand_data";
+				    reg = <0x0000000 0x10000000>;
+			};
+		};
+	};
+	spi@2 {
+		compatible = "mchp,synce_dpll";
+		reg = <2>;
+		pinctrl-0 = <&synce_pins>;
+		pinctrl-names = "default";
+		spi-max-frequency = <8000000>;
+	};
+};
+
+&uio0 {
+	status = "okay";
+};

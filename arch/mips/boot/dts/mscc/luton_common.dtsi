@@ -1,0 +1,86 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2020 Microsemi Corporation
+ */
+
+#include "luton.dtsi"
+
+/ {
+	aliases {
+		spi0 = &spi0;
+		serial0 = &uart0;
+		i2c0    = &i2c0;
+		i2c108  = &i2c108;
+		i2c109  = &i2c109;
+		i2c203  = &i2c203;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+};
+
+&uart0 {
+	status = "okay";
+};
+
+&spi0 {
+	status = "okay";
+	spi-flash@0 {
+		label = "spi_flash";
+		compatible = "jedec,spi-nor";
+		spi-max-frequency = <18000000>; /* input clock */
+		reg = <0>; /* CS0 */
+	};
+};
+
+&pi_nand {
+	status = "okay";
+	chip-delay = <100>; // MX30LF1GE8AB with internal ECC has 45-70 us tR_ECC
+	waitcc = <8>;       // Slow down NAND CS via waitcc - appx 77ns
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		/* 256MiB */
+		partition@0 {
+			    label = "rootfs_nand_data";
+			    reg = <0x0000000 0x10000000>;
+		};
+	};
+};
+
+&i2c0 {
+	status = "okay";
+	i2c-sda-hold-time-ns = <300>;
+};
+
+&ahb {
+	i2c0_emux: i2c0-emux@0 {
+		compatible = "i2c-mux-gpio";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c-parent = <&i2c0>;
+		mux-gpios = <&gpio 11 GPIO_ACTIVE_HIGH>;
+		idle-state = <0>;
+		i2c108: i2c_sfp1 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c109: i2c_sfp2 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c203: pd69xxx {
+			reg = <2>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+	};
+};
+
+&uio0 {
+	status = "okay";
+};

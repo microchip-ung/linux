@@ -6,22 +6,45 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/interrupt-controller/irq.h>
 #include <dt-bindings/phy/phy-ocelot-serdes.h>
-#include "ocelot.dtsi"
+#include "ocelot_common.dtsi"
 
 / {
+	model = "Ocelot PCB120 DIN rail Reference Board";
 	compatible = "mscc,ocelot-pcb120", "mscc,ocelot";
 
-	chosen {
-		stdout-path = "serial0:115200n8";
-	};
-
-	memory@0 {
-		device_type = "memory";
-		reg = <0x0 0x0e000000>;
+	aliases {
+	    i2c0   = &i2c0;
+	    i2c108 = &i2c108;
+	    i2c109 = &i2c109;
+	    i2c201 = &i2c201;
 	};
 };
 
 &gpio {
+	i2c_pins: i2c-pins {
+		pins = "GPIO_16";
+		function = "twi";
+	};
+	i2cmux_pins_i: i2cmux-pins-i {
+		pins = "GPIO_20", "GPIO_21", "GPIO_17";
+		function = "twi_scl_m";
+		output-low;
+	};
+	i2cmux_0: i2cmux-0 {
+		pins = "GPIO_20";
+		function = "twi_scl_m";
+		output-high;
+	};
+	i2cmux_1: i2cmux-1 {
+		pins = "GPIO_21";
+		function = "twi_scl_m";
+		output-high;
+	};
+	i2cmux_2: i2cmux-2 {
+		pins = "GPIO_17";
+		function = "twi_scl_m";
+		output-high;
+	};
 	phy_int_pins: phy-int-pins {
 		pins = "GPIO_4";
 		function = "gpio";
@@ -33,8 +56,34 @@
 	};
 };
 
-&mdio0 {
-	status = "okay";
+&ahb {
+	i2c0_imux: i2c0-imux@0 {
+		compatible = "i2c-mux-pinctrl";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c-parent = <&i2c0>;
+		pinctrl-names =
+			"i2c108", "i2c109", "i2c201", "idle";
+		pinctrl-0 = <&i2cmux_0>;
+		pinctrl-1 = <&i2cmux_1>;
+		pinctrl-2 = <&i2cmux_2>;
+		pinctrl-3 = <&i2cmux_pins_i>;
+		i2c108: i2c_sfp1 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c109: i2c_sfp2 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+		i2c201: i2c_pd69xxx {
+			reg = <0x2>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+	};
 };
 
 &mdio1 {
@@ -118,12 +167,4 @@
 	phy-handle = <&phy5>;
 	phy-mode = "sgmii";
 	phys = <&serdes 9 SERDES1G(4)>;
-};
-
-&uart0 {
-	status = "okay";
-};
-
-&uart2 {
-	status = "okay";
 };
