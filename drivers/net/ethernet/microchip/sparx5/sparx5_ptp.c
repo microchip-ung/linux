@@ -10,10 +10,13 @@
 
 #include "sparx5_main_regs.h"
 #include "sparx5_main.h"
+#include "sparx5_tc.h"
+#include "sparx5_vcap_impl.h"
+#include "vcap_api_client.h"
 
-#define SPARX5_MAX_PTP_ID	512
+#define SPARX5_PTP_RULE_ID_OFFSET 2048
 
-#define TOD_ACC_PIN		0x4
+#define LAN969X_WFH_ERROR_NS      73741824
 
 enum {
 	PTP_PIN_ACTION_IDLE = 0,
@@ -27,7 +30,8 @@ enum {
 static u64 sparx5_ptp_get_1ppm(struct sparx5 *sparx5)
 {
 	/* Represents 1ppm adjustment in 2^59 format with 1.59687500000(625)
-	 * 1.99609375000(500), 3.99218750000(250) as reference
+	 * 1.99609375000(500), 3.04761904762(380), 3.99218750000(250),
+	 * 5.56521739130(180) as reference
 	 * The value is calculated as following:
 	 * (1/1000000)/((2^-59)/X)
 	 */
@@ -35,8 +39,20 @@ static u64 sparx5_ptp_get_1ppm(struct sparx5 *sparx5)
 	u64 res = 0;
 
 	switch (sparx5->coreclock) {
+	case SPX5_CORE_CLOCK_180MHZ:
+		if (sparx5->coreclockref == SPX5_CORE_CLOCK_REF_25MHZ)
+			res = 3207484700609;
+		else
+			res = 3208129404120;
+		break;
 	case SPX5_CORE_CLOCK_250MHZ:
 		res = 2301339409586;
+		break;
+	case SPX5_CORE_CLOCK_328MHZ:
+		if (sparx5->coreclockref == SPX5_CORE_CLOCK_REF_25MHZ)
+			res = 1756479716445;
+		else
+			res = 1756832768924;
 		break;
 	case SPX5_CORE_CLOCK_500MHZ:
 		res = 1150669704793;
@@ -57,8 +73,20 @@ static u64 sparx5_ptp_get_nominal_value(struct sparx5 *sparx5)
 	u64 res = 0;
 
 	switch (sparx5->coreclock) {
+	case SPX5_CORE_CLOCK_180MHZ:
+		if (sparx5->coreclockref == SPX5_CORE_CLOCK_REF_25MHZ)
+			res = 0x2C8346575A51DBE7;
+		else
+			res = 0x2C834656FFBDCFFA;
+		break;
 	case SPX5_CORE_CLOCK_250MHZ:
 		res = 0x1FF0000000000000;
+		break;
+	case SPX5_CORE_CLOCK_328MHZ:
+		if (sparx5->coreclockref == SPX5_CORE_CLOCK_REF_25MHZ)
+			res = 0x186044FEF1EA9C10;
+		else
+			res = 0x18604697DD0F9B5B;
 		break;
 	case SPX5_CORE_CLOCK_500MHZ:
 		res = 0x0FF8000000000000;
@@ -74,6 +102,311 @@ static u64 sparx5_ptp_get_nominal_value(struct sparx5 *sparx5)
 	return res;
 }
 
+#define SPARX5_PTP_TRAP_RULES_CNT	5
+static struct vcap_rule *sparx5_ptp_add_l2_key(struct sparx5_port *port)
+{
+	int rule_id = SPARX5_PTP_RULE_ID_OFFSET +
+		      port->portno * SPARX5_PTP_TRAP_RULES_CNT + 0;
+	struct vcap_control *vctrl = port->sparx5->vcap_ctrl;
+	int chain_id = SPARX5_VCAP_CID_IS2_L0;
+	int prio = (port->portno << 8) + 1;
+	struct vcap_rule *vrule;
+	int err;
+
+	vrule = vcap_alloc_rule(vctrl, port->ndev, chain_id, VCAP_USER_PTP,
+				prio, rule_id);
+	if (!vrule || IS_ERR(vrule))
+		return vrule;
+
+	err = vcap_rule_add_key_u32(vrule, VCAP_KF_ETYPE, ETH_P_1588, ~0);
+	if (err) {
+		vcap_del_rule(vctrl, port->ndev, rule_id);
+		return NULL;
+	}
+
+	return vrule;
+}
+
+static struct vcap_rule *sparx5_ptp_add_ipv4_event_key(struct sparx5_port *port)
+{
+	int rule_id = SPARX5_PTP_RULE_ID_OFFSET +
+		      port->portno * SPARX5_PTP_TRAP_RULES_CNT + 1;
+	struct vcap_control *vctrl = port->sparx5->vcap_ctrl;
+	int chain_id = SPARX5_VCAP_CID_IS2_L1;
+	int prio = (port->portno << 8) + 1;
+	struct vcap_rule *vrule;
+	int err;
+
+	vrule = vcap_alloc_rule(vctrl, port->ndev, chain_id, VCAP_USER_PTP,
+				prio, rule_id);
+	if (!vrule || IS_ERR(vrule))
+		return vrule;
+
+	err = vcap_rule_add_key_u32(vrule, VCAP_KF_L4_DPORT, 319, ~0);
+	if (err) {
+		vcap_del_rule(vctrl, port->ndev, rule_id);
+		return NULL;
+	}
+
+	return vrule;
+}
+
+static struct vcap_rule *sparx5_ptp_add_ipv4_general_key(struct sparx5_port *port)
+{
+	int rule_id = SPARX5_PTP_RULE_ID_OFFSET +
+		      port->portno * SPARX5_PTP_TRAP_RULES_CNT + 2;
+	struct vcap_control *vctrl = port->sparx5->vcap_ctrl;
+	int chain_id = SPARX5_VCAP_CID_IS2_L1;
+	int prio = (port->portno << 8) + 1;
+	struct vcap_rule *vrule;
+	int err;
+
+	vrule = vcap_alloc_rule(vctrl, port->ndev, chain_id, VCAP_USER_PTP,
+				prio, rule_id);
+	if (!vrule || IS_ERR(vrule))
+		return vrule;
+
+	err = vcap_rule_add_key_u32(vrule, VCAP_KF_L4_DPORT, 320, ~0);
+	if (err) {
+		vcap_del_rule(vctrl, port->ndev, rule_id);
+		return NULL;
+	}
+
+	return vrule;
+}
+
+static struct vcap_rule *sparx5_ptp_add_ipv6_event_key(struct sparx5_port *port)
+{
+	int rule_id = SPARX5_PTP_RULE_ID_OFFSET +
+		      port->portno * SPARX5_PTP_TRAP_RULES_CNT + 3;
+	struct vcap_control *vctrl = port->sparx5->vcap_ctrl;
+	int chain_id = SPARX5_VCAP_CID_IS2_L2;
+	int prio = (port->portno << 8) + 1;
+	struct vcap_rule *vrule;
+	int err;
+
+	vrule = vcap_alloc_rule(vctrl, port->ndev, chain_id, VCAP_USER_PTP,
+				prio, rule_id);
+	if (!vrule || IS_ERR(vrule))
+		return vrule;
+
+	err = vcap_rule_add_key_u32(vrule, VCAP_KF_L4_DPORT, 319, ~0);
+	if (err) {
+		vcap_del_rule(vctrl, port->ndev, rule_id);
+		return NULL;
+	}
+
+	return vrule;
+}
+
+static struct vcap_rule *sparx5_ptp_add_ipv6_general_key(struct sparx5_port *port)
+{
+	int rule_id = SPARX5_PTP_RULE_ID_OFFSET +
+		      port->portno * SPARX5_PTP_TRAP_RULES_CNT + 4;
+	struct vcap_control *vctrl = port->sparx5->vcap_ctrl;
+	int chain_id = SPARX5_VCAP_CID_IS2_L2;
+	int prio = (port->portno << 8) + 1;
+	struct vcap_rule *vrule;
+	int err;
+
+	vrule = vcap_alloc_rule(vctrl, port->ndev, chain_id, VCAP_USER_PTP,
+				prio, rule_id);
+	if (!vrule || IS_ERR(vrule))
+		return vrule;
+
+	err = vcap_rule_add_key_u32(vrule, VCAP_KF_L4_DPORT, 320, ~0);
+	if (err) {
+		vcap_del_rule(vctrl, port->ndev, rule_id);
+		return NULL;
+	}
+
+	return vrule;
+}
+
+static int sparx5_ptp_add_trap(struct sparx5_port *port,
+			       struct vcap_rule* (*sparx5_add_ptp_key)(struct sparx5_port*),
+			       u16 proto)
+{
+	struct vcap_rule *vrule;
+	int err;
+
+	vrule = sparx5_add_ptp_key(port);
+	if (!vrule || IS_ERR(vrule)) {
+		if (PTR_ERR(vrule) == -EEXIST)
+			return 0;
+
+		return -ENOMEM;
+	}
+
+	err = vcap_set_rule_set_actionset(vrule, VCAP_AFS_BASE_TYPE);
+	err |= vcap_rule_add_action_bit(vrule, VCAP_AF_CPU_COPY_ENA, VCAP_BIT_1);
+	err |= vcap_rule_add_action_u32(vrule, VCAP_AF_MASK_MODE, SPX5_PMM_REPLACE_ALL);
+	err |= vcap_val_rule(vrule, proto);
+	if (err)
+		goto free_rule;
+
+	err = vcap_add_rule(vrule);
+
+free_rule:
+	/* Free the local copy of the rule */
+	vcap_free_rule(vrule);
+	return err;
+}
+
+static int sparx5_ptp_del(struct sparx5_port *port, int rule_id)
+{
+	return vcap_del_rule(port->sparx5->vcap_ctrl, port->ndev, rule_id);
+}
+
+static int sparx5_ptp_del_l2(struct sparx5_port *port)
+{
+	int rule_id = SPARX5_PTP_RULE_ID_OFFSET +
+		      port->portno * SPARX5_PTP_TRAP_RULES_CNT + 0;
+
+	return sparx5_ptp_del(port, rule_id);
+}
+
+static int sparx5_ptp_del_ipv4_event(struct sparx5_port *port)
+{
+	int rule_id = SPARX5_PTP_RULE_ID_OFFSET +
+		      port->portno * SPARX5_PTP_TRAP_RULES_CNT + 1;
+
+	return sparx5_ptp_del(port, rule_id);
+}
+
+static int sparx5_ptp_del_ipv4_general(struct sparx5_port *port)
+{
+	int rule_id = SPARX5_PTP_RULE_ID_OFFSET +
+		      port->portno * SPARX5_PTP_TRAP_RULES_CNT + 2;
+
+	return sparx5_ptp_del(port, rule_id);
+}
+
+static int sparx5_ptp_del_ipv6_event(struct sparx5_port *port)
+{
+	int rule_id = SPARX5_PTP_RULE_ID_OFFSET +
+		      port->portno * SPARX5_PTP_TRAP_RULES_CNT + 3;
+
+	return sparx5_ptp_del(port, rule_id);
+}
+
+static int sparx5_ptp_del_ipv6_general(struct sparx5_port *port)
+{
+	int rule_id = SPARX5_PTP_RULE_ID_OFFSET +
+		      port->portno * SPARX5_PTP_TRAP_RULES_CNT + 4;
+
+	return sparx5_ptp_del(port, rule_id);
+}
+
+static int sparx5_ptp_add_l2_rule(struct sparx5_port *port)
+{
+	return sparx5_ptp_add_trap(port, sparx5_ptp_add_l2_key, ETH_P_ALL);
+}
+
+static int sparx5_ptp_del_l2_rule(struct sparx5_port *port)
+{
+	return sparx5_ptp_del_l2(port);
+}
+
+static int sparx5_ptp_add_ipv4_rules(struct sparx5_port *port)
+{
+	int err;
+
+	err = sparx5_ptp_add_trap(port, sparx5_ptp_add_ipv4_event_key,
+				  ETH_P_IP);
+	if (err)
+		return err;
+
+	err = sparx5_ptp_add_trap(port, sparx5_ptp_add_ipv4_general_key,
+				  ETH_P_IP);
+	if (err)
+		sparx5_ptp_del_ipv4_event(port);
+
+	return err;
+}
+
+static int sparx5_ptp_del_ipv4_rules(struct sparx5_port *port)
+{
+	int err;
+
+	err = sparx5_ptp_del_ipv4_event(port);
+	err |= sparx5_ptp_del_ipv4_general(port);
+
+	return err;
+}
+
+static int sparx5_ptp_add_ipv6_rules(struct sparx5_port *port)
+{
+	int err;
+
+	err = sparx5_ptp_add_trap(port, sparx5_ptp_add_ipv6_event_key,
+				  ETH_P_IPV6);
+	if (err)
+		return err;
+
+	err = sparx5_ptp_add_trap(port, sparx5_ptp_add_ipv6_general_key,
+				  ETH_P_IPV6);
+	if (err)
+		sparx5_ptp_del_ipv6_event(port);
+
+	return err;
+}
+
+static int sparx5_ptp_del_ipv6_rules(struct sparx5_port *port)
+{
+	int err;
+
+	err = sparx5_ptp_del_ipv6_event(port);
+	err |= sparx5_ptp_del_ipv6_general(port);
+
+	return err;
+}
+
+static int sparx5_ptp_add_traps(struct sparx5_port *port)
+{
+	int err;
+
+	err = sparx5_ptp_add_l2_rule(port);
+	if (err)
+		goto err_l2;
+
+	err = sparx5_ptp_add_ipv4_rules(port);
+	if (err)
+		goto err_ipv4;
+
+	err = sparx5_ptp_add_ipv6_rules(port);
+	if (err)
+		goto err_ipv6;
+
+	return err;
+
+err_ipv6:
+	sparx5_ptp_del_ipv4_rules(port);
+err_ipv4:
+	sparx5_ptp_del_l2_rule(port);
+err_l2:
+	return err;
+}
+
+int sparx5_ptp_del_traps(struct sparx5_port *port)
+{
+	int err;
+
+	err = sparx5_ptp_del_l2_rule(port);
+	err |= sparx5_ptp_del_ipv4_rules(port);
+	err |= sparx5_ptp_del_ipv6_rules(port);
+
+	return err;
+}
+
+int sparx5_ptp_setup_traps(struct sparx5_port *port, struct kernel_hwtstamp_config *cfg)
+{
+	if (cfg->rx_filter == HWTSTAMP_FILTER_NONE)
+		return sparx5_ptp_del_traps(port);
+	else
+		return sparx5_ptp_add_traps(port);
+}
+
 int sparx5_ptp_hwtstamp_set(struct sparx5_port *port,
 			    struct kernel_hwtstamp_config *cfg,
 			    struct netlink_ext_ack *extack)
@@ -81,23 +414,15 @@ int sparx5_ptp_hwtstamp_set(struct sparx5_port *port,
 	struct sparx5 *sparx5 = port->sparx5;
 	struct sparx5_phc *phc;
 
-	/* For now don't allow to run ptp on ports that are part of a bridge,
-	 * because in case of transparent clock the HW will still forward the
-	 * frames, so there would be duplicate frames
-	 */
-
-	if (test_bit(port->portno, sparx5->bridge_mask))
-		return -EINVAL;
-
 	switch (cfg->tx_type) {
 	case HWTSTAMP_TX_ON:
-		port->ptp_cmd = IFH_REW_OP_TWO_STEP_PTP;
+		port->ptp_tx_cmd = IFH_REW_OP_TWO_STEP_PTP;
 		break;
 	case HWTSTAMP_TX_ONESTEP_SYNC:
-		port->ptp_cmd = IFH_REW_OP_ONE_STEP_PTP;
+		port->ptp_tx_cmd = IFH_REW_OP_ONE_STEP_PTP;
 		break;
 	case HWTSTAMP_TX_OFF:
-		port->ptp_cmd = IFH_REW_OP_NOOP;
+		port->ptp_tx_cmd = IFH_REW_OP_NOOP;
 		break;
 	default:
 		return -ERANGE;
@@ -105,6 +430,7 @@ int sparx5_ptp_hwtstamp_set(struct sparx5_port *port,
 
 	switch (cfg->rx_filter) {
 	case HWTSTAMP_FILTER_NONE:
+		port->ptp_rx_cmd = false;
 		break;
 	case HWTSTAMP_FILTER_ALL:
 	case HWTSTAMP_FILTER_PTP_V1_L4_EVENT:
@@ -120,6 +446,7 @@ int sparx5_ptp_hwtstamp_set(struct sparx5_port *port,
 	case HWTSTAMP_FILTER_PTP_V2_SYNC:
 	case HWTSTAMP_FILTER_PTP_V2_DELAY_REQ:
 	case HWTSTAMP_FILTER_NTP_ALL:
+		port->ptp_rx_cmd = true;
 		cfg->rx_filter = HWTSTAMP_FILTER_ALL;
 		break;
 	default:
@@ -152,7 +479,7 @@ static void sparx5_ptp_classify(struct sparx5_port *port, struct sk_buff *skb,
 	u8 msgtype;
 	int type;
 
-	if (port->ptp_cmd == IFH_REW_OP_NOOP) {
+	if (port->ptp_tx_cmd == IFH_REW_OP_NOOP) {
 		*rew_op = IFH_REW_OP_NOOP;
 		*pdu_type = IFH_PDU_TYPE_NONE;
 		*pdu_w16_offset = 0;
@@ -183,7 +510,7 @@ static void sparx5_ptp_classify(struct sparx5_port *port, struct sk_buff *skb,
 	if (type & PTP_CLASS_IPV6)
 		*pdu_type = IFH_PDU_TYPE_IPV6_UDP_PTP;
 
-	if (port->ptp_cmd == IFH_REW_OP_TWO_STEP_PTP) {
+	if (port->ptp_tx_cmd == IFH_REW_OP_TWO_STEP_PTP) {
 		*rew_op = IFH_REW_OP_TWO_STEP_PTP;
 		return;
 	}
@@ -269,10 +596,11 @@ void sparx5_ptp_txtstamp_release(struct sparx5_port *port,
 	spin_unlock_irqrestore(&sparx5->ptp_ts_id_lock, flags);
 }
 
-static void sparx5_get_hwtimestamp(struct sparx5 *sparx5,
-				   struct timespec64 *ts,
-				   u32 nsec)
+void sparx5_ptp_get_hwtimestamp(struct sparx5 *sparx5,
+				struct timespec64 *ts,
+				u32 nsec)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	/* Read current PTP time to get seconds */
 	unsigned long flags;
 	u32 curr_nsec;
@@ -285,10 +613,10 @@ static void sparx5_get_hwtimestamp(struct sparx5 *sparx5,
 		 PTP_PTP_PIN_CFG_PTP_PIN_ACTION |
 		 PTP_PTP_PIN_CFG_PTP_PIN_DOM |
 		 PTP_PTP_PIN_CFG_PTP_PIN_SYNC,
-		 sparx5, PTP_PTP_PIN_CFG(TOD_ACC_PIN));
+		 sparx5, PTP_PTP_PIN_CFG(consts->tod_pin));
 
-	ts->tv_sec = spx5_rd(sparx5, PTP_PTP_TOD_SEC_LSB(TOD_ACC_PIN));
-	curr_nsec = spx5_rd(sparx5, PTP_PTP_TOD_NSEC(TOD_ACC_PIN));
+	ts->tv_sec = spx5_rd(sparx5, PTP_PTP_TOD_SEC_LSB(consts->tod_pin));
+	curr_nsec = spx5_rd(sparx5, PTP_PTP_TOD_NSEC(consts->tod_pin));
 
 	ts->tv_nsec = nsec;
 
@@ -376,7 +704,7 @@ irqreturn_t sparx5_ptp_irq_handler(int irq, void *args)
 		spin_unlock(&sparx5->ptp_ts_id_lock);
 
 		/* Get the h/w timestamp */
-		sparx5_get_hwtimestamp(sparx5, &ts, delay);
+		sparx5_ptp_get_hwtimestamp(sparx5, &ts, delay);
 
 		/* Set the timestamp into the skb */
 		shhwtstamps.hwtstamp = ktime_set(ts.tv_sec, ts.tv_nsec);
@@ -422,9 +750,9 @@ static int sparx5_ptp_adjfine(struct ptp_clock_info *ptp, long scaled_ppm)
 		 sparx5, PTP_PTP_DOM_CFG);
 
 	spx5_wr((u32)tod_inc & 0xFFFFFFFF, sparx5,
-		PTP_CLK_PER_CFG(phc->index, 0));
+	       PTP_CLK_PER_CFG(phc->index, 0));
 	spx5_wr((u32)(tod_inc >> 32), sparx5,
-		PTP_CLK_PER_CFG(phc->index, 1));
+	       PTP_CLK_PER_CFG(phc->index, 1));
 
 	spx5_rmw(PTP_PTP_DOM_CFG_PTP_CLKCFG_DIS_SET(0),
 		 PTP_PTP_DOM_CFG_PTP_CLKCFG_DIS, sparx5,
@@ -440,7 +768,10 @@ static int sparx5_ptp_settime64(struct ptp_clock_info *ptp,
 {
 	struct sparx5_phc *phc = container_of(ptp, struct sparx5_phc, info);
 	struct sparx5 *sparx5 = phc->sparx5;
+	const struct sparx5_consts *consts;
 	unsigned long flags;
+
+	consts = &sparx5->data->consts;
 
 	spin_lock_irqsave(&sparx5->ptp_clock_lock, flags);
 
@@ -451,14 +782,14 @@ static int sparx5_ptp_settime64(struct ptp_clock_info *ptp,
 		 PTP_PTP_PIN_CFG_PTP_PIN_ACTION |
 		 PTP_PTP_PIN_CFG_PTP_PIN_DOM |
 		 PTP_PTP_PIN_CFG_PTP_PIN_SYNC,
-		 sparx5, PTP_PTP_PIN_CFG(TOD_ACC_PIN));
+		 sparx5, PTP_PTP_PIN_CFG(consts->tod_pin));
 
 	/* Set new value */
 	spx5_wr(PTP_PTP_TOD_SEC_MSB_PTP_TOD_SEC_MSB_SET(upper_32_bits(ts->tv_sec)),
-		sparx5, PTP_PTP_TOD_SEC_MSB(TOD_ACC_PIN));
+	       sparx5, PTP_PTP_TOD_SEC_MSB(consts->tod_pin));
 	spx5_wr(lower_32_bits(ts->tv_sec),
-		sparx5, PTP_PTP_TOD_SEC_LSB(TOD_ACC_PIN));
-	spx5_wr(ts->tv_nsec, sparx5, PTP_PTP_TOD_NSEC(TOD_ACC_PIN));
+	       sparx5, PTP_PTP_TOD_SEC_LSB(consts->tod_pin));
+	spx5_wr(ts->tv_nsec, sparx5, PTP_PTP_TOD_NSEC(consts->tod_pin));
 
 	/* Apply new values */
 	spx5_rmw(PTP_PTP_PIN_CFG_PTP_PIN_ACTION_SET(PTP_PIN_ACTION_LOAD) |
@@ -467,7 +798,7 @@ static int sparx5_ptp_settime64(struct ptp_clock_info *ptp,
 		 PTP_PTP_PIN_CFG_PTP_PIN_ACTION |
 		 PTP_PTP_PIN_CFG_PTP_PIN_DOM |
 		 PTP_PTP_PIN_CFG_PTP_PIN_SYNC,
-		 sparx5, PTP_PTP_PIN_CFG(TOD_ACC_PIN));
+		 sparx5, PTP_PTP_PIN_CFG(consts->tod_pin));
 
 	spin_unlock_irqrestore(&sparx5->ptp_clock_lock, flags);
 
@@ -478,9 +809,12 @@ int sparx5_ptp_gettime64(struct ptp_clock_info *ptp, struct timespec64 *ts)
 {
 	struct sparx5_phc *phc = container_of(ptp, struct sparx5_phc, info);
 	struct sparx5 *sparx5 = phc->sparx5;
+	const struct sparx5_consts *consts;
 	unsigned long flags;
 	time64_t s;
 	s64 ns;
+
+	consts = &sparx5->data->consts;
 
 	spin_lock_irqsave(&sparx5->ptp_clock_lock, flags);
 
@@ -490,12 +824,12 @@ int sparx5_ptp_gettime64(struct ptp_clock_info *ptp, struct timespec64 *ts)
 		 PTP_PTP_PIN_CFG_PTP_PIN_ACTION |
 		 PTP_PTP_PIN_CFG_PTP_PIN_DOM |
 		 PTP_PTP_PIN_CFG_PTP_PIN_SYNC,
-		 sparx5, PTP_PTP_PIN_CFG(TOD_ACC_PIN));
+		 sparx5, PTP_PTP_PIN_CFG(consts->tod_pin));
 
-	s = spx5_rd(sparx5, PTP_PTP_TOD_SEC_MSB(TOD_ACC_PIN));
+	s = spx5_rd(sparx5, PTP_PTP_TOD_SEC_MSB(consts->tod_pin));
 	s <<= 32;
-	s |= spx5_rd(sparx5, PTP_PTP_TOD_SEC_LSB(TOD_ACC_PIN));
-	ns = spx5_rd(sparx5, PTP_PTP_TOD_NSEC(TOD_ACC_PIN));
+	s |= spx5_rd(sparx5, PTP_PTP_TOD_SEC_LSB(consts->tod_pin));
+	ns = spx5_rd(sparx5, PTP_PTP_TOD_NSEC(consts->tod_pin));
 	ns &= PTP_PTP_TOD_NSEC_PTP_TOD_NSEC;
 
 	spin_unlock_irqrestore(&sparx5->ptp_clock_lock, flags);
@@ -515,6 +849,9 @@ static int sparx5_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
 {
 	struct sparx5_phc *phc = container_of(ptp, struct sparx5_phc, info);
 	struct sparx5 *sparx5 = phc->sparx5;
+	const struct sparx5_consts *consts;
+
+	consts = &sparx5->data->consts;
 
 	if (delta > -(NSEC_PER_SEC / 2) && delta < (NSEC_PER_SEC / 2)) {
 		unsigned long flags;
@@ -528,10 +865,10 @@ static int sparx5_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
 			 PTP_PTP_PIN_CFG_PTP_PIN_ACTION |
 			 PTP_PTP_PIN_CFG_PTP_PIN_DOM |
 			 PTP_PTP_PIN_CFG_PTP_PIN_SYNC,
-			 sparx5, PTP_PTP_PIN_CFG(TOD_ACC_PIN));
+			 sparx5, PTP_PTP_PIN_CFG(consts->tod_pin));
 
 		spx5_wr(PTP_PTP_TOD_NSEC_PTP_TOD_NSEC_SET(delta),
-			sparx5, PTP_PTP_TOD_NSEC(TOD_ACC_PIN));
+			sparx5, PTP_PTP_TOD_NSEC(consts->tod_pin));
 
 		/* Adjust time with the value of PTP_TOD_NSEC */
 		spx5_rmw(PTP_PTP_PIN_CFG_PTP_PIN_ACTION_SET(PTP_PIN_ACTION_DELTA) |
@@ -540,7 +877,7 @@ static int sparx5_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
 			 PTP_PTP_PIN_CFG_PTP_PIN_ACTION |
 			 PTP_PTP_PIN_CFG_PTP_PIN_DOM |
 			 PTP_PTP_PIN_CFG_PTP_PIN_SYNC,
-			 sparx5, PTP_PTP_PIN_CFG(TOD_ACC_PIN));
+			 sparx5, PTP_PTP_PIN_CFG(consts->tod_pin));
 
 		spin_unlock_irqrestore(&sparx5->ptp_clock_lock, flags);
 	} else {
@@ -559,23 +896,338 @@ static int sparx5_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
 	return 0;
 }
 
+static int sparx5_ptp_verify(struct ptp_clock_info *ptp, unsigned int pin,
+			     enum ptp_pin_function func, unsigned int chan)
+{
+	struct sparx5_phc *phc = container_of(ptp, struct sparx5_phc, info);
+	struct sparx5 *sparx5 = phc->sparx5;
+	struct ptp_clock_info *info;
+	int i;
+
+	/* Currently support only 1 channel */
+	if (chan != 0)
+		return -1;
+
+	switch (func) {
+	case PTP_PF_NONE:
+	case PTP_PF_PEROUT:
+	case PTP_PF_EXTTS:
+		break;
+	default:
+		return -1;
+	}
+
+	/* The PTP pins are shared by all the PHC. So it is required to see if
+	 * the pin is connected to another PHC. The pin is connected to another
+	 * PHC if that pin already has a function on that PHC.
+	 */
+	for (i = 0; i < SPARX5_PHC_COUNT; ++i) {
+		info = &sparx5->phc[i].info;
+
+		/* Ignore the check with ourself */
+		if (ptp == info)
+			continue;
+
+		if (info->pin_config[pin].func == PTP_PF_PEROUT ||
+		    info->pin_config[pin].func == PTP_PF_EXTTS)
+			return -1;
+	}
+
+	return 0;
+}
+
+static int sparx5_ptp_perout(struct ptp_clock_info *ptp,
+			     struct ptp_clock_request *rq, int on)
+{
+	struct sparx5_phc *phc = container_of(ptp, struct sparx5_phc, info);
+	struct sparx5 *sparx5 = phc->sparx5;
+	const struct sparx5_consts *consts = &sparx5->data->consts;
+	struct timespec64 ts_phase, ts_period;
+	unsigned long flags;
+	s64 wf_high, wf_low;
+	bool pps = false;
+	int pin;
+
+	if (rq->perout.flags & ~(PTP_PEROUT_DUTY_CYCLE |
+				 PTP_PEROUT_PHASE))
+		return -EOPNOTSUPP;
+
+	pin = ptp_find_pin(phc->clock, PTP_PF_PEROUT, rq->perout.index);
+	if (pin == -1 || pin >= consts->ptp_pins)
+		return -EINVAL;
+
+	if (!on) {
+		spin_lock_irqsave(&sparx5->ptp_clock_lock, flags);
+		spx5_rmw(PTP_PTP_PIN_CFG_PTP_PIN_ACTION_SET(PTP_PIN_ACTION_IDLE) |
+			 PTP_PTP_PIN_CFG_PTP_PIN_DOM_SET(phc->index) |
+			 PTP_PTP_PIN_CFG_PTP_PIN_SYNC_SET(0),
+			 PTP_PTP_PIN_CFG_PTP_PIN_ACTION |
+			 PTP_PTP_PIN_CFG_PTP_PIN_DOM |
+			 PTP_PTP_PIN_CFG_PTP_PIN_SYNC,
+			 sparx5, PTP_PTP_PIN_CFG(pin));
+		spin_unlock_irqrestore(&sparx5->ptp_clock_lock, flags);
+		return 0;
+	}
+
+	/* On lan969x there is an issue with the HW, if the period is bigger
+	 * than 2^30 (1073741824ns) then the high waveform will be shorter by
+	 * 73741824ns. To fix this check for this conditions and then compensate
+	 * in SW for missing period. This is needed to do both for high waveform
+	 * and the total period otherwise if it is done only for high waveform
+	 * then the total period will still be shorter and if it is done for the
+	 * total period then the high waveform will be shorted.
+	 */
+	if (!is_sparx5(sparx5)) {
+		struct timespec64 period;
+
+		period.tv_sec = rq->perout.period.sec;
+		period.tv_nsec = rq->perout.period.nsec;
+
+		if (timespec64_to_ns(&period) >= NSEC_PER_SEC +
+						 LAN969X_WFH_ERROR_NS) {
+
+			rq->perout.on.nsec += LAN969X_WFH_ERROR_NS;
+			if (rq->perout.on.nsec >= NSEC_PER_SEC) {
+				rq->perout.on.nsec -= NSEC_PER_SEC;
+				rq->perout.on.sec += 1;
+			}
+
+			rq->perout.period.nsec += LAN969X_WFH_ERROR_NS;
+			if (rq->perout.period.nsec >= NSEC_PER_SEC) {
+				rq->perout.period.nsec -= NSEC_PER_SEC;
+				rq->perout.period.sec += 1;
+			}
+		}
+	}
+
+	if (rq->perout.period.sec == 1 &&
+	    rq->perout.period.nsec == 0)
+		pps = true;
+
+	if (rq->perout.flags & PTP_PEROUT_PHASE) {
+		ts_phase.tv_sec = rq->perout.phase.sec;
+		ts_phase.tv_nsec = rq->perout.phase.nsec;
+	} else {
+		ts_phase.tv_sec = rq->perout.start.sec;
+		ts_phase.tv_nsec = rq->perout.start.nsec;
+	}
+
+	if (ts_phase.tv_sec || (ts_phase.tv_nsec && !pps)) {
+		dev_warn(sparx5->dev,
+			 "Absolute time not supported!\n");
+		return -EINVAL;
+	}
+
+	if (rq->perout.flags & PTP_PEROUT_DUTY_CYCLE) {
+		struct timespec64 ts_on;
+
+		ts_on.tv_sec = rq->perout.on.sec;
+		ts_on.tv_nsec = rq->perout.on.nsec;
+
+		wf_high = timespec64_to_ns(&ts_on);
+	} else {
+		wf_high = 5000;
+	}
+
+	if (pps) {
+		spin_lock_irqsave(&sparx5->ptp_clock_lock, flags);
+		spx5_wr(PTP_PIN_WF_LOW_PERIOD_PIN_WFL_SET(ts_phase.tv_nsec),
+			sparx5, PTP_PIN_WF_LOW_PERIOD(pin));
+		spx5_wr(PTP_PIN_WF_HIGH_PERIOD_PIN_WFH_SET(wf_high),
+			sparx5, PTP_PIN_WF_HIGH_PERIOD(pin));
+		spx5_rmw(PTP_PTP_PIN_CFG_PTP_PIN_ACTION_SET(PTP_PIN_ACTION_CLOCK) |
+			 PTP_PTP_PIN_CFG_PTP_PIN_DOM_SET(phc->index) |
+			 PTP_PTP_PIN_CFG_PTP_PIN_SYNC_SET(3),
+			 PTP_PTP_PIN_CFG_PTP_PIN_ACTION |
+			 PTP_PTP_PIN_CFG_PTP_PIN_DOM |
+			 PTP_PTP_PIN_CFG_PTP_PIN_SYNC,
+			 sparx5, PTP_PTP_PIN_CFG(pin));
+		spin_unlock_irqrestore(&sparx5->ptp_clock_lock, flags);
+		return 0;
+	}
+
+	ts_period.tv_sec = rq->perout.period.sec;
+	ts_period.tv_nsec = rq->perout.period.nsec;
+
+	wf_low = timespec64_to_ns(&ts_period);
+	wf_low -= wf_high;
+
+	if ((wf_low >> 30) != 0 || (wf_high >> 30) != 0) {
+		dev_warn(sparx5->dev,
+			 "WFL or WFH can't be bigger than 2^30\n");
+		return -EINVAL;
+	}
+
+	spin_lock_irqsave(&sparx5->ptp_clock_lock, flags);
+	spx5_wr(PTP_PIN_WF_LOW_PERIOD_PIN_WFL_SET(wf_low),
+		sparx5, PTP_PIN_WF_LOW_PERIOD(pin));
+	spx5_wr(PTP_PIN_WF_HIGH_PERIOD_PIN_WFH_SET(wf_high),
+		sparx5, PTP_PIN_WF_HIGH_PERIOD(pin));
+	spx5_rmw(PTP_PTP_PIN_CFG_PTP_PIN_ACTION_SET(PTP_PIN_ACTION_CLOCK) |
+		 PTP_PTP_PIN_CFG_PTP_PIN_DOM_SET(phc->index) |
+		 PTP_PTP_PIN_CFG_PTP_PIN_SYNC_SET(0),
+		 PTP_PTP_PIN_CFG_PTP_PIN_ACTION |
+		 PTP_PTP_PIN_CFG_PTP_PIN_DOM |
+		 PTP_PTP_PIN_CFG_PTP_PIN_SYNC,
+		 sparx5, PTP_PTP_PIN_CFG(pin));
+	spin_unlock_irqrestore(&sparx5->ptp_clock_lock, flags);
+
+	return 0;
+}
+
+irqreturn_t sparx5_ptp_ext_irq_handler(int irq, void *args)
+{
+	struct sparx5 *sparx5 = args;
+	struct sparx5_phc *phc;
+	unsigned long flags;
+	u64 time = 0;
+	time64_t s;
+	int pin, i;
+	s64 ns;
+
+	if (!(spx5_rd(sparx5, PTP_PTP_PIN_INTR)))
+		return IRQ_NONE;
+
+	/* Go through all domains and see which pin generated the interrupt */
+	for (i = 0; i < SPARX5_PHC_COUNT; ++i) {
+		struct ptp_clock_event ptp_event = {0};
+
+		phc = &sparx5->phc[i];
+		pin = ptp_find_pin_unlocked(phc->clock, PTP_PF_EXTTS, 0);
+		if (pin == -1)
+			continue;
+
+		if (!(spx5_rd(sparx5, PTP_PTP_PIN_INTR) & BIT(pin)))
+			continue;
+
+		spin_lock_irqsave(&sparx5->ptp_clock_lock, flags);
+
+		/* Enable to get the new interrupt.
+		 * By writing 1 it clears the bit
+		 */
+		spx5_wr(BIT(pin), sparx5, PTP_PTP_PIN_INTR);
+
+		/* Get current time */
+		s = spx5_rd(sparx5, PTP_PTP_TOD_SEC_MSB(pin));
+		s <<= 32;
+		s |= spx5_rd(sparx5, PTP_PTP_TOD_SEC_LSB(pin));
+		ns = spx5_rd(sparx5, PTP_PTP_TOD_NSEC(pin));
+		ns &= PTP_PTP_TOD_NSEC_PTP_TOD_NSEC;
+
+		spin_unlock_irqrestore(&sparx5->ptp_clock_lock, flags);
+
+		if ((ns & 0xFFFFFFF0) == 0x3FFFFFF0) {
+			s--;
+			ns &= 0xf;
+			ns += 999999984;
+		}
+		time = ktime_set(s, ns);
+
+		ptp_event.index = 0;
+		ptp_event.timestamp = time;
+		ptp_event.type = PTP_CLOCK_EXTTS;
+		ptp_clock_event(phc->clock, &ptp_event);
+	}
+
+	return IRQ_HANDLED;
+}
+
+static int sparx5_ptp_extts(struct ptp_clock_info *ptp,
+			    struct ptp_clock_request *rq, int on)
+{
+	struct sparx5_phc *phc = container_of(ptp, struct sparx5_phc, info);
+	struct sparx5 *sparx5 = phc->sparx5;
+	const struct sparx5_consts *consts = &sparx5->data->consts;
+	unsigned long flags;
+	int pin;
+	u32 val;
+
+	if (sparx5->ptp_ext_irq <= 0)
+		return -EOPNOTSUPP;
+
+	/* Reject requests with unsupported flags */
+	if (rq->extts.flags & ~(PTP_ENABLE_FEATURE |
+				PTP_RISING_EDGE |
+				PTP_STRICT_FLAGS))
+		return -EOPNOTSUPP;
+
+	pin = ptp_find_pin(phc->clock, PTP_PF_EXTTS, rq->extts.index);
+	if (pin == -1 || pin >= consts->ptp_pins)
+		return -EINVAL;
+
+	spin_lock_irqsave(&sparx5->ptp_clock_lock, flags);
+	spx5_rmw(PTP_PTP_PIN_CFG_PTP_PIN_ACTION_SET(PTP_PIN_ACTION_SAVE) |
+		 PTP_PTP_PIN_CFG_PTP_PIN_SYNC_SET(on ? 3 : 0) |
+		 PTP_PTP_PIN_CFG_PTP_PIN_DOM_SET(phc->index) |
+		 PTP_PTP_PIN_CFG_PTP_PIN_SELECT_SET(pin),
+		 PTP_PTP_PIN_CFG_PTP_PIN_ACTION |
+		 PTP_PTP_PIN_CFG_PTP_PIN_SYNC |
+		 PTP_PTP_PIN_CFG_PTP_PIN_DOM |
+		 PTP_PTP_PIN_CFG_PTP_PIN_SELECT,
+		 sparx5, PTP_PTP_PIN_CFG(pin));
+
+	val = spx5_rd(sparx5, PTP_PTP_PIN_INTR_ENA);
+	if (on)
+		val |= BIT(pin);
+	else
+		val &= ~BIT(pin);
+	spx5_wr(val, sparx5, PTP_PTP_PIN_INTR_ENA);
+
+	spin_unlock_irqrestore(&sparx5->ptp_clock_lock, flags);
+
+	return 0;
+}
+
+static int sparx5_ptp_enable(struct ptp_clock_info *ptp,
+			     struct ptp_clock_request *rq, int on)
+{
+	switch (rq->type) {
+	case PTP_CLK_REQ_PEROUT:
+		return sparx5_ptp_perout(ptp, rq, on);
+	case PTP_CLK_REQ_EXTTS:
+		return sparx5_ptp_extts(ptp, rq, on);
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	return 0;
+}
+
 static struct ptp_clock_info sparx5_ptp_clock_info = {
 	.owner		= THIS_MODULE,
 	.name		= "sparx5 ptp",
-	.max_adj	= 200000,
+	.max_adj	= 2000000,
 	.gettime64	= sparx5_ptp_gettime64,
 	.settime64	= sparx5_ptp_settime64,
 	.adjtime	= sparx5_ptp_adjtime,
 	.adjfine	= sparx5_ptp_adjfine,
+	.verify		= sparx5_ptp_verify,
+	.enable		= sparx5_ptp_enable,
 };
 
 static int sparx5_ptp_phc_init(struct sparx5 *sparx5,
 			       int index,
 			       struct ptp_clock_info *clock_info)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	struct sparx5_phc *phc = &sparx5->phc[index];
+	struct ptp_pin_desc *p;
+	int i;
+
+	clock_info->n_per_out = consts->ptp_pins;
+	clock_info->n_ext_ts = consts->ptp_pins;
+	clock_info->n_pins = consts->ptp_pins;
+
+	for (i = 0; i < consts->ptp_pins; i++) {
+		p = &phc->pins[i];
+
+		snprintf(p->name, sizeof(p->name), "pin%d", i);
+		p->index = i;
+		p->func = PTP_PF_NONE;
+	}
 
 	phc->info = *clock_info;
+	phc->info.pin_config = &phc->pins[0];
 	phc->clock = ptp_clock_register(&phc->info, sparx5->dev);
 	if (IS_ERR(phc->clock))
 		return PTR_ERR(phc->clock);
@@ -583,19 +1235,20 @@ static int sparx5_ptp_phc_init(struct sparx5 *sparx5,
 	phc->index = index;
 	phc->sparx5 = sparx5;
 
-	/* PTP Rx stamping is always enabled.  */
-	phc->hwtstamp_config.rx_filter = HWTSTAMP_FILTER_PTP_V2_EVENT;
-
 	return 0;
 }
 
 int sparx5_ptp_init(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	u64 tod_adj = sparx5_ptp_get_nominal_value(sparx5);
 	struct sparx5_port *port;
 	int err, i;
 
-	if (!sparx5->ptp)
+	/* We need PTP TOD on lan969x for QoS and TSN features - for now
+	 * always initialize on lan969x.
+	 */
+	if (!sparx5->ptp && is_sparx5(sparx5))
 		return 0;
 
 	for (i = 0; i < SPARX5_PHC_COUNT; ++i) {
@@ -618,9 +1271,9 @@ int sparx5_ptp_init(struct sparx5 *sparx5)
 
 	for (i = 0; i < SPARX5_PHC_COUNT; ++i) {
 		spx5_wr((u32)tod_adj & 0xFFFFFFFF, sparx5,
-			PTP_CLK_PER_CFG(i, 0));
+		       PTP_CLK_PER_CFG(i, 0));
 		spx5_wr((u32)(tod_adj >> 32), sparx5,
-			PTP_CLK_PER_CFG(i, 1));
+		       PTP_CLK_PER_CFG(i, 1));
 	}
 
 	spx5_rmw(PTP_PTP_DOM_CFG_PTP_CLKCFG_DIS_SET(0),
@@ -630,7 +1283,7 @@ int sparx5_ptp_init(struct sparx5 *sparx5)
 	/* Enable master counters */
 	spx5_wr(PTP_PTP_DOM_CFG_PTP_ENA_SET(0x7), sparx5, PTP_PTP_DOM_CFG);
 
-	for (i = 0; i < SPX5_PORTS; i++) {
+	for (i = 0; i < consts->chip_ports; i++) {
 		port = sparx5->ports[i];
 		if (!port)
 			continue;
@@ -643,10 +1296,11 @@ int sparx5_ptp_init(struct sparx5 *sparx5)
 
 void sparx5_ptp_deinit(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	struct sparx5_port *port;
 	int i;
 
-	for (i = 0; i < SPX5_PORTS; i++) {
+	for (i = 0; i < consts->chip_ports; i++) {
 		port = sparx5->ports[i];
 		if (!port)
 			continue;
@@ -659,14 +1313,15 @@ void sparx5_ptp_deinit(struct sparx5 *sparx5)
 }
 
 void sparx5_ptp_rxtstamp(struct sparx5 *sparx5, struct sk_buff *skb,
-			 u64 timestamp)
+			 u64 src_port, u64 timestamp)
 {
 	struct skb_shared_hwtstamps *shhwtstamps;
 	struct sparx5_phc *phc;
 	struct timespec64 ts;
 	u64 full_ts_in_ns;
 
-	if (!sparx5->ptp)
+	if (!sparx5->ptp ||
+	    !sparx5->ports[src_port]->ptp_rx_cmd)
 		return;
 
 	phc = &sparx5->phc[SPARX5_PHC_PORT];
@@ -680,3 +1335,4 @@ void sparx5_ptp_rxtstamp(struct sparx5 *sparx5, struct sk_buff *skb,
 	shhwtstamps = skb_hwtstamps(skb);
 	shhwtstamps->hwtstamp = full_ts_in_ns;
 }
+EXPORT_SYMBOL_GPL(sparx5_ptp_rxtstamp);

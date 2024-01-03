@@ -777,15 +777,16 @@ static int sparx5_tc_flower_psfp_setup(struct sparx5 *sparx5,
 				       struct sparx5_psfp_fm *fm,
 				       struct sparx5_psfp_sf *sf)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	u32 psfp_sfid = 0, psfp_fmid = 0, psfp_sgid = 0;
 	int ret;
 
 	/* Must always have a stream gate - max sdu (filter option) is evaluated
 	 * after frames have passed the gate, so in case of only a policer, we
-	 * allocate a stream gate that is always open.
+	 * allocate a stream gate that is always open (last gate).
 	 */
 	if (sg_idx < 0) {
-		sg_idx = sparx5_pool_idx_to_id(SPX5_PSFP_SG_OPEN);
+		sg_idx = sparx5_pool_idx_to_id(consts->gate_cnt - 1);
 		sg->ipv = 0; /* Disabled */
 		sg->cycletime = SPX5_PSFP_SG_CYCLE_TIME_DEFAULT;
 		sg->num_entries = 1;
@@ -1241,6 +1242,26 @@ static int sparx5_tc_flower_replace(struct net_device *ndev,
 			if (err)
 				goto out;
 			break;
+		case FLOW_ACTION_DROP:
+			if (admin->vtype != VCAP_TYPE_IS2) {
+				NL_SET_ERR_MSG_MOD(fco->common.extack,
+						   "Drop action not supported in this VCAP");
+				err = -EOPNOTSUPP;
+				goto out;
+			}
+			/* VCAP_AF_MASK_MODE: sparx5 is0 W3, sparx5 is2 W3 */
+			err = vcap_rule_add_action_u32(vrule, VCAP_AF_MASK_MODE, SPX5_PMM_REPLACE_ALL);
+			if (err)
+				goto out;
+			/* VCAP_AF_POLICE_ENA: W1, sparx5: is2/es2 */
+			err = vcap_rule_add_action_bit(vrule, VCAP_AF_POLICE_ENA, VCAP_BIT_1);
+			if (err)
+				goto out;
+			/* VCAP_AF_POLICE_IDX: sparx5 is2 W6, sparx5 es2 W6 */
+			err = vcap_rule_add_action_u32(vrule, VCAP_AF_POLICE_IDX, SPX5_POL_ACL_DISCARD);
+			if (err)
+				goto out;
+			break;
 		case FLOW_ACTION_ACCEPT:
 			err = sparx5_tc_set_actionset(admin, vrule);
 			if (err)
@@ -1308,7 +1329,6 @@ static int sparx5_tc_flower_replace(struct net_device *ndev,
 	if (err)
 		NL_SET_ERR_MSG_MOD(fco->common.extack,
 				   "Could not add the filter");
-
 	if (state.l3_proto == ETH_P_ALL)
 		err = sparx5_tc_add_remaining_rules(vctrl, fco, vrule, admin,
 						    &multi);
@@ -1360,6 +1380,7 @@ static int sparx5_tc_free_rule_resources(struct net_device *ndev,
 					 int rule_id)
 {
 	struct sparx5_port *port = netdev_priv(ndev);
+	struct vcap_client_actionfield *afield;
 	struct sparx5 *sparx5 = port->sparx5;
 	struct vcap_rule *vrule;
 	int ret = 0;
@@ -1367,6 +1388,21 @@ static int sparx5_tc_free_rule_resources(struct net_device *ndev,
 	vrule = vcap_get_rule(vctrl, rule_id);
 	if (IS_ERR(vrule))
 		return -EINVAL;
+
+	/* Check for enabled mirroring in this rule */
+	afield = vcap_find_actionfield(vrule, VCAP_AF_MIRROR_ENA);
+	if (afield && afield->ctrl.type == VCAP_FIELD_BIT && afield->data.u1.value) {
+		pr_debug("%s:%d: rule %d: remove mirroring\n",
+			 __func__, __LINE__, vrule->id);
+	}
+
+	/* Check for an enabled policer for this rule */
+	afield = vcap_find_actionfield(vrule, VCAP_AF_POLICE_ENA);
+	if (afield && afield->ctrl.type == VCAP_FIELD_BIT && afield->data.u1.value) {
+		/* Release policer reserved by this rule */
+		pr_debug("%s:%d: rule %d: remove policer\n",
+			 __func__, __LINE__, vrule->id);
+	}
 
 	sparx5_tc_free_psfp_resources(sparx5, vrule);
 
@@ -1523,7 +1559,6 @@ static int sparx5_tc_flower_template_destroy(struct net_device *ndev,
 {
 	struct sparx5_port *port = netdev_priv(ndev);
 	struct sparx5_tc_flower_template *ftp, *tmp;
-	int err = -ENOENT;
 
 	/* Rules using the template are removed by the tc framework */
 	list_for_each_entry_safe(ftp, tmp, &port->tc_templates, list) {
@@ -1536,9 +1571,9 @@ static int sparx5_tc_flower_template_destroy(struct net_device *ndev,
 					    NULL);
 		list_del(&ftp->list);
 		kfree(ftp);
-		break;
+		return 0;
 	}
-	return err;
+	return -ENOENT;
 }
 
 int sparx5_tc_flower(struct net_device *ndev, struct flow_cls_offload *fco,

@@ -9,6 +9,7 @@
 
 #include "sparx5_main_regs.h"
 #include "sparx5_main.h"
+#include "sparx5_mrp.h"
 
 static struct workqueue_struct *sparx5_owq;
 
@@ -29,31 +30,41 @@ static int sparx5_port_attr_pre_bridge_flags(struct sparx5_port *port,
 	return 0;
 }
 
-static void sparx5_port_update_mcast_ip_flood(struct sparx5_port *port, bool flood_flag)
+static void sparx5_port_update_mcast_ip_flood(struct sparx5_port *port,
+					      bool flood_flag)
 {
 	bool should_flood = flood_flag || port->is_mrouter;
+	struct sparx5 *sparx5 = port->sparx5;
 	int pgid;
 
-	for (pgid = PGID_IPV4_MC_DATA; pgid <= PGID_IPV6_MC_CTRL; pgid++)
+	for (pgid = sparx5_get_pgid_index(sparx5, PGID_IPV4_MC_DATA);
+	     pgid <= sparx5_get_pgid_index(sparx5, PGID_IPV6_MC_CTRL); pgid++)
 		sparx5_pgid_update_mask(port, pgid, should_flood);
 }
 
 static void sparx5_port_attr_bridge_flags(struct sparx5_port *port,
 					  struct switchdev_brport_flags flags)
 {
+	struct sparx5 *sparx5 = port->sparx5;
+
 	if (flags.mask & BR_MCAST_FLOOD) {
-		sparx5_pgid_update_mask(port, PGID_MC_FLOOD, !!(flags.val & BR_MCAST_FLOOD));
-		sparx5_port_update_mcast_ip_flood(port, !!(flags.val & BR_MCAST_FLOOD));
+		sparx5_pgid_update_mask(port,
+					sparx5_get_pgid_index(sparx5, PGID_MC_FLOOD),
+					!!(flags.val & BR_MCAST_FLOOD));
+		sparx5_port_update_mcast_ip_flood(port,
+						  !!(flags.val & BR_MCAST_FLOOD));
 	}
 
 	if (flags.mask & BR_FLOOD)
-		sparx5_pgid_update_mask(port, PGID_UC_FLOOD, !!(flags.val & BR_FLOOD));
+		sparx5_pgid_update_mask(port,
+					sparx5_get_pgid_index(sparx5, PGID_UC_FLOOD),
+					!!(flags.val & BR_FLOOD));
 	if (flags.mask & BR_BCAST_FLOOD)
-		sparx5_pgid_update_mask(port, PGID_BCAST, !!(flags.val & BR_BCAST_FLOOD));
+		sparx5_pgid_update_mask(port, sparx5_get_pgid_index(sparx5, PGID_BCAST),
+					!!(flags.val & BR_BCAST_FLOOD));
 }
 
-static void sparx5_attr_stp_state_set(struct sparx5_port *port,
-				      u8 state)
+void sparx5_attr_stp_state_set(struct sparx5_port *port, u8 state)
 {
 	struct sparx5 *sparx5 = port->sparx5;
 
@@ -155,6 +166,9 @@ static int sparx5_port_attr_set(struct net_device *dev, const void *ctx,
 					     attr->orig_dev,
 					     attr->u.mrouter);
 		break;
+	case SWITCHDEV_ATTR_ID_MRP_PORT_ROLE:
+		sparx5_handle_mrp_port_role(port, attr->u.mrp_port_role);
+		break;
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -219,7 +233,8 @@ static void sparx5_port_bridge_leave(struct sparx5_port *port,
 	port->vid = NULL_VID;
 
 	/* Forward frames to CPU */
-	sparx5_mact_learn(sparx5, PGID_CPU, port->ndev->dev_addr, 0);
+	sparx5_mact_learn(sparx5, sparx5_get_pgid_index(sparx5, PGID_CPU),
+			  port->ndev->dev_addr, 0);
 
 	/* Port enters in host more therefore restore mc list */
 	__dev_mc_sync(port->ndev, sparx5_mc_sync, sparx5_mc_unsync);
@@ -254,7 +269,8 @@ static int sparx5_port_add_addr(struct net_device *dev, bool up)
 	u16 vid = port->pvid;
 
 	if (up)
-		sparx5_mact_learn(sparx5, PGID_CPU, port->ndev->dev_addr, vid);
+		sparx5_mact_learn(sparx5, sparx5_get_pgid_index(sparx5, PGID_CPU),
+				  port->ndev->dev_addr, vid);
 	else
 		sparx5_mact_forget(sparx5, port->ndev->dev_addr, vid);
 
@@ -269,6 +285,8 @@ static int sparx5_netdevice_port_event(struct net_device *dev,
 
 	if (!sparx5_netdevice_check(dev))
 		return 0;
+
+	sparx5_qos_port_event(dev, event);
 
 	switch (event) {
 	case NETDEV_CHANGEUPPER:
@@ -330,7 +348,8 @@ static void sparx5_switchdev_bridge_fdb_event_work(struct work_struct *work)
 	switch (switchdev_work->event) {
 	case SWITCHDEV_FDB_ADD_TO_DEVICE:
 		if (host_addr)
-			sparx5_add_mact_entry(sparx5, dev, PGID_CPU,
+			sparx5_add_mact_entry(sparx5, dev,
+					      sparx5_get_pgid_index(sparx5, PGID_CPU),
 					      fdb_info->addr, vid);
 		else
 			sparx5_add_mact_entry(sparx5, port->ndev, port->portno,
@@ -418,7 +437,8 @@ static int sparx5_handle_port_vlan_add(struct net_device *dev,
 				     switchdev_blocking_nb);
 
 		/* Flood broadcast to CPU */
-		sparx5_mact_learn(sparx5, PGID_BCAST, dev->broadcast,
+		sparx5_mact_learn(sparx5, sparx5_get_pgid_index(sparx5, PGID_BCAST),
+				  dev->broadcast,
 				  v->vid);
 		return 0;
 	}
@@ -516,10 +536,13 @@ static int sparx5_handle_port_mdb_add(struct net_device *dev,
 {
 	struct sparx5_port *port = netdev_priv(dev);
 	struct sparx5 *spx5 = port->sparx5;
+	const struct sparx5_consts *consts;
 	struct sparx5_mdb_entry *entry;
 	bool is_host, is_new;
 	int err, i;
 	u16 vid;
+
+	consts = &spx5->data->consts;
 
 	if (!sparx5_netdevice_check(dev))
 		return -EOPNOTSUPP;
@@ -547,7 +570,7 @@ static int sparx5_handle_port_mdb_add(struct net_device *dev,
 
 	/* Add any mrouter ports to the new entry */
 	if (is_new && ether_addr_is_ip_mcast(v->addr))
-		for (i = 0; i < SPX5_PORTS; i++)
+		for (i = 0; i < consts->chip_ports; i++)
 			if (spx5->ports[i] && spx5->ports[i]->is_mrouter)
 				sparx5_pgid_update_mask(spx5->ports[i],
 							entry->pgid_idx,
@@ -632,6 +655,27 @@ static int sparx5_handle_port_obj_add(struct net_device *dev,
 		err = sparx5_handle_port_mdb_add(dev, nb,
 						 SWITCHDEV_OBJ_PORT_MDB(obj));
 		break;
+	case SWITCHDEV_OBJ_ID_MRP:
+		err = sparx5_handle_mrp_add(dev, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_RING_TEST_MRP:
+		err = sparx5_handle_mrp_ring_test_add(dev, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_RING_ROLE_MRP:
+		err = sparx5_handle_mrp_ring_role_add(dev, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_RING_STATE_MRP:
+		err = sparx5_handle_mrp_ring_state_add(dev, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_IN_TEST_MRP:
+		err = sparx5_handle_mrp_in_test_add(dev, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_IN_ROLE_MRP:
+		err = sparx5_handle_mrp_in_role_add(dev, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_IN_STATE_MRP:
+		err = sparx5_handle_mrp_in_state_add(dev, obj);
+		break;
 	default:
 		err = -EOPNOTSUPP;
 		break;
@@ -684,6 +728,21 @@ static int sparx5_handle_port_obj_del(struct net_device *dev,
 	case SWITCHDEV_OBJ_ID_HOST_MDB:
 		err = sparx5_handle_port_mdb_del(dev, nb,
 						 SWITCHDEV_OBJ_PORT_MDB(obj));
+		break;
+	case SWITCHDEV_OBJ_ID_MRP:
+		err = sparx5_handle_mrp_del(dev, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_RING_TEST_MRP:
+		err = sparx5_handle_mrp_ring_test_del(dev, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_RING_ROLE_MRP:
+		err = sparx5_handle_mrp_ring_role_del(dev, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_IN_TEST_MRP:
+		err = sparx5_handle_mrp_in_test_del(dev, obj);
+		break;
+	case SWITCHDEV_OBJ_ID_IN_ROLE_MRP:
+		err = sparx5_handle_mrp_in_role_del(dev, obj);
 		break;
 	default:
 		err = -EOPNOTSUPP;

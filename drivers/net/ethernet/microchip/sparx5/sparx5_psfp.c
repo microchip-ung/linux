@@ -7,7 +7,6 @@
 #include "sparx5_main_regs.h"
 #include "sparx5_main.h"
 
-#define SPX5_PSFP_SF_CNT 1024
 #define SPX5_PSFP_SG_CONFIG_CHANGE_SLEEP 1000
 #define SPX5_PSFP_SG_CONFIG_CHANGE_TIMEO 100000
 
@@ -18,38 +17,50 @@ static struct sparx5_pool_entry sparx5_psfp_fm_pool[SPX5_SDLB_CNT];
 static struct sparx5_pool_entry sparx5_psfp_sg_pool[SPX5_PSFP_SG_CNT];
 
 /* Pool of available stream filters */
-static struct sparx5_pool_entry sparx5_psfp_sf_pool[SPX5_PSFP_SF_CNT];
+struct sparx5_pool_entry sparx5_psfp_sf_pool[SPX5_PSFP_SF_CNT];
 
-static int sparx5_psfp_sf_get(u32 *id)
+static int sparx5_psfp_sf_get(struct sparx5 *sparx5, u32 *id)
 {
-	return sparx5_pool_get(sparx5_psfp_sf_pool, SPX5_PSFP_SF_CNT, id);
+	const struct sparx5_consts *consts = &sparx5->data->consts;
+
+	return sparx5_pool_get(sparx5_psfp_sf_pool, consts->filter_cnt, id);
 }
 
-static int sparx5_psfp_sf_put(u32 id)
+static int sparx5_psfp_sf_put(struct sparx5 *sparx5, u32 id)
 {
-	return sparx5_pool_put(sparx5_psfp_sf_pool, SPX5_PSFP_SF_CNT, id);
+	const struct sparx5_consts *consts = &sparx5->data->consts;
+
+	return sparx5_pool_put(sparx5_psfp_sf_pool, consts->filter_cnt, id);
 }
 
-static int sparx5_psfp_sg_get(u32 idx, u32 *id)
+static int sparx5_psfp_sg_get(struct sparx5 *sparx5, u32 idx, u32 *id)
 {
-	return sparx5_pool_get_with_idx(sparx5_psfp_sg_pool, SPX5_PSFP_SG_CNT,
+	const struct sparx5_consts *consts = &sparx5->data->consts;
+
+	return sparx5_pool_get_with_idx(sparx5_psfp_sg_pool, consts->gate_cnt,
 					idx, id);
 }
 
-static int sparx5_psfp_sg_put(u32 id)
+static int sparx5_psfp_sg_put(struct sparx5 *sparx5, u32 id)
 {
-	return sparx5_pool_put(sparx5_psfp_sg_pool, SPX5_PSFP_SG_CNT, id);
+	const struct sparx5_consts *consts = &sparx5->data->consts;
+
+	return sparx5_pool_put(sparx5_psfp_sg_pool, consts->gate_cnt, id);
 }
 
-static int sparx5_psfp_fm_get(u32 idx, u32 *id)
+static int sparx5_psfp_fm_get(struct sparx5 *sparx5, u32 idx, u32 *id)
 {
-	return sparx5_pool_get_with_idx(sparx5_psfp_fm_pool, SPX5_SDLB_CNT, idx,
-					id);
+	const struct sparx5_consts *consts = &sparx5->data->consts;
+
+	return sparx5_pool_get_with_idx(sparx5_psfp_fm_pool, consts->lb_cnt,
+					idx, id);
 }
 
-static int sparx5_psfp_fm_put(u32 id)
+static int sparx5_psfp_fm_put(struct sparx5 *sparx5, u32 id)
 {
-	return sparx5_pool_put(sparx5_psfp_fm_pool, SPX5_SDLB_CNT, id);
+	const struct sparx5_consts *consts = &sparx5->data->consts;
+
+	return sparx5_pool_put(sparx5_psfp_fm_pool, consts->lb_cnt, id);
 }
 
 u32 sparx5_psfp_isdx_get_sf(struct sparx5 *sparx5, u32 isdx)
@@ -205,7 +216,7 @@ int sparx5_psfp_sf_add(struct sparx5 *sparx5, const struct sparx5_psfp_sf *sf,
 {
 	int ret;
 
-	ret = sparx5_psfp_sf_get(id);
+	ret = sparx5_psfp_sf_get(sparx5, id);
 	if (ret < 0)
 		return ret;
 
@@ -220,7 +231,7 @@ int sparx5_psfp_sf_del(struct sparx5 *sparx5, u32 id)
 
 	sparx5_psfp_sf_set(sparx5, id, &sf);
 
-	return sparx5_psfp_sf_put(id);
+	return sparx5_psfp_sf_put(sparx5, id);
 }
 
 int sparx5_psfp_sg_add(struct sparx5 *sparx5, u32 uidx,
@@ -229,7 +240,7 @@ int sparx5_psfp_sg_add(struct sparx5 *sparx5, u32 uidx,
 	ktime_t basetime;
 	int ret;
 
-	ret = sparx5_psfp_sg_get(uidx, id);
+	ret = sparx5_psfp_sg_get(sparx5, uidx, id);
 	if (ret < 0)
 		return ret;
 	/* Was already in use, no need to reconfigure */
@@ -253,7 +264,7 @@ int sparx5_psfp_sg_del(struct sparx5 *sparx5, u32 id)
 	const struct sparx5_psfp_sg sg = { 0 };
 	int ret;
 
-	ret = sparx5_psfp_sg_put(id);
+	ret = sparx5_psfp_sg_put(sparx5, id);
 	if (ret < 0)
 		return ret;
 	/* Stream gate still in use ? */
@@ -270,7 +281,7 @@ int sparx5_psfp_fm_add(struct sparx5 *sparx5, u32 uidx,
 	int ret;
 
 	/* Get flow meter */
-	ret = sparx5_psfp_fm_get(uidx, &fm->pol.idx);
+	ret = sparx5_psfp_fm_get(sparx5, uidx, &fm->pol.idx);
 	if (ret < 0)
 		return ret;
 	/* Was already in use, no need to reconfigure */
@@ -303,7 +314,7 @@ int sparx5_psfp_fm_del(struct sparx5 *sparx5, u32 id)
 	if (ret < 0)
 		return ret;
 
-	ret = sparx5_psfp_fm_put(id);
+	ret = sparx5_psfp_fm_put(sparx5, id);
 	if (ret < 0)
 		return ret;
 	/* Do not reset flow-meter if still in use. */
@@ -315,11 +326,13 @@ int sparx5_psfp_fm_del(struct sparx5 *sparx5, u32 id)
 
 void sparx5_psfp_init(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
+	const struct sparx5_ops *ops = &sparx5->data->ops;
 	const struct sparx5_sdlb_group *group;
 	int i;
 
-	for (i = 0; i < SPX5_SDLB_GROUP_CNT; i++) {
-		group = &sdlb_groups[i];
+	for (i = 0; i < consts->lb_group_cnt; i++) {
+		group = ops->get_sdlb_group(i);
 		sparx5_sdlb_group_init(sparx5, group->max_rate,
 				       group->min_burst, group->frame_size, i);
 	}

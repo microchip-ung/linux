@@ -55,44 +55,112 @@ static void __ifh_encode_bitfield(void *ifh, u64 value, u32 pos, u32 width)
 		ifh_hdr[byte - 5] |= (u8)((encode & 0xFF0000000000) >> 40);
 }
 
-void sparx5_set_port_ifh(void *ifh_hdr, u16 portno)
+void sparx5_set_port_ifh(struct sparx5 *sparx5, void *ifh_hdr, u16 portno,
+			 u8 pipeline_pt)
 {
+	const struct sparx5_ops *ops = &sparx5->data->ops;
+	u32 pipeline = ops->get_pipeline_pt(pipeline_pt);
+	int cpu_port0 = sparx5_get_internal_port(sparx5, PORT_CPU_0);
+
 	/* VSTAX.RSV = 1. MSBit must be 1 */
-	ifh_encode_bitfield(ifh_hdr, 1, VSTAX + 79,  1);
+	__ifh_encode_bitfield(ifh_hdr, 1,
+			      ops->get_ifh_field_pos(IFH_VSTAX_RSV),
+			      ops->get_ifh_field_width(IFH_VSTAX_RSV));
 	/* VSTAX.INGR_DROP_MODE = Enable. Don't make head-of-line blocking */
-	ifh_encode_bitfield(ifh_hdr, 1, VSTAX + 55,  1);
+	__ifh_encode_bitfield(ifh_hdr, 1,
+			      ops->get_ifh_field_pos(IFH_VSTAX_INGR_DROP_MODE),
+			      ops->get_ifh_field_width(IFH_VSTAX_INGR_DROP_MODE));
 	/* MISC.CPU_MASK/DPORT = Destination port */
-	ifh_encode_bitfield(ifh_hdr, portno,   29, 8);
+	__ifh_encode_bitfield(ifh_hdr, portno,
+			      ops->get_ifh_field_pos(IFH_MISC_CPU_MASK_DPORT),
+			      ops->get_ifh_field_width(IFH_MISC_CPU_MASK_DPORT));
 	/* MISC.PIPELINE_PT */
-	ifh_encode_bitfield(ifh_hdr, 16,       37, 5);
+	__ifh_encode_bitfield(ifh_hdr, pipeline,
+			      ops->get_ifh_field_pos(IFH_MISC_PIPELINE_PT),
+			      ops->get_ifh_field_width(IFH_MISC_PIPELINE_PT));
 	/* MISC.PIPELINE_ACT */
-	ifh_encode_bitfield(ifh_hdr, 1,        42, 3);
+	__ifh_encode_bitfield(ifh_hdr, 1,
+			      ops->get_ifh_field_pos(IFH_MISC_PIPELINE_ACT),
+			      ops->get_ifh_field_width(IFH_MISC_PIPELINE_ACT));
 	/* FWD.SRC_PORT = CPU */
-	ifh_encode_bitfield(ifh_hdr, SPX5_PORT_CPU, 46, 7);
+	__ifh_encode_bitfield(ifh_hdr, cpu_port0,
+			      ops->get_ifh_field_pos(IFH_FWD_SRC_PORT),
+			      ops->get_ifh_field_width(IFH_FWD_SRC_PORT));
 	/* FWD.SFLOW_ID (disable SFlow sampling) */
-	ifh_encode_bitfield(ifh_hdr, 124,      57, 7);
+	__ifh_encode_bitfield(ifh_hdr, 124,
+			      ops->get_ifh_field_pos(IFH_FWD_SFLOW_ID),
+			      ops->get_ifh_field_width(IFH_FWD_SFLOW_ID));
 	/* FWD.UPDATE_FCS = Enable. Enforce update of FCS. */
-	ifh_encode_bitfield(ifh_hdr, 1,        67, 1);
+	__ifh_encode_bitfield(ifh_hdr, 1,
+			      ops->get_ifh_field_pos(IFH_FWD_UPDATE_FCS),
+			      ops->get_ifh_field_width(IFH_FWD_UPDATE_FCS));
 }
 
-void sparx5_set_port_ifh_rew_op(void *ifh_hdr, u32 rew_op)
+void sparx5_set_port_ifh_rew_op(struct sparx5 *sparx5, void *ifh_hdr,
+				u32 rew_op)
 {
-	ifh_encode_bitfield(ifh_hdr, rew_op, VSTAX + 32,  10);
+	const struct sparx5_ops *ops = &sparx5->data->ops;
+
+	__ifh_encode_bitfield(ifh_hdr, rew_op,
+			      ops->get_ifh_field_pos(IFH_VSTAX_REW_CMD),
+			      ops->get_ifh_field_width(IFH_VSTAX_REW_CMD));
 }
 
-void sparx5_set_port_ifh_pdu_type(void *ifh_hdr, u32 pdu_type)
+void sparx5_set_port_ifh_pdu_type(struct sparx5 *sparx5, void *ifh_hdr,
+				  u32 pdu_type)
 {
-	ifh_encode_bitfield(ifh_hdr, pdu_type, 191, 4);
+	const struct sparx5_ops *ops = &sparx5->data->ops;
+
+	__ifh_encode_bitfield(ifh_hdr, pdu_type,
+			      ops->get_ifh_field_pos(IFH_DST_PDU_TYPE),
+			      ops->get_ifh_field_width(IFH_DST_PDU_TYPE));
 }
 
-void sparx5_set_port_ifh_pdu_w16_offset(void *ifh_hdr, u32 pdu_w16_offset)
+void sparx5_set_port_ifh_pdu_w16_offset(struct sparx5 *sparx5,
+					void *ifh_hdr, u32 pdu_w16_offset)
 {
-	ifh_encode_bitfield(ifh_hdr, pdu_w16_offset, 195, 6);
+	const struct sparx5_ops *ops = &sparx5->data->ops;
+
+	__ifh_encode_bitfield(ifh_hdr, pdu_w16_offset,
+			      ops->get_ifh_field_pos(IFH_DST_PDU_W16_OFFSET),
+			      ops->get_ifh_field_width(IFH_DST_PDU_W16_OFFSET));
 }
 
-void sparx5_set_port_ifh_timestamp(void *ifh_hdr, u64 timestamp)
+void sparx5_set_port_ifh_timestamp(struct sparx5 *sparx5, void *ifh_hdr,
+				   u64 timestamp)
 {
-	ifh_encode_bitfield(ifh_hdr, timestamp, 232,  40);
+	const struct sparx5_ops *ops = &sparx5->data->ops;
+
+	__ifh_encode_bitfield(ifh_hdr, timestamp,
+			      ops->get_ifh_field_pos(IFH_TS_TSTAMP),
+			      ops->get_ifh_field_width(IFH_TS_TSTAMP));
+}
+
+void sparx5_set_port_ifh_afi(struct sparx5 *sparx5, void *ifh_hdr, bool afi)
+{
+	const struct sparx5_ops *ops = &sparx5->data->ops;
+
+	__ifh_encode_bitfield(ifh_hdr, afi,
+			      ops->get_ifh_field_pos(IFH_FWD_AFI),
+			      ops->get_ifh_field_width(IFH_FWD_AFI));
+}
+
+void sparx5_set_port_ifh_sp(struct sparx5 *sparx5, void *ifh_hdr, bool sp)
+{
+	const struct sparx5_ops *ops = &sparx5->data->ops;
+
+	__ifh_encode_bitfield(ifh_hdr, sp,
+			      ops->get_ifh_field_pos(IFH_VSTAX_SP),
+			      ops->get_ifh_field_width(IFH_VSTAX_SP));
+}
+
+void sparx5_set_port_ifh_cl_qos(struct sparx5 *sparx5, void *ifh_hdr, u8 cl_qos)
+{
+	const struct sparx5_ops *ops = &sparx5->data->ops;
+
+	__ifh_encode_bitfield(ifh_hdr, cl_qos,
+			      ops->get_ifh_field_pos(IFH_VSTAX_CL_QOS),
+			      ops->get_ifh_field_width(IFH_VSTAX_CL_QOS));
 }
 
 static int sparx5_port_open(struct net_device *ndev)
@@ -109,7 +177,7 @@ static int sparx5_port_open(struct net_device *ndev)
 
 	phylink_start(port->phylink);
 
-	if (!ndev->phydev) {
+	if (port->serdes) {
 		/* power up serdes */
 		port->conf.power_down = false;
 		if (port->conf.serdes_reset)
@@ -142,7 +210,7 @@ static int sparx5_port_stop(struct net_device *ndev)
 	phylink_stop(port->phylink);
 	phylink_disconnect_phy(port->phylink);
 
-	if (!ndev->phydev) {
+	if (port->serdes) {
 		/* power down serdes */
 		port->conf.power_down = true;
 		if (port->conf.serdes_reset)
@@ -190,7 +258,8 @@ static int sparx5_set_mac_address(struct net_device *dev, void *p)
 	sparx5_mact_forget(sparx5, dev->dev_addr,  port->pvid);
 
 	/* Add new */
-	sparx5_mact_learn(sparx5, PGID_CPU, addr->sa_data, port->pvid);
+	sparx5_mact_learn(sparx5, sparx5_get_pgid_index(sparx5, PGID_CPU),
+			  addr->sa_data, port->pvid);
 
 	/* Record the address */
 	eth_hw_addr_set(dev, addr->sa_data);
@@ -230,17 +299,35 @@ static int sparx5_port_hwtstamp_set(struct net_device *dev,
 {
 	struct sparx5_port *sparx5_port = netdev_priv(dev);
 	struct sparx5 *sparx5 = sparx5_port->sparx5;
+	int err;
 
-	if (!sparx5->ptp)
+	if (cfg->source != HWTSTAMP_SOURCE_NETDEV &&
+	    cfg->source != HWTSTAMP_SOURCE_PHYLIB)
 		return -EOPNOTSUPP;
 
-	return sparx5_ptp_hwtstamp_set(sparx5_port, cfg, extack);
+	err = sparx5_ptp_setup_traps(sparx5_port, cfg);
+	if (err)
+		return err;
+
+	if (cfg->source == HWTSTAMP_SOURCE_NETDEV) {
+		if (!sparx5->ptp)
+			return -EOPNOTSUPP;
+
+		err = sparx5_ptp_hwtstamp_set(sparx5_port, cfg, extack);
+		if (err) {
+			sparx5_ptp_del_traps(sparx5_port);
+			return err;
+		}
+	}
+
+	return 0;
 }
 
 static const struct net_device_ops sparx5_port_netdev_ops = {
 	.ndo_open               = sparx5_port_open,
 	.ndo_stop               = sparx5_port_stop,
 	.ndo_start_xmit         = sparx5_port_xmit_impl,
+	.ndo_change_mtu		= sparx5_mtu_change,
 	.ndo_set_rx_mode        = sparx5_set_rx_mode,
 	.ndo_get_phys_port_name = sparx5_port_get_phys_port_name,
 	.ndo_set_mac_address    = sparx5_set_mac_address,
@@ -270,6 +357,8 @@ struct net_device *sparx5_create_netdev(struct sparx5 *sparx5, u32 portno)
 
 	ndev->hw_features |= NETIF_F_HW_TC;
 	ndev->features |= NETIF_F_HW_TC;
+	/* The MAC supports frame lengths of up to 14,000 bytes */
+	ndev->max_mtu = 14000;
 
 	SET_NETDEV_DEV(ndev, sparx5->dev);
 	spx5_port = netdev_priv(ndev);
@@ -277,8 +366,15 @@ struct net_device *sparx5_create_netdev(struct sparx5 *sparx5, u32 portno)
 	spx5_port->sparx5 = sparx5;
 	spx5_port->portno = portno;
 
+	/* If the switch is PCIe mapped the host may have its own ports */
+	if (sparx5->is_pcie_device)
+		snprintf(ndev->name, IFNAMSIZ, "swp%d", portno);
+	else
+		snprintf(ndev->name, IFNAMSIZ, "eth%d", portno);
+
 	ndev->netdev_ops = &sparx5_port_netdev_ops;
 	ndev->ethtool_ops = &sparx5_ethtool_ops;
+	ndev->needed_headroom = IFH_LEN * 4;
 
 	eth_hw_addr_gen(ndev, sparx5->base_mac, portno + 1);
 
@@ -287,16 +383,17 @@ struct net_device *sparx5_create_netdev(struct sparx5 *sparx5, u32 portno)
 
 int sparx5_register_netdevs(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	int portno;
 	int err;
 
-	for (portno = 0; portno < SPX5_PORTS; portno++)
+	for (portno = 0; portno < consts->chip_ports; portno++)
 		if (sparx5->ports[portno]) {
 			err = register_netdev(sparx5->ports[portno]->ndev);
 			if (err) {
 				dev_err(sparx5->dev,
-					"port: %02u: netdev registration failed\n",
-					portno);
+					"port: %02u: netdev registration failed: %d\n",
+					portno, err);
 				return err;
 			}
 			sparx5_port_inj_timer_setup(sparx5->ports[portno]);
@@ -306,10 +403,11 @@ int sparx5_register_netdevs(struct sparx5 *sparx5)
 
 void sparx5_destroy_netdevs(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	struct sparx5_port *port;
 	int portno;
 
-	for (portno = 0; portno < SPX5_PORTS; portno++) {
+	for (portno = 0; portno < consts->chip_ports; portno++) {
 		port = sparx5->ports[portno];
 		if (port && port->phylink) {
 			/* Disconnect the phy */
@@ -325,10 +423,10 @@ void sparx5_destroy_netdevs(struct sparx5 *sparx5)
 
 void sparx5_unregister_netdevs(struct sparx5 *sparx5)
 {
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	int portno;
 
-	for (portno = 0; portno < SPX5_PORTS; portno++)
+	for (portno = 0; portno < consts->chip_ports; portno++)
 		if (sparx5->ports[portno])
 			unregister_netdev(sparx5->ports[portno]->ndev);
 }
-

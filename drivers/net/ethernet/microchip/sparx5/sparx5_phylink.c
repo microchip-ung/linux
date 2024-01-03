@@ -98,7 +98,13 @@ static int sparx5_pcs_config(struct phylink_pcs *pcs, unsigned int neg_mode,
 {
 	struct sparx5_port *port = sparx5_pcs_to_port(pcs);
 	struct sparx5_port_config conf;
+	const struct sparx5_ops *ops;
 	int ret = 0;
+
+	ops = &port->sparx5->data->ops;
+
+	if (ops->port_is_rgmii(port->portno))
+		return 0;
 
 	conf = port->conf;
 	conf.power_down = false;

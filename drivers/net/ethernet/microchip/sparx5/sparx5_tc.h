@@ -105,4 +105,11 @@ int sparx5_tc_matchall(struct net_device *ndev,
 int sparx5_tc_flower(struct net_device *ndev, struct flow_cls_offload *fco,
 		     bool ingress);
 
+#if defined(CONFIG_DEBUG_FS)
+struct sparx5;
+void sparx5_mirror_probe_debugfs(struct sparx5 *sparx5);
+#else
+static inline void sparx5_mirror_probe_debugfs(struct sparx5 *sparx5) {}
+#endif
+
 #endif	/* __SPARX5_TC_H__ */
