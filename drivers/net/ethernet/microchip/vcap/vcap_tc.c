@@ -66,7 +66,6 @@ int vcap_tc_flower_handler_ipv4_usage(struct vcap_tc_flower_parse_usage *st)
 
 	if (st->l3_proto == ETH_P_IP) {
 		struct flow_match_ipv4_addrs mt;
-
 		flow_rule_match_ipv4_addrs(st->frule, &mt);
 		if (mt.mask->src) {
 			err = vcap_rule_add_key_u32(st->vrule,

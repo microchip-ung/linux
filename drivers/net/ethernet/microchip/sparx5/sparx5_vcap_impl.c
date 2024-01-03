@@ -8,6 +8,7 @@
  */
 
 #include "vcap_api_debugfs.h"
+#include "vcap_netlink.h"
 #include "sparx5_main_regs.h"
 #include "sparx5_main.h"
 #include "sparx5_vcap_impl.h"
@@ -2090,6 +2091,8 @@ void sparx5_vcap_destroy(struct sparx5 *sparx5)
 
 	if (!ctrl)
 		return;
+
+	vcap_netlink_uninit(ctrl);
 
 	list_for_each_entry_safe(admin, admin_next, &ctrl->list, list) {
 		sparx5_vcap_port_key_deselection(sparx5, admin);
