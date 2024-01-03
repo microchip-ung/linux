@@ -14,6 +14,12 @@
 #include <linux/regmap.h>
 #include <linux/reset-controller.h>
 
+#define CHIP_COMMON_REG 0x10
+#define CHIP_COMMON_RESET_BIT BIT(0)
+#define CHIP_COMMON_MDC_BIT BIT(1)
+#define CUPHY_CTRL_REG 0x7c
+#define CUPHY_CTRL_BIT BIT(14)
+
 struct reset_props {
 	u32 protect_reg;
 	u32 protect_bit;
@@ -24,6 +30,9 @@ struct reset_props {
 struct mchp_reset_context {
 	struct regmap *cpu_ctrl;
 	struct regmap *gcb_ctrl;
+	struct regmap *chip_ctrl;
+	struct regmap *phy0_ctrl;
+	struct regmap *phy1_ctrl;
 	struct reset_controller_dev rcdev;
 	const struct reset_props *props;
 };
@@ -47,9 +56,30 @@ static int sparx5_switch_reset(struct mchp_reset_context *ctx)
 		     ctx->props->reset_bit);
 
 	/* Wait for soft reset done */
-	return regmap_read_poll_timeout(ctx->gcb_ctrl, ctx->props->reset_reg, val,
-					(val & ctx->props->reset_bit) == 0,
-					1, 100);
+	regmap_read_poll_timeout(ctx->gcb_ctrl, ctx->props->reset_reg, val,
+				 (val & ctx->props->reset_bit) == 0, 1, 100);
+
+	/* Release the reset and update the polarity of the internal PHY */
+	if (ctx->phy0_ctrl && ctx->phy1_ctrl && ctx->chip_ctrl) {
+		regmap_update_bits(ctx->chip_ctrl, CHIP_COMMON_REG,
+				   CHIP_COMMON_RESET_BIT, CHIP_COMMON_RESET_BIT);
+
+		regmap_update_bits(ctx->chip_ctrl, CHIP_COMMON_REG,
+				   CHIP_COMMON_MDC_BIT, 0);
+		/* This sleep is required otherwise it fails to access the
+		 * PHY register because is changing the way ot access them
+		 */
+		msleep(5);
+		regmap_update_bits(ctx->phy0_ctrl, CUPHY_CTRL_REG,
+				   CUPHY_CTRL_BIT, CUPHY_CTRL_BIT);
+		regmap_update_bits(ctx->phy1_ctrl, CUPHY_CTRL_REG,
+				   CUPHY_CTRL_BIT, CUPHY_CTRL_BIT);
+
+		regmap_update_bits(ctx->chip_ctrl, CHIP_COMMON_REG,
+				   CHIP_COMMON_MDC_BIT, CHIP_COMMON_MDC_BIT);
+	}
+
+	return 0;
 }
 
 static int sparx5_reset_noop(struct reset_controller_dev *rcdev,
@@ -119,6 +149,10 @@ static int mchp_sparx5_reset_probe(struct platform_device *pdev)
 	err = mchp_sparx5_map_io(pdev, 0, &ctx->gcb_ctrl);
 	if (err)
 		return err;
+
+	mchp_sparx5_map_syscon(pdev, "chip-syscon", &ctx->chip_ctrl);
+	mchp_sparx5_map_syscon(pdev, "phy0-syscon", &ctx->phy0_ctrl);
+	mchp_sparx5_map_syscon(pdev, "phy1-syscon", &ctx->phy1_ctrl);
 
 	ctx->rcdev.owner = THIS_MODULE;
 	ctx->rcdev.nr_resets = 1;
