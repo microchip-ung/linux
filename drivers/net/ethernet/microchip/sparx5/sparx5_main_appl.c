@@ -423,10 +423,10 @@ static int mchp_sparx5_appl_probe(struct platform_device *pdev)
 
 	err = sparx5_appl_fdma(sparx5);
 	if (err) {
-		dev_err(sparx5->dev, "Failed to start FDMA\n");
+		dev_info(sparx5->dev, "Failed to start FDMA. Falling back to register-based INJ/XTR\n");
 		err = sparx5_appl_xtr(sparx5);
 		if (err) {
-			dev_err(sparx5->dev, "Failed to start XTR\n");
+			dev_err(sparx5->dev, "Failed to start register-based INJ/XTR\n");
 			return err;
 		}
 	}
