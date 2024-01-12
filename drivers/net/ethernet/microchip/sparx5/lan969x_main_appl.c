@@ -158,7 +158,7 @@ static const u8 ifh_smac[] = { 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff };
 #define XTR_ESCAPE    ntohl((__force __be32)0x80000006u)
 #define XTR_NOT_READY ntohl((__force __be32)0x80000007u)
 
-#define XTR_VALID_BYTES(x)      (4 - ((x) & 3))
+#define XTR_VALID_BYTES(x)      (4 - ((ntohl(x)) & 3))
 
 #define IFH_POS_SRCPORT			124
 #define IFH_WID_SRCPORT			12

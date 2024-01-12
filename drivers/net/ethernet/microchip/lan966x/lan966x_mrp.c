@@ -1471,17 +1471,23 @@ int lan966x_handle_mrp_del(struct lan966x_port *port,
 			   const struct switchdev_obj *obj)
 {
 	const struct switchdev_obj_mrp *mrp = SWITCHDEV_OBJ_MRP(obj);
-	struct lan966x_mrp *mrp_instance = {0};
+	struct lan966x_mrp *tmp, *mrp_instance = {0};
 	struct lan966x *lan966x = port->lan966x;
-
-	if (mrp->p_port != port->dev && mrp->s_port != port->dev)
-		return 0;
 
 	pr_info("%s %s\n", __FUNCTION__, lan966x->bridge->name);
 
-	mrp_instance = lan966x_mrp_find_ring(lan966x, mrp->ring_id);
+	/* Don't create again the instance if already is deleted. Because we
+	 * will just delete it later. In that case just return OK
+	 */
+	list_for_each_entry(tmp, &lan966x->mrp_list, list) {
+		if (tmp->ring_id == mrp->ring_id) {
+			mrp_instance = tmp;
+			break;
+		}
+	}
+
 	if (!mrp_instance)
-		return -EOPNOTSUPP;
+		return 0;
 
 	lan966x_del_prio_is1_rule(mrp_instance->p_port,
 				  mrp_instance->p_port->mrp_is1_p_port_rule_id);
@@ -1496,12 +1502,8 @@ int lan966x_handle_mrp_del(struct lan966x_port *port,
 
 	lan966x_mrp_uninit_port(mrp_instance->p_port);
 	lan966x_mrp_uninit_port(mrp_instance->s_port);
-	mrp_instance->p_port = NULL;
-	mrp_instance->s_port = NULL;
 
-	if (!mrp_instance->p_port && !mrp_instance->s_port &&
-	    !mrp_instance->i_port)
-		lan966x_mrp_delete_ring(lan966x, mrp->ring_id);
+	lan966x_mrp_delete_ring(lan966x, mrp->ring_id);
 
 	return 0;
 }

@@ -14,7 +14,6 @@
 
 #include "lan966x_main.h"
 
-#include "lan966x_vcap_impl.h"
 #include "lan966x_mrp.h"
 #include "lan966x_cfm.h"
 
@@ -1319,7 +1318,7 @@ static int lan966x_remove(struct platform_device *pdev)
 	lan966x_netlink_qos_uninit();
 
 	lan966x_pmac_deinit(lan966x);
-	lan966x_vcap_uninit(lan966x);
+	lan966x_vcap_deinit(lan966x);
 
 	lan966x_taprio_deinit(lan966x);
 	lan966x_fdma_deinit(lan966x);

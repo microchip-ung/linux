@@ -16,14 +16,9 @@ struct vcap_control;
 
 #if defined(CONFIG_DEBUG_FS)
 void sparx5_debugfs(struct sparx5 *sparx5);
-void sparx5_create_vcap_debugfs(struct sparx5 *sparx5,
-				struct vcap_control *ctrl);
 #else
 static inline void sparx5_debugfs(struct sparx5 *sparx5) {}
-static inline void sparx5_create_vcap_debugfs(struct sparx5 *sparx5,
-					      struct vcap_control *ctrl) {}
 #endif
 
 
 #endif /* __SPARX5_DEBUGFS_H__ */
-

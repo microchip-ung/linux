@@ -257,27 +257,35 @@ static int sparx5_port_ioctl(struct net_device *dev, struct ifreq *ifr,
 {
 	struct sparx5_port *sparx5_port = netdev_priv(dev);
 	struct sparx5 *sparx5 = sparx5_port->sparx5;
-	int ret = 0;
+	int err;
 
-	if (phy_has_hwtstamp(dev->phydev)) {
-		/* Don't return here immediately, because it might be required
-		 * for the MAC to configure to copy all the PTP frames to CPU
-		 */
-		ret = phy_mii_ioctl(dev->phydev, ifr, cmd);
-		if (ret)
-			return ret;
+	if (cmd == SIOCSHWTSTAMP) {
+		err = sparx5_ptp_setup_traps(sparx5_port, ifr);
+		if (err)
+			return err;
 	}
 
-	if (sparx5->ptp) {
+	if (!phy_has_hwtstamp(dev->phydev) && sparx5->ptp) {
 		switch (cmd) {
 		case SIOCSHWTSTAMP:
-			return sparx5_ptp_hwtstamp_set(sparx5_port, ifr);
+			err = sparx5_ptp_hwtstamp_set(sparx5_port, ifr);
+			if (err)
+				sparx5_ptp_del_traps(sparx5_port);
+
+			return err;
 		case SIOCGHWTSTAMP:
 			return sparx5_ptp_hwtstamp_get(sparx5_port, ifr);
 		}
 	}
 
-	return 0;
+	if (!dev->phydev)
+		return -ENODEV;
+
+	err = phy_mii_ioctl(dev->phydev, ifr, cmd);
+	if (err && cmd == SIOCSHWTSTAMP)
+		sparx5_ptp_del_traps(sparx5_port);
+
+	return err;
 }
 
 static const struct net_device_ops sparx5_port_netdev_ops = {
@@ -317,7 +325,12 @@ struct net_device *sparx5_create_netdev(struct sparx5 *sparx5, u32 portno)
 	spx5_port->ndev = ndev;
 	spx5_port->sparx5 = sparx5;
 	spx5_port->portno = portno;
-	snprintf(ndev->name, IFNAMSIZ, "eth%d", portno);
+
+	/* If the switch is PCIe mapped the host may have its own ports */
+	if (sparx5->is_pcie_device)
+		snprintf(ndev->name, IFNAMSIZ, "swp%d", portno);
+	else
+		snprintf(ndev->name, IFNAMSIZ, "eth%d", portno);
 
 	ndev->netdev_ops = &sparx5_port_netdev_ops;
 	ndev->ethtool_ops = &sparx5_ethtool_ops;
@@ -338,8 +351,8 @@ int sparx5_register_netdevs(struct sparx5 *sparx5)
 			err = register_netdev(sparx5->ports[portno]->ndev);
 			if (err) {
 				dev_err(sparx5->dev,
-					"port: %02u: netdev registration failed\n",
-					portno);
+					"port: %02u: netdev registration failed: %d\n",
+					portno, err);
 				return err;
 			}
 			sparx5_port_inj_timer_setup(sparx5->ports[portno]);

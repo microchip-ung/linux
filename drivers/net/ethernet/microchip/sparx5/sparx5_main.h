@@ -30,11 +30,11 @@ enum spx5_target_chiptype {
 	SPX5_TARGET_CT_7552       = 0x7552,  /* SparX-5-128 Enterprise */
 	SPX5_TARGET_CT_7556       = 0x7556,  /* SparX-5-160 Enterprise */
 	SPX5_TARGET_CT_7558       = 0x7558,  /* SparX-5-200 Enterprise */
-	SPX5_TARGET_CT_7546TSN    = 0x47546, /* SparX-5-64i Industrial */
-	SPX5_TARGET_CT_7549TSN    = 0x47549, /* SparX-5-90i Industrial */
-	SPX5_TARGET_CT_7552TSN    = 0x47552, /* SparX-5-128i Industrial */
-	SPX5_TARGET_CT_7556TSN    = 0x47556, /* SparX-5-160i Industrial */
-	SPX5_TARGET_CT_7558TSN    = 0x47558, /* SparX-5-200i Industrial */
+	SPX5_TARGET_CT_7546TSN    = 0x0546, /* SparX-5-64i Industrial */
+	SPX5_TARGET_CT_7549TSN    = 0x0549, /* SparX-5-90i Industrial */
+	SPX5_TARGET_CT_7552TSN    = 0x0552, /* SparX-5-128i Industrial */
+	SPX5_TARGET_CT_7556TSN    = 0x0556, /* SparX-5-160i Industrial */
+	SPX5_TARGET_CT_7558TSN    = 0x0558, /* SparX-5-200i Industrial */
 	SPX5_TARGET_CT_LAN9694    = 0x9694,  /* lan969x-40 */
 	SPX5_TARGET_CT_LAN9691VAO = 0x9691,  /* lan969x-40-VAO */
 	SPX5_TARGET_CT_LAN9694TSN = 0x9695,  /* lan969x-40-TSN */
@@ -61,6 +61,25 @@ enum sparx5_vlan_port_type {
 	SPX5_VLAN_PORT_TYPE_S,       /* S-port */
 	SPX5_VLAN_PORT_TYPE_S_CUSTOM /* S-port using custom type */
 };
+
+/* This is used in calendar configuration */
+enum sparx5_cal_bw {
+	SPX5_CAL_SPEED_NONE = 0,
+	SPX5_CAL_SPEED_1G   = 1,
+	SPX5_CAL_SPEED_2G5  = 2,
+	SPX5_CAL_SPEED_5G   = 3,
+	SPX5_CAL_SPEED_10G  = 4,
+	SPX5_CAL_SPEED_25G  = 5,
+	SPX5_CAL_SPEED_0G5  = 6,
+	SPX5_CAL_SPEED_12G5 = 7
+};
+
+#ifdef CONFIG_SPARX5_SWITCH_APPL
+extern const u8 ifh_dmac[];
+extern const u8 ifh_smac[];
+#define IFH_ENCAP_LEN		16
+#define IFH_ETH_TYPE		0x8880
+#endif
 
 #define SPX5_PORTS       65
 #define SPX5_PORTS_ALL   70
@@ -119,6 +138,7 @@ enum sparx5_vlan_port_type {
 
 #define SPARX5_PHC_COUNT		3
 #define SPARX5_PHC_PORT			0
+#define SPARX5_MAX_PHC_PINS_NUM		7
 
 #define IFH_REW_OP_NOOP			0x0
 #define IFH_REW_OP_ONE_STEP_PTP		0x3
@@ -136,8 +156,11 @@ enum sparx5_vlan_port_type {
 #define SPX5_MIRROR_PROBE_MAX 3
 #define SPX5_QFWD_MP_OFFSET 9
 
+#define SPX5_DSM_CAL_LEN               64
 #define SPX5_DSM_CAL_MAX_DEVS_PER_TAXI 13
 #define SPX5_DSM_CAL_TAXIS             8
+
+#define SPARX5_MAX_PTP_ID		512
 
 struct sparx5;
 
@@ -234,8 +257,6 @@ struct sparx5_port_tc {
 	bool block_shared[2];
 	 /* protocol assigned template per vcap lookup */
 	u16 flower_template_proto[SPARX5_VCAP_LOOKUP_MAX];
-	/* list of flower templates for this port */
-	struct list_head templates;
 	/* Port statistics */
 	struct flow_stats prev_mirror_stats;
 	struct sparx5_port_policer port_policer[SPX5_POLICERS_PER_PORT];
@@ -265,7 +286,8 @@ struct sparx5_port {
 	bool vlan_aware;
 	struct hrtimer inj_timer;
 	/* ptp */
-	u8 ptp_cmd;
+	u8 ptp_tx_cmd;
+	u8 ptp_rx_cmd;
 	u16 ts_id;
 	struct sk_buff_head tx_skbs;
 	bool is_mrouter;
@@ -274,19 +296,28 @@ struct sparx5_port {
 	/* Frame preemption configuration */
 	struct sparx5_fp_port_conf fp;
 	struct sparx5_port_tc tc;
+	struct list_head tc_templates; /* list of TC templates on this port */
 };
 
 enum sparx5_core_clockfreq {
 	SPX5_CORE_CLOCK_DEFAULT,  /* Defaults to the highest supported frequency */
+	SPX5_CORE_CLOCK_180MHZ,   /* 180MHZ core clock frequency */
 	SPX5_CORE_CLOCK_250MHZ,   /* 250MHZ core clock frequency */
 	SPX5_CORE_CLOCK_328MHZ,   /* 328MHZ core clock frequency */
 	SPX5_CORE_CLOCK_500MHZ,   /* 500MHZ core clock frequency */
 	SPX5_CORE_CLOCK_625MHZ,   /* 625MHZ core clock frequency */
 };
 
+/* This is used only for speeds 180MHz and 328MHz */
+enum sparx5_core_clockref {
+	SPX5_CORE_CLOCK_REF_25MHZ,   /* Force to use 25Mhz ref. clock */
+	SPX5_CORE_CLOCK_REF_39MHZ,   /* Force to use 39Mhz ref. clock */
+};
+
 struct sparx5_phc {
 	struct ptp_clock *clock;
 	struct ptp_clock_info info;
+	struct ptp_pin_desc pins[SPARX5_MAX_PHC_PINS_NUM];
 	struct hwtstamp_config hwtstamp_config;
 	struct sparx5 *sparx5;
 	u8 index;
@@ -338,6 +369,7 @@ struct sparx5 {
 	/* port structures are in net device */
 	struct sparx5_port *ports[SPX5_PORTS];
 	enum sparx5_core_clockfreq coreclock;
+	enum sparx5_core_clockref coreclockref;
 	/* Statistics */
 	u32 num_stats;
 	u32 num_ethtool_stats;
@@ -386,6 +418,7 @@ struct sparx5 {
 	struct mutex ptp_lock; /* lock for ptp interface state */
 	u16 ptp_skbs;
 	int ptp_irq;
+	int ptp_ext_irq;
 	/* VCAP */
 	struct vcap_control *vcap_ctrl;
 	/* Common root for debugfs */
@@ -395,6 +428,20 @@ struct sparx5 {
 	struct sparx5_mirror_probe mirror_probe[SPX5_MIRROR_PROBE_MAX];
 	/* Time Aware Shaper */
 	struct mutex tas_lock;
+	bool is_pcie_device;
+};
+
+struct sparx5_calendar_data {
+	u32 schedule[SPX5_DSM_CAL_LEN];
+	u32 avg_dist[SPX5_DSM_CAL_MAX_DEVS_PER_TAXI];
+	u32 taxi_ports[SPX5_DSM_CAL_MAX_DEVS_PER_TAXI];
+	u32 taxi_speeds[SPX5_DSM_CAL_MAX_DEVS_PER_TAXI];
+	u32 dev_slots[SPX5_DSM_CAL_MAX_DEVS_PER_TAXI];
+	u32 new_slots[SPX5_DSM_CAL_LEN];
+	u32 temp_sched[SPX5_DSM_CAL_LEN];
+	u32 indices[SPX5_DSM_CAL_LEN];
+	u32 short_list[SPX5_DSM_CAL_LEN];
+	u32 long_list[SPX5_DSM_CAL_LEN];
 };
 
 enum sparx5_ifh_enum {
@@ -468,6 +515,12 @@ struct sparx5_ops {
 	int (*fdma_stop)(struct sparx5 *sparx5);
 	int (*fdma_start)(struct sparx5 *sparx5);
 	int (*fdma_xmit)(struct sparx5 *sparx5, u32 *ifh, struct sk_buff *skb);
+	irqreturn_t (*ptp_irq_handler)(int irq, void *args);
+	enum sparx5_cal_bw (*get_internal_port_cal_speed)(struct sparx5 *sparx5,
+							  u32 portno);
+	int (*dsm_calendar_calc)(struct sparx5 *sparx5, u32 taxi,
+				 struct sparx5_calendar_data *data,
+				 u32 *cal_len);
 };
 
 struct sparx5_consts {
@@ -495,15 +548,21 @@ struct sparx5_consts {
 	const struct sparx5_vcap_inst *vcaps_cfg;
 	const struct vcap_info *vcaps;
 	const struct vcap_statistics *vcap_stats;
+	u8 ptp_pins;
+#ifdef CONFIG_SPARX5_SWITCH_APPL
+	u16 ifh_id;
+#endif
 };
 
 struct sparx5_regs {
+	const unsigned int *tsize;
 	const unsigned int *gaddr;
 	const unsigned int *gcnt;
 	const unsigned int *gsize;
 	const unsigned int *raddr;
 	const unsigned int *rcnt;
 	const unsigned int *fpos;
+	const unsigned int *fsize;
 };
 
 struct sparx5_match_data {
@@ -594,10 +653,16 @@ int sparx5_vlan_vid_del(struct sparx5_port *port, u16 vid);
 void sparx5_vlan_port_apply(struct sparx5 *sparx5, struct sparx5_port *port);
 
 /* sparx5_calendar.c */
+int sparx5_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
+			     struct sparx5_calendar_data *data, u32 *cal_len);
 int sparx5_config_auto_calendar(struct sparx5 *sparx5);
 int sparx5_config_dsm_calendar(struct sparx5 *sparx5);
 u32 *sparx5_get_taxi(int idx);
 void sparx5_calendar_fix(struct sparx5 *sparx5);
+enum sparx5_cal_bw sparx5_get_internal_port_cal_speed(struct sparx5 *sparx5,
+						      u32 portno);
+u32 sparx5_cal_speed_to_value(enum sparx5_cal_bw speed);
+enum sparx5_cal_bw sparx5_get_port_cal_speed(struct sparx5 *sparx5, u32 portno);
 
 /* sparx5_ethtool.c */
 struct sparx5_port_stats {
@@ -642,7 +707,7 @@ void sparx5_ptp_deinit(struct sparx5 *sparx5);
 int sparx5_ptp_hwtstamp_set(struct sparx5_port *port, struct ifreq *ifr);
 int sparx5_ptp_hwtstamp_get(struct sparx5_port *port, struct ifreq *ifr);
 void sparx5_ptp_rxtstamp(struct sparx5 *sparx5, struct sk_buff *skb,
-			 u64 timestamp);
+			 u64 src_port, u64 timestamp);
 int sparx5_ptp_txtstamp_request(struct sparx5_port *port,
 				struct sk_buff *skb);
 void sparx5_ptp_txtstamp_release(struct sparx5_port *port,
@@ -650,6 +715,12 @@ void sparx5_ptp_txtstamp_release(struct sparx5_port *port,
 irqreturn_t sparx5_ptp_irq_handler(int irq, void *args);
 int sparx5_ptp_gettime64(struct ptp_clock_info *ptp,
 			 struct timespec64 *ts);
+int sparx5_ptp_del_traps(struct sparx5_port *port);
+int sparx5_ptp_setup_traps(struct sparx5_port *port, struct ifreq *ifr);
+void sparx5_ptp_get_hwtimestamp(struct sparx5 *sparx5,
+				struct timespec64 *ts,
+				u32 nsec);
+irqreturn_t sparx5_ptp_ext_irq_handler(int irq, void *args);
 
 /* netlink */
 int sparx5_netlink_qos_init(struct sparx5 *sparx5);
@@ -859,6 +930,8 @@ u32 sparx5_get_packet_pipeline_pt(enum sparx5_packet_pipeline_pt pt);
 static inline u32 sparx5_clk_period(enum sparx5_core_clockfreq cclock)
 {
 	switch (cclock) {
+	case SPX5_CORE_CLOCK_180MHZ:
+		return 5564;
 	case SPX5_CORE_CLOCK_250MHZ:
 		return 4000;
 	case SPX5_CORE_CLOCK_328MHZ:
@@ -872,10 +945,7 @@ static inline u32 sparx5_clk_period(enum sparx5_core_clockfreq cclock)
 }
 
 static inline bool sparx5_is_baser(phy_interface_t interface)
-{int sparx5_policer_init(struct sparx5 *sparx5);
-int sparx5_policer_port_stats_update(struct sparx5_port *port, int polidx);
-int sparx5_policer_stats_update(struct sparx5 *sparx5,
-				struct sparx5_policer *pol);
+{
 	return interface == PHY_INTERFACE_MODE_5GBASER ||
 		   interface == PHY_INTERFACE_MODE_10GBASER ||
 		   interface == PHY_INTERFACE_MODE_25GBASER;

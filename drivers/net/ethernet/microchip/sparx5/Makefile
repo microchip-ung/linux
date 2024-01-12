@@ -13,14 +13,15 @@ sparx5-switch-y  := sparx5_main.o sparx5_packet.o \
  sparx5_netlink_qos.o sparx5_netlink_fp.o sparx5_police.o sparx5_pool.o \
  sparx5_psfp.o sparx5_sdlb.o sparx5_regs.o
 
-sparx5-switch-$(CONFIG_DEBUG_FS) += sparx5_debugfs.o sparx5_qos_debugfs.o
+sparx5-switch-$(CONFIG_DEBUG_FS) += sparx5_debugfs.o sparx5_qos_debugfs.o \
+ sparx5_vcap_debugfs.o
 
 # Allow debugging
 ccflags-$(CONFIG_SPARX5_DEBUG) += -DDEBUG
 sparx5-switch-$(CONFIG_SPARX5_DEBUG) += sparx5_tc_dbg.o
 
-obj-$(CONFIG_LAN969X_SWITCH_APPL) += lan969x-appl.o
-lan969x-appl-y := lan969x_main_appl.o
+obj-$(CONFIG_SPARX5_SWITCH_APPL) += sparx5-appl.o
+sparx5-appl-y := sparx5_main_appl.o
 
 obj-$(CONFIG_LAN969X_SWITCH) += lan969x-switch.o
 

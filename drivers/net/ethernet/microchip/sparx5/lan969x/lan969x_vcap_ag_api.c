@@ -1388,7 +1388,7 @@ static const struct vcap_field es0_isdx_keyfield[] = {
 		.offset = 0,
 		.width = 1,
 	},
-	[VCAP_KF_IF_EGR_PORT_MASK] = {
+	[VCAP_KF_IF_EGR_PORT_NO] = {
 		.type = VCAP_FIELD_U32,
 		.offset = 1,
 		.width = 6,
@@ -3649,6 +3649,7 @@ static const char * const vcap_keyfield_names[] = {
 	[VCAP_KF_HOST_MATCH]                     =  "HOST_MATCH",
 	[VCAP_KF_IF_EGR_PORT_MASK]               =  "IF_EGR_PORT_MASK",
 	[VCAP_KF_IF_EGR_PORT_MASK_RNG]           =  "IF_EGR_PORT_MASK_RNG",
+	[VCAP_KF_IF_EGR_PORT_NO]                 =  "IF_EGR_PORT_NO",
 	[VCAP_KF_IF_IGR_PORT]                    =  "IF_IGR_PORT",
 	[VCAP_KF_IF_IGR_PORT_MASK]               =  "IF_IGR_PORT_MASK",
 	[VCAP_KF_IF_IGR_PORT_MASK_L3]            =  "IF_IGR_PORT_MASK_L3",

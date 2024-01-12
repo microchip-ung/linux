@@ -13,8 +13,10 @@
 #include <net/net_namespace.h>
 #include <net/sock.h>
 
+#include "vcap_api_debugfs.h"
 #include "vcap_netlink.h"
 #include "vcap_api.h"
+#include "vcap_api_private.h"
 
 static struct net_device *priv_ndev;
 static struct vcap_control *vctrl;
@@ -135,7 +137,7 @@ static int vcap_put_keyfields(struct sk_buff *msg, struct vcap_admin *admin, str
 	struct vcap_client_keyfield *ckf;
 	const struct vcap_field *fields;
 
-	fields = vcap_keyfields(admin->vtype, rule->keyset);
+	fields = vcap_keyfields(vctrl, admin->vtype, rule->keyset);
 	if (!fields)
 		return -1;
 
@@ -182,12 +184,13 @@ static int vcap_put_keyfields(struct sk_buff *msg, struct vcap_admin *admin, str
 
 static int vcap_put_actionfields(struct sk_buff *msg, struct vcap_admin *admin, struct vcap_rule *rule)
 {
+	struct vcap_control *vctrl = to_intrule(rule)->vctrl;
 	struct nlattr *start_actions, *start_action;
 	struct vcap_client_actionfield_data *action;
 	struct vcap_client_actionfield *caf;
 	const struct vcap_field *fields;
 
-	fields = vcap_actionfields(admin->vtype, rule->actionset);
+	fields = vcap_actionfields(vctrl, admin->vtype, rule->actionset);
 	if (!fields)
 		return -1;
 
@@ -298,6 +301,36 @@ static void vcap_genl_copy_actionfield(struct vcap_client_actionfield_data *data
 	}
 }
 
+static int vcap_genl_add_rule_key_value_by_type(struct vcap_rule *rule,
+						enum vcap_key_field key_id,
+						enum vcap_field_type ftype,
+						struct vcap_client_keyfield_data *data)
+{
+	switch (ftype) {
+	case VCAP_FIELD_BIT:
+		return vcap_rule_add_key_bit(rule, key_id, data->u1.value);
+	case VCAP_FIELD_U32:
+		return vcap_rule_add_key_u32(rule, key_id, data->u32.value,
+					     data->u32.value);
+	case VCAP_FIELD_U48:
+		return vcap_rule_add_key_u48(rule, key_id, &data->u48);
+	case VCAP_FIELD_U56:
+		return vcap_rule_add_key_u56(rule, key_id, &data->u56);
+	case VCAP_FIELD_U64:
+		return vcap_rule_add_key_u64(rule, key_id, &data->u64);
+	case VCAP_FIELD_U72:
+		return vcap_rule_add_key_u72(rule, key_id, &data->u72);
+	case VCAP_FIELD_U112:
+		return vcap_rule_add_key_u112(rule, key_id, &data->u112);
+	case VCAP_FIELD_U128:
+		return vcap_rule_add_key_u128(rule, key_id, &data->u128);
+	default:
+		break;
+	}
+
+	return 0;
+}
+
 static int vcap_genl_add_rule_key_value(struct vcap_rule *rule,
 					struct nlattr *value,
 					enum vcap_key_field key_id,
@@ -306,7 +339,7 @@ static int vcap_genl_add_rule_key_value(struct vcap_rule *rule,
 	struct vcap_client_keyfield_data data;
 
 	vcap_genl_copy_keyfield(&data, value, ftype);
-	return vcap_rule_add_key(rule, key_id, ftype, &data);
+	return vcap_genl_add_rule_key_value_by_type(rule, key_id, ftype, &data);
 }
 
 static int vcap_genl_add_rule_key(struct vcap_rule *rule, struct nlattr *item,
@@ -364,6 +397,36 @@ static int vcap_genl_add_rule_keys(struct vcap_rule *rule, struct nlattr *keys,
 	return 0;
 }
 
+static int vcap_genl_add_rule_action_value_by_type(
+	struct vcap_rule *rule, enum vcap_action_field action_id,
+	enum vcap_field_type ftype, struct vcap_client_actionfield_data *data)
+{
+	switch (ftype) {
+	case VCAP_FIELD_BIT:
+		return vcap_rule_add_action_bit(rule, action_id,
+						data->u1.value);
+	case VCAP_FIELD_U32:
+		return vcap_rule_add_action_u32(rule, action_id,
+						data->u32.value);
+	case VCAP_FIELD_U48:
+		return vcap_rule_add_action_u48(rule, action_id, &data->u48);
+	case VCAP_FIELD_U56:
+		return vcap_rule_add_action_u56(rule, action_id, &data->u56);
+	case VCAP_FIELD_U64:
+		return vcap_rule_add_action_u64(rule, action_id, &data->u64);
+	case VCAP_FIELD_U72:
+		return vcap_rule_add_action_u72(rule, action_id, &data->u72);
+	case VCAP_FIELD_U112:
+		return vcap_rule_add_action_u112(rule, action_id, &data->u112);
+	case VCAP_FIELD_U128:
+		return vcap_rule_add_action_u128(rule, action_id, &data->u128);
+	default:
+		break;
+	}
+
+	return 0;
+}
+
 static int vcap_genl_add_rule_action_value(struct vcap_rule *rule,
 					struct nlattr *value,
 					enum vcap_action_field action_id,
@@ -372,7 +435,7 @@ static int vcap_genl_add_rule_action_value(struct vcap_rule *rule,
 	struct vcap_client_actionfield_data data;
 
 	vcap_genl_copy_actionfield(&data, value, ftype);
-	return vcap_rule_add_action(rule, action_id, ftype, &data);
+	return vcap_genl_add_rule_action_value_by_type(rule, action_id, ftype, &data);
 }
 
 static int vcap_genl_add_rule_action(struct vcap_rule *rule, struct nlattr *item,
@@ -429,6 +492,36 @@ static int vcap_genl_add_rule_actions(struct vcap_rule *rule, struct nlattr *act
 	return 0;
 }
 
+static int vcap_genl_mod_rule_action_by_type(
+	struct vcap_rule *rule, enum vcap_action_field action_id,
+	enum vcap_field_type ftype, struct vcap_client_actionfield_data *data)
+{
+	switch (ftype) {
+	case VCAP_FIELD_BIT:
+		return vcap_rule_mod_action_bit(rule, action_id,
+						data->u1.value);
+	case VCAP_FIELD_U32:
+		return vcap_rule_mod_action_u32(rule, action_id,
+						data->u32.value);
+	case VCAP_FIELD_U48:
+		return vcap_rule_mod_action_u48(rule, action_id, &data->u48);
+	case VCAP_FIELD_U56:
+		return vcap_rule_mod_action_u56(rule, action_id, &data->u56);
+	case VCAP_FIELD_U64:
+		return vcap_rule_mod_action_u64(rule, action_id, &data->u64);
+	case VCAP_FIELD_U72:
+		return vcap_rule_mod_action_u72(rule, action_id, &data->u72);
+	case VCAP_FIELD_U112:
+		return vcap_rule_mod_action_u112(rule, action_id, &data->u112);
+	case VCAP_FIELD_U128:
+		return vcap_rule_mod_action_u128(rule, action_id, &data->u128);
+	default:
+		break;
+	}
+
+	return 0;
+}
+
 static int vcap_genl_mod_rule_action_value(struct vcap_rule *rule,
 					struct nlattr *value,
 					enum vcap_action_field action_id,
@@ -437,7 +530,7 @@ static int vcap_genl_mod_rule_action_value(struct vcap_rule *rule,
 	struct vcap_client_actionfield_data data;
 
 	vcap_genl_copy_actionfield(&data, value, ftype);
-	return vcap_rule_mod_action(rule, action_id, ftype, &data);
+	return vcap_genl_mod_rule_action_by_type(rule, action_id, ftype, &data);
 }
 
 static int vcap_genl_mod_rule_action(struct vcap_rule *rule, struct nlattr *item,
@@ -494,6 +587,35 @@ static int vcap_genl_mod_rule_actions(struct vcap_rule *rule, struct nlattr *act
 	return 0;
 }
 
+static int vcap_genl_mod_rule_key_by_type(
+	struct vcap_rule *rule, enum vcap_key_field key_id,
+	enum vcap_field_type ftype, struct vcap_client_keyfield_data *data)
+{
+	switch (ftype) {
+	case VCAP_FIELD_BIT:
+		return vcap_rule_mod_key_bit(rule, key_id, data->u1.value);
+	case VCAP_FIELD_U32:
+		return vcap_rule_mod_key_u32(rule, key_id, data->u32.value,
+					     data->u32.value);
+	case VCAP_FIELD_U48:
+		return vcap_rule_mod_key_u48(rule, key_id, &data->u48);
+	case VCAP_FIELD_U56:
+		return vcap_rule_mod_key_u56(rule, key_id, &data->u56);
+	case VCAP_FIELD_U64:
+		return vcap_rule_mod_key_u64(rule, key_id, &data->u64);
+	case VCAP_FIELD_U72:
+		return vcap_rule_mod_key_u72(rule, key_id, &data->u72);
+	case VCAP_FIELD_U112:
+		return vcap_rule_mod_key_u112(rule, key_id, &data->u112);
+	case VCAP_FIELD_U128:
+		return vcap_rule_mod_key_u128(rule, key_id, &data->u128);
+	default:
+		break;
+	}
+
+	return 0;
+}
+
 static int vcap_genl_mod_rule_key_value(struct vcap_rule *rule,
 					struct nlattr *value,
 					enum vcap_key_field key_id,
@@ -502,7 +624,7 @@ static int vcap_genl_mod_rule_key_value(struct vcap_rule *rule,
 	struct vcap_client_keyfield_data data;
 
 	vcap_genl_copy_keyfield(&data, value, ftype);
-	return vcap_rule_mod_key(rule, key_id, ftype, &data);
+	return vcap_genl_mod_rule_key_by_type(rule, key_id, ftype, &data);
 }
 
 static int vcap_genl_mod_rule_key(struct vcap_rule *rule, struct nlattr *item,
@@ -596,7 +718,7 @@ static int vcap_genl_get_vcap_keyset_keys(enum vcap_type vt,
 					  enum vcap_keyfield_set keyset,
 					  struct sk_buff *msg)
 {
-	int count = vcap_keyfield_count(vt, keyset);
+	int count = vcap_keyfield_count(vctrl, vt, keyset);
 	const struct vcap_field *fields;
 	enum vcap_keyfield_set key;
 	struct nlattr *start_keys;
@@ -604,7 +726,7 @@ static int vcap_genl_get_vcap_keyset_keys(enum vcap_type vt,
 
 	if (count == 0)
 		return 0;
-	fields = vcap_keyfields(vt, keyset);
+	fields = vcap_keyfields(vctrl, vt, keyset);
 	if (!fields)
 		return 0;
 
@@ -625,7 +747,7 @@ static int vcap_genl_get_vcap_keyset(enum vcap_type vt,
 	struct nlattr *start_keyset;
 
 	/* Check that the keyset is valid */
-	if (vcap_keyfieldset(vt, keyset) == 0)
+	if (vcap_keyfieldset(vctrl, vt, keyset) == 0)
 		return 0;
 
 	start_keyset = nla_nest_start(msg, VCAP_NL_ATTR_KEYSET_ITEM);
@@ -686,7 +808,7 @@ static int vcap_genl_get_vcap_actionset_actions(enum vcap_type vt,
 						enum vcap_actionfield_set actionset,
 						struct sk_buff *msg)
 {
-	int count = vcap_actionfield_count(vt, actionset);
+	int count = vcap_actionfield_count(vctrl, vt, actionset);
 	const struct vcap_field *fields;
 	enum vcap_actionfield_set action;
 	struct nlattr *start_actions;
@@ -694,7 +816,7 @@ static int vcap_genl_get_vcap_actionset_actions(enum vcap_type vt,
 
 	if (count == 0)
 		return 0;
-	fields = vcap_actionfields(vt, actionset);
+	fields = vcap_actionfields(vctrl, vt, actionset);
 	if (!fields)
 		return 0;
 
@@ -715,7 +837,7 @@ static int vcap_genl_get_vcap_actionset(enum vcap_type vt,
 	struct nlattr *start_actionset;
 
 	/* Check that the actionset is valid */
-	if (vcap_actionfieldset(vt, actionset) == 0)
+	if (vcap_actionfieldset(vctrl, vt, actionset) == 0)
 		return 0;
 
 	start_actionset = nla_nest_start(msg, VCAP_NL_ATTR_ACTIONSET_ITEM);
@@ -745,7 +867,7 @@ static int vcap_genl_get_vcap_actionsets(enum vcap_type vt, struct sk_buff *msg)
 	return 0;
 }
 
-int vcap_genl_printf(void *out, int attrtype, const char *fmt, ...)
+int vcap_genl_port_printf(void *out, const char *fmt, ...)
 {
 	struct sk_buff *msg = out;
 	char buffer[300];
@@ -754,11 +876,13 @@ int vcap_genl_printf(void *out, int attrtype, const char *fmt, ...)
 	va_start(args, fmt);
 	vsnprintf(buffer, sizeof(buffer), fmt, args);
 	va_end(args);
-	return nla_put_string(msg, attrtype, buffer);
+	return nla_put_string(msg, VCAP_NL_ATTR_PORT_INFO, buffer);
 }
 
 static int vcap_genl_get_port_info(struct sk_buff *skb, struct genl_info *info)
 {
+	struct vcap_admin *admin_itr, *admin = NULL;
+	struct vcap_output_print out;
 	struct nlattr *start_list;
 	enum vcap_type vtype;
 	struct sk_buff *msg;
@@ -773,6 +897,22 @@ static int vcap_genl_get_port_info(struct sk_buff *skb, struct genl_info *info)
 	vtype = nla_get_u8(info->attrs[VCAP_NL_ATTR_VCAP_TYPE]);
 	if (vctrl->vcaps[vtype].rows == 0) {
 		NL_SET_ERR_MSG_MOD(info->extack, "VCAP_ID is invalid");
+		err = -EINVAL;
+		goto invalid_info;
+	}
+
+	list_for_each_entry(admin_itr, &vctrl->list, list) {
+		if (admin_itr->vinst)
+			continue;
+		if (admin_itr->vtype == vtype) {
+			admin = admin_itr;
+			break;
+		}
+	}
+
+	/* There should always be an admin for a validated vtype. */
+	if (!admin) {
+		NL_SET_ERR_MSG_MOD(info->extack, "Could not find admin for given vtype");
 		err = -EINVAL;
 		goto invalid_info;
 	}
@@ -797,8 +937,10 @@ static int vcap_genl_get_port_info(struct sk_buff *skb, struct genl_info *info)
 	if (!start_list)
 		goto nla_put_failure;
 
-	if (vctrl->ops->port_info(priv_ndev, vtype, vcap_genl_printf, msg,
-				  VCAP_NL_ATTR_PORT_INFO))
+	out.prf = (void *)vcap_genl_port_printf;
+	out.dst = msg;
+
+	if (vctrl->ops->port_info(priv_ndev, admin, &out))
 		goto nla_put_failure;
 
 	nla_nest_end(msg, start_list);
@@ -821,6 +963,7 @@ invalid_info:
 static int vcap_genl_reset_rule_counter(struct sk_buff *skb, struct genl_info *info)
 {
 	struct vcap_counter ctr = {0};
+	struct vcap_rule *rule;
 	struct sk_buff *msg;
 	u32 rule_id;
 	void *hdr;
@@ -833,7 +976,9 @@ static int vcap_genl_reset_rule_counter(struct sk_buff *skb, struct genl_info *i
 	}
 	rule_id = nla_get_u32(info->attrs[VCAP_NL_ATTR_RULE_ID]);
 
-	if (vcap_rule_set_counter(rule_id, &ctr)) {
+	rule = vcap_get_rule(vctrl, rule_id);
+
+	if (vcap_rule_set_counter(rule, &ctr)) {
 		NL_SET_ERR_MSG_MOD(info->extack, "Could not reset counter");
 		err = -EINVAL;
 		goto invalid_info;
@@ -900,7 +1045,7 @@ static int vcap_genl_list_rules(struct sk_buff *skb, struct genl_info *info)
 	if (!start_list)
 		goto nla_put_failure;
 	/* Add all rule ids via a callback interface */
-	if (vcap_rule_iter(vcap_genl_rule_cb, msg))
+	if (vcap_rule_iter(vctrl, vcap_genl_rule_cb, msg))
 		goto nla_put_failure;
 	nla_nest_end(msg, start_list);
 
@@ -938,13 +1083,13 @@ static int vcap_genl_mod_rule(struct sk_buff *skb, struct genl_info *info)
 	rule_id = nla_get_u32(info->attrs[VCAP_NL_ATTR_RULE_ID]);
 
 	/* Get the rule specified by the rule id */
-	rule = vcap_get_rule(priv_ndev, rule_id);
+	rule = vcap_get_rule(vctrl, rule_id);
 	if (!rule || IS_ERR(rule)) {
 		NL_SET_ERR_MSG_MOD(info->extack, "Could not get RULE_ID");
 		err = -EINVAL;
 		goto invalid_info;
 	}
-	admin = vcap_find_admin(rule->vcap_chain_id);
+	admin = vcap_find_admin(vctrl, rule->vcap_chain_id);
 	if (!admin) {
 		NL_SET_ERR_MSG_MOD(info->extack, "Could not get the VCAP of this rule");
 		err = -EINVAL;
@@ -952,13 +1097,13 @@ static int vcap_genl_mod_rule(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	/* Modify keys */
-	fields = vcap_keyfields(admin->vtype, rule->keyset);
+	fields = vcap_keyfields(vctrl, admin->vtype, rule->keyset);
 	if (!fields) {
 		NL_SET_ERR_MSG_MOD(info->extack, "No rule keys for this keyset");
 		err = -EINVAL;
 		goto err_rule_free;
 	}
-	field_count = vcap_keyfield_count(admin->vtype, rule->keyset);
+	field_count = vcap_keyfield_count(vctrl, admin->vtype, rule->keyset);
 
 	if (vcap_genl_mod_rule_keys(rule, info->attrs[VCAP_NL_ATTR_KEYS],
 				    fields, field_count)) {
@@ -967,13 +1112,13 @@ static int vcap_genl_mod_rule(struct sk_buff *skb, struct genl_info *info)
 		goto err_rule_free;
 	}
 
-	fields = vcap_actionfields(admin->vtype, rule->actionset);
+	fields = vcap_actionfields(vctrl, admin->vtype, rule->actionset);
 	if (!fields) {
 		NL_SET_ERR_MSG_MOD(info->extack, "No rule actions for this actionset");
 		err = -EINVAL;
 		goto err_rule_free;
 	}
-	field_count = vcap_actionfield_count(admin->vtype, rule->actionset);
+	field_count = vcap_actionfield_count(vctrl, admin->vtype, rule->actionset);
 
 	if (vcap_genl_mod_rule_actions(rule, info->attrs[VCAP_NL_ATTR_ACTIONS],
 				    fields, field_count)) {
@@ -1046,20 +1191,20 @@ static int vcap_genl_get_rule(struct sk_buff *skb, struct genl_info *info)
 	rule_id = nla_get_u32(info->attrs[VCAP_NL_ATTR_RULE_ID]);
 
 	/* Get the rule specified by the rule id */
-	rule = vcap_get_rule(priv_ndev, rule_id);
+	rule = vcap_get_rule(vctrl, rule_id);
 	if (rule == NULL || IS_ERR(rule)) {
 		NL_SET_ERR_MSG_MOD(info->extack, "Could not get this rule id");
 		err = -EINVAL;
 		goto invalid_info;
 	}
-	admin = vcap_rule_get_admin(rule);
+	admin = vcap_find_admin(vctrl, rule->vcap_chain_id);
 
-	if (vcap_rule_get_counter(rule_id, &counter)) {
+	if (vcap_rule_get_counter(rule, &counter)) {
 		NL_SET_ERR_MSG_MOD(info->extack, "Could not get the rule counter");
 		err = -EINVAL;
 		goto err_rule_free;
 	}
-	if (vcap_rule_get_address(priv_ndev, rule_id, &address)) {
+	if (vcap_rule_get_address(vctrl, rule_id, &address)) {
 		NL_SET_ERR_MSG_MOD(info->extack, "Could not get the rule address");
 		err = -EINVAL;
 		goto err_rule_free;
@@ -1147,7 +1292,7 @@ static int vcap_genl_del_rule(struct sk_buff *skb, struct genl_info *info)
 	rule_id = nla_get_u32(info->attrs[VCAP_NL_ATTR_RULE_ID]);
 
 	/* Delete the rule specified by the rule id */
-	if (vcap_del_rule(priv_ndev, rule_id)) {
+	if (vcap_del_rule(vctrl, priv_ndev, rule_id)) {
 		NL_SET_ERR_MSG_MOD(info->extack, "Rule could not be deleted");
 		err = -EINVAL;
 		goto invalid_info;
@@ -1223,7 +1368,7 @@ static int vcap_genl_add_rule(struct sk_buff *skb, struct genl_info *info)
 	vlookup = nla_get_u8(info->attrs[VCAP_NL_ATTR_VCAP_LOOKUP]);
 
 	/* Check that the vcap information is valid, and get the chain id */
-	admin = vcap_find_admin_with_lookup(vtype, vlookup, &cid);
+	admin = vcap_find_admin_with_lookup(vctrl, vtype, vlookup, &cid);
 	if (!admin) {
 		NL_SET_ERR_MSG_MOD(info->extack, "Could not find VCAP instance");
 		err = -EINVAL;
@@ -1258,7 +1403,7 @@ static int vcap_genl_add_rule(struct sk_buff *skb, struct genl_info *info)
 	}
 	actionset_id = nla_get_u16(info->attrs[VCAP_NL_ATTR_ACTIONSET_ID]);
 
-	rule = vcap_alloc_rule(priv_ndev, cid, VCAP_USER_VCAP_UTIL,
+	rule = vcap_alloc_rule(vctrl, priv_ndev, cid, VCAP_USER_VCAP_UTIL,
 			       priority, rule_id);
 
 	if (!rule || IS_ERR(rule)) {
@@ -1285,13 +1430,13 @@ static int vcap_genl_add_rule(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	/* Add keys */
-	fields = vcap_keyfields(vtype, keyset_id);
+	fields = vcap_keyfields(vctrl, vtype, keyset_id);
 	if (!fields) {
 		NL_SET_ERR_MSG_MOD(info->extack, "No rule keys for this keyset");
 		err = -EINVAL;
 		goto err_rule_free;
 	}
-	field_count = vcap_keyfield_count(vtype, keyset_id);
+	field_count = vcap_keyfield_count(vctrl, vtype, keyset_id);
 
 	if (vcap_genl_add_rule_keys(rule, info->attrs[VCAP_NL_ATTR_KEYS],
 				    fields, field_count)) {
@@ -1301,13 +1446,13 @@ static int vcap_genl_add_rule(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	/* Add actions */
-	fields = vcap_actionfields(vtype, actionset_id);
+	fields = vcap_actionfields(vctrl, vtype, actionset_id);
 	if (!fields) {
 		NL_SET_ERR_MSG_MOD(info->extack, "No rule actions for this actionset");
 		err = -EINVAL;
 		goto err_rule_free;
 	}
-	field_count = vcap_actionfield_count(vtype, actionset_id);
+	field_count = vcap_actionfield_count(vctrl, vtype, actionset_id);
 
 	if (vcap_genl_add_rule_actions(rule, info->attrs[VCAP_NL_ATTR_ACTIONS],
 				    fields, field_count)) {
@@ -1396,7 +1541,7 @@ static int vcap_genl_get_actionset_info(struct sk_buff *skb,
 	actionset = nla_get_u16(info->attrs[VCAP_NL_ATTR_ACTIONSET_ID]);
 
 	/* Check that the actionset is valid */
-	if (vcap_actionfieldset(vt, actionset) == 0) {
+	if (vcap_actionfieldset(vctrl, vt, actionset) == 0) {
 		NL_SET_ERR_MSG_MOD(info->extack, "Attribute ACTIONSET ID is missing");
 		err = -EINVAL;
 		goto invalid_info;
@@ -1467,7 +1612,7 @@ static int vcap_genl_get_keyset_info(struct sk_buff *skb,
 	keyset = nla_get_u16(info->attrs[VCAP_NL_ATTR_KEYSET_ID]);
 
 	/* Check that the keyset is valid */
-	if (vcap_keyfieldset(vt, keyset) == 0) {
+	if (vcap_keyfieldset(vctrl, vt, keyset) == 0) {
 		NL_SET_ERR_MSG_MOD(info->extack, "Attribute KEYSET ID is missing");
 		err = -EINVAL;
 		goto invalid_info;
@@ -1530,7 +1675,7 @@ static int vcap_genl_get_vcap_info(struct sk_buff *skb,
 		err = -EINVAL;
 		goto invalid_info;
 	}
-	vcount = vcap_admin_type_count(vtype);
+	vcount = vcap_admin_type_count(vctrl, vtype);
 
 	msg = genlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
 	if (!msg) {
@@ -1589,11 +1734,15 @@ static int vcap_genl_vcap_info(enum vcap_type vtype, int vinst, struct sk_buff *
 {
 	struct nlattr *start_vcap;
 	struct vcap_admin *admin;
+	struct vcap_output_print out = {
+		.prf = (void *)vcap_genl_vcap_printf,
+		.dst = msg,
+	};
 
 	list_for_each_entry(admin, &vctrl->list, list) {
 		if (admin->vtype == vtype && admin->vinst == vinst) {
 			start_vcap = nla_nest_start(msg, VCAP_NL_ATTR_VCAP_INFO_ITEM);
-			vcap_show_admin_info(vcap_genl_vcap_printf, msg, admin);
+			vcap_show_admin_info(vctrl, admin, &out);
 			nla_nest_end(msg, start_vcap);
 			break;
 		}

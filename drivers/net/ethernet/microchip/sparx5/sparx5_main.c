@@ -239,6 +239,21 @@ static int qlim_wm(struct sparx5 *sparx5, int fraction)
 	return (buf_mem / SPX5_BUFFER_CELL_SZ - 100) * fraction / 100;
 }
 
+static void sparx5_map_resources(struct sparx5 *sparx5, struct resource *iores[])
+{
+	struct resource *res;
+
+	res = platform_get_resource_byname(sparx5->pdev, IORESOURCE_MEM, "cpu");
+	if (res && IO_RANGES > 0)
+		iores[0] = res;
+	res = platform_get_resource_byname(sparx5->pdev, IORESOURCE_MEM, "dev");
+	if (res && IO_RANGES > 1)
+		iores[1] = res;
+	res = platform_get_resource_byname(sparx5->pdev, IORESOURCE_MEM, "gcb");
+	if (res && IO_RANGES > 2)
+		iores[2] = res;
+}
+
 static int sparx5_create_targets(struct sparx5 *sparx5)
 {
 	const struct sparx5_main_io_resource *iomap;
@@ -260,9 +275,8 @@ static int sparx5_create_targets(struct sparx5 *sparx5)
 			idx++;
 		}
 	}
+	sparx5_map_resources(sparx5, iores);
 	for (idx = 0; idx < ioranges; idx++) {
-		iores[idx] = platform_get_resource(sparx5->pdev, IORESOURCE_MEM,
-						   idx);
 		if (!iores[idx]) {
 			dev_err(sparx5->dev, "Invalid resource\n");
 			return -EINVAL;
@@ -312,8 +326,8 @@ static int sparx5_create_port(struct sparx5 *sparx5,
 	spx5_port->custom_etype = 0x8880; /* Vitesse */
 	spx5_port->phylink_pcs.poll = true;
 	spx5_port->phylink_pcs.ops = &sparx5_phylink_pcs_ops;
-	INIT_LIST_HEAD(&spx5_port->tc.templates);
 	spx5_port->is_mrouter = false;
+	INIT_LIST_HEAD(&spx5_port->tc_templates);
 	sparx5->ports[config->portno] = spx5_port;
 
 	err = sparx5_port_init(sparx5, spx5_port, &config->conf);
@@ -455,6 +469,7 @@ static int sparx5_init_coreclock(struct sparx5 *sparx5)
 	const struct sparx5_consts *consts = &sparx5->data->consts;
 	enum sparx5_core_clockfreq freq = sparx5->coreclock;
 	u32 clk_div, clk_period, pol_upd_int, idx;
+	enum sparx5_core_clockref ref;
 
 	/* Verify if core clock frequency is supported on target.
 	 * If 'VTSS_CORE_CLOCK_DEFAULT' then the highest supported
@@ -507,6 +522,7 @@ static int sparx5_init_coreclock(struct sparx5 *sparx5)
 	case SPX5_TARGET_CT_LAN9698TSN:
 	case SPX5_TARGET_CT_LAN9698RED:
 		freq = SPX5_CORE_CLOCK_328MHZ;
+		ref = SPX5_CORE_CLOCK_REF_39MHZ;
 		break;
 	default:
 		dev_err(sparx5->dev, "Target (%#04x) not supported\n",
@@ -555,6 +571,7 @@ static int sparx5_init_coreclock(struct sparx5 *sparx5)
 
 	/* Update state with chosen frequency */
 	sparx5->coreclock = freq;
+	sparx5->coreclockref = ref;
 
 	clk_period = sparx5_clk_period(freq);
 
@@ -709,10 +726,6 @@ static int sparx5_start(struct sparx5 *sparx5)
 	if (err)
 		return err;
 
-	/* Fix me! */
-	if (!is_sparx5(sparx5))
-		sparx5_calendar_fix(sparx5);
-
 	/* Init stats */
 	err = sparx_stats_init(sparx5);
 	if (err)
@@ -778,15 +791,28 @@ static int sparx5_start(struct sparx5 *sparx5)
 		sparx5->xtr_irq = -ENXIO;
 	}
 
-	if (sparx5->ptp_irq >= 0 && is_sparx5(sparx5)) {
+	if (sparx5->ptp_irq >= 0) {
 		err = devm_request_threaded_irq(sparx5->dev, sparx5->ptp_irq,
-						NULL, sparx5_ptp_irq_handler,
+						NULL, ops->ptp_irq_handler,
 						IRQF_ONESHOT, "sparx5-ptp",
 						sparx5);
 		if (err)
 			sparx5->ptp_irq = -ENXIO;
 
 		sparx5->ptp = 1;
+	}
+
+	if (sparx5->ptp) {
+		if (sparx5->ptp_ext_irq > 0) {
+			err = devm_request_threaded_irq(sparx5->dev,
+							sparx5->ptp_ext_irq, NULL,
+							sparx5_ptp_ext_irq_handler,
+							IRQF_ONESHOT,
+							"sparx5-ptp-ext", sparx5);
+			if (err)
+				return dev_err_probe(sparx5->dev, err,
+						     "Unable to use ptp-ext irq");
+		}
 	}
 
 	sparx5_netlink_fp_init();
@@ -799,6 +825,24 @@ static void sparx5_cleanup_ports(struct sparx5 *sparx5)
 {
 	sparx5_unregister_netdevs(sparx5);
 	sparx5_destroy_netdevs(sparx5);
+}
+
+/* Discover if the parent node is a PCIe device */
+static bool sparx5_is_pcie_device(struct sparx5 *sparx5)
+{
+	struct device_node *parent = of_get_parent(sparx5->dev->of_node);
+	struct property *prop;
+	const char *name;
+
+	if (parent == NULL)
+		return false;
+	prop = of_find_property(parent, "compatible", NULL);
+	if (prop == NULL)
+		return false;
+	name = of_prop_next_string(prop, NULL);
+	if (name == NULL)
+		return false;
+	return strncmp(name, "pci", 3) == 0;
 }
 
 static int mchp_sparx5_probe(struct platform_device *pdev)
@@ -821,6 +865,8 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, sparx5);
 	sparx5->pdev = pdev;
 	sparx5->dev = &pdev->dev;
+
+	sparx5->is_pcie_device = sparx5_is_pcie_device(sparx5);
 
 	data = device_get_match_data(sparx5->dev);
 	if (!data)
@@ -920,6 +966,7 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 	sparx5->fdma_irq = platform_get_irq_byname(sparx5->pdev, "fdma");
 	sparx5->xtr_irq = platform_get_irq_byname(sparx5->pdev, "xtr");
 	sparx5->ptp_irq = platform_get_irq_byname(sparx5->pdev, "ptp");
+	sparx5->ptp_ext_irq = platform_get_irq_byname(sparx5->pdev, "ptp-ext");
 
 	/* Read chip ID to check CPU interface */
 	sparx5->chip_id = spx5_rd(sparx5, GCB_CHIP_ID);
@@ -999,6 +1046,15 @@ static int mchp_sparx5_remove(struct platform_device *pdev)
 		disable_irq(sparx5->fdma_irq);
 		sparx5->fdma_irq = -ENXIO;
 	}
+	if (sparx5->ptp_irq) {
+		disable_irq(sparx5->ptp_irq);
+		sparx5->ptp_irq = -ENXIO;
+	}
+	if (sparx5->ptp_ext_irq) {
+		disable_irq(sparx5->ptp_ext_irq);
+		sparx5->ptp_ext_irq = -ENXIO;
+	}
+
 	sparx5_ptp_deinit(sparx5);
 	ops->fdma_stop(sparx5);
 	sparx5_cleanup_ports(sparx5);
@@ -1015,12 +1071,14 @@ static const struct sparx5_match_data sparx5_desc = {
 	.iomap_size = ARRAY_SIZE(sparx5_main_iomap),
 	.ioranges = 3,
 	.regs = {
+		.tsize = sparx5_tsize,
 		.gaddr = sparx5_gaddr,
 		.gcnt = sparx5_gcnt,
 		.gsize = sparx5_gsize,
 		.raddr = sparx5_raddr,
 		.rcnt = sparx5_rcnt,
 		.fpos = sparx5_fpos,
+		.fsize = sparx5_fsize,
 	},
 	.ops = {
 		.port_mux_set = &sparx5_port_mux_set,
@@ -1039,6 +1097,9 @@ static const struct sparx5_match_data sparx5_desc = {
 		.fdma_stop = &sparx5_fdma_stop,
 		.fdma_start = &sparx5_fdma_start,
 		.fdma_xmit = &sparx5_fdma_xmit,
+		.ptp_irq_handler = sparx5_ptp_irq_handler,
+		.get_internal_port_cal_speed = &sparx5_get_internal_port_cal_speed,
+		.dsm_calendar_calc = &sparx5_dsm_calendar_calc,
 	},
 	.consts = {
 		.chip_ports = 65,
@@ -1065,6 +1126,7 @@ static const struct sparx5_match_data sparx5_desc = {
 		.vcaps = sparx5_vcaps,
 		.vcaps_cfg = sparx5_vcap_inst_cfg,
 		.vcap_stats = &sparx5_vcap_stats,
+		.ptp_pins = 4,
 	},
 };
 

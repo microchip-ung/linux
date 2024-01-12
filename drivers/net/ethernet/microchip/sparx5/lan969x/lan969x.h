@@ -19,12 +19,14 @@ extern const struct vcap_statistics lan969x_vcap_stats;
 /* lan969x.c */
 extern const struct sparx5_match_data lan969x_desc;
 
+extern const unsigned int lan969x_tsize[TSIZE_LAST];
 extern const unsigned int lan969x_raddr[RADDR_LAST];
 extern const unsigned int lan969x_rcnt[RCNT_LAST];
 extern const unsigned int lan969x_gaddr[GADDR_LAST];
 extern const unsigned int lan969x_gcnt[GCNT_LAST];
 extern const unsigned int lan969x_gsize[GSIZE_LAST];
 extern const unsigned int lan969x_fpos[FPOS_LAST];
+extern const unsigned int lan969x_fsize[FSIZE_LAST];
 
 static inline bool lan969x_port_is_2g5(int portno)
 {
@@ -57,5 +59,15 @@ static inline bool lan969x_port_is_rgmii(int portno)
 int lan969x_fdma_stop(struct sparx5 *sparx5);
 int lan969x_fdma_start(struct sparx5 *sparx5);
 int lan969x_fdma_xmit(struct sparx5 *sparx5, u32 *ifh, struct sk_buff *skb);
+
+u32 lan969x_get_ifh_field_pos(enum sparx5_ifh_enum idx);
+u32 lan969x_get_ifh_field_width(enum sparx5_ifh_enum idx);
+u32 lan969x_get_packet_pipeline_pt(enum sparx5_packet_pipeline_pt pt);
+
+enum sparx5_cal_bw lan969x_get_internal_port_cal_speed(struct sparx5 *sparx5,
+						       u32 portno);
+
+int lan969x_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
+			      struct sparx5_calendar_data *data, u32 *cal_len);
 
 #endif

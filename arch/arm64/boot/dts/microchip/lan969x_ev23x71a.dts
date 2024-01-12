@@ -48,8 +48,12 @@
 			reg = <0x2>;
 		};
 
-		i2c_sfp3: i2c_sfp3 {
+		i2c_sfp3: i2c-sfp3 {
 			reg = <0x3>;
+		};
+
+		i2c_poe: i2c-poe {
+			reg = <0x7>;
 		};
 	};
 
@@ -105,6 +109,14 @@
 		};
 	};
 
+	mux-controller {
+		compatible = "gpio-mux";
+		#mux-control-cells = <0>;
+
+		mux-gpios = <&sgpio_out 1 2 GPIO_ACTIVE_LOW>,
+			    <&sgpio_out 1 3 GPIO_ACTIVE_LOW>;
+	};
+
 	sfp0: sfp0 {
 		compatible = "sff,sfp";
 		i2c-bus = <&i2c_sfp0>;
@@ -153,6 +165,24 @@
 	};
 };
 
+&flx2 {
+	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_SPI>;
+	status = "okay";
+
+	spi2: spi@400 {
+		pinctrl-0 = <&fc2_pins>;
+		pinctrl-names = "default";
+		cs-gpios = <&gpio 63 GPIO_ACTIVE_LOW>;
+		status = "okay";
+
+		spi@0 {
+			compatible = "mchp,synce_dpll";
+			reg = <0>;
+			spi-max-frequency = <8000000>;
+		};
+	};
+};
+
 &flx3 {
 	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_TWI>;
 	status = "okay";
@@ -184,6 +214,11 @@
 
 	fc0_pins: fc0-pins {
 		pins = "GPIO_3", "GPIO_4";
+		function = "fc";
+	};
+
+	fc2_pins: fc2-pins {
+		pins = "GPIO_64", "GPIO_65", "GPIO_66";
 		function = "fc";
 	};
 
@@ -228,6 +263,16 @@
 	usb_power_pins: usb-power-pins {
 		pins = "GPIO_1";
 		function = "usb_power";
+	};
+
+	ptp_out_pins: ptp-out-pins {
+		pins = "GPIO_58";
+		function = "ptpsync_4";
+	};
+
+	ptp_ext_pins: ptp-ext-pins {
+		pins = "GPIO_59";
+		function = "ptpsync_5";
 	};
 };
 
@@ -439,6 +484,9 @@
 };
 
 &switch {
+	pinctrl-0 = <&ptp_out_pins>, <&ptp_ext_pins>;
+	pinctrl-names = "default";
+
 	status = "okay";
 	ethernet-ports {
 		#address-cells = <1>;

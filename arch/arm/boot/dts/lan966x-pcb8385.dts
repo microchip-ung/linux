@@ -58,6 +58,7 @@
 	gpio-restart {
 		compatible = "gpio-restart";
 		gpios = <&gpio 59 GPIO_ACTIVE_LOW>;
+		open-source;
 		priority = <200>;
 	};
 };

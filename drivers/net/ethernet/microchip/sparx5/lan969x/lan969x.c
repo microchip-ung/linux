@@ -249,17 +249,233 @@ struct sparx5_sdlb_group *lan969x_get_sdlb_group(int idx)
 	return &lan969x_sdlb_groups[idx];
 }
 
+irqreturn_t lan969x_ptp_irq_handler(int irq, void *args)
+{
+	int budget = SPARX5_MAX_PTP_ID;
+	struct sparx5 *sparx5 = args;
+
+	while (budget--) {
+		struct sk_buff *skb, *skb_tmp, *skb_match = NULL;
+		struct skb_shared_hwtstamps shhwtstamps;
+		struct sparx5_port *port;
+		struct timespec64 ts;
+		unsigned long flags;
+		u32 val, id, txport;
+		u32 delay;
+
+		val = spx5_rd(sparx5, PTP_PTP_TWOSTEP_CTRL);
+
+		/* Check if a timestamp can be retrieved */
+		if (!(val & PTP_PTP_TWOSTEP_CTRL_PTP_VLD))
+			break;
+
+		WARN_ON(val & PTP_PTP_TWOSTEP_CTRL_PTP_OVFL);
+
+		if (!(val & PTP_PTP_TWOSTEP_CTRL_STAMP_TX))
+			continue;
+
+		/* Retrieve the ts Tx port */
+		txport = PTP_PTP_TWOSTEP_CTRL_STAMP_PORT_GET(val);
+
+		/* Retrieve its associated skb */
+		port = sparx5->ports[txport];
+
+		/* Retrieve the delay */
+		delay = spx5_rd(sparx5, PTP_PTP_TWOSTEP_STAMP_NSEC);
+		delay = PTP_PTP_TWOSTEP_STAMP_NSEC_STAMP_NSEC_GET(delay);
+
+		/* Get next timestamp from fifo, which needs to be the
+		 * rx timestamp which represents the id of the frame
+		 */
+		spx5_rmw(PTP_PTP_TWOSTEP_CTRL_PTP_NXT_SET(1),
+			 PTP_PTP_TWOSTEP_CTRL_PTP_NXT,
+			 sparx5, PTP_PTP_TWOSTEP_CTRL);
+
+		val = spx5_rd(sparx5, PTP_PTP_TWOSTEP_CTRL);
+
+		/* Check if a timestamp can be retried */
+		if (!(val & PTP_PTP_TWOSTEP_CTRL_PTP_VLD))
+			break;
+
+		/* Read RX timestamping to get the ID */
+		id = spx5_rd(sparx5, PTP_PTP_TWOSTEP_STAMP_NSEC);
+		id <<= 8;
+		id |= spx5_rd(sparx5, PTP_PTP_TWOSTEP_STAMP_SUBNS);
+
+		spin_lock_irqsave(&port->tx_skbs.lock, flags);
+		skb_queue_walk_safe(&port->tx_skbs, skb, skb_tmp) {
+			if (SPARX5_SKB_CB(skb)->ts_id != id)
+				continue;
+
+			__skb_unlink(skb, &port->tx_skbs);
+			skb_match = skb;
+			break;
+		}
+		spin_unlock_irqrestore(&port->tx_skbs.lock, flags);
+
+		/* Next ts */
+		spx5_rmw(PTP_PTP_TWOSTEP_CTRL_PTP_NXT_SET(1),
+			 PTP_PTP_TWOSTEP_CTRL_PTP_NXT,
+			 sparx5, PTP_PTP_TWOSTEP_CTRL);
+
+		if (WARN_ON(!skb_match))
+			continue;
+
+		spin_lock(&sparx5->ptp_ts_id_lock);
+		sparx5->ptp_skbs--;
+		spin_unlock(&sparx5->ptp_ts_id_lock);
+
+		/* Get the h/w timestamp */
+		sparx5_ptp_get_hwtimestamp(sparx5, &ts, delay);
+
+		/* Set the timestamp into the skb */
+		shhwtstamps.hwtstamp = ktime_set(ts.tv_sec, ts.tv_nsec);
+		skb_tstamp_tx(skb_match, &shhwtstamps);
+
+		dev_kfree_skb_any(skb_match);
+	}
+
+	return IRQ_HANDLED;
+}
+
+enum sparx5_cal_bw lan969x_get_internal_port_cal_speed(struct sparx5 *sparx5,
+						       u32 portno)
+{
+	if (portno == sparx5_get_internal_port(sparx5, PORT_CPU_0) ||
+	    portno == sparx5_get_internal_port(sparx5, PORT_CPU_1)) {
+		return SPX5_CAL_SPEED_1G;
+	} else if (portno == sparx5_get_internal_port(sparx5, PORT_VD0)) {
+		return SPX5_CAL_SPEED_10G;
+	} else if (portno == sparx5_get_internal_port(sparx5, PORT_VD1)) {
+		/* OAM only idle BW */
+		return SPX5_CAL_SPEED_NONE;
+	} else if (portno == sparx5_get_internal_port(sparx5, PORT_VD2)) {
+		return SPX5_CAL_SPEED_10G;
+	}
+	/* not in port map */
+	return SPX5_CAL_SPEED_NONE;
+}
+
+int lan969x_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
+			      struct sparx5_calendar_data *data, u32 *cal_len)
+{
+	const struct sparx5_consts *consts = &sparx5->data->consts;
+	int devs_per_taxi = consts->dsm_cal_max_devs_per_taxi;
+	int bwavail[3], s_values[3] = { 5000, 2500, 1000 };
+	const struct sparx5_ops *ops = &sparx5->data->ops;
+	int i, j, p, sp, win, grplen, lcs, s, found;
+	int grp[LAN969X_DSM_CAL_MAX_DEVS_PER_TAXI];
+	u32 idx, taxi_bw, clk_period_ps;
+	int grps = 3, grpspd = 10000;
+	int cnt[30] = {0};
+
+	clk_period_ps = sparx5_clk_period(sparx5->coreclock);
+	taxi_bw = (128 * 1000000 / clk_period_ps) / (1 + 1 / 20);
+
+	memcpy(data->taxi_ports, ops->get_taxi(taxi),
+	       devs_per_taxi * sizeof(u32));
+
+	for (idx = 0; idx < devs_per_taxi; idx++) {
+		u32 portno = data->taxi_ports[idx];
+
+		if (portno < consts->chip_ports_all)
+			data->taxi_speeds[idx] = sparx5_cal_speed_to_value(sparx5_get_port_cal_speed(sparx5, portno));
+		else
+			data->taxi_speeds[idx] = 0;
+	}
+
+	if (taxi_bw < 30000) {
+		for (i = 0; i < LAN969X_DSM_CAL_MAX_DEVS_PER_TAXI &&
+			    data->taxi_speeds[i] != 10000;
+		     i++)
+			;
+
+		if (i == LAN969X_DSM_CAL_MAX_DEVS_PER_TAXI)
+			grpspd = 5000;
+		else
+			grps = 2;
+	}
+
+	lcs = grpspd;
+	for (i = 0; i < 3; i++) {
+		s = s_values[i];
+		found = 0;
+		for (j = 0; j < LAN969X_DSM_CAL_MAX_DEVS_PER_TAXI; j++) {
+			if (data->taxi_speeds[j] == s) {
+				found = 1;
+				break;
+			}
+		}
+		if (found) {
+			if (lcs == 2500)
+				lcs = 500;
+			else
+				lcs = s;
+		}
+	}
+	grplen = grpspd / lcs;
+
+	for (i = 0; i < grps; i++)
+		bwavail[i++] = grpspd;
+
+	for (i = 0; i < LAN969X_DSM_CAL_MAX_DEVS_PER_TAXI; i++) {
+		if (!data->taxi_speeds[i])
+			continue;
+
+		for (j = 0; j < grps && bwavail[j] < data->taxi_speeds[i]; j++)
+			;
+
+		if (j == grps) {
+			pr_err("Could not generate calendar at taxibw %d\n",
+			       taxi_bw);
+			return -EINVAL;
+		}
+
+		grp[i] = j;
+		bwavail[j] -= data->taxi_speeds[i];
+	}
+
+	for (i = 0; i < grplen; i++) {
+		for (j = 0; j < grps; j++) {
+			sp = 1;
+			win = LAN969X_DSM_CAL_MAX_DEVS_PER_TAXI;
+			for (p = 0; p < LAN969X_DSM_CAL_MAX_DEVS_PER_TAXI; p++) {
+				if (grp[p] != j)
+					continue;
+				cnt[p] -= (cnt[p] > 0);
+				if (data->taxi_speeds[p] > sp && !cnt[p]) {
+					win = p;
+					sp = data->taxi_speeds[p];
+				}
+			}
+
+			if (win == LAN969X_DSM_CAL_MAX_DEVS_PER_TAXI)
+				win = 10;
+
+			cnt[win] = grpspd / sp;
+			data->schedule[i * grps + j] = win;
+		}
+	}
+
+	*cal_len = (data->schedule[0] >= LAN969X_DSM_CAL_MAX_DEVS_PER_TAXI) ?
+			   1 : (grps * grplen);
+
+	return 0;
+}
+
 const struct sparx5_match_data lan969x_desc = {
 	.iomap = lan969x_main_iomap,
 	.iomap_size = ARRAY_SIZE(lan969x_main_iomap),
 	.ioranges = 2,
 	.regs = {
+		.tsize = lan969x_tsize,
 		.gaddr = lan969x_gaddr,
 		.gcnt = lan969x_gcnt,
 		.gsize = lan969x_gsize,
 		.raddr = lan969x_raddr,
 		.rcnt = lan969x_rcnt,
 		.fpos = lan969x_fpos,
+		.fsize = lan969x_fsize,
 	},
 	.ops = {
 		.port_mux_set = &lan969x_port_mux_set,
@@ -278,6 +494,9 @@ const struct sparx5_match_data lan969x_desc = {
 		.fdma_stop = lan969x_fdma_stop,
 		.fdma_start = lan969x_fdma_start,
 		.fdma_xmit = lan969x_fdma_xmit,
+		.ptp_irq_handler = lan969x_ptp_irq_handler,
+		.get_internal_port_cal_speed = &lan969x_get_internal_port_cal_speed,
+		.dsm_calendar_calc = &lan969x_dsm_calendar_calc,
 	},
 	.consts = {
 		.chip_ports = 30,
@@ -304,6 +523,7 @@ const struct sparx5_match_data lan969x_desc = {
 		.vcaps = lan969x_vcaps,
 		.vcaps_cfg = lan969x_vcap_inst_cfg,
 		.vcap_stats = &lan969x_vcap_stats,
+		.ptp_pins = 7,
 	},
 };
 MODULE_LICENSE("Dual MIT/GPL");

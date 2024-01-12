@@ -21,13 +21,25 @@
 
 #include "sparx5_serdes.h"
 
-#define SPX5_CMU_MAX          14
-
 #define SPX5_SERDES_10G_START 13
 #define SPX5_SERDES_25G_START 25
 
 /* Optimal power settings from GUC */
 #define SPX5_SERDES_QUIET_MODE_VAL 0x1EF4E0C
+
+const unsigned int sparx5_serdes_tsize[TSIZE_LAST] = {
+	[TC_SD10G_LANE] = 12,
+	[TC_SD_CMU] = 14,
+	[TC_SD_CMU_CFG] = 14,
+	[TC_SD_LANE] = 25,
+};
+
+const unsigned int lan969x_serdes_tsize[TSIZE_LAST] = {
+	[TC_SD10G_LANE] = 10,
+	[TC_SD_CMU] = 6,
+	[TC_SD_CMU_CFG] = 6,
+	[TC_SD_LANE] = 10,
+};
 
 enum sparx5_sd25g28_mode_preset_type {
 	SPX5_SD25G28_MODE_PRESET_25000,
@@ -2144,7 +2156,7 @@ static int sparx5_serdes_power_save(struct sparx5_serdes_macro *macro, u32 pwdn)
 	if (macro->serdestype == SPX5_SDT_6G ||
 	    macro->serdestype == SPX5_SDT_10G)
 		sd_lane_inst = sdx5_inst_get(priv, TARGET_SD_LANE,
-					     macro->stpidx);
+					     macro->sidx);
 	else
 		sd_lane_inst = sdx5_inst_get(priv, TARGET_SD_LANE_25G,
 					     macro->stpidx);
@@ -2559,9 +2571,10 @@ static const struct sparx5_serdes_match_data sparx5_desc = {
 	.type = SPX5_TARGET_SPARX5,
 	.iomap = sparx5_serdes_iomap,
 	.iomap_size = ARRAY_SIZE(sparx5_serdes_iomap),
+	.tsize = sparx5_serdes_tsize,
 	.consts = {
 		.sd_max       = 33,
-		.cmu_max      = 10,
+		.cmu_max      = 14,
 	},
 	.ops = {
 		.serdes_type_set      = &sparx5_serdes_type_set,
@@ -2573,6 +2586,7 @@ static const struct sparx5_serdes_match_data lan969x_desc = {
 	.type = SPX5_TARGET_LAN969X,
 	.iomap = lan969x_serdes_iomap,
 	.iomap_size = ARRAY_SIZE(lan969x_serdes_iomap),
+	.tsize = lan969x_serdes_tsize,
 	.consts = {
 		.sd_max       = 10,
 		.cmu_max      = 6,
@@ -2634,6 +2648,8 @@ static int sparx5_serdes_probe(struct platform_device *pdev)
 	priv->data = device_get_match_data(priv->dev);
 	if (!priv->data)
 		return -EINVAL;
+
+	tsize = priv->data->tsize;
 
 	/* Get coreclock */
 	clk = devm_clk_get(priv->dev, NULL);

@@ -26,6 +26,8 @@
 #define SPX5_RGMII_PORT_RATE 2       /* 1000Mbps  */
 #define SPX5_RGMII_DLL_SHIFT_90DEG 3 /* DLL phase shift 90deg. (2 ns @ 125MHz) */
 
+#define SPX5_PHAD_DIV 3 /* Divide port clock by the power of this */
+
 enum port_error {
 	SPX5_PERR_SPEED,
 	SPX5_PERR_IFTYPE,
@@ -938,6 +940,17 @@ static int sparx5_port_config_low_set(struct sparx5 *sparx5,
 		 sparx5,
 		 DEV2G5_DEV_RST_CTRL(port->portno));
 
+	/* Enable PHAD_CTRL for better timestamping */
+	if (!is_sparx5(sparx5)) {
+		for (int i = 0; i < 2; ++i) {
+			spx5_rmw(DEV2G5_PHAD_CTRL_DIV_CFG_SET(SPX5_PHAD_DIV) |
+				 DEV2G5_PHAD_CTRL_PHAD_ENA_SET(1),
+				 DEV2G5_PHAD_CTRL_DIV_CFG |
+				 DEV2G5_PHAD_CTRL_PHAD_ENA,
+				 sparx5, DEV2G5_PHAD_CTRL(port->portno, i));
+		}
+	}
+
 	return 0;
 }
 
@@ -1243,6 +1256,25 @@ int sparx5_port_init(struct sparx5 *sparx5,
 			DEV25G_PCS25G_SD_CFG_SD_ENA_SET(sd_ena),
 			sparx5,
 			DEV25G_PCS25G_SD_CFG(pix));
+	}
+
+	if (!is_sparx5(sparx5)) {
+		void __iomem *inst;
+		u32 dev, tinst;
+
+		if (ops->port_is_10g(port->portno)) {
+			dev = sparx5_to_high_dev(sparx5, port->portno);
+			tinst = sparx5_port_dev_index(sparx5, port->portno);
+			inst = spx5_inst_get(sparx5, dev, tinst);
+
+			spx5_inst_wr(5, inst, DEV10G_PTP_STAMPER_CFG(port->portno));
+		} else if (ops->port_is_5g(port->portno)) {
+			dev = sparx5_to_high_dev(sparx5, port->portno);
+			tinst = sparx5_port_dev_index(sparx5, port->portno);
+			inst = spx5_inst_get(sparx5, dev, tinst);
+
+			spx5_inst_wr(5, inst, DEV5G_PTP_STAMPER_CFG(port->portno));
+		}
 	}
 
 	return 0;

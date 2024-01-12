@@ -72,33 +72,27 @@
 			status = "disabled";
 		};
 
-		dma: dma-controller@600000000 {
-			compatible = "microchip,vsc7558-fdma";
-			reg = <0x6 0x10000000 0x10000000>, // CSR
-			      <0x6 0x00000000 0x10000000>; // VCore
-			#dma-cells = <1>;
-			dma-channels = <8>;
-			interrupts = <GIC_SPI 25 IRQ_TYPE_LEVEL_HIGH>;
-			status = "disabled";
-		};
-
 		ifh0: ifh_switch_port@0 {
-			compatible = "microchip,vsc7558-fdma-ifh";
-			reg = <0x6 0x10000000 0x10000000>; // CSR
-			dmas = <&dma 0>, <&dma 6>;
-			dma-names = "tx", "rx";
-			interrupts = <GIC_SPI 30 IRQ_TYPE_LEVEL_HIGH>,<GIC_SPI 31 IRQ_TYPE_LEVEL_HIGH>;
-			interrupt-names = "xtr", "inj";
+			compatible = "microchip,sparx5-switch-appl";
+			reg =	<0x6 0 0x401000>,
+				<0x6 0x10504000 0x7fc000>,
+				<0x6 0x11010000 0xaf0000>;
+			reg-names = "cpu", "dev", "gcb";
+			interrupt-names = "xtr", "fdma";
+			interrupts =	<GIC_SPI 30 IRQ_TYPE_LEVEL_HIGH>,
+					<GIC_SPI 25 IRQ_TYPE_LEVEL_HIGH>;
 			status = "disabled";
 		};
 
 		ifh1: ifh_switch_port@1 {
-			compatible = "microchip,vsc7558-fdma-ifh";
-			reg = <0x6 0x10000000 0x10000000>; // CSR
-			dmas = <&dma 1>, <&dma 7>;
-			dma-names = "tx", "rx";
-			interrupts = <GIC_SPI 30 IRQ_TYPE_LEVEL_HIGH>,<GIC_SPI 31 IRQ_TYPE_LEVEL_HIGH>;
-			interrupt-names = "xtr", "inj";
+			compatible = "microchip,sparx5-switch-appl";
+			reg =	<0x6 0 0x401000>,
+				<0x6 0x10504000 0x7fc000>,
+				<0x6 0x11010000 0xaf0000>;
+			reg-names = "cpu", "dev", "gcb";
+			interrupt-names = "xtr", "fdma";
+			interrupts =	<GIC_SPI 30 IRQ_TYPE_LEVEL_HIGH>,
+					<GIC_SPI 25 IRQ_TYPE_LEVEL_HIGH>;
 			status = "disabled";
 		};
 

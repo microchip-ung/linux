@@ -97,9 +97,10 @@
 			reg = <0xe00c0000 0x0010000>,
 			      <0xe2010000 0x1410000>;
 			reg-names = "cpu", "dev";
-			interrupt-names = "xtr", "fdma", "ptp";
+			interrupt-names = "xtr", "fdma", "ptp", "ptp-ext";
 			interrupts = <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>,
 				     <GIC_SPI 88 IRQ_TYPE_LEVEL_HIGH>,
+				     <GIC_SPI  9 IRQ_TYPE_LEVEL_HIGH>,
 				     <GIC_SPI  8 IRQ_TYPE_LEVEL_HIGH>;
 			resets = <&reset 0>;
 			reset-names = "switch";
@@ -147,9 +148,6 @@
 				compatible = "microchip,sam9x60-i2c";
 				reg = <0x600 0x200>;
 				interrupts = <GIC_SPI 46 IRQ_TYPE_LEVEL_HIGH>;
-				dmas = <&dma0 AT91_XDMAC_DT_PERID(3)>,
-				       <&dma0 AT91_XDMAC_DT_PERID(2)>;
-				dma-names = "tx", "rx";
 				clocks = <&fabric_clk>;
 				#address-cells = <1>;
 				#size-cells = <0>;
@@ -198,9 +196,6 @@
 				compatible = "microchip,sam9x60-i2c";
 				reg = <0x600 0x200>;
 				interrupts = <GIC_SPI 47 IRQ_TYPE_LEVEL_HIGH>;
-				dmas = <&dma0 AT91_XDMAC_DT_PERID(3)>,
-				       <&dma0 AT91_XDMAC_DT_PERID(2)>;
-				dma-names = "tx", "rx";
 				clocks = <&fabric_clk>;
 				#address-cells = <1>;
 				#size-cells = <0>;
@@ -268,9 +263,6 @@
 				compatible = "microchip,sam9x60-i2c";
 				reg = <0x600 0x200>;
 				interrupts = <GIC_SPI 48 IRQ_TYPE_LEVEL_HIGH>;
-				dmas = <&dma0 AT91_XDMAC_DT_PERID(7)>,
-				       <&dma0 AT91_XDMAC_DT_PERID(6)>;
-				dma-names = "tx", "rx";
 				clocks = <&fabric_clk>;
 				#address-cells = <1>;
 				#size-cells = <0>;
@@ -319,9 +311,6 @@
 				compatible = "microchip,sam9x60-i2c";
 				reg = <0x600 0x200>;
 				interrupts = <GIC_SPI 49 IRQ_TYPE_LEVEL_HIGH>;
-				dmas = <&dma0 AT91_XDMAC_DT_PERID(9)>,
-				       <&dma0 AT91_XDMAC_DT_PERID(8)>;
-				dma-names = "tx", "rx";
 				clocks = <&fabric_clk>;
 				#address-cells = <1>;
 				#size-cells = <0>;

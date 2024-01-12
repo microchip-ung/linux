@@ -195,7 +195,7 @@ static void sparx5_xtr_grp(struct sparx5 *sparx5, u8 grp, bool byte_swap)
 	/* Finish up skb */
 	skb_put(skb, byte_cnt - ETH_FCS_LEN);
 	eth_skb_pad(skb);
-	sparx5_ptp_rxtstamp(sparx5, skb, fi.timestamp);
+	sparx5_ptp_rxtstamp(sparx5, skb, fi.src_port, fi.timestamp);
 	skb->protocol = eth_type_trans(skb, netdev);
 	netdev->stats.rx_bytes += skb->len;
 	netdev->stats.rx_packets++;
@@ -277,6 +277,7 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 	ops = &sparx5->data->ops;
 
 	memset(ifh, 0, IFH_LEN * 4);
+#ifndef CONFIG_SPARX5_SWITCH_APPL
 	sparx5_set_port_ifh(sparx5, ifh, port->portno);
 
 	if (sparx5->ptp && skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP) {
@@ -293,6 +294,11 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 					      SPARX5_SKB_CB(skb)->ts_id);
 	}
 
+#else
+	skb_pull_inline(skb, IFH_ENCAP_LEN);
+	memcpy(ifh, skb->data, IFH_LEN * 4);
+	skb_pull_inline(skb, IFH_LEN * 4);
+#endif
 	skb_tx_timestamp(skb);
 	if (sparx5->fdma_irq > 0)
 		ret = ops->fdma_xmit(sparx5, ifh, skb);

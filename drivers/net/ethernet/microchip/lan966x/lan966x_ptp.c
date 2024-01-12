@@ -3,7 +3,6 @@
 #include <linux/ptp_classify.h>
 
 #include "lan966x_main.h"
-#include "lan966x_vcap_impl.h"
 
 #include "vcap_api.h"
 #include "vcap_api_client.h"
@@ -45,18 +44,20 @@ static struct vcap_rule *lan966x_ptp_add_l2_key(struct lan966x_port *port)
 {
 	int rule_id = LAN966X_PTP_RULE_ID_OFFSET +
 		      port->chip_port * LAN966X_PTP_TRAP_RULES_CNT + 0;
+	struct vcap_control *vctrl = port->lan966x->vcap_ctrl;
 	int chain_id = LAN966X_VCAP_CID_IS2_L0;
 	int prio = (port->chip_port << 8) + 1;
 	struct vcap_rule *vrule;
 	int err;
 
-	vrule = vcap_alloc_rule(port->dev, chain_id, VCAP_USER_PTP, prio, rule_id);
+	vrule = vcap_alloc_rule(vctrl, port->dev, chain_id, VCAP_USER_PTP, prio,
+				rule_id);
 	if (!vrule || IS_ERR(vrule))
 		return vrule;
 
 	err = vcap_rule_add_key_u32(vrule, VCAP_KF_ETYPE, ETH_P_1588, ~0);
 	if (err) {
-		vcap_del_rule(port->dev, rule_id);
+		vcap_del_rule(vctrl, port->dev, rule_id);
 		return NULL;
 	}
 
@@ -67,18 +68,20 @@ static struct vcap_rule *lan966x_ptp_add_ipv4_event_key(struct lan966x_port *por
 {
 	int rule_id = LAN966X_PTP_RULE_ID_OFFSET +
 		      port->chip_port * LAN966X_PTP_TRAP_RULES_CNT + 1;
+	struct vcap_control *vctrl = port->lan966x->vcap_ctrl;
 	int chain_id = LAN966X_VCAP_CID_IS2_L0;
 	int prio = (port->chip_port << 8) + 1;
 	struct vcap_rule *vrule;
 	int err;
 
-	vrule = vcap_alloc_rule(port->dev, chain_id, VCAP_USER_PTP, prio, rule_id);
+	vrule = vcap_alloc_rule(vctrl, port->dev, chain_id, VCAP_USER_PTP, prio,
+				rule_id);
 	if (!vrule || IS_ERR(vrule))
 		return vrule;
 
 	err = vcap_rule_add_key_u32(vrule, VCAP_KF_L4_DPORT, 319, ~0);
 	if (err) {
-		vcap_del_rule(port->dev, rule_id);
+		vcap_del_rule(vctrl, port->dev, rule_id);
 		return NULL;
 	}
 
@@ -89,18 +92,20 @@ static struct vcap_rule *lan966x_ptp_add_ipv4_general_key(struct lan966x_port *p
 {
 	int rule_id = LAN966X_PTP_RULE_ID_OFFSET +
 		      port->chip_port * LAN966X_PTP_TRAP_RULES_CNT + 2;
+	struct vcap_control *vctrl = port->lan966x->vcap_ctrl;
 	int chain_id = LAN966X_VCAP_CID_IS2_L0;
 	int prio = (port->chip_port << 8) + 1;
 	struct vcap_rule *vrule;
 	int err;
 
-	vrule = vcap_alloc_rule(port->dev, chain_id, VCAP_USER_PTP, prio, rule_id);
+	vrule = vcap_alloc_rule(vctrl, port->dev, chain_id, VCAP_USER_PTP, prio,
+				rule_id);
 	if (!vrule || IS_ERR(vrule))
 		return vrule;
 
 	err = vcap_rule_add_key_u32(vrule, VCAP_KF_L4_DPORT, 320, ~0);
 	if (err) {
-		vcap_del_rule(port->dev, rule_id);
+		vcap_del_rule(vctrl, port->dev, rule_id);
 		return NULL;
 	}
 
@@ -111,18 +116,20 @@ static struct vcap_rule *lan966x_ptp_add_ipv6_event_key(struct lan966x_port *por
 {
 	int rule_id = LAN966X_PTP_RULE_ID_OFFSET +
 		      port->chip_port * LAN966X_PTP_TRAP_RULES_CNT + 3;
+	struct vcap_control *vctrl = port->lan966x->vcap_ctrl;
 	int chain_id = LAN966X_VCAP_CID_IS2_L0;
 	int prio = (port->chip_port << 8) + 1;
 	struct vcap_rule *vrule;
 	int err;
 
-	vrule = vcap_alloc_rule(port->dev, chain_id, VCAP_USER_PTP, prio, rule_id);
+	vrule = vcap_alloc_rule(vctrl, port->dev, chain_id, VCAP_USER_PTP, prio,
+				rule_id);
 	if (!vrule || IS_ERR(vrule))
 		return vrule;
 
 	err = vcap_rule_add_key_u32(vrule, VCAP_KF_L4_DPORT, 319, ~0);
 	if (err) {
-		vcap_del_rule(port->dev, rule_id);
+		vcap_del_rule(vctrl, port->dev, rule_id);
 		return NULL;
 	}
 
@@ -133,18 +140,20 @@ static struct vcap_rule *lan966x_ptp_add_ipv6_general_key(struct lan966x_port *p
 {
 	int rule_id = LAN966X_PTP_RULE_ID_OFFSET +
 		      port->chip_port * LAN966X_PTP_TRAP_RULES_CNT + 4;
+	struct vcap_control *vctrl = port->lan966x->vcap_ctrl;
 	int chain_id = LAN966X_VCAP_CID_IS2_L0;
 	int prio = (port->chip_port << 8) + 1;
 	struct vcap_rule *vrule;
 	int err;
 
-	vrule = vcap_alloc_rule(port->dev, chain_id, VCAP_USER_PTP, prio, rule_id);
+	vrule = vcap_alloc_rule(vctrl, port->dev, chain_id, VCAP_USER_PTP, prio,
+				rule_id);
 	if (!vrule || IS_ERR(vrule))
 		return vrule;
 
 	err = vcap_rule_add_key_u32(vrule, VCAP_KF_L4_DPORT, 320, ~0);
 	if (err) {
-		vcap_del_rule(port->dev, rule_id);
+		vcap_del_rule(vctrl, port->dev, rule_id);
 		return NULL;
 	}
 
@@ -183,7 +192,7 @@ free_rule:
 
 static int lan966x_ptp_del(struct lan966x_port *port, int rule_id)
 {
-	return vcap_del_rule(port->dev, rule_id);
+	return vcap_del_rule(port->lan966x->vcap_ctrl, port->dev, rule_id);
 }
 
 static int lan966x_ptp_del_l2(struct lan966x_port *port)

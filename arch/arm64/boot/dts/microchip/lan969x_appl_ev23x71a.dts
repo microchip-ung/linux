@@ -12,6 +12,7 @@
 	model = "lan969x appl ev23x71a (pcb8398)";
 	aliases {
 		serial0 = &usart0;
+		i2c0   = &i2c_poe;
 		i2c100 = &i2c_sfp0;
 		i2c101 = &i2c_sfp1;
 		i2c102 = &i2c_sfp2;
@@ -52,19 +53,24 @@
 			reg = <0x2>;
 		};
 
-		i2c_sfp3: i2c_sfp3 {
+		i2c_sfp3: i2c-sfp3 {
 			reg = <0x3>;
+		};
+
+		i2c_poe: i2c-poe {
+			reg = <0x7>;
 		};
 	};
 
-	switch_vtss {
+	switch_vtss: switch_vtss@e0000000 {
 		compatible = "mchp,lan969x-switch-appl";
-		reg = <0xe2030000 0x20000>,
-		      <0xe3200000 0x10000>;
-		reg-names = "qs", "asm";
+		reg = <0xe00c0000 0x0010000>,
+		      <0xe2010000 0x1410000>;
+		reg-names = "cpu", "dev";
 
-		interrupts = <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>;
-		interrupt-names = "xtr";
+		interrupts = <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 88 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "xtr", "fdma";
 	};
 
 	switch_ifmux {
@@ -81,6 +87,35 @@
 		pinctrl-0 = <&fc0_pins>;
 		pinctrl-names = "default";
 		status = "okay";
+	};
+};
+
+&flx1 {
+	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_USART>;
+	status = "okay";
+
+	usart1: serial@200 {
+		pinctrl-0 = <&fc1_pins>;
+		pinctrl-names = "default";
+		status = "okay";
+	};
+};
+
+&flx2 {
+	atmel,flexcom-mode = <ATMEL_FLEXCOM_MODE_SPI>;
+	status = "okay";
+
+	spi2: spi@400 {
+		pinctrl-0 = <&fc2_pins>;
+		pinctrl-names = "default";
+		cs-gpios = <&gpio 63 GPIO_ACTIVE_LOW>;
+		status = "okay";
+
+		spi@0 {
+			compatible = "mchp,synce_dpll";
+			reg = <0>;
+			spi-max-frequency = <8000000>;
+		};
 	};
 };
 
@@ -110,6 +145,16 @@
 
 	fc0_pins: fc0-pins {
 		pins = "GPIO_3", "GPIO_4";
+		function = "fc";
+	};
+
+	fc1_pins: fc1-pins {
+		pins = "GPIO_28", "GPIO_29";
+		function = "fc";
+	};
+
+	fc2_pins: fc2-pins {
+		pins = "GPIO_64", "GPIO_65", "GPIO_66";
 		function = "fc";
 	};
 
@@ -166,6 +211,8 @@
 &sgpio {
 	pinctrl-0 = <&sgpio_pins>;
 	pinctrl-names = "default";
+
+	bus-frequency = <5000000>;
 
 	microchip,sgpio-port-ranges = <0 1>, <6 9>;
 	status = "okay";

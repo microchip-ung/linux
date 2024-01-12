@@ -133,6 +133,7 @@
 #define LAN8841_1PPM_FORMAT			34360
 
 #define PTP_RX_VERSION				0x0248
+#define PTP_TX_VERSION				0x0288
 
 #define PTP_RX_MOD				0x024F
 #define PTP_RX_MOD_BAD_UDPV4_CHKSUM_FORCE_FCS_DIS_ BIT(3)
@@ -183,11 +184,13 @@
 #define PTP_CMD_CTL_PTP_LTC_STEP_SEC_		BIT(5)
 #define PTP_CMD_CTL_PTP_LTC_STEP_NSEC_		BIT(6)
 
+#define PTP_CLOCK_SET_SEC_HI			0x0205
 #define PTP_CLOCK_SET_SEC_MID			0x0206
 #define PTP_CLOCK_SET_SEC_LO			0x0207
 #define PTP_CLOCK_SET_NS_HI			0x0208
 #define PTP_CLOCK_SET_NS_LO			0x0209
 
+#define PTP_CLOCK_READ_SEC_HI			0x0229
 #define PTP_CLOCK_READ_SEC_MID			0x022A
 #define PTP_CLOCK_READ_SEC_LO			0x022B
 #define PTP_CLOCK_READ_NS_HI			0x022C
@@ -2715,35 +2718,31 @@ static bool lan8814_rxtstamp(struct mii_timestamper *mii_ts, struct sk_buff *skb
 }
 
 static void lan8814_ptp_clock_set(struct phy_device *phydev,
-				  u32 seconds, u32 nano_seconds)
+				  time64_t sec, u32 nsec)
 {
-	u32 sec_low, sec_high, nsec_low, nsec_high;
-
-	sec_low = seconds & 0xffff;
-	sec_high = (seconds >> 16) & 0xffff;
-	nsec_low = nano_seconds & 0xffff;
-	nsec_high = (nano_seconds >> 16) & 0x3fff;
-
-	lanphy_write_page_reg(phydev, 4, PTP_CLOCK_SET_SEC_LO, sec_low);
-	lanphy_write_page_reg(phydev, 4, PTP_CLOCK_SET_SEC_MID, sec_high);
-	lanphy_write_page_reg(phydev, 4, PTP_CLOCK_SET_NS_LO, nsec_low);
-	lanphy_write_page_reg(phydev, 4, PTP_CLOCK_SET_NS_HI, nsec_high);
+	lanphy_write_page_reg(phydev, 4, PTP_CLOCK_SET_SEC_LO, lower_16_bits(sec));
+	lanphy_write_page_reg(phydev, 4, PTP_CLOCK_SET_SEC_MID, upper_16_bits(sec));
+	lanphy_write_page_reg(phydev, 4, PTP_CLOCK_SET_SEC_HI, upper_32_bits(sec));
+	lanphy_write_page_reg(phydev, 4, PTP_CLOCK_SET_NS_LO, lower_16_bits(nsec));
+	lanphy_write_page_reg(phydev, 4, PTP_CLOCK_SET_NS_HI, upper_16_bits(nsec));
 
 	lanphy_write_page_reg(phydev, 4, PTP_CMD_CTL, PTP_CMD_CTL_PTP_CLOCK_LOAD_);
 }
 
 static void lan8814_ptp_clock_get(struct phy_device *phydev,
-				  u32 *seconds, u32 *nano_seconds)
+				  time64_t *sec , u32 *nsec)
 {
 	lanphy_write_page_reg(phydev, 4, PTP_CMD_CTL, PTP_CMD_CTL_PTP_CLOCK_READ_);
 
-	*seconds = lanphy_read_page_reg(phydev, 4, PTP_CLOCK_READ_SEC_MID);
-	*seconds = (*seconds << 16) |
-		   lanphy_read_page_reg(phydev, 4, PTP_CLOCK_READ_SEC_LO);
+	*sec = lanphy_read_page_reg(phydev, 4, PTP_CLOCK_READ_SEC_HI);
+	*sec <<= 16;
+	*sec |= lanphy_read_page_reg(phydev, 4, PTP_CLOCK_READ_SEC_MID);
+	*sec <<= 16;
+	*sec |= lanphy_read_page_reg(phydev, 4, PTP_CLOCK_READ_SEC_LO);
 
-	*nano_seconds = lanphy_read_page_reg(phydev, 4, PTP_CLOCK_READ_NS_HI);
-	*nano_seconds = ((*nano_seconds & 0x3fff) << 16) |
-			lanphy_read_page_reg(phydev, 4, PTP_CLOCK_READ_NS_LO);
+	*nsec = lanphy_read_page_reg(phydev, 4, PTP_CLOCK_READ_NS_HI);
+	*nsec <<= 16;
+	*nsec |= lanphy_read_page_reg(phydev, 4, PTP_CLOCK_READ_NS_LO);
 }
 
 static int lan8814_ptpci_gettime64(struct ptp_clock_info *ptpci,
@@ -2753,7 +2752,7 @@ static int lan8814_ptpci_gettime64(struct ptp_clock_info *ptpci,
 							  ptp_clock_info);
 	struct phy_device *phydev = shared->phydev;
 	u32 nano_seconds;
-	u32 seconds;
+	time64_t seconds;
 
 	mutex_lock(&shared->shared_lock);
 	lan8814_ptp_clock_get(phydev, &seconds, &nano_seconds);
@@ -3071,7 +3070,7 @@ static void lan8814_ptp_clock_step(struct phy_device *phydev,
 	int gpio_pin = shared->gpio_pin;
 	u32 nano_seconds_step;
 	u64 abs_time_step_ns;
-	u32 unsigned_seconds;
+	time64_t set_seconds;
 	u32 nano_seconds;
 	u32 remainder;
 	s32 seconds;
@@ -3080,34 +3079,34 @@ static void lan8814_ptp_clock_step(struct phy_device *phydev,
 
 	if (time_step_ns >  15000000000LL) {
 		/* convert to clock set */
-		lan8814_ptp_clock_get(phydev, &unsigned_seconds, &nano_seconds);
-		unsigned_seconds += div_u64_rem(time_step_ns, 1000000000LL,
-						&remainder);
+		lan8814_ptp_clock_get(phydev, &set_seconds, &nano_seconds);
+		set_seconds += div_u64_rem(time_step_ns, 1000000000LL,
+					    &remainder);
 		nano_seconds += remainder;
 		if (nano_seconds >= 1000000000) {
-			unsigned_seconds++;
+			set_seconds++;
 			nano_seconds -= 1000000000;
 		}
 		lan8814_set_clock_target(phydev, gpio_pin,
-					 unsigned_seconds + LAN8814_TARGET_BUFF, 0);
-		lan8814_ptp_clock_set(phydev, unsigned_seconds, nano_seconds);
+					 set_seconds + LAN8814_TARGET_BUFF, 0);
+		lan8814_ptp_clock_set(phydev, set_seconds, nano_seconds);
 		return;
 	} else if (time_step_ns < -15000000000LL) {
 		/* convert to clock set */
 		time_step_ns = -time_step_ns;
 
-		lan8814_ptp_clock_get(phydev, &unsigned_seconds, &nano_seconds);
-		unsigned_seconds -= div_u64_rem(time_step_ns, 1000000000LL,
-						&remainder);
+		lan8814_ptp_clock_get(phydev, &set_seconds, &nano_seconds);
+		set_seconds -= div_u64_rem(time_step_ns, 1000000000LL,
+					   &remainder);
 		nano_seconds_step = remainder;
 		if (nano_seconds < nano_seconds_step) {
-			unsigned_seconds--;
+			set_seconds--;
 			nano_seconds += 1000000000;
 		}
 		nano_seconds -= nano_seconds_step;
 		lan8814_set_clock_target(phydev, gpio_pin,
-					 unsigned_seconds + LAN8814_TARGET_BUFF, 0);
-		lan8814_ptp_clock_set(phydev, unsigned_seconds,
+					 set_seconds + LAN8814_TARGET_BUFF, 0);
+		lan8814_ptp_clock_set(phydev, set_seconds,
 				      nano_seconds);
 		return;
 	}
@@ -3162,8 +3161,8 @@ static void lan8814_ptp_clock_step(struct phy_device *phydev,
 					      adjustment_value_hi);
 			seconds -= ((s32)adjustment_value);
 
-			lan8814_ptp_clock_get(phydev, &unsigned_seconds, &nsec);
-			tar_sec = unsigned_seconds - adjustment_value;
+			lan8814_ptp_clock_get(phydev, &set_seconds, &nsec);
+			tar_sec = set_seconds - adjustment_value;
 			lan8814_set_clock_target(phydev, gpio_pin,
 						 tar_sec + LAN8814_TARGET_BUFF, 0);
 		} else {
@@ -3182,8 +3181,8 @@ static void lan8814_ptp_clock_step(struct phy_device *phydev,
 					      adjustment_value_hi);
 			seconds += ((s32)adjustment_value);
 
-			lan8814_ptp_clock_get(phydev, &unsigned_seconds, &nsec);
-			tar_sec = unsigned_seconds + adjustment_value;
+			lan8814_ptp_clock_get(phydev, &set_seconds, &nsec);
+			tar_sec = set_seconds + adjustment_value;
 			lan8814_set_clock_target(phydev, gpio_pin,
 						 tar_sec + LAN8814_TARGET_BUFF, 0);
 		}
@@ -3585,6 +3584,7 @@ static void lan8814_ptp_init(struct phy_device *phydev)
 
 	/* Disable checking for minorVersionPTP field */
 	lanphy_write_page_reg(phydev, 5, PTP_RX_VERSION, 0xff00);
+	lanphy_write_page_reg(phydev, 5, PTP_TX_VERSION, 0xff00);
 
 	skb_queue_head_init(&ptp_priv->tx_queue);
 	skb_queue_head_init(&ptp_priv->rx_queue);
@@ -3737,6 +3737,8 @@ static int lan8814_release_coma_mode(struct phy_device *phydev)
 	return 0;
 }
 
+#define LAN8841_EEE_STATE		56
+#define LAN8841_EEE_STATE_MASK2P5P	BIT(10)
 static void lan8814_workarounds_in_probe(struct phy_device *phydev)
 {
 	struct kszphy_priv *priv = phydev->priv;
@@ -3752,6 +3754,13 @@ static void lan8814_workarounds_in_probe(struct phy_device *phydev)
 	val &= ~LAN8814_DFE_INIT2_100_DEVICE_ERE_MASK_;
 	val |= (LAN8814_DFE_INIT2_100_DEVICE_ERE_VAL_ << 9);
 	lanphy_write_page_reg(phydev, 1, LAN8814_DFE_INIT2_100, val);
+
+	/* Fix LED issue. It was noticed that when traffic is passing and then
+	 * the cable is removed the LED was still on
+	 */
+	val = lanphy_read_page_reg(phydev, 2, LAN8841_EEE_STATE);
+	val &= ~LAN8841_EEE_STATE_MASK2P5P;
+	lanphy_write_page_reg(phydev, 2, LAN8841_EEE_STATE, val);
 
 	/* Below are PGA(Programmable Gain Amplifier) gain look-up-table entries,
 	 * Based on the measured incoming signal amplitude, a PGA gain is derived
@@ -3869,6 +3878,7 @@ static void lan8841_gpio_process_cap(struct kszphy_ptp_priv *ptp_priv);
 #define LAN8841_PTP_RX_VERSION			374
 #define LAN8841_PTP_TX_PARSE_L2_ADDR_EN		434
 #define LAN8841_PTP_TX_PARSE_IP_ADDR_EN		435
+#define LAN8841_PTP_TX_VERSION			438
 #define LAN8841_PTP_CMD_CTL			256
 #define LAN8841_PTP_CMD_CTL_PTP_ENABLE		BIT(2)
 #define LAN8841_PTP_CMD_CTL_PTP_DISABLE		BIT(1)
@@ -3940,6 +3950,7 @@ hw_init:
 
 	/* Disable checking for minorVersionPTP field */
 	phy_write_mmd(phydev, 2, LAN8841_PTP_RX_VERSION, 0xff00);
+	phy_write_mmd(phydev, 2, LAN8841_PTP_TX_VERSION, 0xff00);
 
 	/* 100BT Clause 40 improvenent errata */
 	phy_write_mmd(phydev, 28, LAN8841_ANALOG_CONTROL_1, 0x40);
@@ -4772,7 +4783,7 @@ static void lan8841_gpio_process_cap(struct kszphy_ptp_priv *ptp_priv)
 		return;
 
 	tmp = phy_read_mmd(phydev, 2, LAN8841_PTP_GPIO_CAP_STS);
-	if (!(tmp & LAN8841_PTP_GPIO_CAP_STS_PTP_GPIO_RE_STS(pin)) ||
+	if (!(tmp & LAN8841_PTP_GPIO_CAP_STS_PTP_GPIO_RE_STS(pin)) &&
 	    !(tmp & LAN8841_PTP_GPIO_CAP_STS_PTP_GPIO_FE_STS(pin)))
 		return;
 
@@ -4789,13 +4800,13 @@ static void lan8841_gpio_process_cap(struct kszphy_ptp_priv *ptp_priv)
 		nsec <<= 16;
 		nsec |= phy_read_mmd(phydev, 2, LAN8841_PTP_GPIO_RE_LTC_NS_LO_CAP);
 	} else {
-		sec = phy_read_mmd(phydev, 2, LAN8841_PTP_GPIO_RE_LTC_SEC_HI_CAP);
+		sec = phy_read_mmd(phydev, 2, LAN8841_PTP_GPIO_FE_LTC_SEC_HI_CAP);
 		sec <<= 16;
-		sec |= phy_read_mmd(phydev, 2, LAN8841_PTP_GPIO_RE_LTC_SEC_LO_CAP);
+		sec |= phy_read_mmd(phydev, 2, LAN8841_PTP_GPIO_FE_LTC_SEC_LO_CAP);
 
-		nsec = phy_read_mmd(phydev, 2, LAN8841_PTP_GPIO_RE_LTC_NS_HI_CAP) & 0x3fff;
+		nsec = phy_read_mmd(phydev, 2, LAN8841_PTP_GPIO_FE_LTC_NS_HI_CAP) & 0x3fff;
 		nsec <<= 16;
-		nsec |= phy_read_mmd(phydev, 2, LAN8841_PTP_GPIO_RE_LTC_NS_LO_CAP);
+		nsec |= phy_read_mmd(phydev, 2, LAN8841_PTP_GPIO_FE_LTC_NS_LO_CAP);
 	}
 	mutex_unlock(&ptp_priv->ptp_lock);
 

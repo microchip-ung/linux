@@ -1,13 +1,15 @@
-/* SPDX-License-Identifier: GPL-2.0+ */
+// SPDX-License-Identifier: GPL-2.0+
 /* Microchip VCAP API
  *
  * Copyright (c) 2022 Microchip Technology Inc. and its subsidiaries.
  */
 
 #include "sparx5_tc.h"
-#include "sparx5_tc_dbg.h"
+#include "vcap_api.h"
+#include "vcap_api_client.h"
 #include "sparx5_main_regs.h"
 #include "sparx5_main.h"
+#include "sparx5_vcap_impl.h"
 
 static void sparx5_get_dev_flow_stats(struct net_device *ndev, bool ingress,
 				      struct flow_stats *fstats)
@@ -381,7 +383,9 @@ static int sparx5_tc_matchall_replace(struct net_device *ndev,
 				      struct tc_cls_matchall_offload *tmo,
 				      bool ingress)
 {
+	struct sparx5_port *port = netdev_priv(ndev);
 	struct flow_action_entry *action;
+	struct sparx5 *sparx5;
 	int err;
 
 	if (!flow_offload_has_one_action(&tmo->rule->action)) {
@@ -391,6 +395,7 @@ static int sparx5_tc_matchall_replace(struct net_device *ndev,
 	}
 	action = &tmo->rule->action.entries[0];
 
+	sparx5 = port->sparx5;
 	switch (action->id) {
 	case FLOW_ACTION_MIRRED:
 		pr_debug("%s:%d: port mirroring from %s to %s: ingress: %d\n",
@@ -454,10 +459,37 @@ static int sparx5_tc_matchall_replace(struct net_device *ndev,
 			return err;
 		}
 		break;
+	case FLOW_ACTION_GOTO:
+		err = vcap_enable_lookups(sparx5->vcap_ctrl, ndev,
+					  tmo->common.chain_index,
+					  action->chain_index, tmo->cookie,
+					  true);
+		if (err == -EFAULT) {
+			NL_SET_ERR_MSG_MOD(tmo->common.extack,
+					   "Unsupported goto chain");
+			return -EOPNOTSUPP;
+		}
+		if (err == -EADDRINUSE) {
+			NL_SET_ERR_MSG_MOD(tmo->common.extack,
+					   "VCAP already enabled");
+			return -EOPNOTSUPP;
+		}
+		if (err == -EADDRNOTAVAIL) {
+			NL_SET_ERR_MSG_MOD(tmo->common.extack,
+					   "Already matching this chain");
+			return -EOPNOTSUPP;
+		}
+		if (err) {
+			NL_SET_ERR_MSG_MOD(tmo->common.extack,
+					   "Could not enable VCAP lookups");
+			return err;
+		}
+		break;
 	default:
 		NL_SET_ERR_MSG_MOD(tmo->common.extack, "Unsupported action");
 		return -EOPNOTSUPP;
 	}
+
 	return 0;
 }
 
@@ -465,10 +497,13 @@ static int sparx5_tc_matchall_destroy(struct net_device *ndev,
 				      struct tc_cls_matchall_offload *tmo,
 				      bool ingress)
 {
+	struct sparx5_port *port = netdev_priv(ndev);
 	struct flow_action_entry *action;
+	struct sparx5 *sparx5;
 	int err;
 
 	action = &tmo->rule->action.entries[0];
+	sparx5 = port->sparx5;
 
 	switch (action->id) {
 	case FLOW_ACTION_MIRRED:
@@ -489,6 +524,15 @@ static int sparx5_tc_matchall_destroy(struct net_device *ndev,
 		if (err) {
 			NL_SET_ERR_MSG_MOD(tmo->common.extack,
 					   "Could not delete port policer");
+			return err;
+		}
+		break;
+	case FLOW_ACTION_GOTO:
+		err = vcap_enable_lookups(sparx5->vcap_ctrl, ndev,
+					  0, 0, tmo->cookie, false);
+		if (err) {
+			NL_SET_ERR_MSG_MOD(tmo->common.extack,
+					   "Could not delete goto");
 			return err;
 		}
 		break;
@@ -522,27 +566,13 @@ static int sparx5_tc_matchall_stats(struct net_device *ndev,
 }
 
 int sparx5_tc_matchall(struct net_device *ndev,
-		     struct tc_cls_matchall_offload *tmo,
-		     bool ingress)
+		       struct tc_cls_matchall_offload *tmo,
+		       bool ingress)
 {
-	pr_debug("%s:%d: %s: command: %s, chain: %u, proto: 0x%04x, prio: %u, cookie: %lx\n",
-		 __func__, __LINE__,
-		 netdev_name(ndev),
-		 tc_dbg_tc_matchall_command(tmo->command), tmo->common.chain_index,
-		 be16_to_cpu(tmo->common.protocol), tmo->common.prio, tmo->cookie);
-	if (tmo->rule) {
-		tc_dbg_match_dump(ndev, tmo->rule);
-		tc_dbg_actions_dump(ndev, tmo->rule);
-	}
-	if (!tc_cls_can_offload_and_chain0(ndev, &tmo->common)) {
-		NL_SET_ERR_MSG_MOD(tmo->common.extack,
-				   "Only chain zero is supported");
-		return -EOPNOTSUPP;
-	}
-
 	switch (tmo->command) {
 	case TC_CLSMATCHALL_REPLACE:
 		return sparx5_tc_matchall_replace(ndev, tmo, ingress);
+
 	case TC_CLSMATCHALL_DESTROY:
 		return sparx5_tc_matchall_destroy(ndev, tmo, ingress);
 	case TC_CLSMATCHALL_STATS:
