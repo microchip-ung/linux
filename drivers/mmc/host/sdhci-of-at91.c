@@ -518,9 +518,12 @@ static int sdhci_at91_probe(struct platform_device *pdev)
 	if (priv->soc_data->hs200_broken)
 		host->quirks2 |= SDHCI_QUIRK2_BROKEN_HS200;
 
+	/* Read caps to possibly mask SDR104 */
+	sdhci_read_caps(host);
+
 	/* check if sdr104 speed mode is supported */
 	if (priv->soc_data->sdr104_broken)
-		host->quirks2 |= SDHCI_QUIRK2_BROKEN_SDR104;
+		host->caps1 &= ~SDHCI_SUPPORT_SDR104;
 
 	ret = sdhci_add_host(host);
 	if (ret)
