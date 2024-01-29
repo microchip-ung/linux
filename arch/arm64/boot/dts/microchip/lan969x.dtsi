@@ -408,13 +408,13 @@
 		};
 
 		sdmmc0: sdhci-host@e0830000 {
-			compatible = "microchip,lan966x-sdhci";
+			compatible = "microchip,lan969x-sdhci";
 			reg = <0xe0830000 0x00000300>;
 			interrupts = <GIC_SPI 64 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&clks GCK_ID_SDMMC0>, <&clks GCK_ID_SDMMC0>;
 			clock-names = "hclock", "multclk";
 			assigned-clocks = <&clks GCK_ID_SDMMC0>;
-			assigned-clock-rates = <45000000>;
+			assigned-clock-rates = <100000000>;
 			status = "disabled";
 		};
 

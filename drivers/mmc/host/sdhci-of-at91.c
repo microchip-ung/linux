@@ -268,11 +268,20 @@ static const struct sdhci_at91_soc_data soc_data_lan966x = {
 	.sdr104_broken = true,
 };
 
+static const struct sdhci_at91_soc_data soc_data_lan969x = {
+	.pdata = &sdhci_sama5d2_pdata,
+	.max_sdr104_clk = 100000000,
+	.baseclk_is_generated_internally = true,
+	.divider_for_baseclk = 2,
+	.sdr104_broken = true,
+};
+
 static const struct of_device_id sdhci_at91_dt_match[] = {
 	{ .compatible = "atmel,sama5d2-sdhci", .data = &soc_data_sama5d2 },
 	{ .compatible = "microchip,sam9x60-sdhci", .data = &soc_data_sam9x60 },
 	{ .compatible = "microchip,sama7g5-sdhci", .data = &soc_data_sama7g5 },
 	{ .compatible = "microchip,lan966x-sdhci", .data = &soc_data_lan966x },
+	{ .compatible = "microchip,lan969x-sdhci", .data = &soc_data_lan969x },
 	{}
 };
 MODULE_DEVICE_TABLE(of, sdhci_at91_dt_match);
