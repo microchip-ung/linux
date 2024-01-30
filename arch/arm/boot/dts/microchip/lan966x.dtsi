@@ -563,7 +563,7 @@
 			clocks = <&clks GCK_ID_SDMMC0>, <&clks GCK_ID_SDMMC0>;
 			clock-names = "hclock", "multclk";
 			assigned-clocks = <&clks GCK_ID_SDMMC0>;
-			assigned-clock-rates = <45000000>;
+			assigned-clock-rates = <50000000>;
 			status = "disabled";
 		};
 

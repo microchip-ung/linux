@@ -235,6 +235,7 @@
 	pinctrl-0 = <&emmc_sd_pins>, <&emmc_pins>;
 	pinctrl-names = "default";
 	no-1-8-v;
+	mmc-ddr-3_3v;
 	tx-phase = <0>; /* 180 degrees phase shift */
 	status = "okay";
 };
