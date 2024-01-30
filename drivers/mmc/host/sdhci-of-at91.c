@@ -273,7 +273,6 @@ static const struct sdhci_at91_soc_data soc_data_lan969x = {
 	.max_sdr104_clk = 100000000,
 	.baseclk_is_generated_internally = true,
 	.divider_for_baseclk = 2,
-	.sdr104_broken = true,
 };
 
 static const struct of_device_id sdhci_at91_dt_match[] = {
