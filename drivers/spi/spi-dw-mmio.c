@@ -52,7 +52,7 @@ struct dw_spi_mmio {
 struct dw_spi_mscc {
 	struct regmap       *syscon;
 	void __iomem        *spi_mst; /* Not sparx5 */
-	struct mux_control  *spi_mux; /* Sparx5 bus interface */
+	struct mux_control  *spi_mux; /* Sparx5 bus interface, used by XStaX APPL */
 };
 
 /*
@@ -158,8 +158,9 @@ static void dw_spi_sparx5_set_cs(struct spi_device *spi, bool enable)
 
 	if (!enable) {
 		/* Drive mux */
-		if (mux_control_select(dwsmscc->spi_mux, cs))
-			dev_err(&spi->dev, "Unable to drive SPI mux\n");
+		if (dwsmscc->spi_mux)
+			if (mux_control_select(dwsmscc->spi_mux, cs))
+				dev_err(&spi->dev, "Unable to drive SPI mux\n");
 		/* CS override drive enable */
 		regmap_write(dwsmscc->syscon, SPARX5_FORCE_ENA, 1);
 		/* Now set CSx enabled */
@@ -174,7 +175,8 @@ static void dw_spi_sparx5_set_cs(struct spi_device *spi, bool enable)
 		/* CS override drive disable */
 		regmap_write(dwsmscc->syscon, SPARX5_FORCE_ENA, 0);
 		/* Deselect mux */
-		mux_control_deselect(dwsmscc->spi_mux);
+		if (dwsmscc->spi_mux)
+			mux_control_deselect(dwsmscc->spi_mux);
 	}
 
 	dw_spi_set_cs(spi, enable);
@@ -203,6 +205,24 @@ static int dw_spi_mscc_sparx5_init(struct platform_device *pdev,
 		return PTR_ERR(dwsmscc->syscon);
 	}
 
+	dwsmmio->dws.set_cs = dw_spi_sparx5_set_cs;
+	dwsmmio->priv = dwsmscc;
+
+	return 0;
+}
+
+static int dw_spi_mscc_sparx5_appl_init(struct platform_device *pdev,
+				   struct dw_spi_mmio *dwsmmio)
+{
+	int err = dw_spi_mscc_sparx5_init(pdev, dwsmmio);
+	struct device *dev = &pdev->dev;
+	struct dw_spi_mscc *dwsmscc;
+
+	if (err)
+		return err;
+
+	dwsmscc = dwsmmio->priv;
+
 	/* Get SPI mux */
 	dwsmscc->spi_mux = devm_mux_control_get(dev, NULL);
 	if (IS_ERR(dwsmscc->spi_mux)) {
@@ -210,9 +230,6 @@ static int dw_spi_mscc_sparx5_init(struct platform_device *pdev,
 			dev_err(dev, "SPI mux is required\n");
 		return PTR_ERR(dwsmscc->spi_mux);
 	}
-
-	dwsmmio->dws.set_cs = dw_spi_sparx5_set_cs;
-	dwsmmio->priv = dwsmscc;
 
 	return 0;
 }
@@ -432,6 +449,7 @@ static const struct of_device_id dw_spi_mmio_of_match[] = {
 		.data = dw_spi_mountevans_imc_init,
 	},
 	{ .compatible = "microchip,sparx5-spi", dw_spi_mscc_sparx5_init},
+	{ .compatible = "microchip,sparx5-spi-appl", dw_spi_mscc_sparx5_appl_init},
 	{ .compatible = "canaan,k210-spi", dw_spi_canaan_k210_init},
 	{ .compatible = "amd,pensando-elba-spi", .data = dw_spi_elba_init},
 	{ /* end of table */}
