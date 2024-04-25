@@ -110,7 +110,6 @@ properties:
 
         required:
           - reg
-          - phys
           - phy-mode
           - microchip,bandwidth
 
@@ -134,113 +133,115 @@ additionalProperties: false
 examples:
   - |
     #include <dt-bindings/interrupt-controller/arm-gic.h>
-		switch: switch@e0000000 {
-			compatible = "microchip,lan969x-switch";
-			reg = <0xe00c0000 0x0010000>,
-			      <0xe2010000 0x13f0000>;
-      reg-names = "cpu", "dev";
-			interrupt-names = "xtr", "fdma", "ptp";
-			interrupts = <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>,
-				     <GIC_SPI 88 IRQ_TYPE_LEVEL_HIGH>,
-				     <GIC_SPI  8 IRQ_TYPE_LEVEL_HIGH>;
-			resets = <&reset 0>;
-			reset-names = "switch";
-			status = "okay";
-ethernet-ports {
-		#address-cells = <1>;
-		#size-cells = <0>;
 
-		port0: port@0 {
-			reg = <0>;
-			microchip,bandwidth = <1000>;
-			phy-handle = <&phy4>;
-			phy-mode = "qsgmii";
-			phys = <&serdes 0>;
-		};
+    switch: switch@e0000000 {
+        compatible = "microchip,lan969x-switch";
+        reg = <0xe00c0000 0x0010000>,
+            <0xe2010000 0x13f0000>;
+        reg-names = "cpu", "devices";
+        interrupt-names = "xtr", "fdma", "ptp";
+        interrupts = <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>,
+            <GIC_SPI 88 IRQ_TYPE_LEVEL_HIGH>,
+            <GIC_SPI  8 IRQ_TYPE_LEVEL_HIGH>;
+        resets = <&reset 0>;
+        reset-names = "switch";
+        status = "okay";
+        ethernet-ports {
+            #address-cells = <1>;
+            #size-cells = <0>;
 
-		port1: port@1 {
-			reg = <1>;
-			microchip,bandwidth = <1000>;
-			phy-handle = <&phy5>;
-			phy-mode = "qsgmii";
-			phys = <&serdes 0>;
-		};
+            port0: port@0 {
+                 reg = <0>;
+                 microchip,bandwidth = <1000>;
+                 phy-handle = <&phy4>;
+                 phy-mode = "qsgmii";
+                 phys = <&serdes 0>;
+            };
 
-		port2: port@2 {
-			reg = <2>;
-			microchip,bandwidth = <1000>;
-			phy-handle = <&phy6>;
-			phy-mode = "qsgmii";
-			phys = <&serdes 0>;
-		};
+            port1: port@1 {
+                 reg = <1>;
+                 microchip,bandwidth = <1000>;
+                 phy-handle = <&phy5>;
+                 phy-mode = "qsgmii";
+                 phys = <&serdes 0>;
+            };
 
-		port3: port@3 {
-			reg = <3>;
-			microchip,bandwidth = <1000>;
-			phy-handle = <&phy7>;
-			phy-mode = "qsgmii";
-			phys = <&serdes 0>;
-		};
+            port2: port@2 {
+                 reg = <2>;
+                 microchip,bandwidth = <1000>;
+                 phy-handle = <&phy6>;
+                 phy-mode = "qsgmii";
+                 phys = <&serdes 0>;
+            };
 
-		port4: port@4 {
-			reg = <4>;
-			microchip,bandwidth = <1000>;
-			phy-handle = <&phy8>;
-			phy-mode = "qsgmii";
-			phys = <&serdes 1>;
-		};
+            port3: port@3 {
+                 reg = <3>;
+                 microchip,bandwidth = <1000>;
+                 phy-handle = <&phy7>;
+                 phy-mode = "qsgmii";
+                 phys = <&serdes 0>;
+            };
 
-		port5: port@5 {
-			reg = <5>;
-			microchip,bandwidth = <1000>;
-			phy-handle = <&phy9>;
-			phy-mode = "qsgmii";
-			phys = <&serdes 1>;
-		};
+            port4: port@4 {
+                 reg = <4>;
+                 microchip,bandwidth = <1000>;
+                 phy-handle = <&phy8>;
+                 phy-mode = "qsgmii";
+                 phys = <&serdes 1>;
+            };
 
-		port6: port@6 {
-			reg = <6>;
-			microchip,bandwidth = <1000>;
-			phy-handle = <&phy10>;
-			phy-mode = "qsgmii";
-			phys = <&serdes 1>;
-		};
+            port5: port@5 {
+                 reg = <5>;
+                 microchip,bandwidth = <1000>;
+                 phy-handle = <&phy9>;
+                 phy-mode = "qsgmii";
+                 phys = <&serdes 1>;
+            };
 
-		port7: port@7 {
-			reg = <7>;
-			microchip,bandwidth = <1000>;
-			phy-handle = <&phy11>;
-			phy-mode = "qsgmii";
-			phys = <&serdes 1>;
-		};
+            port6: port@6 {
+                 reg = <6>;
+                 microchip,bandwidth = <1000>;
+                 phy-handle = <&phy10>;
+                 phy-mode = "qsgmii";
+                 phys = <&serdes 1>;
+            };
 
-		port24: port@24 {
-			reg = <24>;
-			microchip,bandwidth = <10000>;
-			phys = <&serdes 6>;
-			phy-mode = "10gbase-r";
-			sfp = <&sfp0>;
-			microchip,sd-sgpio = <365>;
-			managed = "in-band-status";
-		};
+            port7: port@7 {
+                 reg = <7>;
+                 microchip,bandwidth = <1000>;
+                 phy-handle = <&phy11>;
+                 phy-mode = "qsgmii";
+                 phys = <&serdes 1>;
+            };
 
-		port25: port@25 {
-			reg = <25>;
-			microchip,bandwidth = <10000>;
-			phys = <&serdes 7>;
-			phy-mode = "10gbase-r";
-			sfp = <&sfp1>;
-			microchip,sd-sgpio = <369>;
-			managed = "in-band-status";
-		};
+            port24: port@24 {
+                  reg = <24>;
+                  microchip,bandwidth = <10000>;
+                  phys = <&serdes 6>;
+                  phy-mode = "10gbase-r";
+                  sfp = <&sfp0>;
+                  microchip,sd-sgpio = <365>;
+                  managed = "in-band-status";
+            };
 
-		port28: port@28 {
-			reg = <28>;
-			microchip,bandwidth = <1000>;
-			phy-handle = <&phy3>;
-			phy-mode = "rgmii";
-		};
-	};
+            port25: port@25 {
+                  reg = <25>;
+                  microchip,bandwidth = <10000>;
+                  phys = <&serdes 7>;
+                  phy-mode = "10gbase-r";
+                  sfp = <&sfp1>;
+                  microchip,sd-sgpio = <369>;
+                  managed = "in-band-status";
+            };
+
+            port28: port@28 {
+                  reg = <28>;
+                  microchip,bandwidth = <1000>;
+                  phy-handle = <&phy3>;
+                  phy-mode = "rgmii";
+            };
+        };
+    };
 
 ...
 #  vim: set ts=2 sw=2 sts=2 tw=80 et cc=80 ft=yaml :
