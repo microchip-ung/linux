@@ -184,10 +184,13 @@ static int sparx5_port_open(struct net_device *ndev)
 		port->conf.power_down = false;
 		if (port->conf.serdes_reset)
 			err = sparx5_serdes_set(port->sparx5, port, &port->conf);
-		else
-			err = phy_power_on(port->serdes);
 		if (err) {
-			netdev_err(ndev, "%s failed\n", __func__);
+			netdev_err(ndev, "serdes_reset failed\n");
+			goto out_power;
+		}
+		err = phy_power_on(port->serdes);
+		if (err) {
+			netdev_err(ndev, "power on failed\n");
 			goto out_power;
 		}
 	}

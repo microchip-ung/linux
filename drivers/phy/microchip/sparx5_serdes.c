@@ -2180,15 +2180,33 @@ static int sparx5_serdes_power_save(struct sparx5_serdes_macro *macro, u32 pwdn)
 					     macro->stpidx);
 
 	if (macro->serdestype == SPX5_SDT_25G) { /* 25G */
-		/* Take serdes out of reset */
-		sdx5_inst_rmw(SD_LANE_25G_SD_LANE_CFG_EXT_CFG_RST_SET(0),
-			      SD_LANE_25G_SD_LANE_CFG_EXT_CFG_RST,
-			      sd_lane_inst, SD_LANE_25G_SD_LANE_CFG(0));
+		if(pwdn) {
+			/* Put serdes in reset */
+			sdx5_inst_rmw(SD_LANE_25G_SD_LANE_CFG_EXT_CFG_RST_SET(1),
+					SD_LANE_25G_SD_LANE_CFG_EXT_CFG_RST,
+					sd_lane_inst, SD_LANE_25G_SD_LANE_CFG(0));
+			/* Actually power down */
+			sdx5_inst_rmw(SD25G_LANE_LANE_04_LN_CFG_PD_DRIVER_SET(1) |
+					SD25G_LANE_LANE_04_LN_CFG_PD_CLK_SET(1) |
+					SD25G_LANE_LANE_04_LN_CFG_PD_CML_SET(1),
+						SD25G_LANE_LANE_04_LN_CFG_PD_DRIVER |
+						SD25G_LANE_LANE_04_LN_CFG_PD_CLK |
+						SD25G_LANE_LANE_04_LN_CFG_PD_CML,
+					sd_lane_inst, SD25G_LANE_LANE_04(0));
+		} else {
+			/* Take serdes out of reset */
+			sdx5_inst_rmw(SD_LANE_25G_SD_LANE_CFG_EXT_CFG_RST_SET(0),
+					SD_LANE_25G_SD_LANE_CFG_EXT_CFG_RST,
+					sd_lane_inst, SD_LANE_25G_SD_LANE_CFG(0));
 
-		/* Set power down settings for quiet mode */
-		sdx5_inst_rmw(SD_LANE_25G_QUIET_MODE_6G_QUIET_MODE_SET(SPX5_SERDES_QUIET_MODE_VAL),
-			      SD_LANE_25G_QUIET_MODE_6G_QUIET_MODE,
-			      sd_lane_inst, SD_LANE_25G_QUIET_MODE_6G(0));
+			sdx5_inst_rmw(0,
+					SD25G_LANE_LANE_04_LN_CFG_PD_DRIVER | SD25G_LANE_LANE_04_LN_CFG_PD_CLK | SD25G_LANE_LANE_04_LN_CFG_PD_CML,
+					sd_lane_inst, SD25G_LANE_LANE_04(0));
+			/* Set power down settings for quiet mode */
+			sdx5_inst_rmw(SD_LANE_25G_QUIET_MODE_6G_QUIET_MODE_SET(SPX5_SERDES_QUIET_MODE_VAL),
+					SD_LANE_25G_QUIET_MODE_6G_QUIET_MODE,
+					sd_lane_inst, SD_LANE_25G_QUIET_MODE_6G(0));
+		}
 	} else { /* 6G and 10G */
 		/* Take serdes out of reset */
 		sdx5_inst_rmw(SD_LANE_SD_LANE_CFG_EXT_CFG_RST_SET(0),
