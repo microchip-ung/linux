@@ -307,6 +307,13 @@ static int sparx5_port_hwtstamp_set(struct net_device *dev,
 	    cfg->source != HWTSTAMP_SOURCE_PHYLIB)
 		return -EOPNOTSUPP;
 
+	if((sparx5_port->ptp_rx_cmd && cfg->rx_filter)) {
+		// Looks like timestamping doesn't get disabled by upper layers
+		// This is a quick workaround, to prevent failing, if the filters
+		// are already enabled.
+		return 0;
+	}
+
 	err = sparx5_ptp_setup_traps(sparx5_port, cfg);
 	if (err)
 		return err;
