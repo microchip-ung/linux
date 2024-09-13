@@ -1750,6 +1750,7 @@ static int vcap_write_counter(struct vcap_rule_internal *ri,
 				    ri->counter_id, 0);
 	ri->vctrl->ops->update(ri->ndev, admin, VCAP_CMD_WRITE,
 			       VCAP_SEL_COUNTER, ri->addr);
+	ri->counter = *ctr;
 	return 0;
 }
 
@@ -2694,6 +2695,7 @@ out:
 	return &ri->data;
 }
 
+/* Get a copy of the rule. */
 struct vcap_rule *vcap_get_rule(struct vcap_control *vctrl, u32 id)
 {
 	struct vcap_rule_internal *elem;
@@ -3595,7 +3597,7 @@ EXPORT_SYMBOL_GPL(vcap_rule_set_counter_id);
 
 int vcap_rule_set_counter(struct vcap_rule *rule, struct vcap_counter *ctr)
 {
-	struct vcap_rule_internal *ri = to_intrule(rule);
+	struct vcap_rule_internal *ri = to_intrule(rule), *orig;
 	int err;
 
 	err = vcap_api_check(ri->vctrl);
@@ -3606,8 +3608,15 @@ int vcap_rule_set_counter(struct vcap_rule *rule, struct vcap_counter *ctr)
 		return -EINVAL;
 	}
 
-	mutex_lock(&ri->admin->lock);
-	err = vcap_write_counter(ri, ctr);
+	/* When rule is obtained from vcap_get_rule, we have a copy. To be sure
+	 * that we can update the counter sw cache, we need to find the original.
+	 */
+	orig = vcap_get_locked_rule(ri->vctrl, rule->id);
+	if (!orig)
+		return -ENOENT;
+
+	err = vcap_write_counter(orig, ctr);
+	ri->counter = *ctr;
 	mutex_unlock(&ri->admin->lock);
 
 	return err;
