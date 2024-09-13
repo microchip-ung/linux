@@ -3393,6 +3393,7 @@ static int vcap_disable_rule(struct vcap_rule_internal *ri)
 
 	ri->state = VCAP_RS_DISABLED;
 	ri->vctrl->ops->init(ri->ndev, ri->admin, ri->addr, ri->size);
+	memset(&ri->counter, 0, sizeof(ri->counter));
 	return 0;
 }
 
@@ -3739,13 +3740,25 @@ int vcap_get_rule_count_by_cookie(struct vcap_control *vctrl,
 			if (err)
 				goto unlock;
 
-			/* Instead of reset the counter in HW, update the
+			/* The HW counters are either 1-bit saturating or 32bit
+			 * overflowing counters. We must report counts since
+			 * previous tc read, but we prefer not to change the
+			 * counter state in HW.
+			 * Instead of reset the counter in HW, update the
 			 * counter in SW with the last read value and then next
 			 * time when calculating the number of packets just
-			 * substract from what HW says the last read value
-			 * In this way the HW counters will not be ever erased*/
-			ctr->value += temp.value - ri->counter.value;
-			ri->counter.value = temp.value;
+			 * subtract from what HW says the last read value
+			 * In this way the HW counters will not be ever erased
+			 */
+			if (temp.value >= ri->counter.value) {
+				ctr->value += temp.value - ri->counter.value;
+			} else {
+				/* Either HW counter is 32bit and overflowed, or
+				 * we have a bug with HW and SW out of sync.
+				 */
+				ctr->value += temp.value;
+			}
+			ri->counter = temp;
 		}
 		mutex_unlock(&admin->lock);
 	}
