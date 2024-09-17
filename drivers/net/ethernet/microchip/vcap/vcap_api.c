@@ -3381,6 +3381,7 @@ static int vcap_enable_rules(struct vcap_control *vctrl,
 /* Read and erase a rule from VCAP HW to disable it */
 static int vcap_disable_rule(struct vcap_rule_internal *ri)
 {
+	struct vcap_counter zero = {};
 	int err;
 
 	err = vcap_read_rule(ri);
@@ -3393,9 +3394,12 @@ static int vcap_disable_rule(struct vcap_rule_internal *ri)
 	if (err)
 		return err;
 
+	err = vcap_write_counter(ri, &zero);
+	if (err)
+		return err;
+
 	ri->state = VCAP_RS_DISABLED;
 	ri->vctrl->ops->init(ri->ndev, ri->admin, ri->addr, ri->size);
-	memset(&ri->counter, 0, sizeof(ri->counter));
 	return 0;
 }
 
