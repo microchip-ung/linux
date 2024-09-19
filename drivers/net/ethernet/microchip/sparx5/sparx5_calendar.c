@@ -61,17 +61,17 @@ static u32 sparx5_target_bandwidth(struct sparx5 *sparx5)
 	case SPX5_TARGET_CT_LAN9694TSN:
 	case SPX5_TARGET_CT_LAN9691VAO:
 	case SPX5_TARGET_CT_LAN9694:
-		return 68000;
+		return 48000;
 	case SPX5_TARGET_CT_LAN9696RED:
 	case SPX5_TARGET_CT_LAN9696TSN:
 	case SPX5_TARGET_CT_LAN9692VAO:
 	case SPX5_TARGET_CT_LAN9696:
-		return 88000;
+		return 68000;
 	case SPX5_TARGET_CT_LAN9698RED:
 	case SPX5_TARGET_CT_LAN9698TSN:
 	case SPX5_TARGET_CT_LAN9693VAO:
 	case SPX5_TARGET_CT_LAN9698:
-		return 106000;
+		return 101000;
 	default:
 		return 0;
 	}
