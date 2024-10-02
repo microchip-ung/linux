@@ -200,77 +200,102 @@
 
 &mdio0 {
 	status = "okay";
+	reset-gpios = <&gpio 19 GPIO_ACTIVE_LOW>;
 	phy0: ethernet-phy@0 {
 		reg = <0>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy1: ethernet-phy@1 {
 		reg = <1>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy2: ethernet-phy@2 {
 		reg = <2>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy3: ethernet-phy@3 {
 		reg = <3>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy4: ethernet-phy@4 {
 		reg = <4>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy5: ethernet-phy@5 {
 		reg = <5>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy6: ethernet-phy@6 {
 		reg = <6>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy7: ethernet-phy@7 {
 		reg = <7>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy8: ethernet-phy@8 {
 		reg = <8>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy9: ethernet-phy@9 {
 		reg = <9>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy10: ethernet-phy@10 {
 		reg = <10>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy11: ethernet-phy@11 {
 		reg = <11>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy12: ethernet-phy@12 {
 		reg = <12>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy13: ethernet-phy@13 {
 		reg = <13>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy14: ethernet-phy@14 {
 		reg = <14>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy15: ethernet-phy@15 {
 		reg = <15>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy16: ethernet-phy@16 {
 		reg = <16>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy17: ethernet-phy@17 {
 		reg = <17>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy18: ethernet-phy@18 {
 		reg = <18>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy19: ethernet-phy@19 {
 		reg = <19>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy20: ethernet-phy@20 {
 		reg = <20>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy21: ethernet-phy@21 {
 		reg = <21>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy22: ethernet-phy@22 {
 		reg = <22>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy23: ethernet-phy@23 {
 		reg = <23>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 };
 
@@ -278,75 +303,99 @@
 	status = "okay";
 	phy24: ethernet-phy@24 {
 		reg = <0>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy25: ethernet-phy@25 {
 		reg = <1>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy26: ethernet-phy@26 {
 		reg = <2>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy27: ethernet-phy@27 {
 		reg = <3>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy28: ethernet-phy@28 {
 		reg = <4>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy29: ethernet-phy@29 {
 		reg = <5>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy30: ethernet-phy@30 {
 		reg = <6>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy31: ethernet-phy@31 {
 		reg = <7>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy32: ethernet-phy@32 {
 		reg = <8>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy33: ethernet-phy@33 {
 		reg = <9>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy34: ethernet-phy@34 {
 		reg = <10>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy35: ethernet-phy@35 {
 		reg = <11>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy36: ethernet-phy@36 {
 		reg = <12>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy37: ethernet-phy@37 {
 		reg = <13>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy38: ethernet-phy@38 {
 		reg = <14>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy39: ethernet-phy@39 {
 		reg = <15>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy40: ethernet-phy@40 {
 		reg = <16>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy41: ethernet-phy@41 {
 		reg = <17>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy42: ethernet-phy@42 {
 		reg = <18>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy43: ethernet-phy@43 {
 		reg = <19>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy44: ethernet-phy@44 {
 		reg = <20>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy45: ethernet-phy@45 {
 		reg = <21>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy46: ethernet-phy@46 {
 		reg = <22>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 	phy47: ethernet-phy@47 {
 		reg = <23>;
+		coma-mode-gpios = <&gpio 16 GPIO_OPEN_DRAIN>;
 	};
 };
 
