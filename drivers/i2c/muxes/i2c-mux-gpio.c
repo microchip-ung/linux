@@ -21,11 +21,17 @@ struct gpiomux {
 	struct i2c_mux_gpio_platform_data data;
 	int ngpios;
 	struct gpio_desc **gpios;
+	unsigned current_val;
 };
 
-static void i2c_mux_gpio_set(const struct gpiomux *mux, unsigned int val)
+static void i2c_mux_gpio_set(struct gpiomux *mux, unsigned int val)
 {
 	DECLARE_BITMAP(values, BITS_PER_TYPE(val));
+
+	if (val == mux->current_val)
+		return;
+
+	mux->current_val = val;
 
 	values[0] = val;
 
@@ -153,6 +159,7 @@ static int i2c_mux_gpio_probe(struct platform_device *pdev)
 		return ngpios ?: -EINVAL;
 	}
 	mux->ngpios = ngpios;
+	mux->current_val = ngpios + 1;
 
 	parent = i2c_get_adapter(mux->data.parent);
 	if (!parent)
