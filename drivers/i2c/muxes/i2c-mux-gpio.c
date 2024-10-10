@@ -24,17 +24,28 @@ struct gpiomux {
 	int ngpios;
 	struct gpio_desc **gpios;
 	int select_delay;
+	unsigned current_val;
 };
 
-static void i2c_mux_gpio_set(const struct gpiomux *mux, unsigned val)
+static void i2c_mux_gpio_set(struct gpiomux *mux, unsigned val)
 {
 	DECLARE_BITMAP(values, BITS_PER_TYPE(val));
+
+	if (val == mux->current_val)
+		return;
+
+	mux->current_val = val;
 
 	values[0] = val;
 
 	gpiod_set_array_value_cansleep(mux->ngpios, mux->gpios, NULL, values);
-	if (mux->select_delay)
-		udelay(mux->select_delay);
+	if (mux->select_delay) {
+		if (mux->select_delay < 1000) {
+			udelay(mux->select_delay);
+		} else {
+			msleep(mux->select_delay / 1000);
+		}
+	}
 }
 
 static int i2c_mux_gpio_select(struct i2c_mux_core *muxc, u32 chan)
@@ -156,6 +167,7 @@ static int i2c_mux_gpio_probe(struct platform_device *pdev)
 		return ngpios ?: -EINVAL;
 	}
 	mux->ngpios = ngpios;
+	mux->current_val = ngpios + 1;
 
 	parent = i2c_get_adapter(mux->data.parent);
 	if (!parent)
