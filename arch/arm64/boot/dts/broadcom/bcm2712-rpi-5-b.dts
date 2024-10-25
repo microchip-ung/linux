@@ -62,3 +62,11 @@
 	sd-uhs-ddr50;
 	sd-uhs-sdr104;
 };
+
+&pcie1 {
+	status = "okay";
+};
+
+&pcie2 {
+	status = "okay";
+};
