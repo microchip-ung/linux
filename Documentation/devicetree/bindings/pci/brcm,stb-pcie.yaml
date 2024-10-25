@@ -182,6 +182,26 @@ allOf:
         - resets
         - reset-names
 
+  - if:
+      properties:
+        compatible:
+          contains:
+            const: brcm,bcm2712-pcie
+    then:
+      properties:
+        resets:
+          minItems: 2
+          maxItems: 2
+
+        reset-names:
+          items:
+            - const: bridge
+            - const: rescal
+
+      required:
+        - resets
+        - reset-names
+
 unevaluatedProperties: false
 
 examples:
