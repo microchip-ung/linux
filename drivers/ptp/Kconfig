@@ -213,7 +213,8 @@ config PTP_DFL_TOD
 
 config PTP_1588_CLOCK_ZL3073X
 	tristate "Microchip zl3073x as PTP clock"
-	depends on PTP_1588_CLOCK && SPI
+	depends on PTP_1588_CLOCK
+	depends on MFD_MICROCHIP_DPLL_I2C || MFD_MICROCHIP_DPLL_SPI
 	default n
 	help
 	  This driver adds support for using IDT ZL3073X as a PTP
