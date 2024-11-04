@@ -137,7 +137,10 @@
 		interrupts = <GIC_SPI 52 IRQ_TYPE_LEVEL_HIGH>;
 		clocks = <&nic_clk>;
 		pinctrl-0 = <&fc4_b_pins>;
-		pinctrl-names = "default";
+		pinctrl-1 = <&fc4_b_pins_gpio>;
+		pinctrl-names = "default", "gpio";
+		sda-gpios = <&gpio 58 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		scl-gpios = <&gpio 57 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
 		i2c-analog-filter;
 		i2c-digital-filter;
 		i2c-digital-filter-width-ns = <35>;
@@ -170,6 +173,12 @@
 		/* SCL, SDA */
 		pins = "GPIO_57", "GPIO_58";
 		function = "fc4_b";
+	};
+
+	fc4_b_pins_gpio: fcb4-i2c-pins-gpio {
+		/* RXD, TXD */
+		pins = "GPIO_57", "GPIO_58";
+		function = "gpio";
 	};
 
 	pps_out_pins: pps-out-pins {
