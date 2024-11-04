@@ -685,7 +685,7 @@
 			phys = <&serdes 6>;
 			phy-mode = "10gbase-r";
 			sfp = <&sfp0>;
-			microchip,sd-sgpio = <365>;
+			microchip,sd-sgpio = <24>;
 			managed = "in-band-status";
 		};
 
@@ -695,7 +695,7 @@
 			phys = <&serdes 7>;
 			phy-mode = "10gbase-r";
 			sfp = <&sfp1>;
-			microchip,sd-sgpio = <369>;
+			microchip,sd-sgpio = <28>;
 			managed = "in-band-status";
 		};
 
@@ -705,7 +705,7 @@
 			phys = <&serdes 8>;
 			phy-mode = "10gbase-r";
 			sfp = <&sfp2>;
-			microchip,sd-sgpio = <373>;
+			microchip,sd-sgpio = <32>;
 			managed = "in-band-status";
 		};
 
@@ -715,7 +715,7 @@
 			phys = <&serdes 9>;
 			phy-mode = "10gbase-r";
 			sfp = <&sfp3>;
-			microchip,sd-sgpio = <377>;
+			microchip,sd-sgpio = <36>;
 			managed = "in-band-status";
 		};
 		port29: port@29 {
