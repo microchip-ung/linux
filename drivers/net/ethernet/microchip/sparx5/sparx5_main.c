@@ -318,8 +318,8 @@ static int sparx5_create_port(struct sparx5 *sparx5,
 	spx5_port->of_node = config->node;
 	spx5_port->serdes = config->serdes;
 	spx5_port->pvid = NULL_VID;
-	spx5_port->signd_internal = true;
-	spx5_port->signd_active_high = true;
+	spx5_port->signd_internal = config->conf.sd_sgpio == ~0 ? true : false;
+	spx5_port->signd_active_high = config->conf.sd_sgpio == ~0 ? true : false;
 	spx5_port->signd_enable = true;
 	spx5_port->max_vlan_tags = SPX5_PORT_MAX_TAGS_NONE;
 	spx5_port->vlan_type = SPX5_VLAN_PORT_TYPE_UNAWARE;
