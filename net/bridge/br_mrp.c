@@ -918,9 +918,6 @@ int br_mrp_start_in_test(struct net_bridge *br,
 	if (!mrp)
 		return -EINVAL;
 
-	if (mrp->in_role != BR_MRP_IN_ROLE_MIM)
-		return -EINVAL;
-
 	/* Try to push it to the HW and if it fails then continue with SW
 	 * implementation and if that also fails then return error.
 	 */
