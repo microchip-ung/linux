@@ -994,6 +994,24 @@ static int zl3073x_dpll_init_fine_phase_adjust(struct zl3073x *zl3073x)
 	return ret;
 }
 
+/* These are debug prints, they are temporary so expect that they will be
+ * removed at later point
+ */
+static void zl3073x_dpll_debug_pll(struct zl3073x *zl3073x)
+{
+	u8 buf;
+
+	zl3073x_read(zl3073x, 0x10a, &buf, sizeof(buf));
+	pr_info("%s addr: 0x10a, val 0x%02x\n", __func__, buf);
+
+	zl3073x_read(zl3073x, 0x107, &buf, sizeof(buf));
+	pr_info("%s addr: 0x107, val 0x%02x\n", __func__, buf);
+
+	zl3073x_read(zl3073x, 0x032, &buf, sizeof(buf));
+	pr_info("%s addr: 0x032, val 0x%02x\n", __func__, buf);
+}
+
+
 static int zl3073x_ptp_init(struct zl3073x *zl3073x, u8 index)
 {
 	struct zl3073x_dpll *dpll = &zl3073x->dpll[index];
@@ -1158,6 +1176,8 @@ static int zl3073x_probe(struct platform_device *pdev)
 
 	/* Initial firmware fine phase correction */
 	zl3073x_dpll_init_fine_phase_adjust(zl3073x);
+
+	zl3073x_dpll_debug_pll(zl3073x);
 
 	return 0;
 }
