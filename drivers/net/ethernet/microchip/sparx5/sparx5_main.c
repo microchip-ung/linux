@@ -702,12 +702,6 @@ static int sparx5_start(struct sparx5 *sparx5)
 			 ANA_CL_FILTER_CTRL_FORCE_FCS_UPDATE_ENA,
 			 sparx5, ANA_CL_FILTER_CTRL(idx));
 
-	/* Init PGID table arbitrator */
-	sparx5_pgid_init(sparx5);
-
-	/* Setup VLANs */
-	sparx5_vlan_init(sparx5);
-
 	/* Add host mode BC address (points only to CPU) */
 	sparx5_mact_learn(sparx5, sparx5_get_pgid_index(sparx5, PGID_CPU),
 			  broadcast, NULL_VID);
@@ -717,8 +711,6 @@ static int sparx5_start(struct sparx5 *sparx5)
 
 	mutex_init(&sparx5->mdb_lock);
 	INIT_LIST_HEAD(&sparx5->mdb_entries);
-
-	sparx5_board_init(sparx5);
 
 	/* Start Frame DMA with fallback to register based INJ/XTR */
 	err = -ENXIO;
@@ -773,8 +765,6 @@ static int sparx5_start(struct sparx5 *sparx5)
 		}
 	}
 
-	sparx5_netlink_fp_init();
-	sparx5_netlink_qos_init(sparx5);
 	sparx5_debugfs(sparx5);
 
 	return err;
@@ -959,6 +949,12 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 			goto cleanup_ports;
 		}
 	}
+
+	sparx5_pgid_init(sparx5);
+	sparx5_vlan_init(sparx5);
+	sparx5_board_init(sparx5);
+	sparx5_netlink_fp_init();
+	sparx5_netlink_qos_init(sparx5);
 
 	err = sparx5_calendar_init(sparx5);
 	if (err) {
