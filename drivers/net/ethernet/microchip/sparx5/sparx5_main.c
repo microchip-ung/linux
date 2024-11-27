@@ -1009,12 +1009,6 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		}
 	}
 
-	err = sparx5_rr_router_init(sparx5);
-	if (err) {
-		dev_err(sparx5->dev, "Router initialization failed\n");
-		goto cleanup_ports;
-	}
-
 	err = sparx5_qos_init(sparx5);
 	if (err) {
 		dev_err(sparx5->dev, "Failed to initialize QoS\n");
@@ -1027,6 +1021,12 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		goto cleanup_ports;
 	}
 
+	err = sparx5_rr_router_init(sparx5);
+	if (err) {
+		dev_err(sparx5->dev, "Failed to initialize router\n");
+		goto cleanup_ports;
+	}
+
 	/* Initialize the rest of the hardware and start the IRQ handlers.
 	 * Only initialization that does not require cleanup should be inside
 	 * this function.
@@ -1034,11 +1034,13 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 	err = sparx5_start(sparx5);
 	if (err) {
 		dev_err(sparx5->dev, "Start failed\n");
-		goto cleanup_ports;
+		goto cleanup_router;
 	}
 
 	goto cleanup_config;
 
+cleanup_router:
+	sparx5_rr_router_deinit(sparx5);
 cleanup_ports:
 	sparx5_cleanup_ports(sparx5);
 	if (sparx5->mact_queue)
@@ -1073,8 +1075,8 @@ static int mchp_sparx5_remove(struct platform_device *pdev)
 		sparx5->ptp_ext_irq = -ENXIO;
 	}
 
-	sparx5_ptp_deinit(sparx5);
 	sparx5_rr_router_deinit(sparx5);
+	sparx5_ptp_deinit(sparx5);
 	ops->fdma_stop(sparx5);
 	sparx5_cleanup_ports(sparx5);
 	sparx5_vcap_destroy(sparx5);
