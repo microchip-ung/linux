@@ -669,8 +669,7 @@ struct sparx5_router {
 /* sparx5_calendar.c */
 int sparx5_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
 			     struct sparx5_calendar_data *data, u32 *cal_len);
-int sparx5_config_auto_calendar(struct sparx5 *sparx5);
-int sparx5_config_dsm_calendar(struct sparx5 *sparx5);
+int sparx5_calendar_init(struct sparx5 *sparx5);
 u32 *sparx5_get_taxi(int idx);
 void sparx5_calendar_fix(struct sparx5 *sparx5);
 enum sparx5_cal_bw sparx5_get_internal_port_cal_speed(struct sparx5 *sparx5,
