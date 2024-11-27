@@ -818,6 +818,7 @@ static int sparx5_start(struct sparx5 *sparx5)
 
 	sparx5_netlink_fp_init();
 	sparx5_netlink_qos_init(sparx5);
+	sparx5_debugfs(sparx5);
 
 	return err;
 }
@@ -1008,12 +1009,6 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		}
 	}
 
-	err = sparx5_start(sparx5);
-	if (err) {
-		dev_err(sparx5->dev, "Start failed\n");
-		goto cleanup_ports;
-	}
-
 	err = sparx5_rr_router_init(sparx5);
 	if (err) {
 		dev_err(sparx5->dev, "Router initialization failed\n");
@@ -1031,7 +1026,16 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		dev_err(sparx5->dev, "PTP failed\n");
 		goto cleanup_ports;
 	}
-	sparx5_debugfs(sparx5);
+
+	/* Initialize the rest of the hardware and start the IRQ handlers.
+	 * Only initialization that does not require cleanup should be inside
+	 * this function.
+	 */
+	err = sparx5_start(sparx5);
+	if (err) {
+		dev_err(sparx5->dev, "Start failed\n");
+		goto cleanup_ports;
+	}
 
 	goto cleanup_config;
 
