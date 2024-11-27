@@ -698,6 +698,7 @@ bool sparx5_get_cpuport_stats(struct sparx5 *sparx5, int portno, int idx,
 
 void sparx5_get_stats64(struct net_device *ndev, struct rtnl_link_stats64 *stats);
 int sparx5_stats_init(struct sparx5 *sparx5);
+void sparx5_stats_deinit(struct sparx5 *sparx5);
 
 /* sparx5_dcb.c */
 #ifdef CONFIG_SPARX5_DCB

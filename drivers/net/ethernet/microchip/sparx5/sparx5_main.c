@@ -727,11 +727,6 @@ static int sparx5_start(struct sparx5 *sparx5)
 	if (err)
 		return err;
 
-	/* Init stats */
-	err = sparx5_stats_init(sparx5);
-	if (err)
-		return err;
-
 	/* Init mact_sw struct */
 	mutex_init(&sparx5->mact_lock);
 	INIT_LIST_HEAD(&sparx5->mact_entries);
@@ -1006,10 +1001,16 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		goto cleanup_ports;
 	}
 
+	err = sparx5_stats_init(sparx5);
+	if (err) {
+		dev_err(sparx5->dev, "Failed to initialize stats\n");
+		goto cleanup_ports;
+	}
+
 	err = sparx5_rr_router_init(sparx5);
 	if (err) {
 		dev_err(sparx5->dev, "Failed to initialize router\n");
-		goto cleanup_ports;
+		goto cleanup_stats;
 	}
 
 	err = sparx5_register_notifier_blocks(sparx5);
@@ -1042,6 +1043,8 @@ cleanup_notifiers:
 	sparx5_unregister_notifier_blocks(sparx5);
 cleanup_router:
 	sparx5_rr_router_deinit(sparx5);
+cleanup_stats:
+	sparx5_stats_deinit(sparx5);
 cleanup_ports:
 	sparx5_destroy_netdevs(sparx5);
 	if (sparx5->mact_queue)
@@ -1079,6 +1082,7 @@ static int mchp_sparx5_remove(struct platform_device *pdev)
 	sparx5_unregister_netdevs(sparx5);
 	sparx5_unregister_notifier_blocks(sparx5);
 	sparx5_rr_router_deinit(sparx5);
+	sparx5_stats_deinit(sparx5);
 	sparx5_ptp_deinit(sparx5);
 	ops->fdma_stop(sparx5);
 	sparx5_vcap_destroy(sparx5);
