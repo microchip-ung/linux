@@ -970,14 +970,14 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 
 	err = sparx5_ptp_init(sparx5);
 	if (err) {
-		dev_err(sparx5->dev, "PTP failed\n");
+		dev_err(sparx5->dev, "Failed to initialize PTP\n");
 		goto cleanup_ports;
 	}
 
 	err = sparx5_vcap_init(sparx5);
 	if (err) {
 		dev_err(sparx5->dev, "Failed to initialize VCAP\n");
-		goto cleanup_ports;
+		goto cleanup_ptp;
 	}
 
 	err = sparx5_mact_init(sparx5);
@@ -1034,6 +1034,8 @@ cleanup_mact:
 	sparx5_mact_deinit(sparx5);
 cleanup_vcap:
 	sparx5_vcap_destroy(sparx5);
+cleanup_ptp:
+	sparx5_ptp_deinit(sparx5);
 cleanup_ports:
 	sparx5_destroy_netdevs(sparx5);
 cleanup_config:
