@@ -50,8 +50,8 @@ int br_mrp_switchdev_del(struct net_bridge *br, struct br_mrp *mrp)
 	struct switchdev_obj_mrp mrp_obj = {
 		.obj.orig_dev = br->dev,
 		.obj.id = SWITCHDEV_OBJ_ID_MRP,
-		.p_port = NULL,
-		.s_port = NULL,
+		.p_port = rtnl_dereference(mrp->p_port)->dev,
+		.s_port = rtnl_dereference(mrp->s_port)->dev,
 		.ring_id = mrp->ring_id,
 	};
 
