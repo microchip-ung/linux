@@ -156,6 +156,10 @@ static int i2c_mux_pinctrl_probe(struct platform_device *pdev)
 			goto err_del_adapter;
 	}
 
+	/* Bring devices on the mux in a welldefined state */
+	for (i = 0; i < num_names - !!muxc->deselect; i++) {
+		i2c_mux_pinctrl_deselect(muxc, i);
+	}
 	return 0;
 
 err_del_adapter:
