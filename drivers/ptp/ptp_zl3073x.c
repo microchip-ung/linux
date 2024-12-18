@@ -18,14 +18,26 @@
 #define DPLL_MODE_REFSEL(index)			(0x284 + (index) * 0x4)
 #define DPLL_MODE_REFSEL_MODE_GET(val)		(val & GENMASK(2, 0))
 
+#define DPLL_TIE_CTRL				0x2b0
+#define DPLL_TIE_CTRL_MASK			GENMASK(2, 0)
+#define DPLL_TIE_CTRL_MASK_REG			0x2b1
+#define DPLL_TIE_CTRL_OPERATION			4
+#define DPLL_TIE_CTRL_SIZE			1
+
 #define DPLL_TOD_CTRL(index)			(0x2b8 + (index))
 #define DPLL_TOD_CTRL_SEM			BIT(4)
 
 #define DPLL_DF_OFFSET(index)			(0x300 + (index) * 0x20)
+#define DPLL_TIE_DATA(index)			(0x30c + (index) * 0x20)
 #define DPLL_TOD_SEC(index)			(0x312 + (index) * 0x20)
 #define DPLL_TOD_SEC_SIZE			6
 #define DPLL_TOD_NSEC(index)			(0x318 + (index) * 0x20)
 #define DPLL_TOD_NSEC_SIZE			6
+
+#define DPLL_SYNTH_PHASE_SHIFT_CTRL		0x49e
+#define DPLL_SYNTH_PHASE_SHIFT_MASK		0x49f
+#define DPLL_SYNTH_PHASE_SHIFT_INTVL		0x4a0
+#define DPLL_SYNTH_PHASE_SHIFT_DATA		0x4a1
 
 #define DPLL_OUTPUT_CTRL(index)			(0x4a8 + (index))
 #define DPLL_OUTPUT_CTRL_SIZE			1
@@ -221,6 +233,15 @@ static int zl3073x_ptp_phase_ctrl_op(struct zl3073x_dpll *dpll)
 	u8 ctrl;
 
 	zl3073x_read(zl3073x, DPLL_OUTPUT_PHASE_STEP_CTRL, &ctrl, sizeof(ctrl));
+	return ctrl;
+}
+
+static int zl3073x_ptp_tie_ctrl_op(struct zl3073x_dpll *dpll)
+{
+	struct zl3073x *zl3073x = dpll->zl3073x;
+	u8 ctrl;
+
+	zl3073x_read(zl3073x, DPLL_TIE_CTRL, &ctrl, sizeof(ctrl));
 	return ctrl;
 }
 
@@ -440,7 +461,67 @@ static s64 _zl3073x_ptp_get_synth_freq(struct zl3073x_dpll *dpll, u8 synth)
 	return base * mult * numerator / denomitor;
 }
 
-static int _zl3073x_ptp_adjphase(struct zl3073x_dpll *dpll, const s64 delta)
+static int zl3073x_ptp_getmaxphase(struct ptp_clock_info *ptp)
+{
+	/* Adjphase accepts phase inputs from -1s to 1s */
+	return NSEC_PER_SEC;
+}
+
+static int zl3073x_ptp_adjphase(struct ptp_clock_info *ptp, s32 delta)
+{
+	struct zl3073x_dpll *dpll = container_of(ptp, struct zl3073x_dpll, info);
+	struct zl3073x *zl3073x = dpll->zl3073x;
+	u8 tieWriteOp = DPLL_TIE_CTRL_OPERATION;
+	s64 delta_sub_sec_in_tie_units;
+	u8 tieDpll = BIT(dpll->index);
+	s32 delta_sub_sec_in_ns;
+	u8 tieData[6];
+	int val;
+	int ret;
+
+	/* Remove seconds and convert to 0.01ps units */
+	delta_sub_sec_in_ns = delta % NSEC_PER_SEC;
+	delta_sub_sec_in_tie_units =  delta_sub_sec_in_ns * 100000LL;
+
+	tieData[5] = (delta_sub_sec_in_tie_units & 0xFF0000000000) >> 40;
+	tieData[4] = (delta_sub_sec_in_tie_units & 0xFF00000000) >> 32;
+	tieData[3] = (delta_sub_sec_in_tie_units & 0xFF000000) >> 24;
+	tieData[2] = (delta_sub_sec_in_tie_units & 0xFF0000) >> 16;
+	tieData[1] = (delta_sub_sec_in_tie_units & 0xFF00) >> 8;
+	tieData[0] = (delta_sub_sec_in_tie_units & 0xFF) >> 0;
+
+	mutex_lock(zl3073x->lock);
+
+	/* Set the ctrl to look at the correct dpll */
+	zl3073x_write(zl3073x, DPLL_TIE_CTRL_MASK_REG, &tieDpll, DPLL_TIE_CTRL_SIZE);
+
+	/* Wait for access to the CTRL register */
+	ret = readx_poll_timeout_atomic(zl3073x_ptp_tie_ctrl_op, dpll,
+					val,
+					!(DPLL_TIE_CTRL_MASK & val),
+					READ_SLEEP_US, READ_TIMEOUT_US);
+	if (ret)
+		goto out;
+
+	/* Writes data to the tie register */
+	zl3073x_write(zl3073x, DPLL_TIE_DATA(dpll->index), tieData, sizeof(tieData));
+
+	/* Request to write the TIE */
+	zl3073x_write(zl3073x, DPLL_TIE_CTRL, &tieWriteOp, DPLL_TIE_CTRL_SIZE);
+
+	/* Wait until the TIE operation is completed*/
+	ret = readx_poll_timeout_atomic(zl3073x_ptp_tie_ctrl_op, dpll,
+					val,
+					!(DPLL_TIE_CTRL_MASK & val),
+					READ_SLEEP_US, READ_TIMEOUT_US);
+
+out:
+	mutex_unlock(zl3073x->lock);
+
+	return ret;
+}
+
+static int _zl3073x_ptp_steptime(struct zl3073x_dpll *dpll, const s64 delta)
 {
 	struct zl3073x *zl3073x = dpll->zl3073x;
 	s32 register_units;
@@ -503,64 +584,24 @@ static int _zl3073x_ptp_adjphase(struct zl3073x_dpll *dpll, const s64 delta)
 	return 0;
 }
 
-static void zl3073x_ptp_stop_1pps(struct zl3073x_dpll *dpll)
-{
-	struct zl3073x *zl3073x = dpll->zl3073x;
-	u8 buf;
-
-	for (size_t i = 0; i < ZL3073X_MAX_OUTPUTS; ++i) {
-		if (!(BIT(i) & dpll->perout_mask))
-			continue;
-
-		zl3073x_read(zl3073x, DPLL_OUTPUT_CTRL(i), &buf,
-			     DPLL_OUTPUT_CTRL_SIZE);
-		buf |= DPLL_OUTPUT_CTRL_STOP;
-
-		buf &= ~(DPLL_OUTPUT_CTRL_STOP_HZ &
-			 DPLL_OUTPUT_CTRL_STOP_HIGH);
-
-		zl3073x_write(zl3073x, DPLL_OUTPUT_CTRL(i), &buf,
-			      DPLL_OUTPUT_CTRL_SIZE);
-	}
-}
-
-static void zl3073x_ptp_start_1pps(struct zl3073x_dpll *dpll)
-{
-	struct zl3073x *zl3073x = dpll->zl3073x;
-	u8 buf;
-
-	for (size_t i = 0; i < ZL3073X_MAX_OUTPUTS; ++i) {
-		if (!(BIT(i) & dpll->perout_mask))
-			continue;
-
-		zl3073x_read(zl3073x, DPLL_OUTPUT_CTRL(i), &buf,
-			     DPLL_OUTPUT_CTRL_SIZE);
-		buf &= ~DPLL_OUTPUT_CTRL_STOP;
-
-		zl3073x_write(zl3073x, DPLL_OUTPUT_CTRL(i), &buf,
-			      DPLL_OUTPUT_CTRL_SIZE);
-	}
-}
-
 static int zl3073x_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
 {
 	struct zl3073x_dpll *dpll = container_of(ptp, struct zl3073x_dpll, info);
 	struct zl3073x *zl3073x = dpll->zl3073x;
+	s64 delta_sub_sec_in_ns;
 	struct timespec64 ts;
+	s64 delta_sec_in_ns;
+	s32 delta_sec_rem;
+	s64 delta_sec;
 	int ret;
+	int val;
+
+	/* Split the offset to apply into seconds and nanoseconds */
+	delta_sec = div_s64_rem(delta, NSEC_PER_SEC, &delta_sec_rem);
+	delta_sec_in_ns = delta_sec * NSEC_PER_SEC;
+	delta_sub_sec_in_ns = delta_sec_rem;
 
 	mutex_lock(zl3073x->lock);
-
-	/* When adjusting the time and having a 1PPS enabled then it is the 1PPS
-	 * will come more often then 1 per second and this might introduce
-	 * issues. For example when running ts2phc then it might see twice the
-	 * 1PPS and when it is running on multiple TSU then it migth use the
-	 * wrong timestamps. Therefore here disable the 1PPS and just enable it
-	 * at later point(in 3 seconds) to make sure the time is adjusted and
-	 * the listeners of the 1PPS will not see multiple signals.
-	 */
-	if (dpll->perout_mask)
-		zl3073x_ptp_stop_1pps(dpll);
 
 	if (delta >= NSEC_PER_SEC || delta <= -NSEC_PER_SEC) {
 		/* wait for rollover */
@@ -574,20 +615,24 @@ static int zl3073x_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
 		if (ret)
 			goto out;
 
-		ts = timespec64_add(ts, ns_to_timespec64(delta));
+		ts = timespec64_add(ts, ns_to_timespec64(delta_sec_in_ns));
 
 		ret = _zl3073x_ptp_settime64(dpll, &ts,
 					     ZL3073X_TOD_CTRL_CMD_WRITE_NEXT_1HZ);
 		if (ret)
 			goto out;
-	} else {
-		ret = _zl3073x_ptp_adjphase(dpll, delta);
+
+		/* Wait for the semaphore bit to confirm correct settime application */
+		ret = readx_poll_timeout_atomic(zl3073x_ptp_tod_sem, dpll,
+					val, !(DPLL_TOD_CTRL_SEM & val),
+					READ_SLEEP_US, READ_TIMEOUT_US);
+		if (ret)
+			goto out;
 	}
 
-out:
-	if (dpll->perout_mask)
-		ptp_schedule_worker(dpll->clock, nsecs_to_jiffies(1 * NSEC_PER_SEC));
+	ret = _zl3073x_ptp_steptime(dpll, delta_sub_sec_in_ns);
 
+out:
 	mutex_unlock(zl3073x->lock);
 
 	return ret;
@@ -597,22 +642,22 @@ static int zl3073x_ptp_adjfine(struct ptp_clock_info *ptp, long scaled_ppm)
 {
 	struct zl3073x_dpll *dpll = container_of(ptp, struct zl3073x_dpll, info);
 	struct zl3073x *zl3073x = dpll->zl3073x;
+	s64 scaled_ppm_s64;
 	u8 dco[6];
 	s64 ref;
-	s64 ppm;
 
 	/* Store the scaled_ppm into a s64 variable because on 32bit arch, the
 	 * multiplication with ZL30373X_1PPM_FORMAT with overflow meaning that
 	 * will not be able to adjust to lowest ns
 	 */
-	ppm = scaled_ppm;
-	if (!ppm)
+	scaled_ppm_s64 = scaled_ppm;
+	if (!scaled_ppm_s64)
 		return 0;
 
 	mutex_lock(zl3073x->lock);
 
-	ref = ZL3073X_1PPM_FORMAT * (ppm >> 16);
-	ref += (ZL3073X_1PPM_FORMAT * (0xffff & ppm)) >> 16;
+	ref = ZL3073X_1PPM_FORMAT * (scaled_ppm_s64 >> 16);
+	ref += (ZL3073X_1PPM_FORMAT * (0xffff & scaled_ppm_s64)) >> 16;
 
 	/* The value that is written in HW is in 2 complement */
 	ref = ~ref + 1;
@@ -900,16 +945,6 @@ static int zl3073x_ptp_verify(struct ptp_clock_info *ptp, unsigned int pin,
 	return 0;
 }
 
-static long zl3073x_ptp_do_aux_work(struct ptp_clock_info *ptp)
-{
-	struct zl3073x_dpll *dpll = container_of(ptp, struct zl3073x_dpll, info);
-
-	if (dpll->perout_mask)
-		zl3073x_ptp_start_1pps(dpll);
-
-	return -1;
-}
-
 static struct ptp_clock_info zl3073x_ptp_clock_info = {
 	.owner		= THIS_MODULE,
 	.name		= "zl3073x ptp",
@@ -918,13 +953,64 @@ static struct ptp_clock_info zl3073x_ptp_clock_info = {
 	.settime64	= zl3073x_ptp_settime64,
 	.adjtime	= zl3073x_ptp_adjtime,
 	.adjfine	= zl3073x_ptp_adjfine,
+	.adjphase	= zl3073x_ptp_adjphase,
+	.getmaxphase	= zl3073x_ptp_getmaxphase,
 	.enable		= zl3073x_ptp_enable,
 	.verify		= zl3073x_ptp_verify,
-	.do_aux_work	= zl3073x_ptp_do_aux_work,
 	.n_per_out	= ZL3073X_MAX_OUTPUTS,
 	.n_ext_ts	= ZL3073X_MAX_OUTPUTS,
 	.n_pins		= ZL3073X_MAX_OUTPUTS,
 };
+
+static int zl3073x_dpll_init_fine_phase_adjust(struct zl3073x *zl3073x)
+{
+	u8 phase_shift_data[] = { 0xFF, 0xFF };
+	u8 phase_shift_intvl = 0x01;
+	u8 phase_shift_mask = 0x1F;
+	u8 phase_shift_ctrl = 0x01;
+	int ret;
+
+	ret = zl3073x_write(zl3073x, DPLL_SYNTH_PHASE_SHIFT_MASK,
+			    &phase_shift_mask, sizeof(phase_shift_mask));
+
+	if (ret)
+		return ret;
+
+	ret = zl3073x_write(zl3073x, DPLL_SYNTH_PHASE_SHIFT_INTVL,
+			    &phase_shift_intvl, sizeof(phase_shift_intvl));
+
+	if (ret)
+		return ret;
+
+	ret = zl3073x_write(zl3073x, DPLL_SYNTH_PHASE_SHIFT_DATA,
+			    phase_shift_data, sizeof(phase_shift_data));
+
+	if (ret)
+		return ret;
+
+	ret = zl3073x_write(zl3073x, DPLL_SYNTH_PHASE_SHIFT_CTRL,
+			    &phase_shift_ctrl, sizeof(phase_shift_ctrl));
+
+	return ret;
+}
+
+/* These are debug prints, they are temporary so expect that they will be
+ * removed at later point
+ */
+static void zl3073x_dpll_debug_pll(struct zl3073x *zl3073x)
+{
+	u8 buf;
+
+	zl3073x_read(zl3073x, 0x10a, &buf, sizeof(buf));
+	pr_info("%s addr: 0x10a, val 0x%02x\n", __func__, buf);
+
+	zl3073x_read(zl3073x, 0x107, &buf, sizeof(buf));
+	pr_info("%s addr: 0x107, val 0x%02x\n", __func__, buf);
+
+	zl3073x_read(zl3073x, 0x032, &buf, sizeof(buf));
+	pr_info("%s addr: 0x032, val 0x%02x\n", __func__, buf);
+}
+
 
 static int zl3073x_ptp_init(struct zl3073x *zl3073x, u8 index)
 {
@@ -1087,6 +1173,11 @@ static int zl3073x_probe(struct platform_device *pdev)
 	}
 
 	platform_set_drvdata(pdev, zl3073x);
+
+	/* Initial firmware fine phase correction */
+	zl3073x_dpll_init_fine_phase_adjust(zl3073x);
+
+	zl3073x_dpll_debug_pll(zl3073x);
 
 	return 0;
 }

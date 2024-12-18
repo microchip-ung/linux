@@ -318,8 +318,8 @@ static int sparx5_create_port(struct sparx5 *sparx5,
 	spx5_port->of_node = config->node;
 	spx5_port->serdes = config->serdes;
 	spx5_port->pvid = NULL_VID;
-	spx5_port->signd_internal = true;
-	spx5_port->signd_active_high = true;
+	spx5_port->signd_internal = config->conf.sd_sgpio == ~0 ? true : false;
+	spx5_port->signd_active_high = config->conf.sd_sgpio == ~0 ? true : false;
 	spx5_port->signd_enable = true;
 	spx5_port->max_vlan_tags = SPX5_PORT_MAX_TAGS_NONE;
 	spx5_port->vlan_type = SPX5_VLAN_PORT_TYPE_UNAWARE;
@@ -668,7 +668,6 @@ static int sparx5_start(struct sparx5 *sparx5)
 	u8 broadcast[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 	const struct sparx5_consts *consts = &sparx5->data->consts;
 	const struct sparx5_ops *ops = &sparx5->data->ops;
-	char queue_name[32];
 	u32 idx;
 	int err;
 
@@ -703,15 +702,6 @@ static int sparx5_start(struct sparx5 *sparx5)
 			 ANA_CL_FILTER_CTRL_FORCE_FCS_UPDATE_ENA,
 			 sparx5, ANA_CL_FILTER_CTRL(idx));
 
-	/* Init MAC table, ageing */
-	sparx5_mact_init(sparx5);
-
-	/* Init PGID table arbitrator */
-	sparx5_pgid_init(sparx5);
-
-	/* Setup VLANs */
-	sparx5_vlan_init(sparx5);
-
 	/* Add host mode BC address (points only to CPU) */
 	sparx5_mact_learn(sparx5, sparx5_get_pgid_index(sparx5, PGID_CPU),
 			  broadcast, NULL_VID);
@@ -719,49 +709,8 @@ static int sparx5_start(struct sparx5 *sparx5)
 	/* Enable queue limitation watermarks */
 	sparx5_qlim_set(sparx5);
 
-	err = sparx5_config_auto_calendar(sparx5);
-	if (err)
-		return err;
-
-	err = sparx5_config_dsm_calendar(sparx5);
-	if (err)
-		return err;
-
-	/* Init stats */
-	err = sparx5_stats_init(sparx5);
-	if (err)
-		return err;
-
-	/* Init mact_sw struct */
-	mutex_init(&sparx5->mact_lock);
-	INIT_LIST_HEAD(&sparx5->mact_entries);
-	snprintf(queue_name, sizeof(queue_name), "%s-mact",
-		 dev_name(sparx5->dev));
-	sparx5->mact_queue = create_singlethread_workqueue(queue_name);
-	if (!sparx5->mact_queue)
-		return -ENOMEM;
-
-	INIT_DELAYED_WORK(&sparx5->mact_work, sparx5_mact_pull_work);
-	queue_delayed_work(sparx5->mact_queue, &sparx5->mact_work,
-			   SPX5_MACT_PULL_DELAY);
-
 	mutex_init(&sparx5->mdb_lock);
 	INIT_LIST_HEAD(&sparx5->mdb_entries);
-
-	err = sparx5_register_netdevs(sparx5);
-	if (err)
-		return err;
-
-	sparx5_board_init(sparx5);
-	err = sparx5_register_notifier_blocks(sparx5);
-	if (err)
-		return err;
-
-	err = sparx5_vcap_init(sparx5);
-	if (err) {
-		sparx5_unregister_notifier_blocks(sparx5);
-		return err;
-	}
 
 	/* Start Frame DMA with fallback to register based INJ/XTR */
 	err = -ENXIO;
@@ -816,16 +765,9 @@ static int sparx5_start(struct sparx5 *sparx5)
 		}
 	}
 
-	sparx5_netlink_fp_init();
-	sparx5_netlink_qos_init(sparx5);
+	sparx5_debugfs(sparx5);
 
 	return err;
-}
-
-static void sparx5_cleanup_ports(struct sparx5 *sparx5)
-{
-	sparx5_unregister_netdevs(sparx5);
-	sparx5_destroy_netdevs(sparx5);
 }
 
 /* Discover if the parent node is a PCIe device */
@@ -1008,15 +950,15 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		}
 	}
 
-	err = sparx5_start(sparx5);
-	if (err) {
-		dev_err(sparx5->dev, "Start failed\n");
-		goto cleanup_ports;
-	}
+	sparx5_pgid_init(sparx5);
+	sparx5_vlan_init(sparx5);
+	sparx5_board_init(sparx5);
+	sparx5_netlink_fp_init();
+	sparx5_netlink_qos_init(sparx5);
 
-	err = sparx5_rr_router_init(sparx5);
+	err = sparx5_calendar_init(sparx5);
 	if (err) {
-		dev_err(sparx5->dev, "Router initialization failed\n");
+		dev_err(sparx5->dev, "Failed to initialize calendar\n");
 		goto cleanup_ports;
 	}
 
@@ -1028,17 +970,74 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 
 	err = sparx5_ptp_init(sparx5);
 	if (err) {
-		dev_err(sparx5->dev, "PTP failed\n");
+		dev_err(sparx5->dev, "Failed to initialize PTP\n");
 		goto cleanup_ports;
 	}
-	sparx5_debugfs(sparx5);
+
+	err = sparx5_vcap_init(sparx5);
+	if (err) {
+		dev_err(sparx5->dev, "Failed to initialize VCAP\n");
+		goto cleanup_ptp;
+	}
+
+	err = sparx5_mact_init(sparx5);
+	if (err) {
+		dev_err(sparx5->dev, "Failed to initialize MAC table\n");
+		goto cleanup_vcap;
+	}
+
+	err = sparx5_stats_init(sparx5);
+	if (err) {
+		dev_err(sparx5->dev, "Failed to initialize stats\n");
+		goto cleanup_mact;
+	}
+
+	err = sparx5_rr_router_init(sparx5);
+	if (err) {
+		dev_err(sparx5->dev, "Failed to initialize router\n");
+		goto cleanup_stats;
+	}
+
+	err = sparx5_register_notifier_blocks(sparx5);
+	if (err) {
+		dev_err(sparx5->dev, "Failed to register notifier blocks\n");
+		goto cleanup_router;
+	}
+
+	err = sparx5_register_netdevs(sparx5);
+	if (err) {
+		dev_err(sparx5->dev, "Failed to register net devices\n");
+		goto cleanup_notifiers;
+	}
+
+	/* Initialize the rest of the hardware and start the IRQ handlers.
+	 * Only initialization that does not require cleanup should be inside
+	 * this function.
+	 */
+	err = sparx5_start(sparx5);
+	if (err) {
+		dev_err(sparx5->dev, "Start failed\n");
+		goto cleanup_netdevs;
+	}
 
 	goto cleanup_config;
 
+cleanup_netdevs:
+	sparx5_unregister_netdevs(sparx5);
+cleanup_notifiers:
+	sparx5_unregister_notifier_blocks(sparx5);
+cleanup_router:
+	sparx5_rr_router_deinit(sparx5);
+cleanup_stats:
+	sparx5_stats_deinit(sparx5);
+cleanup_mact:
+	sparx5_mact_deinit(sparx5);
+cleanup_vcap:
+	sparx5_vcap_destroy(sparx5);
+cleanup_ptp:
+	sparx5_ptp_deinit(sparx5);
 cleanup_ports:
-	sparx5_cleanup_ports(sparx5);
-	if (sparx5->mact_queue)
-		destroy_workqueue(sparx5->mact_queue);
+	sparx5_destroy_netdevs(sparx5);
 cleanup_config:
 	kfree(configs);
 cleanup_pnode:
@@ -1069,14 +1068,15 @@ static int mchp_sparx5_remove(struct platform_device *pdev)
 		sparx5->ptp_ext_irq = -ENXIO;
 	}
 
-	sparx5_ptp_deinit(sparx5);
-	sparx5_rr_router_deinit(sparx5);
-	ops->fdma_stop(sparx5);
-	sparx5_cleanup_ports(sparx5);
-	sparx5_vcap_destroy(sparx5);
-	/* Unregister netdevs */
+	sparx5_unregister_netdevs(sparx5);
 	sparx5_unregister_notifier_blocks(sparx5);
-	destroy_workqueue(sparx5->mact_queue);
+	sparx5_rr_router_deinit(sparx5);
+	sparx5_stats_deinit(sparx5);
+	sparx5_mact_deinit(sparx5);
+	sparx5_vcap_destroy(sparx5);
+	sparx5_ptp_deinit(sparx5);
+	ops->fdma_stop(sparx5);
+	sparx5_destroy_netdevs(sparx5);
 
 	return 0;
 }

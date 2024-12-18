@@ -596,7 +596,6 @@ void sparx5_fdma_reload(struct sparx5 *sparx5, struct fdma *fdma);
 void sparx5_fdma_llp_configure(struct sparx5 *sparx5, u64 addr, u32 channel_id);
 
 /* sparx5_mactable.c */
-void sparx5_mact_pull_work(struct work_struct *work);
 int sparx5_mact_learn(struct sparx5 *sparx5, int port,
 		      const unsigned char mac[ETH_ALEN], u16 vid);
 bool sparx5_mact_getnext(struct sparx5 *sparx5,
@@ -615,7 +614,8 @@ int sparx5_del_mact_entry(struct sparx5 *sparx5,
 int sparx5_mc_sync(struct net_device *dev, const unsigned char *addr);
 int sparx5_mc_unsync(struct net_device *dev, const unsigned char *addr);
 void sparx5_set_ageing(struct sparx5 *sparx5, int msecs);
-void sparx5_mact_init(struct sparx5 *sparx5);
+int sparx5_mact_init(struct sparx5 *sparx5);
+void sparx5_mact_deinit(struct sparx5 *sparx5);
 
 /* sparx5_vlan.c */
 void sparx5_pgid_update_mask(struct sparx5_port *port, int pgid, bool enable);
@@ -669,8 +669,7 @@ struct sparx5_router {
 /* sparx5_calendar.c */
 int sparx5_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
 			     struct sparx5_calendar_data *data, u32 *cal_len);
-int sparx5_config_auto_calendar(struct sparx5 *sparx5);
-int sparx5_config_dsm_calendar(struct sparx5 *sparx5);
+int sparx5_calendar_init(struct sparx5 *sparx5);
 u32 *sparx5_get_taxi(int idx);
 void sparx5_calendar_fix(struct sparx5 *sparx5);
 enum sparx5_cal_bw sparx5_get_internal_port_cal_speed(struct sparx5 *sparx5,
@@ -698,6 +697,7 @@ bool sparx5_get_cpuport_stats(struct sparx5 *sparx5, int portno, int idx,
 
 void sparx5_get_stats64(struct net_device *ndev, struct rtnl_link_stats64 *stats);
 int sparx5_stats_init(struct sparx5 *sparx5);
+void sparx5_stats_deinit(struct sparx5 *sparx5);
 
 /* sparx5_dcb.c */
 #ifdef CONFIG_SPARX5_DCB

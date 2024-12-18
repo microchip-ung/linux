@@ -142,7 +142,7 @@ static struct at91_twi_pdata sam9x60_config = {
 	.has_dig_filtr = true,
 	.has_adv_dig_filtr = true,
 	.has_ana_filtr = true,
-	.has_clear_cmd = true,
+	.has_clear_cmd = false,
 };
 
 static const struct of_device_id atmel_twi_dt_ids[] = {

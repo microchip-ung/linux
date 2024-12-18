@@ -145,7 +145,7 @@ void lan966x_dmac_enable(struct lan966x_port *port, int lookup, bool enable)
 	else {
 		value = lan_rd(lan966x, ANA_VCAP_CFG(port->chip_port));
 		value = ANA_VCAP_CFG_S1_DMAC_DIP_ENA_GET(value);
-		value &= !BIT(lookup);
+		value &= ~BIT(lookup);
 
 		lan_rmw(ANA_VCAP_CFG_S1_DMAC_DIP_ENA_SET(value),
 			ANA_VCAP_CFG_S1_DMAC_DIP_ENA,

@@ -1750,6 +1750,7 @@ static int vcap_write_counter(struct vcap_rule_internal *ri,
 				    ri->counter_id, 0);
 	ri->vctrl->ops->update(ri->ndev, admin, VCAP_CMD_WRITE,
 			       VCAP_SEL_COUNTER, ri->addr);
+	ri->counter = *ctr;
 	return 0;
 }
 
@@ -2694,6 +2695,7 @@ out:
 	return &ri->data;
 }
 
+/* Get a copy of the rule. */
 struct vcap_rule *vcap_get_rule(struct vcap_control *vctrl, u32 id)
 {
 	struct vcap_rule_internal *elem;
@@ -3379,6 +3381,7 @@ static int vcap_enable_rules(struct vcap_control *vctrl,
 /* Read and erase a rule from VCAP HW to disable it */
 static int vcap_disable_rule(struct vcap_rule_internal *ri)
 {
+	struct vcap_counter zero = {};
 	int err;
 
 	err = vcap_read_rule(ri);
@@ -3388,6 +3391,10 @@ static int vcap_disable_rule(struct vcap_rule_internal *ri)
 	if (err)
 		return err;
 	err = vcap_decode_actionset(ri);
+	if (err)
+		return err;
+
+	err = vcap_write_counter(ri, &zero);
 	if (err)
 		return err;
 
@@ -3594,7 +3601,7 @@ EXPORT_SYMBOL_GPL(vcap_rule_set_counter_id);
 
 int vcap_rule_set_counter(struct vcap_rule *rule, struct vcap_counter *ctr)
 {
-	struct vcap_rule_internal *ri = to_intrule(rule);
+	struct vcap_rule_internal *ri = to_intrule(rule), *orig;
 	int err;
 
 	err = vcap_api_check(ri->vctrl);
@@ -3605,8 +3612,15 @@ int vcap_rule_set_counter(struct vcap_rule *rule, struct vcap_counter *ctr)
 		return -EINVAL;
 	}
 
-	mutex_lock(&ri->admin->lock);
-	err = vcap_write_counter(ri, ctr);
+	/* When rule is obtained from vcap_get_rule, we have a copy. To be sure
+	 * that we can update the counter sw cache, we need to find the original.
+	 */
+	orig = vcap_get_locked_rule(ri->vctrl, rule->id);
+	if (!orig)
+		return -ENOENT;
+
+	err = vcap_write_counter(orig, ctr);
+	ri->counter = *ctr;
 	mutex_unlock(&ri->admin->lock);
 
 	return err;
@@ -3739,13 +3753,25 @@ int vcap_get_rule_count_by_cookie(struct vcap_control *vctrl,
 			if (err)
 				goto unlock;
 
-			/* Instead of reset the counter in HW, update the
+			/* The HW counters are either 1-bit saturating or 32bit
+			 * overflowing counters. We must report counts since
+			 * previous tc read, but we prefer not to change the
+			 * counter state in HW.
+			 * Instead of reset the counter in HW, update the
 			 * counter in SW with the last read value and then next
 			 * time when calculating the number of packets just
-			 * substract from what HW says the last read value
-			 * In this way the HW counters will not be ever erased*/
-			ctr->value += temp.value - ri->counter.value;
-			ri->counter.value = temp.value;
+			 * subtract from what HW says the last read value
+			 * In this way the HW counters will not be ever erased
+			 */
+			if (temp.value >= ri->counter.value) {
+				ctr->value += temp.value - ri->counter.value;
+			} else {
+				/* Either HW counter is 32bit and overflowed, or
+				 * we have a bug with HW and SW out of sync.
+				 */
+				ctr->value += temp.value;
+			}
+			ri->counter = temp;
 		}
 		mutex_unlock(&admin->lock);
 	}

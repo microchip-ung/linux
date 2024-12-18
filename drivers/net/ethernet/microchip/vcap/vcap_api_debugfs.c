@@ -337,12 +337,10 @@ static void vcap_show_admin_rule(struct vcap_control *vctrl,
 				 struct vcap_output_print *out,
 				 struct vcap_rule_internal *ri)
 {
-	ri->counter.value = admin->cache.counter;
-	ri->counter.sticky = admin->cache.sticky;
 	out->prf(out->dst,
 		 "rule: %u, addr: [%d,%d], X%d, ctr[%d]: %d, hit: %d\n",
 		 ri->data.id, ri->addr, ri->addr + ri->size - 1, ri->size,
-		 ri->counter_id, ri->counter.value, ri->counter.sticky);
+		 ri->counter_id, admin->cache.counter, admin->cache.sticky);
 	out->prf(out->dst, "  chain_id: %d\n", ri->data.vcap_chain_id);
 	out->prf(out->dst, "  user: %d\n", ri->data.user);
 	out->prf(out->dst, "  priority: %d\n", ri->data.priority);

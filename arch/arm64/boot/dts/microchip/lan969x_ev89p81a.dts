@@ -500,7 +500,6 @@
 			phys = <&serdes 0>;
 			phy-mode = "10gbase-r";
 			sfp = <&sfp0>;
-			microchip,sd-sgpio = <377>;
 			managed = "in-band-status";
 		};
 
@@ -510,7 +509,6 @@
 			phys = <&serdes 1>;
 			phy-mode = "10gbase-r";
 			sfp = <&sfp1>;
-			microchip,sd-sgpio = <377>;
 			managed = "in-band-status";
 		};
 
@@ -520,7 +518,6 @@
 			phys = <&serdes 2>;
 			phy-mode = "10gbase-r";
 			sfp = <&sfp2>;
-			microchip,sd-sgpio = <377>;
 			managed = "in-band-status";
 		};
 
@@ -530,7 +527,6 @@
 			phys = <&serdes 3>;
 			phy-mode = "10gbase-r";
 			sfp = <&sfp3>;
-			microchip,sd-sgpio = <377>;
 			managed = "in-band-status";
 		};
 
@@ -540,7 +536,6 @@
 			phys = <&serdes 4>;
 			phy-mode = "10gbase-r";
 			sfp = <&sfp4>;
-			microchip,sd-sgpio = <377>;
 			managed = "in-band-status";
 		};
 
@@ -550,7 +545,6 @@
 			phys = <&serdes 5>;
 			phy-mode = "10gbase-r";
 			sfp = <&sfp5>;
-			microchip,sd-sgpio = <377>;
 			managed = "in-band-status";
 		};
 
@@ -560,7 +554,6 @@
 			phys = <&serdes 6>;
 			phy-mode = "10gbase-r";
 			sfp = <&sfp6>;
-			microchip,sd-sgpio = <377>;
 			managed = "in-band-status";
 		};
 
@@ -570,7 +563,6 @@
 			phys = <&serdes 7>;
 			phy-mode = "10gbase-r";
 			sfp = <&sfp7>;
-			microchip,sd-sgpio = <377>;
 			managed = "in-band-status";
 		};
 
@@ -580,7 +572,6 @@
 			phys = <&serdes 8>;
 			phy-mode = "10gbase-r";
 			sfp = <&sfp8>;
-			microchip,sd-sgpio = <377>;
 			managed = "in-band-status";
 		};
 
@@ -590,7 +581,6 @@
 			phys = <&serdes 9>;
 			phy-mode = "10gbase-r";
 			sfp = <&sfp9>;
-			microchip,sd-sgpio = <377>;
 			managed = "in-band-status";
 		};
 
