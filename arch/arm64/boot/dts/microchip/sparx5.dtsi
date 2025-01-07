@@ -291,9 +291,18 @@
 				function = "emmc";
 			};
 
+			/* MDC and MDIO pins need different drive strength. That is why we
+			   provide a way to reference them inividually */
 			miim1_pins: miim1-pins {
-				pins = "GPIO_56", "GPIO_57";
-				function = "miim";
+				mdc_miim1_pins: mdc-miim1-pins {
+					pins = "GPIO_56";
+					function = "miim";
+				};
+
+				mdio_miim1_pins: mdio-miim1-pins {
+					pins = "GPIO_57";
+					function = "miim";
+				};
 			};
 
 			miim2_pins: miim2-pins {
@@ -302,8 +311,15 @@
 			};
 
 			miim3_pins: miim3-pins {
-				pins = "GPIO_52", "GPIO_53";
-				function = "miim";
+				mdc_miim3_pins: mdc-miim3-pins {
+					pins = "GPIO_52";
+					function = "miim";
+				};
+
+				mdio_miim3_pins: mdio-miim3-pins {
+					pins = "GPIO_53";
+					function = "miim";
+				};
 			};
 		};
 
