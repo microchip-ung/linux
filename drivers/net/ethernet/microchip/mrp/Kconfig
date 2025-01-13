@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Microchip MRP API configuration
+#
+
+if NET_VENDOR_MICROCHIP
+
+config MCHP_MRP
+	bool "MRP (Media redundancy protocol) library"
+	help
+	  Provides the basic MRP functionality for multiple Microchip switchcores
+
+endif # NET_VENDOR_MICROCHIP
