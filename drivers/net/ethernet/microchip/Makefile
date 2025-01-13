@@ -14,3 +14,4 @@ obj-$(CONFIG_LAN966X_SWITCH) += lan966x/
 obj-$(CONFIG_SPARX5_SWITCH) += sparx5/
 obj-$(CONFIG_VCAP) += vcap/
 obj-$(CONFIG_FDMA) += fdma/
+obj-$(CONFIG_AFI) += afi/

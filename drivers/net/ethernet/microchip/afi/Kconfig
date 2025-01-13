@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Microchip AFI API configuration
+#
+
+if NET_VENDOR_MICROCHIP
+
+config AFI
+	bool "AFI (Automatic frame injection) library"
+	help
+	  Provides the basic AFI functionality for multiple Microchip switchcores
+
+	  A AFI will allow to configure the HW to send out frames at different
+	  rates. The advantage of this is that it reduces the CPU usage.
+
+endif # NET_VENDOR_MICROCHIP
