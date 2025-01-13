@@ -1,0 +1,171 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+
+/dts-v1/;
+
+#include "fsl-ls1046a.dtsi"
+#include "fsl-ls1046a-miriac-mpxls1046.dtsi"
+
+/ {
+	model = "Microsys miriac SBC-LS1046A";
+	compatible = "microsys,sbc1046a", "microsys,mpxls1046a", "fsl,ls1046a";
+
+	aliases {
+		ethernet0 = &enet2;
+		ethernet1 = &enet4;
+		ethernet2 = &enet5;
+		ethernet3 = &enet6;
+
+		serial0 = &duart0;
+		serial1 = &duart1;
+		serial2 = &duart2;
+		serial3 = &duart3;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	meba {
+		board = "Jaguar2 pcb123 via PCI";
+		pcb = "pcb123";
+	};
+};
+
+&duart0 {
+	status = "okay";
+};
+
+&duart1 {
+	status = "okay";
+};
+
+&i2c0 {
+	status = "okay";
+
+	eeprom@57 {
+		compatible = "at24,24c128";
+		reg = <0x57>;
+	};
+};
+
+&i2c1 {
+	status = "okay";
+};
+
+&ifc {
+	nand@0,0 {
+		partition@0 {
+			reg = <0x0 0x00100000>;
+			label = "UBoot";
+			read-only;
+		};
+
+		partition@100000 {
+			reg = <0x00100000 0x00040000>;
+			label = "Env";
+		};
+
+		partition@140000 {
+			reg = <0x00140000 0x00040000>;
+			label = "Env.bk";
+		};
+
+		partition@180000 {
+			reg = <0x00180000 0x00080000>;
+			label = "Unused";
+		};
+
+		partition@200000 {
+			reg = <0x00200000 0x01400000>;
+			label = "linux";
+		};
+
+		partition@1600000 {
+			reg = <0x01600000 0x01400000>;
+			label = "linux.bk";
+		};
+
+		partition@2a00000 {
+			reg = <0x02a00000 0x1d600000>;
+			label = "rootfs_nand_data";
+		};
+	};
+};
+
+#include "fsl-ls1046-post.dtsi"
+
+&fman0 {
+	compatible = "fsl,fman", "simple-bus";
+
+	ethernet@e4000 {
+		phy-handle = <&rgmii_phy1>;
+		phy-connection-type = "rgmii";
+	};
+
+	ethernet@e8000 {
+		phy-handle = <&sgmii_phy1>;
+		phy-connection-type = "sgmii";
+	};
+
+	ethernet@ea000 {
+		phy-handle = <&sgmii_phy2>;
+		phy-connection-type = "sgmii";
+	};
+
+	ethernet@f0000 {
+		phy-handle = <&sgmii_phy3>;
+		phy-connection-type = "sgmii";
+	};
+
+	mdio@fc000 {
+		rgmii_phy1: ethernet-phy@3 {
+			reg = <3>;
+		};
+
+		sgmii_phy1: ethernet-phy@2 {
+			reg = <2>;
+		};
+
+		sgmii_phy2: ethernet-phy@1 {
+			reg = <1>;
+		};
+
+		sgmii_phy3: ethernet-phy@0 {
+			reg = <0>;
+		};
+	};
+};
+
+&pcie1 {
+	pci@0,0 {
+		#address-cells = <3>;
+		#size-cells = <2>;
+		reg = <0 0 0 0 0>;
+		device_type = "pci";
+		ranges = <0x82000000 0x0 0x40000000 0x82000000 0x0 0x40000000 0 0x40000000>;
+
+		ocelot: switch@0,0 {
+			compatible = "pci101b,b005";
+
+			reg = <0x0000 0 0 0 0>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0x00000000 0x82000000 0x0 0x40000000 0x2000000>,
+				 <0x20000000 0x82000000 0x0 0x42000000 0x0100000>;
+
+			#interrupt-cells = <1>;
+			interrupt-controller;
+			interrupt-parent = <&ocelot>;
+
+			ocelot_uio0: mscc_switch@0 {
+				compatible = "generic-uio";
+				reg = <0x0 0x2000000>;
+			};
+
+			ocelot_uio1: mscc_cpu@20000000 {
+				compatible = "generic-uio";
+				reg = <0x20000000  0x0100000>;
+			};
+		};
+	};
+};

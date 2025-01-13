@@ -1,0 +1,62 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+
+/ {
+	compatible = "microsys,mpxls1046a", "fsl,ls1046a";
+};
+
+&duart0 {
+	status = "okay";
+};
+
+&duart1 {
+	status = "okay";
+};
+
+&i2c0 {
+	status = "okay";
+
+	temp-sensor@4c {
+		compatible = "national,lm90";
+		reg = <0x4c>;
+	};
+
+	eeprom@50 {
+		compatible = "at24,24c128";
+		reg = <0x50>;
+	};
+
+	rtc@32 {
+		compatible = "epson,rx8803";
+		reg = <0x32>;
+	};
+};
+
+&ifc {
+	#address-cells = <2>;
+	#size-cells = <1>;
+
+	ranges = <0x0 0x0 0x0 0x7e800000 0x00010000>;
+	status = "okay";
+
+	nand@0,0 {
+		compatible = "fsl,ifc-nand";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		reg = <0x0 0x0 0x10000>;
+	};
+};
+
+&qspi {
+	num-cs = <1>;
+	bus-num = <0>;
+	status = "okay";
+
+	qflash0: s25fsparx512s@0 {
+		compatible = "spansion,n25q128a11", "jedec,spi-nor";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		spi-max-frequency = <20000000>;
+		m25p,fast-read;
+		reg = <0>;
+	};
+};
