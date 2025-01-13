@@ -1,0 +1,385 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+
+/dts-v1/;
+
+#include "fsl-ls1046a.dtsi"
+#include "fsl-ls1046a-miriac-mpxls1046.dtsi"
+
+/ {
+	model = "Microsys miriac SBC-LS1046A";
+	compatible = "microsys,sbc1046a", "microsys,mpxls1046a", "fsl,ls1046a";
+
+	aliases {
+		ethernet0 = &enet2;
+		ethernet1 = &enet4;
+		ethernet2 = &enet5;
+		ethernet3 = &enet6;
+
+		serial0 = &duart0;
+		serial1 = &duart1;
+		serial2 = &duart2;
+		serial3 = &duart3;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	meba {
+		board = "Jaguar2 pcb110 via PCI";
+		pcb = "pcb110";
+	};
+};
+
+&duart0 {
+	status = "okay";
+};
+
+&duart1 {
+	status = "okay";
+};
+
+&i2c0 {
+	status = "okay";
+
+	eeprom@57 {
+		compatible = "at24,24c128";
+		reg = <0x57>;
+	};
+};
+
+&i2c1 {
+	status = "okay";
+};
+
+&ifc {
+	nand@0,0 {
+		partition@0 {
+			reg = <0x0 0x00100000>;
+			label = "UBoot";
+			read-only;
+		};
+
+		partition@100000 {
+			reg = <0x00100000 0x00040000>;
+			label = "Env";
+		};
+
+		partition@140000 {
+			reg = <0x00140000 0x00040000>;
+			label = "Env.bk";
+		};
+
+		partition@180000 {
+			reg = <0x00180000 0x00080000>;
+			label = "Unused";
+		};
+
+		partition@200000 {
+			reg = <0x00200000 0x01400000>;
+			label = "linux";
+		};
+
+		partition@1600000 {
+			reg = <0x01600000 0x01400000>;
+			label = "linux.bk";
+		};
+
+		partition@2a00000 {
+			reg = <0x02a00000 0x1d600000>;
+			label = "rootfs_nand_data";
+		};
+	};
+};
+
+#include "fsl-ls1046-post.dtsi"
+
+&fman0 {
+	compatible = "fsl,fman", "simple-bus";
+
+	ethernet@e4000 {
+		phy-handle = <&rgmii_phy1>;
+		phy-connection-type = "rgmii";
+	};
+
+	ethernet@e8000 {
+		phy-handle = <&sgmii_phy1>;
+		phy-connection-type = "sgmii";
+	};
+
+	ethernet@ea000 {
+		phy-handle = <&sgmii_phy2>;
+		phy-connection-type = "sgmii";
+	};
+
+	ethernet@f0000 {
+		phy-handle = <&sgmii_phy3>;
+		phy-connection-type = "sgmii";
+	};
+
+	mdio@fc000 {
+		rgmii_phy1: ethernet-phy@3 {
+			reg = <3>;
+		};
+
+		sgmii_phy1: ethernet-phy@2 {
+			reg = <2>;
+		};
+
+		sgmii_phy2: ethernet-phy@1 {
+			reg = <1>;
+		};
+
+		sgmii_phy3: ethernet-phy@0 {
+			reg = <0>;
+		};
+	};
+};
+
+&pcie1 {
+	pci@0,0 {
+		#address-cells = <3>;
+		#size-cells = <2>;
+		reg = <0 0 0 0 0>;
+		device_type = "pci";
+		ranges = <0x82000000 0x0 0x40000000 0x82000000 0x0 0x40000000 0 0x40000000>;
+
+		jaguar2: switch@0,0 {
+			compatible = "pci101b,b003";
+
+			reg = <0x0000 0 0 0 0>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0 0x82000000 0x0 0x48000000 0x2000000>;
+
+			#interrupt-cells = <1>;
+			interrupt-controller;
+			interrupt-parent = <&jaguar2>;
+
+			jaguar_clk: jaguar-clock {
+				compatible = "fixed-clock";
+				#clock-cells = <0>;
+				clock-frequency = <250000000>;
+			};
+
+			cpu_ctrl: syscon@0 {
+				compatible = "mscc,jaguar2-cpu-syscon", "syscon";
+				reg = <0x0 0x2c>;
+			};
+
+			gpio: pinctrl@1070034 {
+				compatible = "mscc,jaguar2-pinctrl";
+				reg = <0x1010038 0x90>;
+				gpio-controller;
+				#gpio-cells = <2>;
+				gpio-ranges = <&gpio 0 0 64>;
+
+				uart_pins: uart-pins {
+					pins = "GPIO_10", "GPIO_11";
+					function = "uart";
+				};
+
+				uart2_pins: uart2-pins {
+					pins = "GPIO_24", "GPIO_25";
+					function = "uart2";
+				};
+
+				i2c_pins: i2c-pins {
+					pins = "GPIO_14", "GPIO_15";
+					function = "twi";
+				};
+
+				i2c2_pins: i2c2-pins {
+					pins = "GPIO_28", "GPIO_29";
+					function = "twi2";
+				};
+
+				twiscl_m_pins: twiscl_m-pins {
+					pins = "GPIO_17", "GPIO_18", "GPIO_20", "GPIO_21";
+					function = "twi_scl_m";
+				};
+			};
+
+			serial@100000 {
+				pinctrl-0 = <&uart_pins>;
+				pinctrl-names = "default";
+				compatible = "ns16550a";
+				reg = <0x100000 0x100>;
+				interrupts = <6>;
+				clocks = <&jaguar_clk>;
+				no-loopback-test;
+				reg-io-width = <4>;
+				reg-shift = <2>;
+			};
+
+			i2c_parent: i2c@100400 {
+				compatible = "mscc,ocelot-i2c", "snps,designware-i2c";
+				pinctrl-0 = <&i2c_pins>;
+				pinctrl-names = "default";
+				reg = <0x100400 0x100>, <0x1b8 0x8>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				interrupts = <8>;
+				i2c-sda-hold-time-ns = <300>;
+				clock-frequency = <100000>;
+				clocks = <&jaguar_clk>;
+			};
+
+			i2cmux {
+				compatible = "i2c-mux-gpio";
+				pinctrl-0 = <&twiscl_m_pins>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				mux-gpios = <&gpio 17 0 &gpio 18 0 &gpio 20 0 &gpio 21 0 &gpio 51 0 &gpio 52 0 &gpio 53 0 &gpio 58 0 &gpio 59 0>;
+				i2c-parent = <&i2c_parent>;
+
+				i2c@100 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0x100>;
+				};
+
+				i2c@110 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0x110>;
+				};
+
+				i2c@120 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0x120>;
+				};
+
+				i2c@130 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0x130>;
+				};
+
+				i2c@140 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0x140>;
+				};
+
+				i2c@150 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0x150>;
+				};
+
+				i2c@160 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0x160>;
+				};
+
+				i2c@170 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0x170>;
+				};
+
+				i2c@80 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0x80>;
+				};
+
+				i2c@90 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0x90>;
+				};
+
+				i2c@A0 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0xA0>;
+				};
+
+				i2c@B0 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0xB0>;
+				};
+
+				i2c@C0 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0xC0>;
+				};
+
+				i2c@D0 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0xD0>;
+				};
+
+				i2c@E0 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0xE0>;
+				};
+
+				i2c@F0 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0xF0>;
+				};
+
+				i2c@1 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0x1>;
+				};
+
+				i2c@2 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0x2>;
+				};
+
+				i2c@4 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0x4>;
+				};
+
+				i2c@8 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0x8>;
+				};
+			};
+
+			serial@100800 {
+				pinctrl-0 = <&uart2_pins>;
+				pinctrl-names = "default";
+				compatible = "ns16550a";
+				reg = <0x100800 0x100>;
+				interrupts = <7>;
+				clocks = <&jaguar_clk>;
+				reg-io-width = <4>;
+				reg-shift = <2>;
+				no-loopback-test;
+			};
+
+			spi@101000 {
+				compatible = "mscc,jaguar2-spi";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <0x101000 0x1000>, <0x3c 0x18>;
+				interrupts = <10>;
+				clocks = <&jaguar_clk>;
+
+				flash@0 {
+					compatible = "mx25l25635e", "jedec,spi-nor";
+					spi-max-frequency = <20840000>;
+					reg = <0>;
+				};
+			};
+		};
+	};
+};
