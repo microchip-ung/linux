@@ -25,6 +25,9 @@
 #define		MSCC_MIIM_STATUS_STAT_PENDING	BIT(2)
 #define		MSCC_MIIM_STATUS_STAT_BUSY	BIT(3)
 #define MSCC_MIIM_REG_CMD		0x8
+#define		MSCC_MIIM_CMD_OPR_ADDR		0
+#define		MSCC_MIIM_CMD_OPR_WRITE_C45	(BIT(1))
+#define		MSCC_MIIM_CMD_OPR_READ_C45	(BIT(1) | BIT(2))
 #define		MSCC_MIIM_CMD_OPR_WRITE		BIT(1)
 #define		MSCC_MIIM_CMD_OPR_READ		BIT(2)
 #define		MSCC_MIIM_CMD_WRDATA_SHIFT	4
@@ -35,6 +38,9 @@
 #define		MSCC_MIIM_DATA_ERROR		(BIT(16) | BIT(17))
 #define MSCC_MIIM_REG_CFG		0x10
 #define		MSCC_MIIM_CFG_PRESCALE_MASK	GENMASK(7, 0)
+#define		MSCC_MIIM_CFG_SOF_MASK		GENMASK(10, 9)
+#define		MSCC_MIIM_CFG_SOF_C22		BIT(9)
+#define		MSCC_MIIM_CFG_SOF_C45		0
 
 #define MSCC_PHY_REG_PHY_CFG	0x0
 #define		PHY_CFG_PHY_ENA		(BIT(0) | BIT(1) | BIT(2) | BIT(3))
@@ -115,6 +121,14 @@ static int mscc_miim_read(struct mii_bus *bus, int mii_id, int regnum)
 	if (ret)
 		goto out;
 
+	ret = regmap_update_bits(miim->regs, MSCC_MIIM_REG_CFG,
+				 MSCC_MIIM_CFG_SOF_MASK,
+				 MSCC_MIIM_CFG_SOF_C22);
+	if (ret < 0) {
+		WARN_ONCE(1, "mscc miim clause 22 SOF update error %d\n", ret);
+		goto out;
+	}
+
 	ret = regmap_write(miim->regs,
 			   MSCC_MIIM_REG_CMD + miim->mii_status_offset,
 			   MSCC_MIIM_CMD_VLD |
@@ -158,6 +172,14 @@ static int mscc_miim_write(struct mii_bus *bus, int mii_id,
 	if (ret < 0)
 		goto out;
 
+	ret = regmap_update_bits(miim->regs, MSCC_MIIM_REG_CFG,
+				 MSCC_MIIM_CFG_SOF_MASK,
+				 MSCC_MIIM_CFG_SOF_C22);
+	if (ret < 0) {
+		WARN_ONCE(1, "mscc miim clause 22 SOF update error %d\n", ret);
+		goto out;
+	}
+
 	ret = regmap_write(miim->regs,
 			   MSCC_MIIM_REG_CMD + miim->mii_status_offset,
 			   MSCC_MIIM_CMD_VLD |
@@ -168,6 +190,117 @@ static int mscc_miim_write(struct mii_bus *bus, int mii_id,
 
 	if (ret < 0)
 		WARN_ONCE(1, "mscc miim write error %d\n", ret);
+out:
+	return ret;
+}
+
+static int mscc_miim_read_c45(struct mii_bus *bus, int addr, int devnum, int regnum)
+{
+	struct mscc_miim_dev *miim = bus->priv;
+	u32 val;
+	int ret;
+
+	ret = mscc_miim_wait_pending(bus);
+	if (ret)
+		goto out;
+
+	/* Change to clause 45 SOF */
+	ret = regmap_update_bits(miim->regs, MSCC_MIIM_REG_CFG,
+				 MSCC_MIIM_CFG_SOF_MASK,
+				 MSCC_MIIM_CFG_SOF_C45);
+	if (ret < 0) {
+		WARN_ONCE(1, "mscc mmd clause 45 SOF update error %d\n", ret);
+		goto out;
+	}
+
+	/* Write address 'devnum' command */
+	ret = regmap_write(miim->regs,
+			   MSCC_MIIM_REG_CMD + miim->mii_status_offset,
+			   MSCC_MIIM_CMD_VLD |
+			   (addr << MSCC_MIIM_CMD_PHYAD_SHIFT) |
+			   (devnum << MSCC_MIIM_CMD_REGAD_SHIFT) |
+			   (regnum << MSCC_MIIM_CMD_WRDATA_SHIFT) |
+			   MSCC_MIIM_CMD_OPR_ADDR);
+	if (ret < 0) {
+		WARN_ONCE(1, "mscc mmd write cmd reg error %d\n", ret);
+		goto out;
+	}
+
+	/* Write register 'devnum' to read command */
+	ret = regmap_write(miim->regs,
+			   MSCC_MIIM_REG_CMD + miim->mii_status_offset,
+			   MSCC_MIIM_CMD_VLD |
+			   (addr << MSCC_MIIM_CMD_PHYAD_SHIFT) |
+			   (devnum << MSCC_MIIM_CMD_REGAD_SHIFT) |
+			   MSCC_MIIM_CMD_OPR_READ_C45);
+	if (ret < 0) {
+		WARN_ONCE(1, "mscc mmd write cmd reg error %d\n", ret);
+		goto out;
+	}
+
+	ret = mscc_miim_wait_ready(bus);
+	if (ret)
+		goto out;
+
+	ret = regmap_read(miim->regs,
+			  MSCC_MIIM_REG_DATA + miim->mii_status_offset, &val);
+	if (ret < 0) {
+		WARN_ONCE(1, "mscc mmd read data reg error %d\n", ret);
+		goto out;
+	}
+
+	if (!miim->ignore_read_errors && !!(val & MSCC_MIIM_DATA_ERROR)) {
+		ret = -EIO;
+		goto out;
+	}
+
+	ret = val & 0xFFFF;
+out:
+	return ret;
+}
+
+static int mscc_miim_write_c45(struct mii_bus *bus, int addr, int devnum,
+			       int regnum, u16 value)
+{
+	struct mscc_miim_dev *miim = bus->priv;
+	int ret;
+
+	ret = mscc_miim_wait_pending(bus);
+	if (ret)
+		goto out;
+
+	/* Change to clause 45 SOF */
+	ret = regmap_update_bits(miim->regs, MSCC_MIIM_REG_CFG,
+				 MSCC_MIIM_CFG_SOF_MASK,
+				 MSCC_MIIM_CFG_SOF_C45);
+	if (ret < 0) {
+		WARN_ONCE(1, "mscc mmd clause 45 SOF update error %d\n", ret);
+		goto out;
+	}
+
+	/* Write address 'devnum' command */
+	ret = regmap_write(miim->regs,
+			   MSCC_MIIM_REG_CMD + miim->mii_status_offset,
+			   MSCC_MIIM_CMD_VLD |
+			   (addr << MSCC_MIIM_CMD_PHYAD_SHIFT) |
+			   (devnum << MSCC_MIIM_CMD_REGAD_SHIFT) |
+			   (regnum << MSCC_MIIM_CMD_WRDATA_SHIFT) |
+			   MSCC_MIIM_CMD_OPR_ADDR);
+	if (ret < 0) {
+		WARN_ONCE(1, "mscc mmd write cmd reg error %d\n", ret);
+		goto out;
+	}
+
+	/* Write register 'devnum' to read command */
+	ret = regmap_write(miim->regs,
+			   MSCC_MIIM_REG_CMD + miim->mii_status_offset,
+			   MSCC_MIIM_CMD_VLD |
+			   (addr << MSCC_MIIM_CMD_PHYAD_SHIFT) |
+			   (devnum << MSCC_MIIM_CMD_REGAD_SHIFT) |
+			   (value << MSCC_MIIM_CMD_WRDATA_SHIFT) |
+			   MSCC_MIIM_CMD_OPR_WRITE);
+	if (ret < 0)
+		WARN_ONCE(1, "mscc mmd write error %d\n", ret);
 out:
 	return ret;
 }
@@ -241,6 +374,8 @@ int mscc_miim_setup(struct device *dev, struct mii_bus **pbus, const char *name,
 	bus->name = name;
 	bus->read = mscc_miim_read;
 	bus->write = mscc_miim_write;
+	bus->read_c45 = mscc_miim_read_c45;
+	bus->write_c45 = mscc_miim_write_c45;
 	bus->reset = reset;
 	snprintf(bus->id, MII_BUS_ID_SIZE, "%s-mii", dev_name(dev));
 	bus->parent = dev;
