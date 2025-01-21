@@ -7,6 +7,7 @@
 #include <linux/interrupt.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
+#include <linux/platform_device.h>
 
 #include "sparx5_main.h"
 #include "sparx5_regs.h"
@@ -445,14 +446,13 @@ static int mchp_sparx5_appl_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int mchp_sparx5_appl_remove(struct platform_device *pdev)
+static void mchp_sparx5_appl_remove(struct platform_device *pdev)
 {
-	return 0;
 }
 
 static struct platform_driver mchp_sparx5_appl_driver = {
 	.probe = mchp_sparx5_appl_probe,
-	.remove = mchp_sparx5_appl_remove,
+	.remove_new = mchp_sparx5_appl_remove,
 	.driver = {
 		.name = "sparx5-switch-appl",
 		.of_match_table = mchp_sparx5_appl_match,
