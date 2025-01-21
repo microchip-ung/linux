@@ -4,4 +4,4 @@
 #
 
 obj-$(CONFIG_FDMA) += fdma.o
-fdma-y += fdma_api.o
+fdma-y += fdma_api.o fdma_pci.o
