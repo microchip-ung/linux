@@ -318,7 +318,7 @@ static int vcap_genl_add_rule_key_value_by_type(struct vcap_rule *rule,
 					     vcap_val_to_bit(data->u1.value));
 	case VCAP_FIELD_U32:
 		return vcap_rule_add_key_u32(rule, key_id, data->u32.value,
-					     data->u32.value);
+					     data->u32.mask);
 	case VCAP_FIELD_U48:
 		return vcap_rule_add_key_u48(rule, key_id, &data->u48);
 	case VCAP_FIELD_U56:
