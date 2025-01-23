@@ -314,6 +314,8 @@ obj-$(CONFIG_MFD_LOONGSON_SE)	+= loongson-se.o
 obj-$(CONFIG_MFD_MICROCHIP_DPLL_SPI) += microchip-dpll-spi.o
 obj-$(CONFIG_MFD_MICROCHIP_DPLL_I2C) += microchip-dpll-i2c.o
 
+obj-$(CONFIG_MFD_MICROCHIP_LAN9645X_SPI) += lan9645x-spi.o
+
 lan966x-pci-of-objs			:= lan966x_pci_of.o lan966x_pci_irq.o
 lan966x-pci-of-objs			+= lan966x_pci.dtb.o
 
