@@ -882,6 +882,7 @@ static int lan966x_probe_port(struct lan966x *lan966x, u32 p,
 		return -ENOMEM;
 
 	SET_NETDEV_DEV(dev, lan966x->dev);
+	dev->dev.of_node = to_of_node(portnp);
 	port = netdev_priv(dev);
 	port->dev = dev;
 	port->lan966x = lan966x;
