@@ -810,6 +810,44 @@ static bool sparx5_is_pcie_device(struct sparx5 *sparx5)
 	return strncmp(name, "pci", 3) == 0;
 }
 
+/* There are some sparx5 chips that were fused with hex encoded BCD digits
+ * meaning that they will have a different partid than what is expected. The
+ * only difference between these chips and the other one is just the partid
+ * number, so not to add new targets which just confuse more then make sure to
+ * change the target_chiptype to the correct one.
+ */
+static enum spx5_target_chiptype sparx5_fix_target_ct(struct sparx5 *sparx5)
+{
+	/* If the target is already known then there is nothing to do and just
+	 * return the current target chiptype.
+	 */
+	if (is_sparx5(sparx5))
+		return sparx5->target_ct;
+
+	/* Now check for the partids that have the wrong value and correct them
+	 * with the correct value
+	 */
+	switch ((u16)sparx5->target_ct) {
+	case 0x052e:
+		return SPX5_TARGET_CT_7546;
+	case 0x0531:
+		return SPX5_TARGET_CT_7549;
+	case 0x0534:
+		return SPX5_TARGET_CT_7552;
+	case 0x0538:
+		return SPX5_TARGET_CT_7556;
+	case 0x053a:
+		return SPX5_TARGET_CT_7558;
+	default:
+		/* This means that is an unknown partid or it is a lan969x part
+		 * id. In this case just return the current value as later in
+		 * the code will check if it is a lan969x target chiptype or is
+		 * something totally wrong and then it would bailed out.
+		 */
+		return sparx5->target_ct;
+	}
+}
+
 static int mchp_sparx5_probe(struct platform_device *pdev)
 {
 	struct initial_port_config *configs, *config;
@@ -946,6 +984,8 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 
 	sparx5->target_ct = (enum spx5_target_chiptype)
 		GCB_CHIP_ID_PART_ID_GET(sparx5->chip_id);
+
+	sparx5->target_ct = sparx5_fix_target_ct(sparx5);
 
 	/* Initialize Switchcore and internal RAMs */
 	err = sparx5_init_switchcore(sparx5);
