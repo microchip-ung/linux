@@ -423,10 +423,6 @@ static int mchp_sparx5_appl_probe(struct platform_device *pdev)
 	strcpy(dev->name, "vtss.ifh");
 	dev->mtu = IF_BUFSIZE_JUMBO;
 
-	sparx5->ports[0] = devm_kcalloc(&pdev->dev, 1,
-					sizeof(struct sparx5_port *),
-					GFP_KERNEL);
-
 	SET_NETDEV_DEV(dev, sparx5->dev);
 	sparx5_port = netdev_priv(dev);
 	sparx5_port->ndev = dev;
