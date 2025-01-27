@@ -4974,9 +4974,6 @@ static irqreturn_t lan8841_handle_interrupt(struct phy_device *phydev)
 		ret = IRQ_HANDLED;
 	}
 
-	if (!lan8814_handle_gpio_interrupt(phydev, irq_status))
-		ret = IRQ_HANDLED;
-
 	return ret;
 }
 
