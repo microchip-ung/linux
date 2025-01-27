@@ -400,6 +400,7 @@ const struct sparx5_match_data lan969x_desc = {
 		.get_ifh_field_width = &lan969x_get_ifh_field_width,
 		.get_pipeline_pt = &lan969x_get_packet_pipeline_pt,
 		.get_taxi = &lan969x_get_taxi,
+		.get_mtu = &sparx5_mtu_max,
 		.get_hsch_max_group_rate = &lan969x_get_hsch_max_group_rate,
 #ifndef CONFIG_MFD_LAN969X_PCI
 		.fdma_deinit = lan969x_fdma_deinit,

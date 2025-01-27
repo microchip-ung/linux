@@ -368,7 +368,7 @@ int lan969x_fdma_init(struct sparx5 *sparx5)
 {
 	int err;
 
-	sparx5->tx.max_mtu = sparx5_mtu_max(sparx5);
+	sparx5->tx.max_mtu = sparx5->data->ops.get_mtu(sparx5);
 	sparx5->rx.ndev = sparx5_fdma_get_ndev(sparx5);
 
 	sparx5->rx.page_order =

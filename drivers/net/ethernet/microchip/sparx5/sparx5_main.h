@@ -515,6 +515,7 @@ struct sparx5_ops {
 	u32 (*get_dev_mode_bit)(struct sparx5 *sparx5, int port);
 	u32 (*get_hsch_max_group_rate)(int grp);
 	u32* (*get_taxi)(int idx);
+	u32 (*get_mtu)(struct sparx5 *sparx5);
 	int (*port_mux_set)(struct sparx5 *sparx5, struct sparx5_port *port,
 			    struct sparx5_port_config *conf);
 	struct sparx5_sdlb_group* (*get_sdlb_group)(int idx);
@@ -623,7 +624,7 @@ void sparx5_fdma_rx_deactivate(struct sparx5 *sparx5, struct sparx5_rx *rx);
 void sparx5_fdma_tx_activate(struct sparx5 *sparx5, struct sparx5_tx *tx);
 void sparx5_fdma_tx_deactivate(struct sparx5 *sparx5, struct sparx5_tx *tx);
 void sparx5_fdma_injection_mode(struct sparx5 *sparx5);
-int sparx5_fdma_get_mtu(struct sparx5 *sparx5);
+u32 sparx5_fdma_get_mtu(struct sparx5 *sparx5);
 struct net_device *sparx5_fdma_get_ndev(struct sparx5 *sparx5);
 void sparx5_fdma_reload(struct sparx5 *sparx5, struct fdma *fdma);
 void sparx5_fdma_llp_configure(struct sparx5 *sparx5, u64 addr, u32 channel_id);

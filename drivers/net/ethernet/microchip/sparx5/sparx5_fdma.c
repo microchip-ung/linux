@@ -72,7 +72,7 @@ struct net_device *sparx5_fdma_get_ndev(struct sparx5 *sparx5)
 	return NULL;
 }
 
-int sparx5_fdma_get_mtu(struct sparx5 *sparx5)
+u32 sparx5_fdma_get_mtu(struct sparx5 *sparx5)
 {
 	struct net_device *ndev = sparx5_fdma_get_ndev(sparx5);
 
@@ -495,7 +495,7 @@ int sparx5_fdma_init(struct sparx5 *sparx5)
 {
 	int err;
 
-	sparx5->tx.max_mtu = sparx5_mtu_max(sparx5);
+	sparx5->tx.max_mtu = sparx5->data->ops.get_mtu(sparx5);
 	sparx5->rx.ndev = sparx5_fdma_get_ndev(sparx5);
 
 	sparx5->rx.page_order =
