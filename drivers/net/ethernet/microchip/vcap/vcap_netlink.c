@@ -603,7 +603,7 @@ static int vcap_genl_mod_rule_key_by_type(
 		return vcap_rule_mod_key_bit(rule, key_id, data->u1.value);
 	case VCAP_FIELD_U32:
 		return vcap_rule_mod_key_u32(rule, key_id, data->u32.value,
-					     data->u32.value);
+					     data->u32.mask);
 	case VCAP_FIELD_U48:
 		return vcap_rule_mod_key_u48(rule, key_id, &data->u48);
 	case VCAP_FIELD_U56:
