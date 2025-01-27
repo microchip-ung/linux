@@ -122,9 +122,11 @@ static const struct sparx5_match_data sparx5_appl_desc = {
 		.get_pipeline_pt = &sparx5_get_packet_pipeline_pt,
 		.get_ifh_field_pos = &sparx5_get_ifh_field_pos,
 		.get_ifh_field_width = &sparx5_get_ifh_field_width,
+		.get_mtu = sparx5_fdma_get_mtu,
 		.fdma_deinit = &sparx5_fdma_deinit,
 		.fdma_init = &sparx5_fdma_init,
 		.fdma_xmit = &sparx5_fdma_xmit,
+		.fdma_poll = sparx5_fdma_napi_callback,
 	},
 	.consts = {
 		.chip_ports = 65,
@@ -150,9 +152,11 @@ static const struct sparx5_match_data lan969x_appl_desc = {
 		.get_pipeline_pt = &lan969x_get_packet_pipeline_pt,
 		.get_ifh_field_pos = &lan969x_get_ifh_field_pos,
 		.get_ifh_field_width = &lan969x_get_ifh_field_width,
+		.get_mtu = sparx5_fdma_get_mtu,
 		.fdma_deinit = lan969x_fdma_deinit,
 		.fdma_init = lan969x_fdma_init,
 		.fdma_xmit = lan969x_fdma_xmit,
+		.fdma_poll = lan969x_fdma_napi_poll,
 	},
 	.consts = {
 		.chip_ports = 30,
@@ -365,7 +369,12 @@ static int sparx5_appl_fdma(struct sparx5 *sparx5)
 	 */
 	sparx5->rx.page_order = 2;
 
-	return sparx5->data->ops.fdma_init(sparx5);
+	err = sparx5->data->ops.fdma_init(sparx5);
+	if (err)
+		return err;
+	sparx5_fdma_start(sparx5);
+
+	return 0;
 }
 
 static const struct net_device_ops netdev_ops = {
