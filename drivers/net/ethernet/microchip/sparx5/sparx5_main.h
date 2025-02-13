@@ -80,6 +80,11 @@ enum sparx5_cal_bw {
 	SPX5_CAL_SPEED_12G5 = 7
 };
 
+enum sparx5_feature {
+	SPX5_FEATURE_PSFP = BIT(0),
+	SPX5_FEATURE_PTP = BIT(1),
+};
+
 #ifdef CONFIG_SPARX5_SWITCH_APPL
 extern const u8 ifh_dmac[];
 extern const u8 ifh_smac[];
@@ -352,6 +357,7 @@ struct sparx5 {
 	struct device *dev;
 	u32 chip_id;
 	enum spx5_target_chiptype target_ct;
+	u32 features;
 	const struct sparx5_match_data *data;
 	void __iomem *regs[NUM_TARGETS];
 	int port_count;
@@ -587,6 +593,7 @@ struct sparx5_match_data {
 /* sparx5_main.c */
 extern const struct sparx5_regs *regs;
 bool is_sparx5(struct sparx5 *sparx5);
+bool sparx5_has_feature(struct sparx5 *sparx5, enum sparx5_feature feature);
 
 /* sparx5_switchdev.c */
 int sparx5_register_notifier_blocks(struct sparx5 *sparx5);
