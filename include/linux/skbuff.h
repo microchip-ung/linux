@@ -1253,7 +1253,7 @@ static inline bool skb_data_unref(const struct sk_buff *skb,
 
 	if (atomic_read(&shinfo->dataref) == bias)
 		smp_rmb();
-	else if (atomic_sub_return(bias, &shinfo->dataref))
+	if (atomic_sub_return(bias, &shinfo->dataref))
 		return false;
 
 	return true;
