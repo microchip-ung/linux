@@ -2648,9 +2648,14 @@ EXPORT_SYMBOL_GPL(vcap_alloc_rule);
 /* Free mem of a rule owned by client after the rule as been added to the VCAP */
 void vcap_free_rule(struct vcap_rule *rule)
 {
-	struct vcap_rule_internal *ri = to_intrule(rule);
+	struct vcap_rule_internal *ri;
 	struct vcap_client_actionfield *caf, *next_caf;
 	struct vcap_client_keyfield *ckf, *next_ckf;
+
+	if (!rule)
+		return;
+
+	ri = to_intrule(rule);
 
 	/* Deallocate the list of keys and actions */
 	list_for_each_entry_safe(ckf, next_ckf, &ri->data.keyfields, ctrl.list) {
