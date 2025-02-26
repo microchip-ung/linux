@@ -12,6 +12,7 @@
 	model = "lan969x appl ev89p81a (ung8422)";
 	aliases {
 		serial0 = &usart0;
+		spi0 = &qspi0;
 		i2c100 = &i2c_sfp0;
 		i2c101 = &i2c_sfp1;
 		i2c102 = &i2c_sfp2;

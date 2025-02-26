@@ -12,6 +12,7 @@
 	model = "lan969x ev89p81a (ung8422)";
 	aliases {
 		serial0 = &usart0;
+		spi0 = &qspi0;
 	};
 
 	chosen {
