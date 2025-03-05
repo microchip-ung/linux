@@ -394,7 +394,11 @@
 #define LAN8814_CHECK_LINK_MAX			5
 
 #define LAN8814_AX_AN_STATUS			0x14
+#define LAN8814_AX_AN_STATUS_LINK_DET		BIT(14)
 #define LAN8814_AX_AN_STATUS_SIG_DET		BIT(13)
+
+#define LAN8814_CONTROL_REGISTER		0x1f
+#define LAN8814_CONTROL_REGISTER_SOFT_RESET	BIT(1)
 
 struct kszphy_hw_stat {
 	const char *string;
@@ -491,6 +495,7 @@ struct kszphy_priv {
 	int rev;
 
 	struct delayed_work phy_aneg_work;
+	struct delayed_work phy_force_work;
 	uint8_t check_link;
 	bool restarted_aneg;
 	struct phy_device *phydev;
@@ -4385,10 +4390,13 @@ static int lan8814_config_aneg(struct phy_device *phydev)
 	 */
 	priv->check_link = 0;
 	priv->restarted_aneg = false;
-	if (phydev->autoneg == AUTONEG_ENABLE)
+	if (phydev->autoneg == AUTONEG_ENABLE) {
+		cancel_delayed_work_sync(&priv->phy_force_work);
 		schedule_delayed_work(&priv->phy_aneg_work, msecs_to_jiffies(1000));
-	else
+	} else {
 		cancel_delayed_work_sync(&priv->phy_aneg_work);
+		schedule_delayed_work(&priv->phy_force_work, msecs_to_jiffies(1000));
+	}
 
 	return genphy_config_aneg(phydev);
 }
@@ -4398,6 +4406,7 @@ static int lan8814_suspend(struct phy_device *phydev)
 	struct kszphy_priv *priv = phydev->priv;
 
 	cancel_delayed_work_sync(&priv->phy_aneg_work);
+	cancel_delayed_work_sync(&priv->phy_force_work);
 	return genphy_suspend(phydev);
 }
 
@@ -4561,6 +4570,56 @@ out:
 	schedule_delayed_work(&priv->phy_aneg_work, msecs_to_jiffies(1000));
 }
 
+static void lan8814_phy_force_work(struct work_struct *phy_force_work)
+{
+	struct kszphy_priv *priv =
+		container_of(phy_force_work, struct kszphy_priv, phy_force_work.work);
+	struct phy_device *phydev = priv->phydev;
+	int val;
+
+	/* This workaround is only for the speed 100, there is no issue with
+	 * speed 10
+	 */
+	if (phydev->speed != 100)
+		return;
+
+	/* Wait until the auto cross over is completed */
+	val = phy_read(phydev, LAN8814_AX_AN_STATUS);
+	if (val < 0)
+		return;
+
+	if (!(val & LAN8814_AX_AN_STATUS_LINK_DET))
+		goto out;
+
+	/* If there is link, then there is nothing else to do */
+	val = phy_read(phydev, MII_BMSR);
+	if (val < 0)
+		return;
+
+	if (val & BMSR_LSTATUS)
+		goto out;
+
+	/* If after 5 tries, there is still no link, then do a SW reset to the
+	 * PHY. This will reset just the PHY except all registers, meaning that
+	 * there is no need to configure again the PHY
+	 */
+	priv->check_link++;
+	if (priv->check_link == 5) {
+		val = phy_read(phydev, LAN8814_CONTROL_REGISTER);
+		if (val < 0)
+			return;
+
+		val |= LAN8814_CONTROL_REGISTER_SOFT_RESET;
+		phy_write(phydev, LAN8814_CONTROL_REGISTER, val);
+
+		priv->check_link = 0;
+	}
+
+	/* Reschedule the work in 1 second */
+out:
+	schedule_delayed_work(&priv->phy_force_work, msecs_to_jiffies(1000));
+}
+
 static int lan8814_probe(struct phy_device *phydev)
 {
 	const struct kszphy_type *type = phydev->drv->driver_data;
@@ -4605,6 +4664,7 @@ static int lan8814_probe(struct phy_device *phydev)
 	lan8814_workarounds_in_probe(phydev);
 
 	INIT_DELAYED_WORK(&priv->phy_aneg_work, lan8814_phy_aneg_work);
+	INIT_DELAYED_WORK(&priv->phy_force_work, lan8814_phy_force_work);
 
 	return 0;
 }
