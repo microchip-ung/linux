@@ -1065,9 +1065,9 @@ static inline __pure int spx5_offset(int id, int tinst, int tcnt,
 				     int raddr, int rinst,
 				     int rcnt, int rwidth)
 {
-	WARN_ON((tinst) >= tcnt);
-	WARN_ON((ginst) >= gcnt);
-	WARN_ON((rinst) >= rcnt);
+	WARN((tinst) >= tcnt, "tinst %d >= tcnt %d\n", tinst, tcnt);
+	WARN((ginst) >= gcnt, "ginst %d >= gcnt %d\n", ginst, gcnt);
+	WARN((rinst) >= rcnt, "rinst %d >= rcnt %d\n", rinst, rcnt);
 	return gbase + ((ginst) * gwidth) +
 		raddr + ((rinst) * rwidth);
 }
@@ -1082,9 +1082,9 @@ static inline void __iomem *spx5_addr(void __iomem *base[],
 				      int raddr, int rinst,
 				      int rcnt, int rwidth)
 {
-	WARN_ON((tinst) >= tcnt);
-	WARN_ON((ginst) >= gcnt);
-	WARN_ON((rinst) >= rcnt);
+	WARN((tinst) >= tcnt, "tinst %d >= tcnt %d\n", tinst, tcnt);
+	WARN((ginst) >= gcnt, "ginst %d >= gcnt %d\n", ginst, gcnt);
+	WARN((rinst) >= rcnt, "rinst %d >= rcnt %d\n", rinst, rcnt);
 	return base[id + (tinst)] +
 		gbase + ((ginst) * gwidth) +
 		raddr + ((rinst) * rwidth);
@@ -1096,8 +1096,8 @@ static inline void __iomem *spx5_inst_addr(void __iomem *base,
 					   int raddr, int rinst,
 					   int rcnt, int rwidth)
 {
-	WARN_ON((ginst) >= gcnt);
-	WARN_ON((rinst) >= rcnt);
+	WARN((ginst) >= gcnt, "ginst %d >= gcnt %d\n", ginst, gcnt);
+	WARN((rinst) >= rcnt, "rinst %d >= rcnt %d\n", rinst, rcnt);
 	return base +
 		gbase + ((ginst) * gwidth) +
 		raddr + ((rinst) * rwidth);
