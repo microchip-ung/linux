@@ -9,6 +9,8 @@
 #include "sparx5_port.h"
 #include "sparx5_tc.h"
 
+#include "lan969x/lan969x.h"
+
 /* The IFH bit position of the first VSTAX bit. This is because the
  * VSTAX bit positions in Data sheet is starting from zero.
  */
@@ -355,8 +357,8 @@ struct net_device *sparx5_create_netdev(struct sparx5 *sparx5, u32 portno)
 	if (!ndev)
 		return ERR_PTR(-ENOMEM);
 
-	ndev->hw_features |= NETIF_F_HW_TC;
-	ndev->features |= NETIF_F_HW_TC;
+	ndev->hw_features |= (NETIF_F_HW_TC | LAN969X_SUPPORTED_HSR_FEATURES);
+	ndev->features |= (NETIF_F_HW_TC | LAN969X_SUPPORTED_HSR_FEATURES);
 	/* The MAC supports frame lengths of up to 14,000 bytes */
 	ndev->max_mtu = 14000;
 

@@ -27,9 +27,13 @@ sparx5-appl-y := sparx5_main_appl.o
 
 obj-$(CONFIG_LAN969X_SWITCH) += lan969x-switch.o
 
-lan969x-switch-y := lan969x/lan969x_regs.o lan969x/lan969x.o \
- lan969x/lan969x_vcap_impl.o lan969x/lan969x_vcap_ag_api.o \
- lan969x/lan969x_fdma.o lan969x/lan969x_calendar.o
+lan969x-switch-y := lan969x/lan969x_regs.o \
+		    lan969x/lan969x.o \
+		    lan969x/lan969x_vcap_impl.o \
+		    lan969x/lan969x_vcap_ag_api.o \
+		    lan969x/lan969x_fdma.o \
+		    lan969x/lan969x_calendar.o \
+		    lan969x/lan969x_redbox.o
 
 lan969x-switch-$(CONFIG_MFD_LAN969X_PCI) += lan969x/lan969x_fdma_pci.o
 

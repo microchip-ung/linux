@@ -5,7 +5,10 @@
  */
 
 #include <linux/if_bridge.h>
+#include <linux/if_hsr.h>
 #include <net/switchdev.h>
+
+#include "lan969x/lan969x.h"
 
 #include "sparx5_main_regs.h"
 #include "sparx5_main.h"
@@ -257,6 +260,16 @@ static int sparx5_port_changeupper(struct net_device *dev,
 			sparx5_port_bridge_leave(port, info->upper_dev);
 
 		sparx5_vlan_port_apply(port->sparx5, port);
+	}
+
+	if (is_hsr_master(info->upper_dev)) {
+		if (!sparx5_has_feature(port->sparx5, SPX5_FEATURE_REDBOX))
+			return -EOPNOTSUPP;
+
+		if (info->linking)
+			lan969x_hsr_join(info->upper_dev, dev);
+		else
+			lan969x_hsr_leave(info->upper_dev, dev);
 	}
 
 	return err;
