@@ -31,9 +31,14 @@ struct hsr_tag {
 
 #if IS_ENABLED(CONFIG_HSR)
 extern bool is_hsr_master(struct net_device *dev);
+extern bool is_hsr_redbox(struct net_device *dev);
 extern int hsr_get_version(struct net_device *dev, enum hsr_version *ver);
 #else
 static inline bool is_hsr_master(struct net_device *dev)
+{
+	return false;
+}
+static inline bool is_hsr_redbox(struct net_device *dev)
 {
 	return false;
 }
