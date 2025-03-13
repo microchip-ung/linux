@@ -27,6 +27,10 @@
 	status = "okay";
 };
 
+&i2c0 {
+	clock-frequency = <400000>;
+};
+
 // SGPIO IRQ's are forwarded to WEBSTAX for the *time being*. On
 // longer term individual IRQ's should be forwarded iff they cannot be
 // handled in kernel drivers. If forwarded, they *must* use the IRQ
