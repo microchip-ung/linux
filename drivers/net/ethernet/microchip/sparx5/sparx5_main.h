@@ -83,6 +83,7 @@ enum sparx5_cal_bw {
 enum sparx5_feature {
 	SPX5_FEATURE_PSFP = BIT(0),
 	SPX5_FEATURE_PTP = BIT(1),
+	SPX5_FEATURE_REDBOX = BIT(2),
 };
 
 #ifdef CONFIG_SPARX5_SWITCH_APPL

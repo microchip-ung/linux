@@ -2,7 +2,6 @@
 
 #include "lan969x.h"
 
-#define LAN969X_DSM_CAL_MAX_DEVS_PER_TAXI  10
 #define LAN969X_DSM_CAL_TAXIS               5
 #define LAN969X_SDLB_GROUP_COUNT            5
 
@@ -94,6 +93,11 @@ static const struct sparx5_main_io_resource lan969x_main_iomap[] =  {
 	{ TARGET_DEVRGMII +  1,       0x30e8000, 1 }, /* 0xe30e8000 */
 	{ TARGET_DSM,                 0x30ec000, 1 }, /* 0xe30ec000 */
 	{ TARGET_PORT_CONF,           0x30f0000, 1 }, /* 0xe30f0000 */
+	{ TARGET_RB,                  0x30f4000, 1 }, /* 0xe30f4000 */
+	{ TARGET_RB +  1,             0x30f8000, 1 }, /* 0xe30f8000 */
+	{ TARGET_RB +  2,             0x30fc000, 1 }, /* 0xe30fc000 */
+	{ TARGET_RB +  3,             0x3100000, 1 }, /* 0xe3100000 */
+	{ TARGET_RB +  4,             0x3104000, 1 }, /* 0xe3104000 */
 	{ TARGET_ASM,                 0x3200000, 1 }, /* 0xe3200000 */
 	{ TARGET_HSIO_WRAP,           0x3408000, 1 }, /* 0xe3408000 */
 };

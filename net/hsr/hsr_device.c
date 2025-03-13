@@ -665,6 +665,11 @@ int hsr_dev_finalize(struct net_device *hsr_dev, struct net_device *slave[2],
 
 	unregister = true;
 
+	/* We need to know up-front, before adding ports, if we are to be
+	 * expecting two or three ports (i.e. DANH, DANP or Redbox) */
+	if (interlink)
+		hsr->redbox = true;
+
 	res = hsr_add_port(hsr, slave[0], HSR_PT_SLAVE_A, extack);
 	if (res)
 		goto err_unregister;
@@ -673,12 +678,11 @@ int hsr_dev_finalize(struct net_device *hsr_dev, struct net_device *slave[2],
 	if (res)
 		goto err_unregister;
 
-	if (interlink) {
+	if (hsr->redbox) {
 		res = hsr_add_port(hsr, interlink, HSR_PT_INTERLINK, extack);
 		if (res)
 			goto err_unregister;
 
-		hsr->redbox = true;
 		ether_addr_copy(hsr->macaddress_redbox, interlink->dev_addr);
 		mod_timer(&hsr->prune_proxy_timer,
 			  jiffies + msecs_to_jiffies(PRUNE_PROXY_PERIOD));

@@ -17,6 +17,8 @@
 #include "vcap_api_debugfs.h"
 #include "sparx5_vcap_impl.h"
 
+#include "lan969x/lan969x.h"
+
 static void sparx5_mirror_probe_debugfs_show_probe(struct seq_file *m, int idx)
 {
 	struct sparx5 *sparx5 = m->private;
@@ -247,4 +249,9 @@ void sparx5_debugfs(struct sparx5 *sparx5)
 					    &sparx5_portstat_debugfs_fops);
 		}
 	sparx5_mirror_probe_debugfs(sparx5);
+
+#ifdef CONFIG_LAN969X_SWITCH
+	if (!is_sparx5(sparx5))
+		lan969x_rb_debugfs(sparx5);
+#endif
 }

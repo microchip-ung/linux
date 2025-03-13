@@ -7,10 +7,16 @@
 #ifndef __LAN969X_H__
 #define __LAN969X_H__
 
+#include <linux/netdev_features.h>
+#include <linux/if_hsr.h>
+
 #include "../sparx5_main.h"
 #include "../sparx5_port.h"
 
 #include "fdma_api.h"
+
+#define LAN969X_DSM_CAL_MAX_DEVS_PER_TAXI  10
+#define LAN969X_RB_REDBOX_CNT 5
 
 /* lan969x_vcap_impl.c */
 extern const struct sparx5_vcap_inst lan969x_vcap_inst_cfg[];
@@ -84,5 +90,15 @@ int lan969x_fdma_xmit(struct sparx5 *sparx5, u32 *ifh, struct sk_buff *skb);
 int lan969x_fdma_init(struct sparx5 *sparx5);
 int lan969x_fdma_deinit(struct sparx5 *sparx5);
 int lan969x_fdma_resize(struct sparx5 *sparx5);
+
+/* lan969x_redbox.c */
+#define LAN969X_SUPPORTED_HSR_FEATURES \
+	(NETIF_F_HW_HSR_TAG_INS | NETIF_F_HW_HSR_TAG_RM | \
+	 NETIF_F_HW_HSR_FWD | NETIF_F_HW_HSR_DUP)
+
+int lan969x_hsr_join(struct net_device *master, struct net_device *slave);
+int lan969x_hsr_leave(struct net_device *master, struct net_device *slave);
+void lan969x_rb_fwd_mask_get(unsigned long *mask, u8 rb);
+void lan969x_rb_debugfs(struct sparx5 *sparx5);
 
 #endif
