@@ -17,6 +17,7 @@
 #include <net/pkt_cls.h>
 #include <net/selftests.h>
 #include <net/tc_act/tc_mirred.h>
+#include <net/flow_offload.h>
 #include <linux/if_bridge.h>
 #include <linux/if_hsr.h>
 #include <net/dcbnl.h>
@@ -1482,19 +1483,46 @@ dsa_user_add_cls_matchall_police(struct net_device *dev,
 	return err;
 }
 
+static int dsa_user_add_cls_matchall_goto(struct net_device *dev,
+					  struct tc_cls_matchall_offload *cls,
+					  bool ingress)
+{
+	struct netlink_ext_ack *extack = cls->common.extack;
+	struct dsa_port *dp = dsa_user_to_port(dev);
+	struct dsa_switch *ds = dp->ds;
+	int port = dp->index;
+
+	if (!ds->ops->cls_matchall_goto_add) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Matchall goto offload not implemented");
+		return -EOPNOTSUPP;
+	}
+
+	if (!flow_action_basic_hw_stats_check(&cls->rule->action,
+					      cls->common.extack))
+		return -EOPNOTSUPP;
+
+	return ds->ops->cls_matchall_goto_add(ds, port, cls, ingress);
+}
+
 static int dsa_user_add_cls_matchall(struct net_device *dev,
 				     struct tc_cls_matchall_offload *cls,
 				     bool ingress)
 {
 	int err = -EOPNOTSUPP;
 
-	if (cls->common.protocol == htons(ETH_P_ALL) &&
+	if (!cls->common.chain_index &&
+	    cls->common.protocol == htons(ETH_P_ALL) &&
 	    flow_offload_has_one_action(&cls->rule->action) &&
 	    cls->rule->action.entries[0].id == FLOW_ACTION_MIRRED)
 		err = dsa_user_add_cls_matchall_mirred(dev, cls, ingress);
-	else if (flow_offload_has_one_action(&cls->rule->action) &&
+	else if (!cls->common.chain_index &&
+		 flow_offload_has_one_action(&cls->rule->action) &&
 		 cls->rule->action.entries[0].id == FLOW_ACTION_POLICE)
 		err = dsa_user_add_cls_matchall_police(dev, cls, ingress);
+	else if (flow_offload_has_one_action(&cls->rule->action) &&
+		 cls->rule->action.entries[0].id == FLOW_ACTION_GOTO)
+		err = dsa_user_add_cls_matchall_goto(dev, cls, ingress);
 
 	return err;
 }
@@ -1505,6 +1533,16 @@ static void dsa_user_del_cls_matchall(struct net_device *dev,
 	struct dsa_port *dp = dsa_user_to_port(dev);
 	struct dsa_mall_tc_entry *mall_tc_entry;
 	struct dsa_switch *ds = dp->ds;
+
+	if (ds->ops->cls_matchall_goto_del &&
+	    flow_offload_has_one_action(&cls->rule->action) &&
+	    cls->rule->action.entries[0].id == FLOW_ACTION_GOTO) {
+		ds->ops->cls_matchall_goto_del(ds, dp->index, cls);
+		return;
+	}
+
+	if (cls->common.chain_index)
+		return;
 
 	mall_tc_entry = dsa_user_mall_tc_entry_find(dev, cls->cookie);
 	if (!mall_tc_entry)
@@ -1533,9 +1571,6 @@ static int dsa_user_setup_tc_cls_matchall(struct net_device *dev,
 					  struct tc_cls_matchall_offload *cls,
 					  bool ingress)
 {
-	if (cls->common.chain_index)
-		return -EOPNOTSUPP;
-
 	switch (cls->command) {
 	case TC_CLSMATCHALL_REPLACE:
 		return dsa_user_add_cls_matchall(dev, cls, ingress);

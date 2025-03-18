@@ -21,6 +21,7 @@
 #include <linux/phylink.h>
 #include <net/devlink.h>
 #include <net/switchdev.h>
+#include <net/pkt_cls.h>
 
 struct dsa_8021q_context;
 struct tc_action;
@@ -1123,6 +1124,11 @@ struct dsa_switch_ops {
 	void	(*port_policer_del)(struct dsa_switch *ds, int port);
 	int	(*port_setup_tc)(struct dsa_switch *ds, int port,
 				 enum tc_setup_type type, void *type_data);
+	int (*cls_matchall_goto_add)(struct dsa_switch *ds, int port,
+				     struct tc_cls_matchall_offload *cls,
+				     bool ingress);
+	void (*cls_matchall_goto_del)(struct dsa_switch *ds, int port,
+				      struct tc_cls_matchall_offload *cls);
 
 	/*
 	 * Cross-chip operations
