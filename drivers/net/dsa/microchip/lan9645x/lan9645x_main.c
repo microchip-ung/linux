@@ -1522,6 +1522,34 @@ static void lan9645x_port_policer_del(struct dsa_switch *ds, int port)
 	lan9645x_police_port_del(lan9645x, port);
 }
 
+static int lan9645x_cls_matchall_add(struct dsa_switch *ds, int port,
+				     struct tc_cls_matchall_offload *cls,
+				     bool ingress)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	struct lan9645x_port *p = lan9645x_to_port(lan9645x, port);
+
+	dev_dbg(lan9645x->dev,
+		"%s port=%d cmd=%d chain=%u prio=%u proto=%x\n",
+		__func__, port, cls->command, cls->common.chain_index,
+		cls->common.prio, ntohs(cls->common.protocol));
+
+	return lan9645x_tc_matchall_goto_add(p, cls);
+}
+
+static void lan9645x_cls_matchall_del(struct dsa_switch *ds, int port,
+				      struct tc_cls_matchall_offload *cls)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	struct lan9645x_port *p = lan9645x_to_port(lan9645x, port);
+
+	dev_dbg(lan9645x->dev, "port=%d cmd=%d chain=%u prio=%u proto=%x\n",
+		port, cls->command, cls->common.chain_index,
+		cls->common.prio, ntohs(cls->common.protocol));
+
+	lan9645x_tc_matchall_goto_del(p, cls);
+}
+
 static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.get_tag_protocol		= lan9645x_get_tag_protocol,
 	.connect_tag_protocol		= lan9645x_connect_tag_protocol,
@@ -1595,6 +1623,8 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.port_mirror_del		= lan9645x_port_mirror_del,
 	.port_policer_add		= lan9645x_port_policer_add,
 	.port_policer_del		= lan9645x_port_policer_del,
+	.cls_matchall_goto_add		= lan9645x_cls_matchall_add,
+	.cls_matchall_goto_del		= lan9645x_cls_matchall_del,
 };
 
 static int lan9645x_request_target_regmaps(struct lan9645x *lan9645x)
