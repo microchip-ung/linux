@@ -1238,6 +1238,7 @@ int lan969x_hsr_join(struct net_device *master, struct net_device *slave)
 
 	if (lrea_taxi_idx != lreb_taxi_idx) {
 		pr_err("LREA and LREB must be attached to the same taxi bus.");
+		lan969x_rb_put(redbox);
 		return -EINVAL;
 	}
 
@@ -1341,6 +1342,9 @@ void lan969x_rb_fwd_mask_get(unsigned long *mask, u8 rb)
 	struct lan969x_redbox *redbox = &redboxes[rb];
 
 	if (!redbox->hsr_master)
+		return;
+
+	if (!is_hsr_redbox(redbox->hsr_master))
 		return;
 
 	*mask |= BIT(redbox->ports[LAN969X_RB_LREA]->portno);

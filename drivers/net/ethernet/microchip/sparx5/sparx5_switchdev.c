@@ -267,7 +267,7 @@ static int sparx5_port_changeupper(struct net_device *dev,
 			return -EOPNOTSUPP;
 
 		if (info->linking)
-			lan969x_hsr_join(info->upper_dev, dev);
+			err = lan969x_hsr_join(info->upper_dev, dev);
 		else
 			lan969x_hsr_leave(info->upper_dev, dev);
 	}
