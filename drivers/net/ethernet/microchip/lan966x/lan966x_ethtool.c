@@ -382,14 +382,15 @@ static void lan966x_get_eth_mac_stats(struct net_device *dev,
 		lan966x->stats[idx + SYS_COUNT_RX_BC];
 	mac_stats->FrameCheckSequenceErrors =
 		lan966x->stats[idx + SYS_COUNT_RX_CRC] +
-		lan966x->stats[idx + SYS_COUNT_RX_CRC];
+		lan966x->stats[idx + SYS_COUNT_RX_PMAC_CRC];
 	mac_stats->OctetsTransmittedOK =
 		lan966x->stats[idx + SYS_COUNT_TX_OCT] +
 		lan966x->stats[idx + SYS_COUNT_TX_PMAC_OCT];
 	mac_stats->FramesWithDeferredXmissions =
 		lan966x->stats[idx + SYS_COUNT_TX_MM_HOLD];
 	mac_stats->OctetsReceivedOK =
-		lan966x->stats[idx + SYS_COUNT_RX_OCT];
+		lan966x->stats[idx + SYS_COUNT_RX_OCT] +
+		lan966x->stats[idx + SYS_COUNT_RX_PMAC_OCT];
 	mac_stats->MulticastFramesXmittedOK =
 		lan966x->stats[idx + SYS_COUNT_TX_MC] +
 		lan966x->stats[idx + SYS_COUNT_TX_PMAC_MC];
@@ -420,13 +421,13 @@ static void lan966x_get_eth_mac_stats(struct net_device *dev,
 }
 
 static const struct ethtool_rmon_hist_range lan966x_rmon_ranges[] = {
-	{    0,    64 },
-	{   65,   127 },
-	{  128,   255 },
-	{  256,   511 },
-	{  512,  1023 },
-	{ 1024,  1518 },
-	{ 1519, 10239 },
+	{    0,     64 },
+	{   65,    127 },
+	{  128,    255 },
+	{  256,    511 },
+	{  512,   1023 },
+	{ 1024,   1526 },
+	{ 1527, 0xffff },
 	{}
 };
 
@@ -475,8 +476,8 @@ static void lan966x_get_eth_rmon_stats(struct net_device *dev,
 		lan966x->stats[idx + SYS_COUNT_RX_SZ_1024_1526] +
 		lan966x->stats[idx + SYS_COUNT_RX_PMAC_SZ_1024_1526];
 	rmon_stats->hist[6] =
-		lan966x->stats[idx + SYS_COUNT_RX_SZ_1024_1526] +
-		lan966x->stats[idx + SYS_COUNT_RX_PMAC_SZ_1024_1526];
+		lan966x->stats[idx + SYS_COUNT_RX_SZ_JUMBO] +
+		lan966x->stats[idx + SYS_COUNT_RX_PMAC_SZ_JUMBO];
 
 	rmon_stats->hist_tx[0] =
 		lan966x->stats[idx + SYS_COUNT_TX_SZ_64] +
@@ -497,8 +498,8 @@ static void lan966x_get_eth_rmon_stats(struct net_device *dev,
 		lan966x->stats[idx + SYS_COUNT_TX_SZ_1024_1526] +
 		lan966x->stats[idx + SYS_COUNT_TX_PMAC_SZ_1024_1526];
 	rmon_stats->hist_tx[6] =
-		lan966x->stats[idx + SYS_COUNT_TX_SZ_1024_1526] +
-		lan966x->stats[idx + SYS_COUNT_TX_PMAC_SZ_1024_1526];
+		lan966x->stats[idx + SYS_COUNT_TX_SZ_JUMBO] +
+		lan966x->stats[idx + SYS_COUNT_TX_PMAC_SZ_JUMBO];
 
 	mutex_unlock(&lan966x->stats_lock);
 
@@ -713,10 +714,17 @@ void lan966x_stats_get(struct net_device *dev,
 		lan966x->stats[idx + SYS_COUNT_RX_JABBER] +
 		lan966x->stats[idx + SYS_COUNT_RX_CRC] +
 		lan966x->stats[idx + SYS_COUNT_RX_SYMBOL_ERR] +
-		lan966x->stats[idx + SYS_COUNT_RX_LONG];
+		lan966x->stats[idx + SYS_COUNT_RX_LONG] +
+		lan966x->stats[idx + SYS_COUNT_RX_PMAC_SHORT] +
+		lan966x->stats[idx + SYS_COUNT_RX_PMAC_FRAG] +
+		lan966x->stats[idx + SYS_COUNT_RX_PMAC_JABBER] +
+		lan966x->stats[idx + SYS_COUNT_RX_PMAC_CRC] +
+		lan966x->stats[idx + SYS_COUNT_RX_PMAC_SYMBOL_ERR] +
+		lan966x->stats[idx + SYS_COUNT_RX_PMAC_LONG];
 
 	stats->rx_dropped = dev->stats.rx_dropped +
 		lan966x->stats[idx + SYS_COUNT_RX_LONG] +
+		lan966x->stats[idx + SYS_COUNT_RX_CAT_DROP] +
 		lan966x->stats[idx + SYS_COUNT_DR_LOCAL] +
 		lan966x->stats[idx + SYS_COUNT_DR_TAIL] +
 		lan966x->stats[idx + SYS_COUNT_RX_RED_PRIO_0] +
