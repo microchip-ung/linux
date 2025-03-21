@@ -164,6 +164,8 @@
 			#address-cells = <0>;
 			#size-cells = <0>;
 			status = "okay";
+
+			dpll-types = "eec", "pps";
 		};
 	};
 };
