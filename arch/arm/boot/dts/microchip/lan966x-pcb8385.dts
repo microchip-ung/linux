@@ -158,7 +158,7 @@
 		i2c-sda-hold-time-ns = <1500>;
 		status = "okay";
 
-		dpll@70 {
+		dpll0: dpll@70 {
 			compatible = "microchip,zl30732";
 			reg = <0x70>;
 			#address-cells = <0>;
@@ -278,4 +278,144 @@
 	pinctrl-0 = <&usb_host_a_pins>;
 	pinctrl-names = "default";
 	status = "okay";
+};
+
+&dpll0 {
+	input-pins {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		pin@0 { /* REF0P */
+			reg = <0>;
+
+			connection-type = "ext";
+			label = "SyncE IN M1 CLK1";
+		};
+		pin@1 { /* REF0N */
+			reg = <1>;
+
+			connection-type = "ext";
+			label = "SyncE IN M1 CLK2";
+		};
+		pin@2 { /* REF1P */
+			reg = <2>;
+
+			connection-type = "ext";
+			label = "SyncE IN M2 CLK1";
+		};
+		pin@3 { /* REF1N */
+			reg = <3>;
+
+			connection-type = "ext";
+			label = "SyncE IN M2 CLK2";
+		};
+		pin@4 { /* REF2P */
+			reg = <4>;
+
+			connection-type = "ext";
+			label = "Station CLK IN";
+		};
+		pin@5 { /* REF2N */
+			reg = <5>;
+
+			connection-type = "ext";
+			label = "1PPS IN";
+		};
+		pin@7 { /* REF3N */
+			reg = <7>;
+
+			connection-type = "ext";
+			label = "Feedb 1PPS IN";
+		};
+		pin@8 { /* REF4P */
+			reg = <8>;
+
+			connection-type = "ext";
+			label = "Feedb 25M IN";
+		};
+		pin@9 { /* REF4N */
+			reg = <9>;
+
+			connection-type = "ext";
+			label = "REF_TEST 10M";
+		};
+	};
+
+	output-pins {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		pin@0 { /* OUT0P */
+			reg = <0>;
+
+			connection-type = "gnss";
+			label = "Feedb 25M OUT";
+		};
+		pin@1 { /* OUT0N */
+			reg = <1>;
+
+			connection-type = "gnss";
+			label = "1PPS OUT";
+		};
+		pin@2 { /* OUT1P */
+			reg = <2>;
+
+			connection-type = "gnss";
+			label = "1PPS M1 OUT";
+		};
+		pin@3 { /* OUT1N */
+			reg = <3>;
+
+			connection-type = "gnss";
+			label = "1PPS M2 OUT";
+		};
+		pin@4 { /* OUT2P */
+			reg = <4>;
+
+			connection-type = "gnss";
+			label = "Station CLK OUT";
+		};
+		pin@6 { /* OUT3P & OUT3N LVDS */
+			reg = <6>;
+
+			connection-type = "gnss";
+			label = "CLK125M1 OUT";
+		};
+		pin@8 { /* OUT4P & OUT4N LVDS */
+			reg = <8>;
+
+			connection-type = "gnss";
+			label = "CLK125M2 OUT";
+		};
+		pin@12 { /* OUT6P & OUT6N LVDS */
+			reg = <12>;
+
+			connection-type = "gnss";
+			label = "SyncE Local OUT";
+		};
+		pin@14 { /* OUT7P & OUT7N LVDS */
+			reg = <14>;
+
+			connection-type = "gnss";
+			label = "SyncE Diff M1 OUT";
+		};
+		pin@16 { /* OUT8P & OUT8N LVDS */
+			reg = <16>;
+
+			connection-type = "gnss";
+			label = "SyncE Diff M2 OUT";
+		};
+		pin@18 { /* OUT9P */
+			reg = <18>;
+
+			connection-type = "gnss";
+			label = "SyncE M1 OUT";
+		};
+		pin@19 { /* OUT9N */
+			reg = <19>;
+
+			connection-type = "gnss";
+			label = "SyncE M2 OUT";
+		};
+	};
 };
