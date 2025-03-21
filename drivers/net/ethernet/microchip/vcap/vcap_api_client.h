@@ -144,7 +144,7 @@ enum vcap_bit {
 };
 
 struct vcap_counter {
-	u32 value;
+	u64 value;
 	bool sticky;
 };
 
@@ -232,6 +232,7 @@ int vcap_get_rule_count_by_cookie(struct vcap_control *vctrl,
 				  struct vcap_counter *ctr, u64 cookie);
 int vcap_rule_set_counter(struct vcap_rule *rule, struct vcap_counter *ctr);
 int vcap_rule_get_counter(struct vcap_rule *rule, struct vcap_counter *ctr);
+int vcap_update_counters(struct vcap_control *vctrl);
 
 /* Find vcap type instance count */
 int vcap_admin_type_count(struct vcap_control *vctrl, enum vcap_type vt);

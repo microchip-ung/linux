@@ -1751,6 +1751,7 @@ static int vcap_write_counter(struct vcap_rule_internal *ri,
 	ri->vctrl->ops->update(ri->ndev, admin, VCAP_CMD_WRITE,
 			       VCAP_SEL_COUNTER, ri->addr);
 	ri->counter = *ctr;
+	ri->tc_last_cnt = *ctr;
 	return 0;
 }
 
@@ -3261,6 +3262,15 @@ int vcap_rule_add_action_u128(struct vcap_rule *rule, enum vcap_action_field act
 }
 EXPORT_SYMBOL_GPL(vcap_rule_add_action_u128);
 
+/* Add a possibly wrapping 32 bit value to a 64 bit counter */
+static void vcap_add_cnt(u64 *cnt, u32 val)
+{
+	if (val < (*cnt & U32_MAX))
+		*cnt += (u64)1 << 32; /* value has wrapped */
+
+	*cnt = (*cnt & ~(u64)U32_MAX) + val;
+}
+
 static int vcap_read_counter(struct vcap_rule_internal *ri,
 			     struct vcap_counter *ctr)
 {
@@ -3270,8 +3280,10 @@ static int vcap_read_counter(struct vcap_rule_internal *ri,
 			       ri->addr);
 	ri->vctrl->ops->cache_read(ri->ndev, admin, VCAP_SEL_COUNTER,
 				   ri->counter_id, 0);
-	ctr->value = admin->cache.counter;
-	ctr->sticky = admin->cache.sticky;
+
+	vcap_add_cnt(&ri->counter.value, admin->cache.counter);
+	ri->counter.sticky = admin->cache.sticky;
+	*ctr = ri->counter;
 	return 0;
 }
 
@@ -3626,6 +3638,7 @@ int vcap_rule_set_counter(struct vcap_rule *rule, struct vcap_counter *ctr)
 
 	err = vcap_write_counter(orig, ctr);
 	ri->counter = *ctr;
+	ri->tc_last_cnt = *ctr;
 	mutex_unlock(&ri->admin->lock);
 
 	return err;
@@ -3734,12 +3747,35 @@ int vcap_rule_get_keysets(struct vcap_rule_internal *ri,
 	return -EINVAL;
 }
 
+int vcap_update_counters(struct vcap_control *vctrl)
+{
+	struct vcap_rule_internal *ri;
+	struct vcap_counter temp = {};
+	struct vcap_admin *admin;
+	int err = 0;
+
+	list_for_each_entry(admin, &vctrl->list, list) {
+		mutex_lock(&admin->lock);
+		list_for_each_entry(ri, &admin->rules, list) {
+			err = vcap_read_counter(ri, &temp);
+			if (err) {
+				mutex_unlock(&admin->lock);
+				return err;
+			}
+		}
+		mutex_unlock(&admin->lock);
+	}
+
+	return err;
+}
+EXPORT_SYMBOL_GPL(vcap_update_counters);
+
 /* Collect packet counts from all rules with the same cookie */
 int vcap_get_rule_count_by_cookie(struct vcap_control *vctrl,
 				  struct vcap_counter *ctr, u64 cookie)
 {
 	struct vcap_rule_internal *ri;
-	struct vcap_counter temp = {};
+	struct vcap_counter old = {};
 	struct vcap_admin *admin;
 	int err;
 
@@ -3754,29 +3790,20 @@ int vcap_get_rule_count_by_cookie(struct vcap_control *vctrl,
 			if (ri->data.cookie != cookie)
 				continue;
 
-			err = vcap_read_counter(ri, &temp);
+			old = ri->tc_last_cnt;
+
+			err = vcap_read_counter(ri, &ri->tc_last_cnt);
 			if (err)
 				goto unlock;
 
-			/* The HW counters are either 1-bit saturating or 32bit
-			 * overflowing counters. We must report counts since
-			 * previous tc read, but we prefer not to change the
-			 * counter state in HW.
-			 * Instead of reset the counter in HW, update the
-			 * counter in SW with the last read value and then next
-			 * time when calculating the number of packets just
-			 * subtract from what HW says the last read value
-			 * In this way the HW counters will not be ever erased
+			/* The VCAP HW counters are either 1-bit saturating or
+			 * 32bit overflowing. The vcap_read_counter accumulates
+			 * overflowing counters in a u64, assuming it is called
+			 * sufficiently often.
+			 * For 1-bit saturating counters we will report a diff
+			 * of 0 here.
 			 */
-			if (temp.value >= ri->counter.value) {
-				ctr->value += temp.value - ri->counter.value;
-			} else {
-				/* Either HW counter is 32bit and overflowed, or
-				 * we have a bug with HW and SW out of sync.
-				 */
-				ctr->value += temp.value;
-			}
-			ri->counter = temp;
+			ctr->value += ri->tc_last_cnt.value - old.value;
 		}
 		mutex_unlock(&admin->lock);
 	}

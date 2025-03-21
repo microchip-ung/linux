@@ -34,7 +34,8 @@ struct vcap_rule_internal {
 	int size; /* the size of the rule: max(entry, action) */
 	u32 addr; /* address in the VCAP at insertion */
 	u32 counter_id; /* counter id (if a dedicated counter is available) */
-	struct vcap_counter counter; /* last read counter value */
+	struct vcap_counter counter; /* cached counter value */
+	struct vcap_counter tc_last_cnt; /* last read counter value by tc */
 	enum vcap_rule_state state;  /* rule storage state */
 };
 
