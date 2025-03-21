@@ -289,55 +289,146 @@
 			reg = <0>;
 
 			connection-type = "ext";
+			esync-control;
 			label = "SyncE IN M1 CLK1";
+			supported-frequencies-hz = /bits/ 64 <1
+							   25
+							   100
+							   1000
+							   10000000
+							   25000000
+							   62500000
+							   78125000
+							   100000000>;
 		};
 		pin@1 { /* REF0N */
 			reg = <1>;
 
 			connection-type = "ext";
+			esync-control;
 			label = "SyncE IN M1 CLK2";
+			supported-frequencies-hz = /bits/ 64 <1
+							   25
+							   100
+							   1000
+							   10000000
+							   25000000
+							   62500000
+							   78125000
+							   100000000>;
 		};
 		pin@2 { /* REF1P */
 			reg = <2>;
 
 			connection-type = "ext";
+			esync-control;
 			label = "SyncE IN M2 CLK1";
+			supported-frequencies-hz = /bits/ 64 <1
+							   25
+							   100
+							   1000
+							   10000000
+							   25000000
+							   62500000
+							   78125000
+							   100000000
+							   125000000>;
 		};
 		pin@3 { /* REF1N */
 			reg = <3>;
 
 			connection-type = "ext";
+			esync-control;
 			label = "SyncE IN M2 CLK2";
+			supported-frequencies-hz = /bits/ 64 <1
+							   25
+							   100
+							   1000
+							   10000000
+							   25000000
+							   62500000
+							   78125000
+							   100000000>;
 		};
 		pin@4 { /* REF2P */
 			reg = <4>;
 
 			connection-type = "ext";
+			esync-control;
 			label = "Station CLK IN";
+			supported-frequencies-hz = /bits/ 64 <1
+							   25
+							   100
+							   1000
+							   10000000
+							   25000000
+							   62500000
+							   78125000
+							   100000000>;
 		};
 		pin@5 { /* REF2N */
 			reg = <5>;
 
 			connection-type = "ext";
+			esync-control;
 			label = "1PPS IN";
+			supported-frequencies-hz = /bits/ 64 <1
+							   25
+							   100
+							   1000
+							   10000000
+							   25000000
+							   62500000
+							   78125000
+							   100000000>;
 		};
 		pin@7 { /* REF3N */
 			reg = <7>;
 
 			connection-type = "ext";
+			esync-control;
 			label = "Feedb 1PPS IN";
+			supported-frequencies-hz = /bits/ 64 <1
+							   25
+							   100
+							   1000
+							   10000000
+							   25000000
+							   62500000
+							   78125000
+							   100000000>;
 		};
 		pin@8 { /* REF4P */
 			reg = <8>;
 
 			connection-type = "ext";
+			esync-control;
 			label = "Feedb 25M IN";
+			supported-frequencies-hz = /bits/ 64 <1
+							   25
+							   100
+							   1000
+							   10000000
+							   25000000
+							   62500000
+							   78125000
+							   100000000>;
 		};
 		pin@9 { /* REF4N */
 			reg = <9>;
 
 			connection-type = "ext";
+			esync-control;
 			label = "REF_TEST 10M";
+			supported-frequencies-hz = /bits/ 64 <1
+							   25
+							   100
+							   1000
+							   10000000
+							   25000000
+							   62500000
+							   78125000
+							   100000000>;
 		};
 	};
 
@@ -349,73 +440,157 @@
 			reg = <0>;
 
 			connection-type = "gnss";
+			esync-control;
 			label = "Feedb 25M OUT";
+			supported-frequencies-hz = /bits/ 64 <1
+							   25
+							   100
+							   1000
+							   10000000
+							   25000000>;
 		};
 		pin@1 { /* OUT0N */
 			reg = <1>;
 
 			connection-type = "gnss";
+			esync-control;
 			label = "1PPS OUT";
+			supported-frequencies-hz = /bits/ 64 <1
+							   25
+							   100
+							   1000
+							   10000000
+							   25000000>;
 		};
 		pin@2 { /* OUT1P */
 			reg = <2>;
 
 			connection-type = "gnss";
+			esync-control;
 			label = "1PPS M1 OUT";
+			supported-frequencies-hz = /bits/ 64 <1
+							   25
+							   100
+							   1000
+							   10000000
+							   25000000>;
 		};
 		pin@3 { /* OUT1N */
 			reg = <3>;
 
 			connection-type = "gnss";
+			esync-control;
 			label = "1PPS M2 OUT";
+			supported-frequencies-hz = /bits/ 64 <1
+							   25
+							   100
+							   1000
+							   10000000
+							   25000000>;
 		};
 		pin@4 { /* OUT2P */
 			reg = <4>;
 
 			connection-type = "gnss";
+			esync-control;
 			label = "Station CLK OUT";
+			supported-frequencies-hz = /bits/ 64 <1
+							   25
+							   100
+							   1000
+							   10000000
+							   25000000>;
 		};
 		pin@6 { /* OUT3P & OUT3N LVDS */
 			reg = <6>;
 
 			connection-type = "gnss";
+			esync-control;
 			label = "CLK125M1 OUT";
+			supported-frequencies-hz = /bits/ 64 <1
+							   25
+							   100
+							   1000
+							   10000000
+							   25000000>;
 		};
 		pin@8 { /* OUT4P & OUT4N LVDS */
 			reg = <8>;
 
 			connection-type = "gnss";
+			esync-control;
 			label = "CLK125M2 OUT";
+			supported-frequencies-hz = /bits/ 64 <1
+							   25
+							   100
+							   1000
+							   10000000
+							   25000000>;
 		};
 		pin@12 { /* OUT6P & OUT6N LVDS */
 			reg = <12>;
 
 			connection-type = "gnss";
+			esync-control;
 			label = "SyncE Local OUT";
+			supported-frequencies-hz = /bits/ 64 <1
+							   25
+							   100
+							   1000
+							   10000000
+							   25000000>;
 		};
 		pin@14 { /* OUT7P & OUT7N LVDS */
 			reg = <14>;
 
 			connection-type = "gnss";
+			esync-control;
 			label = "SyncE Diff M1 OUT";
+			supported-frequencies-hz = /bits/ 64 <1
+							   25
+							   100
+							   1000
+							   10000000
+							   25000000>;
 		};
 		pin@16 { /* OUT8P & OUT8N LVDS */
 			reg = <16>;
 
 			connection-type = "gnss";
+			esync-control;
 			label = "SyncE Diff M2 OUT";
+			supported-frequencies-hz = /bits/ 64 <1
+							   25
+							   100
+							   1000
+							   10000000
+							   25000000>;
 		};
 		pin@18 { /* OUT9P */
 			reg = <18>;
 
 			connection-type = "gnss";
+			esync-control;
 			label = "SyncE M1 OUT";
+			supported-frequencies-hz = /bits/ 64 <1
+							   25
+							   100
+							   1000
+							   10000000
+							   25000000>;
 		};
 		pin@19 { /* OUT9N */
 			reg = <19>;
 
 			connection-type = "gnss";
+			esync-control;
 			label = "SyncE M2 OUT";
+			supported-frequencies-hz = /bits/ 64 <1
+							   25
+							   100
+							   1000
+							   10000000
+							   25000000>;
 		};
 	};
 };
