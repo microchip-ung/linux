@@ -231,6 +231,7 @@
 #define QSPI_WPSR_WPVSRC(src)           (((src) << 8) & QSPI_WPSR_WPVSRC)
 
 #define ATMEL_QSPI_TIMEOUT		1000	/* ms */
+
 #define ATMEL_QSPI_SYNC_TIMEOUT		300	/* ms */
 #define QSPI_DLLCFG_THRESHOLD_FREQ	90000000U
 #define QSPI_CALIB_TIME			2000	/* 2 us */
@@ -295,7 +296,7 @@ struct atmel_qspi {
 struct atmel_qspi_ops {
 	int (*set_cfg)(struct atmel_qspi *aq, const struct spi_mem_op *op,
 		       u32 *offset);
-	int (*transfer)(struct atmel_qspi *aq, const struct spi_mem_op *op,
+	int (*transfer)(struct spi_mem *mem, const struct spi_mem_op *op,
 			u32 offset);
 };
 
@@ -617,9 +618,12 @@ static int atmel_qspi_wait_for_completion(struct atmel_qspi *aq, u32 irq_mask)
 	return err;
 }
 
-static int atmel_qspi_transfer(struct atmel_qspi *aq,
+static int atmel_qspi_transfer(struct spi_mem *mem,
 			       const struct spi_mem_op *op, u32 offset)
 {
+	struct atmel_qspi *aq = spi_controller_get_devdata(mem->spi->controller);
+
+	/* Skip to the final steps if there is no data */
 	if (!op->data.nbytes)
 		return atmel_qspi_wait_for_completion(aq,
 						      QSPI_SR_CMD_COMPLETED);
@@ -628,12 +632,19 @@ static int atmel_qspi_transfer(struct atmel_qspi *aq,
 	(void)atmel_qspi_read(aq, QSPI_IFR);
 
 	/* Send/Receive data */
-	if (op->data.dir == SPI_MEM_DATA_IN)
+	if (op->data.dir == SPI_MEM_DATA_IN) {
 		memcpy_fromio(op->data.buf.in, aq->mem + offset,
 			      op->data.nbytes);
-	else
+
+		/* Synchronize AHB and APB accesses again */
+		rmb();
+	} else {
 		memcpy_toio(aq->mem + offset, op->data.buf.out,
 			    op->data.nbytes);
+
+		/* Synchronize AHB and APB accesses again */
+		wmb();
+	}
 
 	/* Release the chip-select */
 	atmel_qspi_write(QSPI_CR_LASTXFER, aq, QSPI_CR);
@@ -756,9 +767,10 @@ static int atmel_qspi_sama7g5_set_cfg(struct atmel_qspi *aq,
 	return atmel_qspi_update_config(aq);
 }
 
-static int atmel_qspi_sama7g5_transfer(struct atmel_qspi *aq,
+static int atmel_qspi_sama7g5_transfer(struct spi_mem *mem,
 				       const struct spi_mem_op *op, u32 offset)
 {
+	struct atmel_qspi *aq = spi_controller_get_devdata(mem->spi->controller);
 	int err;
 	u32 val;
 
@@ -814,7 +826,10 @@ static int atmel_qspi_exec_op(struct spi_mem *mem, const struct spi_mem_op *op)
 	 * when the flash memories overrun the controller's memory space.
 	 */
 	if (op->addr.val + op->data.nbytes > aq->mmap_size)
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
+
+	if (op->addr.nbytes > 4)
+		return -EOPNOTSUPP;
 
 	err = pm_runtime_resume_and_get(&aq->pdev->dev);
 	if (err < 0)
@@ -827,7 +842,7 @@ static int atmel_qspi_exec_op(struct spi_mem *mem, const struct spi_mem_op *op)
 	if (err)
 		goto pm_runtime_put;
 
-	return aq->ops->transfer(aq, op, offset);
+	err = aq->ops->transfer(mem, op, offset);
 
 pm_runtime_put:
 	pm_runtime_mark_last_busy(&aq->pdev->dev);
