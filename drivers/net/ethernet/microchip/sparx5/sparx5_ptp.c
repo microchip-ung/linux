@@ -1242,8 +1242,34 @@ int sparx5_ptp_init(struct sparx5 *sparx5)
 {
 	const struct sparx5_consts *consts = &sparx5->data->consts;
 	u64 tod_adj = sparx5_ptp_get_nominal_value(sparx5);
+	const struct sparx5_ops *ops = &sparx5->data->ops;
 	struct sparx5_port *port;
 	int err, i;
+
+	if (sparx5->ptp_irq >= 0 &&
+	    sparx5_has_feature(sparx5, SPX5_FEATURE_PTP)) {
+		err = devm_request_threaded_irq(sparx5->dev, sparx5->ptp_irq,
+						NULL, ops->ptp_irq_handler,
+						IRQF_ONESHOT, "sparx5-ptp",
+						sparx5);
+		if (err)
+			sparx5->ptp_irq = -ENXIO;
+
+		sparx5->ptp = 1;
+	}
+
+	if (sparx5->ptp) {
+		if (sparx5->ptp_ext_irq > 0) {
+			err = devm_request_threaded_irq(sparx5->dev,
+							sparx5->ptp_ext_irq, NULL,
+							sparx5_ptp_ext_irq_handler,
+							IRQF_ONESHOT,
+							"sparx5-ptp-ext", sparx5);
+			if (err)
+				return dev_err_probe(sparx5->dev, err,
+						     "Unable to use ptp-ext irq");
+		}
+	}
 
 	/* We need PTP TOD on lan969x for QoS and TSN features - for now
 	 * always initialize on lan969x.
