@@ -401,6 +401,9 @@ static int sparx5_create_port(struct sparx5 *sparx5,
 	/* Setup QoS */
 	sparx5_qos_port_setup(sparx5, spx5_port->portno);
 
+	/* Setup XDP */
+	sparx5_xdp_port_init(spx5_port);
+
 	/* Create a phylink for PHY management.  Also handles SFPs */
 	spx5_port->phylink_config.dev = &spx5_port->ndev->dev;
 	spx5_port->phylink_config.type = PHYLINK_NETDEV;

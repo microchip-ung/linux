@@ -22,6 +22,7 @@
 #include <uapi/linux/mrp_bridge.h>
 #include <net/flow_offload.h>
 #include <net/pkt_cls.h>
+#include <net/xdp.h>
 
 #include "sparx5_main_regs.h"
 #include "sparx5_vcap_impl.h"
@@ -117,6 +118,7 @@ extern const u8 ifh_smac[];
 #define PGID_TABLE_SIZE	       3290
 
 #define IFH_LEN                9 /* 36 bytes */
+#define IFH_LEN_BYTES          (IFH_LEN * sizeof(u32))
 #define NULL_VID               0
 #define SPX5_MACT_PULL_DELAY   (2 * HZ)
 #define SPX5_STATS_CHECK_DELAY (1 * HZ)
@@ -166,6 +168,12 @@ extern const u8 ifh_smac[];
 
 struct sparx5;
 
+enum spx5_db_data_type {
+	SPX5_DB_DATA_TYPE_SKB,
+	SPX5_DB_DATA_TYPE_XDPF,
+	SPX5_DB_DATA_TYPE_PAGE
+};
+
 /* For each hardware DB there is an entry in this list and when the HW DB
  * entry is used, this SW DB entry is moved to the back of the list
  */
@@ -177,6 +185,13 @@ struct sparx5_db {
 	dma_addr_t dma_addr;
 	int len;
 	struct sk_buff *skb;
+	union {
+		struct sk_buff *skb;
+		struct xdp_frame *xdpf;
+		struct page *page;
+	} data;
+	enum spx5_db_data_type data_type;
+	int offset;
 };
 
 /* Frame DMA receive state:
@@ -285,6 +300,8 @@ struct sparx5_port {
 	struct list_head tc_templates; /* list of TC templates on this port */
 
 	struct mrp_port *mrp_port;
+	struct bpf_prog *xdp_prog;
+	struct xdp_rxq_info xdp_rxq;
 };
 
 enum sparx5_core_clockfreq {
@@ -1027,6 +1044,33 @@ void sparx5_afi_deinit(struct sparx5 *sparx5);
 
 /* sparx5_debugfs.c */
 void sparx5_debugfs(struct sparx5 *sparx5);
+
+/* sparx5_xdp.c */
+bool sparx5_port_has_xdp(struct sparx5_port *port);
+bool sparx5_has_xdp(struct sparx5 *sparx5);
+int sparx5_xdp_port_init(struct sparx5_port *port);
+void sparx5_xdp_port_deinit(struct sparx5_port *port);
+int sparx5_xdp(struct net_device *dev, struct netdev_bpf *xdp);
+int sparx5_xdp_xmit(struct net_device *dev, int n, struct xdp_frame **frames,
+		    u32 flags);
+int sparx5_xdp_run(struct sparx5_port *port, struct page *page, u32 len);
+void sparx5_xdp_mem_type_set(struct sparx5 *sparx5, enum xdp_mem_type type,
+			     void *allocator);
+
+/* FDMA return action codes for checking if the frame is valid
+ * FDMA_PASS, frame is valid and can be used
+ * FDMA_ERROR, something went wrong, stop getting more frames
+ * FDMA_DROP, frame is dropped, but continue to get more frames
+ * FDMA_TX, frame is given to TX, but continue to get more frames
+ * FDMA_REDIRECT, frame is given to TX, but continue to get more frames
+ */
+enum sparx5_fdma_action {
+	FDMA_PASS = 0,
+	FDMA_ERROR,
+	FDMA_DROP,
+	FDMA_TX,
+	FDMA_REDIRECT,
+};
 
 /* Clock period in picoseconds */
 static inline u32 sparx5_clk_period(enum sparx5_core_clockfreq cclock)
