@@ -908,6 +908,29 @@ static int sparx5_tc_action_vlan_pop(struct vcap_admin *admin,
 	return err;
 }
 
+static int sparx5_tc_action_vlan_modify_is0(struct vcap_admin *admin,
+	struct vcap_rule *vrule,
+	struct flow_cls_offload *fco,
+	struct flow_action_entry *act,
+	u16 tpid)
+{
+	int err = 0;
+
+	err = vcap_rule_add_action_u32(vrule,
+		VCAP_AF_CLS_VID_SEL,
+		2);
+	if (err)
+		return err;
+
+	err = vcap_rule_add_action_u32(vrule,
+			VCAP_AF_VID_VAL,
+			act->vlan.vid);
+	if (err)
+		return err;
+
+	return 0;
+}
+
 static int sparx5_tc_action_vlan_modify(struct vcap_admin *admin,
 					struct vcap_rule *vrule,
 					struct flow_cls_offload *fco,
@@ -917,6 +940,8 @@ static int sparx5_tc_action_vlan_modify(struct vcap_admin *admin,
 	int err = 0;
 
 	switch (admin->vtype) {
+	case VCAP_TYPE_IS0:
+		return sparx5_tc_action_vlan_modify_is0(admin, vrule,fco, act, tpid);
 	case VCAP_TYPE_ES0:
 		err = vcap_rule_add_action_u32(vrule,
 					       VCAP_AF_PUSH_OUTER_TAG,
