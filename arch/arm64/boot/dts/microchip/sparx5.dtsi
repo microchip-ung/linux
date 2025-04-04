@@ -192,6 +192,13 @@
 			interrupts = <GIC_SPI 6 IRQ_TYPE_LEVEL_HIGH>;
 		};
 
+		watchdog: watchdog@600106000 {
+			compatible = "snps,dw-wdt";
+			reg = <0x6 0x00106000 0x1000>;
+			interrupts = <GIC_SPI 5 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&ahb_clk>;
+		};
+
 		sdhci0: mmc@600800000 {
 			compatible = "microchip,dw-sparx5-sdhci";
 			status = "disabled";
