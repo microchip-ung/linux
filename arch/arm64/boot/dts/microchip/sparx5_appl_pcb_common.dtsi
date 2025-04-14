@@ -28,6 +28,8 @@
 };
 
 &i2c0 {
+	i2c-sda-falling-time-ns = <120>;
+	i2c-scl-falling-time-ns = <120>;
 	clock-frequency = <400000>;
 };
 
