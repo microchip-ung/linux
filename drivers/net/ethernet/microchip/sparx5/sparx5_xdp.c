@@ -24,6 +24,9 @@ void sparx5_xdp_mem_type_set(struct sparx5 *sparx5, enum xdp_mem_type type,
 
 		port = sparx5->ports[i];
 
+		if (!port->ndev->xdp_features)
+			continue;
+
 		xdp_rxq_info_unreg_mem_model(&port->xdp_rxq);
 		xdp_rxq_info_reg_mem_model(&port->xdp_rxq, type, allocator);
 	}
