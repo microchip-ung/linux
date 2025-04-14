@@ -157,6 +157,7 @@ static int sparx5_fdma_rx_process_frame(struct sparx5 *sparx5, int *src_port)
 	*src_port = fi.src_port;
 
 #ifdef CONFIG_SPARX5_SWITCH_APPL
+	*src_port = 0;
 	port = sparx5->ports[0];
 #else
 	port = fi.src_port < consts->chip_ports ? sparx5->ports[fi.src_port] :
