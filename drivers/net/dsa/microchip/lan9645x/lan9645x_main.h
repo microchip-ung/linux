@@ -31,6 +31,16 @@
 #define NUM_PRIO_QUEUES		8
 #define LAN9645X_NUM_TC		8
 
+/* 0-87 : Queue scheduler elements
+ * 8 queues per egress port
+ * 9 phys ports
+ * 2 cpu ports
+ * 11*8 = 88
+ */
+#define LAN9645X_QSCHD_IDX(port, queue) ((port) * NUM_PRIO_QUEUES + (queue))
+/* 88-98 : Port schedular elements */
+#define LAN9645X_PSCHD_IDX(port) (88 + (port))
+
 /* Reserved amount for (SRC, PRIO) at index 8*SRC + PRIO
  * See QSYS:RES_CTRL[*]:RES_CFG description
  */
@@ -815,5 +825,27 @@ int lan9645x_tc_flower_del(struct lan9645x_port *p, struct flow_cls_offload *f,
 			   bool ingress);
 int lan9645x_tc_flower_stats(struct lan9645x_port *p,
 			     struct flow_cls_offload *f);
+
+/* Credit Based Shaping CBS: lan9645x_cbs.c */
+int lan9645x_cbs_del(struct lan9645x *lan9645x, int port,
+		     struct tc_cbs_qopt_offload *qopt);
+int lan9645x_cbs_add(struct lan9645x *lan9645x, int port,
+		     struct tc_cbs_qopt_offload *qopt);
+
+/* lan9645x_mqprio.c */
+int lan9645x_mqprio_set(struct lan9645x *lan9645x, int port,
+			struct tc_mqprio_qopt_offload *mqprio);
+
+/* token based filter: lan9645x_tbf.c */
+int lan9645x_tbf_add(struct lan9645x *lan9645x, int port,
+		     struct tc_tbf_qopt_offload *qopt);
+int lan9645x_tbf_del(struct lan9645x *lan9645x, int port,
+		     struct tc_tbf_qopt_offload *qopt);
+
+/* lan9645x_ets.c */
+int lan9645x_ets_del(struct lan9645x *lan9645x, int port,
+		     struct tc_ets_qopt_offload *qopt);
+int lan9645x_ets_add(struct lan9645x *lan9645x, int port,
+		     struct tc_ets_qopt_offload *qopt);
 
 #endif /* __LAN9645X_MAIN_H__ */

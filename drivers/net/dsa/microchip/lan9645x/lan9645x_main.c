@@ -1648,6 +1648,87 @@ static int lan9645x_cls_flower_stats(struct dsa_switch *ds, int port,
 	return lan9645x_tc_flower_stats(p, cls);
 }
 
+static int lan9645x_port_setup_cbs(struct dsa_switch *ds, int port,
+				   struct tc_cbs_qopt_offload *cbs_qopt)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	if (cbs_qopt->queue >= ds->num_tx_queues)
+		return -EINVAL;
+
+	if (cbs_qopt->enable)
+		return lan9645x_cbs_add(lan9645x, port, cbs_qopt);
+	else
+		return lan9645x_cbs_del(lan9645x, port, cbs_qopt);
+}
+
+static int lan9645x_port_setup_mqprio(struct dsa_switch *ds, int port,
+				      struct tc_mqprio_qopt_offload *mqprio)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	int err;
+
+	mutex_lock(&lan9645x->fwd_domain_lock);
+	err = lan9645x_mqprio_set(lan9645x, port,  mqprio);
+	mutex_unlock(&lan9645x->fwd_domain_lock);
+
+	return err;
+}
+
+static int lan9645x_port_setup_tbf(struct dsa_switch *ds, int port,
+				   struct tc_tbf_qopt_offload *qopt)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	switch (qopt->command) {
+	case TC_TBF_REPLACE:
+		return lan9645x_tbf_add(lan9645x, port, qopt);
+	case TC_TBF_DESTROY:
+		return lan9645x_tbf_del(lan9645x, port, qopt);
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	return -EOPNOTSUPP;
+}
+
+static int lan9645x_port_setup_ets(struct dsa_switch *ds, int port,
+				   struct tc_ets_qopt_offload *qopt)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	switch (qopt->command) {
+	case TC_ETS_REPLACE:
+		return lan9645x_ets_add(lan9645x, port, qopt);
+	case TC_ETS_DESTROY:
+		return lan9645x_ets_del(lan9645x, port, qopt);
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+
+static int lan9645x_port_setup_tc(struct dsa_switch *ds, int port,
+				  enum tc_setup_type type, void *type_data)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	dev_dbg(lan9645x->dev, "port=%d type=%d\n", port, type);
+
+	switch (type) {
+	case TC_SETUP_QDISC_MQPRIO:
+		return lan9645x_port_setup_mqprio(ds, port, type_data);
+	case TC_SETUP_QDISC_CBS:
+		return lan9645x_port_setup_cbs(ds, port, type_data);
+	case TC_SETUP_QDISC_TBF:
+		return lan9645x_port_setup_tbf(ds, port, type_data);
+	case TC_SETUP_QDISC_ETS:
+		return lan9645x_port_setup_ets(ds, port, type_data);
+	/* BLOCK and FT handled by dsa */
+	default:
+		return -ENOTSUPP;
+	}
+}
+
 static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.get_tag_protocol		= lan9645x_get_tag_protocol,
 	.connect_tag_protocol		= lan9645x_connect_tag_protocol,
@@ -1726,6 +1807,7 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.cls_flower_add			= lan9645x_cls_flower_add,
 	.cls_flower_del			= lan9645x_cls_flower_del,
 	.cls_flower_stats		= lan9645x_cls_flower_stats,
+	.port_setup_tc			= lan9645x_port_setup_tc,
 
 	/* DCB integration */
 	.port_get_default_prio		= lan9645x_port_get_default_prio,
