@@ -225,8 +225,6 @@ static void sparx5_port_bridge_leave(struct sparx5_port *port,
 {
 	struct sparx5 *sparx5 = port->sparx5;
 
-	switchdev_bridge_port_unoffload(port->ndev, NULL, NULL, NULL);
-
 	clear_bit(port->portno, sparx5->bridge_mask);
 	if (bitmap_empty(sparx5->bridge_mask, SPX5_PORTS))
 		sparx5->hw_bridge_dev = NULL;
@@ -242,6 +240,24 @@ static void sparx5_port_bridge_leave(struct sparx5_port *port,
 
 	/* Port enters in host more therefore restore mc list */
 	__dev_mc_sync(port->ndev, sparx5_mc_sync, sparx5_mc_unsync);
+}
+
+static int
+sparx5_port_prechangeupper(struct net_device *dev,
+			   struct net_device *brport_dev,
+			   struct netdev_notifier_changeupper_info *info)
+{
+	struct lan966x_port *port = netdev_priv(dev);
+	int err = NOTIFY_DONE;
+
+	if (netif_is_bridge_master(info->upper_dev)) {
+		if (info->linking)
+			return 0;
+		else
+			switchdev_bridge_port_unoffload(dev, port, NULL, NULL);
+	}
+
+	return err;
 }
 
 static int sparx5_port_changeupper(struct net_device *dev,
@@ -303,6 +319,13 @@ static int sparx5_netdevice_port_event(struct net_device *dev,
 	sparx5_qos_port_event(dev, event);
 
 	switch (event) {
+	case NETDEV_PRECHANGEUPPER:
+		/* When a port is directly attached to a bridge, the brport_dev
+		 * and dev are identical.
+		 */
+
+		sparx5_port_prechangeupper(dev, dev, ptr);
+		break;
 	case NETDEV_CHANGEUPPER:
 		err = sparx5_port_changeupper(dev, ptr);
 		break;
