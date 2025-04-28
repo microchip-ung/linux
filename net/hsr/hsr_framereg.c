@@ -252,11 +252,20 @@ struct hsr_node *hsr_get_node(struct hsr_port *port, struct list_head *node_db,
 		}
 	}
 
+	/* Subtract 1 to avoid first frame to an unknown
+	 * node being filtered by duplicate discard
+	 * check in hsr_register_frame_out
+	 */
+	seq_out = HSR_SEQNR_START - 1;
+
 	/* Everyone may create a node entry, connected node to a HSR/PRP
 	 * device.
 	 */
-	if (ethhdr->h_proto == htons(ETH_P_PRP) ||
-	    ethhdr->h_proto == htons(ETH_P_HSR)) {
+	if (port->dev->features & NETIF_F_HW_HSR_TAG_RM)
+		return hsr_add_node(hsr, node_db, ethhdr->h_source, seq_out,
+				    san, rx_port);
+
+	if (ethhdr->h_proto == htons(ETH_P_HSR)) {
 		/* Check if skb contains hsr_ethhdr */
 		if (skb->mac_len < sizeof(struct hsr_ethhdr))
 			return NULL;
@@ -272,7 +281,6 @@ struct hsr_node *hsr_get_node(struct hsr_port *port, struct list_head *node_db,
 		} else {
 			if (rx_port != HSR_PT_MASTER)
 				san = true;
-			seq_out = HSR_SEQNR_START;
 		}
 	}
 
