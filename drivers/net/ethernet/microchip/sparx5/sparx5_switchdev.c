@@ -20,6 +20,7 @@ struct sparx5_switchdev_event_work {
 	struct work_struct work;
 	struct switchdev_notifier_fdb_info fdb_info;
 	struct net_device *dev;
+	struct net_device *orig_dev;
 	struct sparx5 *sparx5;
 	unsigned long event;
 };
@@ -384,41 +385,37 @@ static void sparx5_schedule_work(struct work_struct *work)
 	queue_work(sparx5_owq, work);
 }
 
-static int sparx5_switchdev_event(struct notifier_block *nb,
-				  unsigned long event, void *ptr)
+static int
+sparx5_switchdev_handle_fdb(struct net_device *dev,
+			    struct net_device *orig_dev,
+			    unsigned long event, const void *ctx,
+			    const struct switchdev_notifier_fdb_info *fdb_info)
 {
-	struct net_device *dev = switchdev_notifier_info_to_dev(ptr);
 	struct sparx5_switchdev_event_work *switchdev_work;
-	struct switchdev_notifier_fdb_info *fdb_info;
-	struct switchdev_notifier_info *info = ptr;
-	struct sparx5 *spx5;
-	int err;
-
-	spx5 = container_of(nb, struct sparx5, switchdev_nb);
+	struct sparx5_port *port = netdev_priv(dev);
+	struct sparx5 *sparx5 = port->sparx5;
 
 	switch (event) {
-	case SWITCHDEV_PORT_ATTR_SET:
-		err = switchdev_handle_port_attr_set(dev, ptr,
-						     sparx5_netdevice_check,
-						     sparx5_port_attr_set);
-		return notifier_from_errno(err);
 	case SWITCHDEV_FDB_ADD_TO_DEVICE:
 		fallthrough;
 	case SWITCHDEV_FDB_DEL_TO_DEVICE:
+		if (sparx5_netdevice_check(orig_dev) &&
+		    !fdb_info->added_by_user)
+			break;
+
 		switchdev_work = kzalloc(sizeof(*switchdev_work), GFP_ATOMIC);
 		if (!switchdev_work)
 			return NOTIFY_BAD;
 
 		switchdev_work->dev = dev;
+		switchdev_work->orig_dev = orig_dev;
 		switchdev_work->event = event;
-		switchdev_work->sparx5 = spx5;
+		switchdev_work->sparx5 = sparx5;
 
-		fdb_info = container_of(info,
-					struct switchdev_notifier_fdb_info,
-					info);
 		INIT_WORK(&switchdev_work->work,
 			  sparx5_switchdev_bridge_fdb_event_work);
-		memcpy(&switchdev_work->fdb_info, ptr,
+		memcpy(&switchdev_work->fdb_info,
+		       fdb_info,
 		       sizeof(switchdev_work->fdb_info));
 		switchdev_work->fdb_info.addr = kzalloc(ETH_ALEN, GFP_ATOMIC);
 		if (!switchdev_work->fdb_info.addr)
@@ -436,6 +433,40 @@ static int sparx5_switchdev_event(struct notifier_block *nb,
 err_addr_alloc:
 	kfree(switchdev_work);
 	return NOTIFY_BAD;
+}
+
+static bool sparx5_foreign_device_check(const struct net_device *dev,
+					const struct net_device *foreign_dev)
+{
+	return false;
+}
+
+static int sparx5_switchdev_event(struct notifier_block *nb,
+				  unsigned long event, void *ptr)
+{
+	struct net_device *dev = switchdev_notifier_info_to_dev(ptr);
+	int err;
+
+	switch (event) {
+	case SWITCHDEV_PORT_ATTR_SET:
+		err = switchdev_handle_port_attr_set(dev,
+						     ptr,
+						     sparx5_netdevice_check,
+						     sparx5_port_attr_set);
+		return notifier_from_errno(err);
+	case SWITCHDEV_FDB_ADD_TO_DEVICE:
+			fallthrough;
+	case SWITCHDEV_FDB_DEL_TO_DEVICE:
+		err = switchdev_handle_fdb_event_to_device(dev,
+							   event,
+							   ptr,
+							   sparx5_netdevice_check,
+							   sparx5_foreign_device_check,
+							   sparx5_switchdev_handle_fdb);
+		return notifier_from_errno(err);
+	}
+
+	return NOTIFY_DONE;
 }
 
 static int sparx5_handle_port_vlan_add(struct net_device *dev,
