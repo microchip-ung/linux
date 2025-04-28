@@ -181,6 +181,29 @@ static void sparx5_update_src_fwd(struct sparx5 *sparx5,
 	}
 }
 
+void sparx5_update_dst_fwd(struct sparx5 *sparx5)
+{
+	DECLARE_BITMAP(dstmask, SPX5_PORTS);
+	struct sparx5_port *port;
+	u32 mask[3] = {0};
+
+	for (int i = 0; i < sparx5->data->consts.chip_ports; i++) {
+		port = sparx5->ports[i];
+		if (!port)
+			continue;
+
+		bitmap_zero(dstmask, SPX5_PORTS);
+
+		set_bit(i, dstmask);
+
+		bitmap_to_arr32(mask, dstmask, SPX5_PORTS);
+
+		spx5_wr(mask[0], sparx5, ANA_AC_PGID_CFG(i));
+		if (is_sparx5(sparx5))
+			spx5_wr(mask[1], sparx5, ANA_AC_PGID_CFG1(i));
+	}
+}
+
 static void sparx5_update_clear_fwd(struct sparx5 *sparx5,
 				    unsigned long *fwdmask)
 {
