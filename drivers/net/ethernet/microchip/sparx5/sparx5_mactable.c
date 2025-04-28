@@ -236,6 +236,7 @@ static struct sparx5_mact_entry *alloc_mact_entry(struct sparx5 *sparx5,
 						  const unsigned char *mac,
 						  u16 vid, u16 port_index)
 {
+	struct sparx5_port *port = sparx5->ports[port_index];
 	struct sparx5_mact_entry *mact_entry;
 
 	mact_entry = devm_kzalloc(sparx5->dev,
@@ -246,6 +247,12 @@ static struct sparx5_mact_entry *alloc_mact_entry(struct sparx5 *sparx5,
 	memcpy(mact_entry->mac, mac, ETH_ALEN);
 	mact_entry->vid = vid;
 	mact_entry->port = port_index;
+
+	spin_lock(&sparx5->lock);
+	mact_entry->lag = !!(mact_entry->port < sparx5->data->consts.chip_ports &&
+			     port->lag_master);
+	spin_unlock(&sparx5->lock);
+
 	return mact_entry;
 }
 
@@ -275,14 +282,18 @@ static void sparx5_fdb_call_notifiers(enum switchdev_notifier_type type,
 				      struct sparx5_port *port, bool offloaded)
 {
 	struct switchdev_notifier_fdb_info info = {};
+	struct sparx5 *sparx5 = port->sparx5;
+	struct net_device *ndev;
 
 	info.addr = mac;
 	info.vid = vid;
 	info.offloaded = offloaded;
-	call_switchdev_notifiers(type,
-				 port->ndev,
-				 &info.info,
-				 NULL);
+
+	spin_lock(&sparx5->lock);
+	ndev = (port->lag_master ? port->lag_master : port->ndev);
+	spin_unlock(&sparx5->lock);
+
+	call_switchdev_notifiers(type, ndev, &info.info, NULL);
 }
 
 int sparx5_add_mact_entry(struct sparx5 *sparx5,

@@ -194,7 +194,10 @@ void sparx5_update_dst_fwd(struct sparx5 *sparx5)
 
 		bitmap_zero(dstmask, SPX5_PORTS);
 
-		set_bit(i, dstmask);
+		if (port->lag_master)
+			sparx5_lag_mask_get(sparx5, port->lag_master, dstmask);
+		else
+			set_bit(i, dstmask);
 
 		bitmap_to_arr32(mask, dstmask, SPX5_PORTS);
 
