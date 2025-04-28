@@ -272,14 +272,17 @@ static struct sparx5_mact_entry *find_mact_entry(struct sparx5 *sparx5,
 
 static void sparx5_fdb_call_notifiers(enum switchdev_notifier_type type,
 				      const char *mac, u16 vid,
-				      struct net_device *dev, bool offloaded)
+				      struct sparx5_port *port, bool offloaded)
 {
 	struct switchdev_notifier_fdb_info info = {};
 
 	info.addr = mac;
 	info.vid = vid;
 	info.offloaded = offloaded;
-	call_switchdev_notifiers(type, dev, &info.info, NULL);
+	call_switchdev_notifiers(type,
+				 port->ndev,
+				 &info.info,
+				 NULL);
 }
 
 int sparx5_add_mact_entry(struct sparx5 *sparx5,
@@ -287,6 +290,7 @@ int sparx5_add_mact_entry(struct sparx5 *sparx5,
 			  u16 portno,
 			  const unsigned char *addr, u16 vid)
 {
+	struct sparx5_port *port = netdev_priv(dev);
 	struct sparx5_mact_entry *mact_entry;
 	int ret;
 	u32 cfg2;
@@ -315,15 +319,14 @@ int sparx5_add_mact_entry(struct sparx5 *sparx5,
 	mutex_lock(&sparx5->mact_lock);
 	list_add_tail(&mact_entry->list, &sparx5->mact_entries);
 	mutex_unlock(&sparx5->mact_lock);
-
 update_hw:
 	ret = sparx5_mact_learn(sparx5, portno, addr, vid);
 
 	/* New entry? */
 	if (mact_entry->flags == 0) {
 		mact_entry->flags |= MAC_ENT_LOCK; /* Don't age this */
-		sparx5_fdb_call_notifiers(SWITCHDEV_FDB_ADD_TO_BRIDGE, addr, vid,
-					  dev, true);
+		sparx5_fdb_call_notifiers(SWITCHDEV_FDB_ADD_TO_BRIDGE, addr,
+					  vid, port, true);
 	}
 
 	return ret;
@@ -409,9 +412,8 @@ static void sparx5_mact_handle_entry(struct sparx5 *sparx5,
 	}
 
 	/* New or moved entry - notify bridge */
-	sparx5_fdb_call_notifiers(SWITCHDEV_FDB_ADD_TO_BRIDGE,
-				  mac, vid, sparx5->ports[port]->ndev,
-				  true);
+	sparx5_fdb_call_notifiers(SWITCHDEV_FDB_ADD_TO_BRIDGE, mac, vid,
+				  sparx5->ports[port], true);
 }
 
 static void sparx5_mact_pull_work(struct work_struct *work)
@@ -461,7 +463,7 @@ static void sparx5_mact_pull_work(struct work_struct *work)
 
 		sparx5_fdb_call_notifiers(SWITCHDEV_FDB_DEL_TO_BRIDGE,
 					  mact_entry->mac, mact_entry->vid,
-					  sparx5->ports[mact_entry->port]->ndev,
+					  sparx5->ports[mact_entry->port],
 					  true);
 
 		list_del(&mact_entry->list);
