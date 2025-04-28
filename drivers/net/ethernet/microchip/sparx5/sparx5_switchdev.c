@@ -181,6 +181,7 @@ static int sparx5_port_attr_set(struct net_device *dev, const void *ctx,
 }
 
 static int sparx5_port_bridge_join(struct sparx5_port *port,
+				   struct net_device *brport_dev,
 				   struct net_device *bridge,
 				   struct netlink_ext_ack *extack)
 {
@@ -200,7 +201,7 @@ static int sparx5_port_bridge_join(struct sparx5_port *port,
 
 	set_bit(port->portno, sparx5->bridge_mask);
 
-	err = switchdev_bridge_port_offload(ndev, ndev, NULL, NULL, NULL,
+	err = switchdev_bridge_port_offload(brport_dev, ndev, NULL, NULL, NULL,
 					    false, extack);
 	if (err)
 		goto err_switchdev_offload;
@@ -261,6 +262,7 @@ sparx5_port_prechangeupper(struct net_device *dev,
 }
 
 static int sparx5_port_changeupper(struct net_device *dev,
+				   struct net_device *brport_dev,
 				   struct netdev_notifier_changeupper_info *info)
 {
 	struct sparx5_port *port = netdev_priv(dev);
@@ -271,7 +273,9 @@ static int sparx5_port_changeupper(struct net_device *dev,
 
 	if (netif_is_bridge_master(info->upper_dev)) {
 		if (info->linking)
-			err = sparx5_port_bridge_join(port, info->upper_dev,
+			err = sparx5_port_bridge_join(port,
+						      brport_dev,
+						      info->upper_dev,
 						      extack);
 		else
 			sparx5_port_bridge_leave(port, info->upper_dev);
@@ -327,7 +331,11 @@ static int sparx5_netdevice_port_event(struct net_device *dev,
 		sparx5_port_prechangeupper(dev, dev, ptr);
 		break;
 	case NETDEV_CHANGEUPPER:
-		err = sparx5_port_changeupper(dev, ptr);
+		/* When a port is directly attached to a bridge, the brport_dev
+		 * and dev are identical.
+		 */
+
+		err = sparx5_port_changeupper(dev, dev, ptr);
 		break;
 	case NETDEV_PRE_UP:
 		err = sparx5_port_add_addr(dev, true);
