@@ -30,17 +30,6 @@
 #define TABLE_UPDATE_SLEEP_US 10
 #define TABLE_UPDATE_TIMEOUT_US 100000
 
-struct sparx5_mact_entry {
-	struct list_head list;
-	unsigned char mac[ETH_ALEN];
-	u32 flags;
-#define MAC_ENT_ALIVE	BIT(0)
-#define MAC_ENT_MOVED	BIT(1)
-#define MAC_ENT_LOCK	BIT(2)
-	u16 vid;
-	u16 port;
-};
-
 static int sparx5_mact_get_status(struct sparx5 *sparx5)
 {
 	return spx5_rd(sparx5, LRN_COMMON_ACCESS_CTRL);

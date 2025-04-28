@@ -656,6 +656,18 @@ void sparx5_fdma_llp_configure(struct sparx5 *sparx5, u64 addr, u32 channel_id);
 int sparx5_fdma_resize(struct sparx5 *sparx5);
 
 /* sparx5_mactable.c */
+struct sparx5_mact_entry {
+	struct list_head list;
+	unsigned char mac[ETH_ALEN];
+	u32 flags;
+#define MAC_ENT_ALIVE	BIT(0)
+#define MAC_ENT_MOVED	BIT(1)
+#define MAC_ENT_LOCK	BIT(2)
+	u16 vid;
+	u16 port;
+	bool lag;
+};
+
 int sparx5_mact_learn(struct sparx5 *sparx5, int port,
 		      const unsigned char mac[ETH_ALEN], u16 vid);
 bool sparx5_mact_getnext(struct sparx5 *sparx5,
