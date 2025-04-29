@@ -317,8 +317,10 @@ struct sk_buff *hsr_create_tagged_frame(struct hsr_frame_info *frame,
 		struct hsr_ethhdr *hsr_ethhdr =
 			(struct hsr_ethhdr *)skb_mac_header(frame->skb_hsr);
 
-		/* set the lane id properly */
-		hsr_set_path_id(hsr_ethhdr, port);
+		/* set the lane id properly, except when forwarding frames. */
+		if (!prp_drop_frame(frame, port))
+			hsr_set_path_id(hsr_ethhdr, port);
+
 		return skb_clone(frame->skb_hsr, GFP_ATOMIC);
 	} else if (port->dev->features & NETIF_F_HW_HSR_TAG_INS) {
 		return skb_clone(frame->skb_std, GFP_ATOMIC);
