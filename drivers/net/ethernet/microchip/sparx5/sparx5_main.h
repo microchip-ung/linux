@@ -584,6 +584,7 @@ struct sparx5_consts {
 	int tod_pin;
 	int vmid_cnt;
 	int arp_tbl_cnt;
+	int bum_slb_cnt;
 	const struct sparx5_vcap_inst *vcaps_cfg;
 	const struct vcap_info *vcaps;
 	const struct vcap_statistics *vcap_stats;
