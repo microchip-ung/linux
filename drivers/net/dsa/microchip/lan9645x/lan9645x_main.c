@@ -924,6 +924,9 @@ void lan9645x_update_fwd_mask(struct lan9645x *lan9645x, bool joining)
 
 	lockdep_assert_held(&lan9645x->fwd_domain_lock);
 
+	if (joining)
+		lan9645x_cut_through_fwd(lan9645x);
+
 	/* Updates the source port PGIDs, making sure frames from p
 	 * are only forwarded to ports q != p, where q is relevant to forward
 	 */
@@ -944,6 +947,9 @@ void lan9645x_update_fwd_mask(struct lan9645x *lan9645x, bool joining)
 
 		lan_wr(mask, lan9645x, ANA_PGID(PGID_SRC + port));
 	}
+
+	if (!joining)
+		lan9645x_cut_through_fwd(lan9645x);
 }
 
 static int lan9645x_port_bridge_join(struct dsa_switch *ds, int port,

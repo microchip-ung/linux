@@ -848,4 +848,8 @@ int lan9645x_ets_del(struct lan9645x *lan9645x, int port,
 int lan9645x_ets_add(struct lan9645x *lan9645x, int port,
 		     struct tc_ets_qopt_offload *qopt);
 
+/* lan9645x_cut_thru.c */
+void lan9645x_cut_through_fwd(struct lan9645x *lan9645x);
+
+
 #endif /* __LAN9645X_MAIN_H__ */

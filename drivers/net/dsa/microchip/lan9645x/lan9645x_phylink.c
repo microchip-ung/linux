@@ -219,6 +219,9 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 	       DEV_MAC_ENA_CFG_TX_ENA_SET(1),
 	       lan9645x, DEV_MAC_ENA_CFG(p->chip_port));
 
+	mutex_lock(&lan9645x->fwd_domain_lock);
+	lan9645x_cut_through_fwd(lan9645x);
+	mutex_unlock(&lan9645x->fwd_domain_lock);
 
 	usleep_range(2 * USEC_PER_MSEC, 3 * USEC_PER_MSEC);
 	/* TODO: Enable phase detector */
@@ -245,8 +248,6 @@ void lan9645x_phylink_port_down(struct lan9645x *lan9645x, int port)
 	u32 val, delay = 0;
 
 	dev_dbg(lan9645x->dev, "port=%d\n", port);
-
-	p->speed = LAN9645X_SPEED_DISABLED;
 
 	/* 0.5: Disable any AFI */
 	lan_rmw(AFI_PORT_CFG_FC_SKIP_TTI_INJ_SET(1) |
@@ -282,6 +283,10 @@ void lan9645x_phylink_port_down(struct lan9645x *lan9645x, int port)
 		DEV_CLOCK_CFG_PCS_RX_RST,
 		lan9645x, DEV_CLOCK_CFG(p->chip_port));
 
+	mutex_lock(&lan9645x->fwd_domain_lock);
+	p->speed = LAN9645X_SPEED_DISABLED;
+	lan9645x_cut_through_fwd(lan9645x);
+	mutex_unlock(&lan9645x->fwd_domain_lock);
 
 	/* 3: Disable traffic being sent to or from switch port */
 	lan_rmw(QSYS_SW_PORT_MODE_PORT_ENA_SET(0),
