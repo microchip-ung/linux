@@ -851,5 +851,10 @@ int lan9645x_ets_add(struct lan9645x *lan9645x, int port,
 /* lan9645x_cut_thru.c */
 void lan9645x_cut_through_fwd(struct lan9645x *lan9645x);
 
+/* lan9645x_eee.c */
+int lan9645x_eee_mac_get(struct lan9645x *lan9645x, int port,
+			 struct ethtool_keee *e);
+int lan9645x_eee_mac_set(struct lan9645x *lan9645x, int port,
+			 struct ethtool_keee *e);
 
 #endif /* __LAN9645X_MAIN_H__ */

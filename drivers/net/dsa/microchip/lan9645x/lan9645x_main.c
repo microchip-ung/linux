@@ -1735,6 +1735,22 @@ static int lan9645x_port_setup_tc(struct dsa_switch *ds, int port,
 	}
 }
 
+static int lan9645x_port_set_mac_eee(struct dsa_switch *ds, int port,
+				     struct ethtool_keee *e)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	return lan9645x_eee_mac_set(lan9645x, port, e);
+}
+
+static int lan9645x_port_get_mac_eee(struct dsa_switch *ds, int port,
+				     struct ethtool_keee *e)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	return lan9645x_eee_mac_get(lan9645x, port, e);
+}
+
 static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.get_tag_protocol		= lan9645x_get_tag_protocol,
 	.connect_tag_protocol		= lan9645x_connect_tag_protocol,
@@ -1821,6 +1837,10 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.port_get_dscp_prio		= lan9645x_port_get_dscp_prio,
 	.port_add_dscp_prio		= lan9645x_port_add_dscp_prio,
 	.port_del_dscp_prio		= lan9645x_port_del_dscp_prio,
+
+	 /* MAC EEE settings */
+	 .set_mac_eee			= lan9645x_port_set_mac_eee,
+	 .get_mac_eee			= lan9645x_port_get_mac_eee,
 };
 
 static int lan9645x_request_target_regmaps(struct lan9645x *lan9645x)
