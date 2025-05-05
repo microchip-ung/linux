@@ -1,0 +1,792 @@
+// SPDX-License-Identifier: GPL-2.0
+/* Copyright (C) 2025 Microchip Technology Inc.
+ */
+
+#include <linux/platform_device.h>
+#include <linux/phy/phy.h>
+
+#include "lan9645x_main.h"
+
+static const char *lan9645x_resource_names[NUM_TARGETS] = {
+	[TARGET_ORG]          = "org",
+	[TARGET_GCB]          = "gcb",
+	[TARGET_QS]           = "qs",
+	[TARGET_PTP]          = "ptp",
+	[TARGET_CHIP_TOP]     = "chip_top",
+	[TARGET_TAS]          = "tas",
+	[TARGET_REW]          = "rew",
+	[TARGET_VCAP]         = "vcap",
+	[TARGET_VCAP + 1]     = "vcap1",
+	[TARGET_VCAP + 2]     = "vcap2",
+	[TARGET_MEP]          = "mep",
+	[TARGET_SYS]          = "sys",
+	[TARGET_HSIO]         = "hsio",
+	[TARGET_DEV]          = "dev",
+	[TARGET_DEV + 1]      = "dev1",
+	[TARGET_DEV + 2]      = "dev2",
+	[TARGET_DEV + 3]      = "dev3",
+	[TARGET_DEV + 4]      = "dev4",
+	[TARGET_DEV + 5]      = "dev5",
+	[TARGET_DEV + 6]      = "dev6",
+	[TARGET_DEV + 7]      = "dev7",
+	[TARGET_DEV + 8]      = "dev8",
+	[TARGET_UVOV]         = "uvov",
+	[TARGET_QSYS]         = "qsys",
+	[TARGET_AFI]          = "afi",
+	[TARGET_ANA]          = "ana",
+	[TARGET_IROM]         = "irom",
+	[TARGET_IRAM]         = "iram",
+	[TARGET_EROM_I2C]     = "erom_i2c",
+	[TARGET_EROM_SPI]     = "erom_spi",
+	[TARGET_CUPHY]        = "cuphy",
+	[TARGET_UART]         = "uart",
+	[TARGET_I2C]          = "i2c",
+	[TARGET_I2C + 1]      = "i2c1",
+	[TARGET_TIMERS]       = "timers",
+	[TARGET_CPU]          = "cpu",
+	[TARGET_OTP]          = "otp",
+	[TARGET_WDT]          = "wdt",
+};
+
+static struct regmap *lan9645x_request_regmap(struct lan9645x *lan9645x,
+					      enum lan9645x_target target)
+{
+	const char *resource_name = lan9645x_resource_names[target];
+
+	if (!resource_name) {
+		dev_err(lan9645x->dev,
+			"Requested regmap for target not found: %d\n", target);
+		return NULL;
+	}
+
+	return dev_get_regmap(lan9645x->dev->parent, resource_name);
+}
+
+static int lan9645x_tag_npi_setup(struct dsa_switch *ds)
+{
+	struct dsa_port *dp, *first_cpu_dp = NULL;
+	struct lan9645x *lan9645x = ds->priv;
+
+	dsa_switch_for_each_user_port(dp, ds) {
+		if (first_cpu_dp && dp->cpu_dp != first_cpu_dp) {
+			dev_err(ds->dev, "Multiple NPI ports not supported\n");
+			return -EINVAL;
+		}
+
+		first_cpu_dp = dp->cpu_dp;
+	}
+
+	if (!first_cpu_dp)
+		return -EINVAL;
+
+	lan9645x_npi_port_init(lan9645x, first_cpu_dp);
+
+	return 0;
+}
+
+static enum dsa_tag_protocol lan9645x_get_tag_protocol(struct dsa_switch *ds,
+						       int port,
+						       enum dsa_tag_protocol tp)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	return lan9645x->tag_proto;
+}
+
+static int lan9645x_connect_tag_protocol(struct dsa_switch *ds,
+					 enum dsa_tag_protocol proto)
+{
+	switch (proto) {
+	case DSA_TAG_PROTO_LAN9645X:
+		return 0;
+	default:
+		return -EPROTONOSUPPORT;
+	}
+}
+
+static void lan9645x_teardown(struct dsa_switch *ds)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	lan9645x_npi_port_deinit(lan9645x, lan9645x->npi);
+}
+
+static void lan9645x_port_phylink_get_caps(struct dsa_switch *ds, int port,
+					   struct phylink_config *config)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	lan9645x_phylink_get_caps(lan9645x, port, config);
+}
+
+static void
+lan9645x_port_phylink_mac_config(struct dsa_switch *ds, int port,
+				 unsigned int mode,
+				 const struct phylink_link_state *state)
+{
+	struct ethtool_pauseparam pauseparam = {
+		.cmd = ETHTOOL_SPAUSEPARAM,
+		.autoneg = 0,
+		.rx_pause = 0,
+		.tx_pause = 0,
+	};
+	struct lan9645x *lan9645x = ds->priv;
+	struct phylink *pl;
+
+	pl = dsa_to_port(ds, port)->pl;
+
+	if (lan9645x->npi == port && pl) {
+		/* Pause frames to the NPI port cause problems for the chip, as
+		 * they lack the configured prefix format. Make sure to disable
+		 * pause aneg if there is a PHY present on the link.
+		 */
+		if (!phylink_ethtool_set_pauseparam(pl, &pauseparam))
+			dev_info_once(lan9645x->dev,
+				      "Disabled pause autoneg on phy of NPI port=%d\n",
+				      port);
+	}
+
+	lan9645x_phylink_mac_config(lan9645x, port, mode, state);
+}
+
+static void lan9645x_port_phylink_mac_link_up(struct dsa_switch *ds, int port,
+					      unsigned int link_an_mode,
+					      phy_interface_t interface,
+					      struct phy_device *phydev,
+					      int speed, int duplex,
+					      bool tx_pause, bool rx_pause)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	lan9645x_phylink_mac_link_up(lan9645x, port, link_an_mode, interface,
+				     phydev, speed, duplex, tx_pause, rx_pause);
+}
+
+static void lan9645x_port_phylink_mac_link_down(struct dsa_switch *ds, int port,
+						unsigned int link_an_mode,
+						phy_interface_t interface)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	lan9645x_phylink_mac_link_down(lan9645x, port, link_an_mode, interface);
+}
+
+static struct phylink_pcs *
+lan9645x_port_phylink_mac_select_pcs(struct dsa_switch *ds, int port,
+				     phy_interface_t iface)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	return lan9645x_phylink_mac_select_pcs(lan9645x, port, iface);
+}
+
+static int lan9645x_port_set_maxlen(struct lan9645x *lan9645x, int port,
+				    size_t sdu)
+{
+	struct lan9645x_port *p = lan9645x->ports[port];
+
+	dev_dbg(lan9645x->dev, "port=%d sdu=%zu", port, sdu);
+
+	int maxlen = sdu + ETH_HLEN + ETH_FCS_LEN;
+
+	if (port == lan9645x->npi) {
+		maxlen += LAN9645X_IFH_LEN;
+		maxlen += LAN9645X_LONG_PREFIX_LEN;
+	}
+
+	lan_wr(DEV_MAC_MAXLEN_CFG_MAX_LEN_SET(maxlen), lan9645x,
+	       DEV_MAC_MAXLEN_CFG(p->chip_port));
+
+	/* Set Pause WM hysteresis */
+	lan_rmw(SYS_PAUSE_CFG_PAUSE_STOP_SET(lan9645x_wm_enc(4 * maxlen)) |
+		SYS_PAUSE_CFG_PAUSE_START_SET(lan9645x_wm_enc(6 * maxlen)),
+		SYS_PAUSE_CFG_PAUSE_START |
+		SYS_PAUSE_CFG_PAUSE_STOP,
+		lan9645x,
+		SYS_PAUSE_CFG(p->chip_port));
+
+	return 0;
+}
+
+static int lan9645x_change_mtu(struct dsa_switch *ds, int port, int new_mtu)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	lan9645x_port_set_maxlen(lan9645x, port, new_mtu);
+
+	return 0;
+}
+
+static int lan9645x_get_max_mtu(struct dsa_switch *ds, int port)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	/* Actual MAC max MTU is around 16KB. We set 10000 - overhead which
+	 * should be sufficient for all jumbo frames. Larger frames can cause
+	 * problems especially with flow control, since we only have 160K queue
+	 * buffer.
+	 */
+	int max_mtu = 10000 - ETH_HLEN - ETH_FCS_LEN;
+
+	if (port == lan9645x->npi) {
+		max_mtu -= LAN9645X_IFH_LEN;
+		max_mtu -= LAN9645X_LONG_PREFIX_LEN;
+	}
+
+	return max_mtu;
+}
+
+static int lan9645x_port_init(struct lan9645x *lan9645x, int port)
+{
+	struct lan9645x_port *p = lan9645x->ports[port];
+
+	/* Disable learning on port */
+	lan_rmw(ANA_PORT_CFG_LEARN_ENA_SET(0),
+		ANA_PORT_CFG_LEARN_ENA,
+		lan9645x, ANA_PORT_CFG(p->chip_port));
+
+	p->learn_ena = false;
+
+	lan9645x_port_set_maxlen(lan9645x, port, ETH_DATA_LEN);
+
+	lan9645x_phylink_port_down(lan9645x, port);
+
+	if (phy_interface_num_ports(p->phy_mode) == 4)
+		lan_rmw(DEV_CLOCK_CFG_PCS_RX_RST_SET(0) |
+			DEV_CLOCK_CFG_PCS_TX_RST_SET(0),
+			DEV_CLOCK_CFG_PCS_RX_RST |
+			DEV_CLOCK_CFG_PCS_TX_RST,
+			lan9645x, DEV_CLOCK_CFG(p->chip_port));
+
+	/* Drop frames with multicast source address */
+	lan_rmw(ANA_DROP_CFG_DROP_MC_SMAC_ENA_SET(1),
+		ANA_DROP_CFG_DROP_MC_SMAC_ENA, lan9645x,
+		ANA_DROP_CFG(p->chip_port));
+
+	/* Enable receiving frames on the port, and activate auto-learning of
+	 * MAC addresses.
+	 */
+	lan_rmw(ANA_PORT_CFG_LEARNAUTO_SET(1) |
+		ANA_PORT_CFG_RECV_ENA_SET(1) |
+		ANA_PORT_CFG_PORTID_VAL_SET(p->chip_port),
+		ANA_PORT_CFG_LEARNAUTO |
+		ANA_PORT_CFG_RECV_ENA |
+		ANA_PORT_CFG_PORTID_VAL,
+		lan9645x, ANA_PORT_CFG(p->chip_port));
+
+	return 0;
+}
+
+static int lan9645x_port_parse_delays(struct lan9645x_port *port,
+				      struct fwnode_handle *portnp)
+{
+	struct fwnode_handle *delay;
+	int err;
+
+	INIT_LIST_HEAD(&port->path_delays);
+
+	fwnode_for_each_available_child_node(portnp, delay) {
+		struct lan9645x_path_delay *path_delay;
+		s32 tx_delay;
+		s32 rx_delay;
+		u32 speed;
+
+		err = fwnode_property_read_u32(delay, "speed", &speed);
+		if (err)
+			return err;
+
+		err = fwnode_property_read_u32(delay, "rx_delay", &rx_delay);
+		if (err)
+			return err;
+
+		err = fwnode_property_read_u32(delay, "tx_delay", &tx_delay);
+		if (err)
+			return err;
+
+		path_delay = devm_kzalloc(port->lan9645x->dev,
+					  sizeof(*path_delay), GFP_KERNEL);
+		if (!path_delay)
+			return -ENOMEM;
+
+		path_delay->rx_delay = rx_delay;
+		path_delay->tx_delay = tx_delay;
+		path_delay->speed = speed;
+		list_add_tail(&path_delay->list, &port->path_delays);
+	}
+
+	return 0;
+}
+
+static int lan9645x_parse_ports_node(struct lan9645x *lan9645x)
+{
+	struct fwnode_handle *ports, *portnp;
+	struct device *dev = lan9645x->dev;
+	int err = 0;
+
+	ports = device_get_named_child_node(dev, "ethernet-ports");
+	if (!ports)
+		ports = device_get_named_child_node(dev, "ports");
+	if (!ports) {
+		dev_err(dev, "no ethernet-ports or ports child found\n");
+		return -ENODEV;
+	}
+
+	fwnode_for_each_available_child_node(ports, portnp) {
+		phy_interface_t phy_mode;
+		struct phy *serdes;
+		u32 p;
+
+		if (fwnode_property_read_u32(portnp, "reg", &p)) {
+			dev_err(dev, "Port number not defined in device tree (property \"reg\")\n");
+			err = -ENODEV;
+			fwnode_handle_put(portnp);
+			goto err_free_ports;
+		}
+
+		if (!(p >= 0 && p <= lan9645x->num_phys_ports)) {
+			dev_err(dev,
+				"Port number in device tree is invalid %u (property \"reg\")\n",
+				p);
+			err = -ENODEV;
+			fwnode_handle_put(portnp);
+			goto err_free_ports;
+		}
+
+		phy_mode = fwnode_get_phy_mode(portnp);
+		if (phy_mode < 0) {
+			dev_err(dev,
+				"Failed to read phy-mode or phy-interface-type property for port %u: %pe\n",
+				p, ERR_PTR(phy_mode));
+			err = -ENODEV;
+			fwnode_handle_put(portnp);
+			goto err_free_ports;
+		}
+
+		lan9645x->ports[p]->phy_mode = phy_mode;
+		lan9645x->ports[p]->fwnode = fwnode_handle_get(portnp);
+		lan9645x_port_parse_delays(lan9645x->ports[p], portnp);
+
+		serdes = devm_of_phy_optional_get(lan9645x->dev,
+						  to_of_node(portnp), NULL);
+		if (IS_ERR(serdes))
+			return PTR_ERR(serdes);
+		lan9645x->ports[p]->serdes = serdes;
+	}
+
+err_free_ports:
+	fwnode_handle_put(ports);
+	return err;
+}
+
+static void lan9645x_cpu_port_init(struct lan9645x *lan9645x)
+{
+	lan_wr(BIT(CPU_PORT), lan9645x, ANA_PGID(PGID_CPU));
+
+	lan_rmw(ANA_PORT_CFG_PORTID_VAL_SET(CPU_PORT) |
+		ANA_PORT_CFG_RECV_ENA_SET(1),
+		ANA_PORT_CFG_PORTID_VAL |
+		ANA_PORT_CFG_RECV_ENA, lan9645x,
+		ANA_PORT_CFG(CPU_PORT));
+
+	/* Enable switching to/from cpu port. Keep default aging-mode. */
+	lan_rmw(QSYS_SW_PORT_MODE_PORT_ENA_SET(1) |
+		QSYS_SW_PORT_MODE_SCH_NEXT_CFG_SET(1) |
+		QSYS_SW_PORT_MODE_INGRESS_DROP_MODE_SET(1),
+		QSYS_SW_PORT_MODE_PORT_ENA |
+		QSYS_SW_PORT_MODE_SCH_NEXT_CFG |
+		QSYS_SW_PORT_MODE_INGRESS_DROP_MODE,
+		lan9645x, QSYS_SW_PORT_MODE(CPU_PORT));
+}
+
+static int lan9645x_reset_switch(struct lan9645x *lan9645x)
+{
+	int val = 0;
+	int err;
+
+	lan_wr(SYS_RESET_CFG_CORE_ENA_SET(0), lan9645x, SYS_RESET_CFG);
+	lan_wr(SYS_RAM_INIT_RAM_INIT_SET(1), lan9645x, SYS_RAM_INIT);
+	err = lan9645x_rd_poll_timeout(lan9645x, SYS_RAM_INIT, val,
+				       SYS_RAM_INIT_RAM_INIT_GET(val) == 0);
+	if (err) {
+		dev_err(lan9645x->dev, "Lan9645x setup: failed to init chip RAM.");
+		return err;
+	}
+	lan_wr(SYS_RESET_CFG_CORE_ENA_SET(1), lan9645x, SYS_RESET_CFG);
+
+	return 0;
+}
+
+static void lan9645x_igmp_snooping(struct lan9645x *lan9645x, bool enabled,
+				   int chip_port)
+{
+	lan_rmw(ANA_CPU_FWD_CFG_IGMP_REDIR_ENA_SET(enabled) |
+		ANA_CPU_FWD_CFG_MLD_REDIR_ENA_SET(enabled) |
+		ANA_CPU_FWD_CFG_IPMC_CTRL_COPY_ENA_SET(enabled),
+		ANA_CPU_FWD_CFG_IGMP_REDIR_ENA |
+		ANA_CPU_FWD_CFG_MLD_REDIR_ENA |
+		ANA_CPU_FWD_CFG_IPMC_CTRL_COPY_ENA,
+		lan9645x, ANA_CPU_FWD_CFG(chip_port));
+}
+
+const struct phylink_pcs_ops lan9645x_phylink_pcs_ops = {
+	.pcs_get_state = lan9645x_pcs_get_state,
+	.pcs_config = lan9645x_pcs_config,
+	.pcs_an_restart = lan9645x_pcs_aneg_restart,
+};
+
+static void lan9645x_set_tail_drop_wm(struct lan9645x *lan9645x)
+{
+	int shared_per_port;
+	int port;
+
+	/* Configure tail dropping watermark */
+	shared_per_port =
+		lan9645x->shared_queue_sz / (lan9645x->num_phys_ports + 1);
+
+	/* The total memory size is diveded by number of front ports plus CPU
+	 * port.
+	 */
+	lan9645x_for_each_chipport(lan9645x, port) {
+		lan_wr(lan9645x_wm_enc(shared_per_port), lan9645x, SYS_ATOP(port));
+	}
+
+	/* Tail dropping active based only on per port ATOP wm */
+	lan_wr(lan9645x_wm_enc(lan9645x->shared_queue_sz),
+	       lan9645x, SYS_ATOP_TOT_CFG);
+}
+
+static int lan9645x_setup(struct dsa_switch *ds)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	struct device *dev = lan9645x->dev;
+	phy_interface_t *port_phy_modes;
+	u32 all_phys_ports, all_ports;
+	struct dsa_port *dp;
+	int err = 0;
+
+	dev_dbg(lan9645x->dev, "starting setup");
+
+	lan9645x->num_phys_ports = ds->num_ports;
+	all_phys_ports = GENMASK(lan9645x->num_phys_ports - 1, 0);
+	all_ports = all_phys_ports | BIT(CPU_PORT);
+
+	lan9645x_reset_switch(lan9645x);
+
+	lan9645x->ports = devm_kcalloc(lan9645x->dev, lan9645x->num_phys_ports,
+				       sizeof(struct lan9645x_port *),
+				       GFP_KERNEL);
+	if (!lan9645x->ports)
+		return -ENOMEM;
+
+	for (int port = 0; port < lan9645x->num_phys_ports; port++) {
+		struct lan9645x_port *p;
+
+		p = devm_kzalloc(lan9645x->dev,
+				 sizeof(struct lan9645x_port), GFP_KERNEL);
+		if (!p) {
+			dev_err(lan9645x->dev,
+				"failed to allocate port memory\n");
+			kfree(port_phy_modes);
+			return -ENOMEM;
+		}
+
+		p->lan9645x = lan9645x;
+		p->chip_port = port;
+		p->phylink_pcs.poll = true;
+		p->phylink_pcs.neg_mode = true;
+		p->phylink_pcs.ops = &lan9645x_phylink_pcs_ops;
+		lan9645x->ports[port] = p;
+	}
+
+	err = lan9645x_parse_ports_node(lan9645x);
+	if (err) {
+		dev_err(dev, "Lan9645x setup: failed to parse ports node.");
+		return err;
+	}
+
+	/* Link Aggregation Mode: NETDEV_LAG_HASH_L2 */
+	lan_wr(ANA_AGGR_CFG_AC_SMAC_ENA |
+	       ANA_AGGR_CFG_AC_DMAC_ENA,
+	       lan9645x, ANA_AGGR_CFG);
+
+	/* Flush queues */
+	lan_wr(GENMASK(1, 0), lan9645x, QS_XTR_FLUSH);
+
+	/* Allow to drain */
+	mdelay(1);
+
+	/* All Queues normal */
+	lan_wr(0x0, lan9645x, QS_XTR_FLUSH);
+
+	/* Set MAC age time to default value, the entry is aged after
+	 * 2 * AGE_PERIOD
+	 */
+	lan_wr(ANA_AUTOAGE_AGE_PERIOD_SET(BR_DEFAULT_AGEING_TIME / 2 / HZ),
+	       lan9645x, ANA_AUTOAGE);
+
+	/* Disable learning for frames discarded by VLAN ingress filtering */
+	lan_rmw(ANA_ADVLEARN_VLAN_CHK_SET(1),
+		ANA_ADVLEARN_VLAN_CHK,
+		lan9645x, ANA_ADVLEARN);
+
+	/* Queue system frame ageing. We target 2s ageing.
+	 *
+	 * Register unit is 1024 cycles.
+	 *
+	 * ASIC: 165.625 Mhz  ~ 6.0377 ns period
+	 * FPGA:  66.125 Mhz  ~ 15.125ns period
+	 *
+	 * 1024 * 6.0377 ns =~ 6182 ns
+	 * val = 2000000000ns / 6182ns
+	 */
+	lan_wr(SYS_FRM_AGING_AGE_TX_ENA_SET(1) |
+	       SYS_FRM_AGING_MAX_AGE_SET((2000000000 / 6182)),
+	       lan9645x,  SYS_FRM_AGING);
+
+	/* Map the 8 CPU extraction queues to CPU port 9 (datasheet is wrong) */
+	lan_wr(0, lan9645x, QSYS_CPU_GROUP_MAP);
+
+	/* Set min-spacing of EOF to SOF on injected frames to 0, on cpu device
+	 * 0. This is required when injecting with IFH.
+	 * Default values emulates delay of std preamble/IFG setting on a front
+	 * port.
+	 */
+	lan_rmw(QS_INJ_CTRL_GAP_SIZE_SET(0),
+		QS_INJ_CTRL_GAP_SIZE,
+		lan9645x, QS_INJ_CTRL(0));
+
+	/* Setup flooding PGIDs for IPv4/IPv6 multicast. Control and dataplane
+	 * use the same masks. Control frames are redirected to CPU, and
+	 * the network stack is responsible for forwarding these.
+	 * The dataplane is forwarding according to the offloaded MDB entries.
+	 *
+	 * In DSA it is not currently possible to know if the bridge is in
+	 * snooping mode, and we default to the igmp_snooping 1 behaviour.
+	 */
+	lan_wr(ANA_FLOODING_IPMC_FLD_MC4_DATA_SET(PGID_MCIPV4) |
+	       ANA_FLOODING_IPMC_FLD_MC4_CTRL_SET(PGID_MC) |
+	       ANA_FLOODING_IPMC_FLD_MC6_DATA_SET(PGID_MCIPV6) |
+	       ANA_FLOODING_IPMC_FLD_MC6_CTRL_SET(PGID_MC),
+	       lan9645x, ANA_FLOODING_IPMC);
+
+	/* There are 8 priorities */
+	for (int prio = 0; prio < 8; ++prio)
+		lan_wr(ANA_FLOODING_FLD_MULTICAST_SET(PGID_MC) |
+		       ANA_FLOODING_FLD_UNICAST_SET(PGID_UC) |
+		       ANA_FLOODING_FLD_BROADCAST_SET(PGID_BC),
+		       lan9645x, ANA_FLOODING(prio));
+
+	/* Set all the entries to obey VLAN_VLAN. */
+	for (int i = 0; i < PGID_ENTRIES; ++i)
+		lan_wr(ANA_PGID_CFG_OBEY_VLAN_SET(1),
+		       lan9645x, ANA_PGID_CFG(i));
+
+	/* Disable bridging by default */
+	for (int p = 0; p < lan9645x->num_phys_ports; p++) {
+		lan_wr(0, lan9645x, ANA_PGID(PGID_SRC + p));
+
+		/* Do not forward BPDU frames to the front ports and copy them
+		 * to CPU
+		 */
+		lan_wr(ANA_CPU_FWD_BPDU_CFG_BPDU_REDIR_ENA,
+		       lan9645x, ANA_CPU_FWD_BPDU_CFG(p));
+	}
+
+	/* Set source buffer size for each priority and each port to 1500 bytes */
+	for (int i = 0; i <= QSYS_Q_RSRV; ++i) {
+		lan_wr(1500 / 64, lan9645x, QSYS_RES_CFG(i));
+		lan_wr(1500 / 64, lan9645x, QSYS_RES_CFG(512 + i));
+	}
+
+	/* Configure and enable the CPU port */
+	lan9645x_cpu_port_init(lan9645x);
+
+	/* Multicast to all front ports */
+	lan_wr(all_phys_ports, lan9645x, ANA_PGID(PGID_MC));
+
+	/* Snooping on by default. This will be controlled by mrouter ports */
+	lan_wr(0x0, lan9645x, ANA_PGID(PGID_MCIPV4));
+	lan_wr(0x0, lan9645x, ANA_PGID(PGID_MCIPV6));
+
+	/* Unicast to all front ports */
+	lan_wr(all_phys_ports, lan9645x, ANA_PGID(PGID_UC));
+
+	/* Broadcast to the CPU port and to front ports */
+	lan_wr(all_ports, lan9645x, ANA_PGID(PGID_BC));
+
+	/* Transmit cpu frames as received without any tagging, timing or other
+	 * updates
+	 */
+	lan_wr(REW_PORT_CFG_NO_REWRITE_SET(1),
+	       lan9645x, REW_PORT_CFG(CPU_PORT));
+
+	dsa_switch_for_each_available_port(dp, ds) {
+		lan9645x_port_init(lan9645x, dp->index);
+	}
+
+	dsa_switch_for_each_user_port(dp, ds) {
+		lan9645x_igmp_snooping(lan9645x, true, dp->index);
+	}
+
+	err = lan9645x_tag_npi_setup(ds);
+	if (err) {
+		dev_err(dev, "Lan9645x setup: failed to setup NPI port.\n");
+		return err;
+	}
+
+	lan9645x_set_tail_drop_wm(lan9645x);
+
+	ds->mtu_enforcement_ingress = true;
+	ds->assisted_learning_on_cpu_port = true;
+	ds->fdb_isolation = true;
+
+	return 0;
+}
+
+static int lan9645x_port_set_mac_address(struct dsa_switch *ds, int port,
+					 const unsigned char *addr)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	/* Not allowed to program hardware off of this callback. Only veto. */
+
+	dev_dbg(lan9645x->dev, "port=%d addr=%pM\n", port, addr);
+
+	return 0;
+}
+
+static const struct dsa_switch_ops lan9645x_switch_ops = {
+	.get_tag_protocol		= lan9645x_get_tag_protocol,
+	.connect_tag_protocol		= lan9645x_connect_tag_protocol,
+
+	.setup				= lan9645x_setup,
+	.teardown			= lan9645x_teardown,
+
+	/* Phylink integration */
+	.phylink_mac_config		= lan9645x_port_phylink_mac_config,
+	.phylink_get_caps		= lan9645x_port_phylink_get_caps,
+	.phylink_mac_link_up		= lan9645x_port_phylink_mac_link_up,
+	.phylink_mac_link_down		= lan9645x_port_phylink_mac_link_down,
+	.phylink_mac_select_pcs		= lan9645x_port_phylink_mac_select_pcs,
+
+	/* MTU  */
+	.port_change_mtu		= lan9645x_change_mtu,
+	.port_max_mtu			= lan9645x_get_max_mtu,
+
+	/* Veto port MAC changes */
+	.port_set_mac_address		= lan9645x_port_set_mac_address,
+};
+
+static int lan9645x_request_target_regmaps(struct lan9645x *lan9645x)
+{
+	struct regmap *tgt_map;
+
+	for (int i = 0; i < NUM_TARGETS; i++) {
+		tgt_map = lan9645x_request_regmap(lan9645x, i);
+		if (IS_ERR(tgt_map)) {
+			dev_err(lan9645x->dev,
+				"Failed to get target regmap: %pe\n", tgt_map);
+			return PTR_ERR(tgt_map);
+		}
+
+		lan9645x->rmap[i] = tgt_map;
+	}
+
+	return 0;
+}
+
+static int lan9645x_probe(struct platform_device *pdev)
+{
+	struct device *dev = &pdev->dev;
+	struct lan9645x *lan9645x;
+	struct dsa_switch *ds;
+	int err = 0;
+
+	lan9645x = devm_kzalloc(dev, sizeof(*lan9645x), GFP_KERNEL);
+	if (!lan9645x)
+		return -ENOMEM;
+
+	dev_set_drvdata(dev, lan9645x);
+	lan9645x->dev = dev;
+
+	err = lan9645x_request_target_regmaps(lan9645x);
+	if (err)
+		goto err_free_lan9645x;
+
+	ds = devm_kzalloc(dev, sizeof(*ds), GFP_KERNEL);
+	if (!ds) {
+		err = -ENOMEM;
+		dev_err_probe(dev, err, "Failed to allocate DSA switch\n");
+		goto err_free_lan9645x;
+	}
+
+	ds->dev = dev;
+	ds->num_ports = NUM_PHYS_PORTS;
+	ds->num_tx_queues = NUM_PRIO_QUEUES;
+
+	ds->ops = &lan9645x_switch_ops;
+	ds->priv = lan9645x;
+
+	lan9645x->ds = ds;
+	lan9645x->tag_proto = DSA_TAG_PROTO_LAN9645X;
+	lan9645x->shared_queue_sz = LAN9645X_BUFFER_MEMORY;
+
+	err = dsa_register_switch(ds);
+	if (err) {
+		dev_err_probe(dev, err, "Failed to register DSA switch\n");
+		goto err_free_ds;
+	}
+
+	return 0;
+
+err_free_ds:
+	kfree(ds);
+err_free_lan9645x:
+	kfree(lan9645x);
+	return err;
+}
+
+static void lan9645x_remove(struct platform_device *pdev)
+{
+	struct lan9645x *lan9645x = dev_get_drvdata(&pdev->dev);
+
+	if (!lan9645x)
+		return;
+
+	/* Calls lan9645x DSA .teardown */
+	dsa_unregister_switch(lan9645x->ds);
+
+	dev_set_drvdata(&pdev->dev, NULL);
+}
+
+static void lan9645x_shutdown(struct platform_device *pdev)
+{
+	struct lan9645x *lan9645x = dev_get_drvdata(&pdev->dev);
+
+	if (!lan9645x)
+		return;
+
+	dsa_switch_shutdown(lan9645x->ds);
+
+	dev_set_drvdata(&pdev->dev, NULL);
+}
+
+static const struct of_device_id lan9645x_switch_of_match[] = {
+	{ .compatible = "microchip,lan9645x-switch" },
+	{},
+};
+MODULE_DEVICE_TABLE(of, lan9645x_switch_of_match);
+
+static struct platform_driver lan9645x_switch_driver = {
+	.driver = {
+		.name = "lan9645x-switch",
+		.of_match_table = lan9645x_switch_of_match,
+	},
+	.probe = lan9645x_probe,
+	.remove = lan9645x_remove,
+	.shutdown = lan9645x_shutdown,
+};
+module_platform_driver(lan9645x_switch_driver);
+
+MODULE_DESCRIPTION("Lan9645x Switch Driver");
+MODULE_AUTHOR("Jens Emil Schulz Østergaard <jensemil.schulzostergaard@microchip.com>");
+MODULE_LICENSE("Dual MIT/GPL");
