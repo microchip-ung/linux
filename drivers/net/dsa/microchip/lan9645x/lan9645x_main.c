@@ -652,6 +652,7 @@ static int lan9645x_setup(struct dsa_switch *ds)
 
 	dsa_switch_for_each_available_port(dp, ds) {
 		lan9645x_port_init(lan9645x, dp->index);
+		lan9645x_police_port_init(lan9645x->ports[dp->index]);
 	}
 
 	dsa_switch_for_each_user_port(dp, ds) {
@@ -1497,6 +1498,30 @@ static void lan9645x_port_mirror_del(struct dsa_switch *ds, int from,
 	lan9645x_mirror_port_del(lan9645x, from, mirror->ingress);
 }
 
+static int lan9645x_port_policer_add(struct dsa_switch *ds, int port,
+				     struct dsa_mall_policer_tc_entry *policer)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	struct lan9645x_policer pol = {
+		.rate = div_u64(policer->rate_bytes_per_sec, 1000) * 8,
+		.burst = policer->burst,
+	};
+
+	dev_dbg(lan9645x->dev, "port=%d rate=%llu burst=%u\n", port,
+		policer->rate_bytes_per_sec, policer->burst);
+
+	return lan9645x_police_port_add(lan9645x, port, &pol);
+}
+
+static void lan9645x_port_policer_del(struct dsa_switch *ds, int port)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	dev_dbg(lan9645x->dev, "port=%d\n", port);
+
+	lan9645x_police_port_del(lan9645x, port);
+}
+
 static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.get_tag_protocol		= lan9645x_get_tag_protocol,
 	.connect_tag_protocol		= lan9645x_connect_tag_protocol,
@@ -1568,6 +1593,8 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	/* TC integration */
 	.port_mirror_add		= lan9645x_port_mirror_add,
 	.port_mirror_del		= lan9645x_port_mirror_del,
+	.port_policer_add		= lan9645x_port_policer_add,
+	.port_policer_del		= lan9645x_port_policer_del,
 };
 
 static int lan9645x_request_target_regmaps(struct lan9645x *lan9645x)

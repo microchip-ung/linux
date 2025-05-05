@@ -302,6 +302,13 @@ struct lan9645x_mirror {
 	int to;
 };
 
+struct lan9645x_policer {
+	/* kilobit per second */
+	u32 rate;
+	/* bytes */
+	u32 burst;
+};
+
 struct lan9645x {
 	struct device *dev;
 	struct dsa_switch *ds;
@@ -754,5 +761,14 @@ void lan9645x_mirror_port_del(struct lan9645x *lan9645x, int from,
 void lan9645x_mirror_put(struct lan9645x *lan9645x);
 struct lan9645x_mirror *lan9645x_mirror_get(struct lan9645x *lan9645x, int to,
 					    struct netlink_ext_ack *extack);
+
+/* Port Policer */
+int lan9645x_police_port_add(struct lan9645x *lan9645x, int port,
+			     struct lan9645x_policer *pol);
+void lan9645x_police_port_del(struct lan9645x *lan9645x, int port);
+int lan9645x_police_add(struct lan9645x_port *p,
+			struct lan9645x_policer *pol, int pol_idx);
+void lan9645x_police_del(struct lan9645x *lan9645x, u16 pol_idx);
+void lan9645x_police_port_init(struct lan9645x_port *p);
 
 #endif /* __LAN9645X_MAIN_H__ */
