@@ -518,6 +518,9 @@ int lan9645x_mact_entry_del(struct lan9645x *lan9645x, int pgid,
 			    const unsigned char *mac, u16 vid);
 int lan9645x_mact_entry_add(struct lan9645x *lan9645x, int pgid,
 			    const unsigned char *mac, u16 vid);
+void lan9645x_migrate_lag_fdb(struct lan9645x *lan9645x,
+			      struct net_device *bond, int old_lag_id,
+			      int new_lag_id);
 
 /* VLAN lan9645x_vlan.c */
 void lan9645x_vlan_init(struct lan9645x *lan9645x);
@@ -536,5 +539,20 @@ void lan9645x_vlan_set_mask(struct lan9645x *lan9645x, u16 vid);
 void lan9645x_vlan_set_hostmode(struct lan9645x_port *p);
 int lan9645x_port_vlan_prepare(struct lan9645x_port *p, u16 vid, bool pvid,
 			       bool untagged, struct netlink_ext_ack *extack);
+
+/* LAG: Link aggregation group lan9645x_lag.c */
+u32 lan9645x_lag_dev_get_mask(struct lan9645x *lan9645x,
+			      struct net_device *bond);
+int lan9645x_lag_dev_get_id(struct lan9645x *lan9645x, struct net_device *bond);
+void lan9645x_lag_port_set_pgids(struct lan9645x *lan9645x, int port,
+				 bool leaving, u32 bond_mask);
+int lan9645x_lag_apply_hash_type(struct lan9645x *lan9645x,
+				 struct netdev_lag_upper_info *info,
+				 struct netlink_ext_ack *extack);
+int lan9645x_lag_join_prepare(struct lan9645x *lan9645x,
+			      struct netdev_lag_upper_info *info,
+			      struct netlink_ext_ack *extack);
+int lan9645x_lag_reconfigure(struct lan9645x *lan9645x, struct net_device *bond,
+			     int port, bool leaving);
 
 #endif /* __LAN9645X_MAIN_H__ */

@@ -750,3 +750,34 @@ int lan9645x_mact_dsa_dump(struct lan9645x *lan9645x, int port,
 
 	return err;
 }
+
+/* Migrate all fdbs for given lag to new lag_id when the logical lag port
+ * changes.
+ */
+void lan9645x_migrate_lag_fdb(struct lan9645x *lan9645x,
+			      struct net_device *bond, int old_lag_id,
+			      int new_lag_id)
+{
+	struct lan9645x_mact_entry *entry, *tmp;
+	struct list_head deleted;
+
+	INIT_LIST_HEAD(&deleted);
+
+	mutex_lock(&lan9645x->mac_entry_lock);
+	mutex_lock(&lan9645x->mact_lock);
+	list_for_each_entry_safe(entry, tmp, &lan9645x->mac_entries, list) {
+		if (entry->common.pgid != old_lag_id || entry->bond != bond)
+			continue;
+
+		entry->common.pgid = new_lag_id;
+		__lan9645x_mact_forget(lan9645x, entry->common.key.mac,
+				       entry->common.key.vid,
+				       entry->common.type);
+		__lan9645x_mact_learn(lan9645x, entry->common.pgid,
+				      entry->common.key.mac,
+				      entry->common.key.vid,
+				      entry->common.type);
+	}
+	mutex_unlock(&lan9645x->mact_lock);
+	mutex_unlock(&lan9645x->mac_entry_lock);
+}

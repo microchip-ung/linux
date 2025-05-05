@@ -898,6 +898,10 @@ void lan9645x_update_fwd_mask(struct lan9645x *lan9645x, bool joining)
 		if (lan9645x_port_is_bridged(p)) {
 			mask = lan9645x->bridge_mask &
 			       lan9645x->bridge_fwd_mask & ~BIT(p->chip_port);
+
+			if (p->bond)
+				mask &= ~lan9645x_lag_dev_get_mask(lan9645x,
+								   p->bond);
 		}
 
 		lan_wr(mask, lan9645x, ANA_PGID(PGID_SRC + port));
@@ -1082,6 +1086,160 @@ static int lan9645x_port_vlan_del(struct dsa_switch *ds, int port,
 	return 0;
 }
 
+static int lan9645x_lag_join(struct dsa_switch *ds, int port,
+			     struct dsa_lag lag,
+			     struct netdev_lag_upper_info *info,
+			     struct netlink_ext_ack *extack)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	struct lan9645x_port *p = lan9645x->ports[port];
+	int old_lag_id, new_lag_id;
+	int err;
+
+	err = lan9645x_lag_join_prepare(lan9645x, info, extack);
+	if (err)
+		return err;
+
+	dev_dbg(lan9645x->dev, "port=%d\n", port);
+
+	mutex_lock(&lan9645x->fwd_domain_lock);
+
+	err = lan9645x_lag_apply_hash_type(lan9645x, info, extack);
+	if (err) {
+		mutex_unlock(&lan9645x->fwd_domain_lock);
+		return err;
+	}
+
+	old_lag_id = lan9645x_lag_dev_get_id(lan9645x, lag.dev);
+	p->bond = lag.dev;
+	p->hash_type = info->hash_type;
+	new_lag_id = lan9645x_lag_reconfigure(lan9645x, lag.dev, port, false);
+
+	/* Update LAG logical port */
+	if (old_lag_id >= 0 && old_lag_id != new_lag_id)
+		lan9645x_migrate_lag_fdb(lan9645x, lag.dev, old_lag_id,
+					 new_lag_id);
+
+	mutex_unlock(&lan9645x->fwd_domain_lock);
+
+	return 0;
+}
+
+static int lan9645x_lag_leave(struct dsa_switch *ds, int port,
+			      struct dsa_lag lag)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	int old_lag_id, new_lag_id;
+
+	dev_dbg(lan9645x->dev, "port=%d\n", port);
+
+	mutex_lock(&lan9645x->fwd_domain_lock);
+
+	old_lag_id = lan9645x_lag_dev_get_id(lan9645x, lag.dev);
+	lan9645x->ports[port]->bond = NULL;
+	lan9645x->ports[port]->hash_type = NETDEV_LAG_HASH_NONE;
+
+	new_lag_id = lan9645x_lag_reconfigure(lan9645x, lag.dev, port, true);
+
+	/* When the last port leaves a LAG, DSA will flush the entries for us.
+	 * The sequence is something like:
+	 *
+	 * 1) lag_change tx_enabled=0
+	 * 2) lag_fdb_del all static entries from lag_fdb_add
+	 * 3) bridge_leave (if bridged)
+	 * 4) port_fast_age (flushes learned entries)
+	 * 5) lag_leave
+	 * 6) link down sequence
+	 *
+	 * NOTE: This will clear our hw, but the static entries will remain in
+	 * software as offload static. Fear not - if you add a port back to the
+	 * bond, DSA will kindly call you with lag_fdb_add
+	 *
+	 * When a port leaves (not last) - dsa will also flush (fast_age) the port.
+	 * so we only need to migrate static entries
+	 */
+	if (new_lag_id >= 0 && old_lag_id != new_lag_id)
+		lan9645x_migrate_lag_fdb(lan9645x, lag.dev, old_lag_id,
+					 new_lag_id);
+
+	mutex_unlock(&lan9645x->fwd_domain_lock);
+
+	return 0;
+}
+
+static int lan9645x_lag_change(struct dsa_switch *ds, int port)
+{
+	struct dsa_port *dp = dsa_to_port(ds, port);
+	struct lan9645x *lan9645x = ds->priv;
+	struct lan9645x_port *p;
+	u32 bond_mask;
+
+	dev_dbg(lan9645x->dev, "port=%d lag_tx_enabled=%d\n", port,
+		dp->lag_tx_enabled);
+
+	p = lan9645x->ports[port];
+
+	mutex_lock(&lan9645x->fwd_domain_lock);
+
+	bond_mask = lan9645x_lag_dev_get_mask(lan9645x, p->bond);
+	p->lag_tx_active = dp->lag_tx_enabled;
+	lan9645x_lag_port_set_pgids(lan9645x, port, false, bond_mask);
+
+	mutex_unlock(&lan9645x->fwd_domain_lock);
+
+	return 0;
+}
+
+static int lan9645x_lag_fdb_add(struct dsa_switch *ds, struct dsa_lag lag,
+				const unsigned char *addr, u16 vid,
+				struct dsa_db db)
+{
+	struct net_device *br = lan9645x_classify_db(db);
+	struct lan9645x *lan9645x = ds->priv;
+	int lag_port;
+
+	dev_dbg(lan9645x->dev, "mac=%pM vid=%u lag_id=%d\n", addr, vid,
+		lan9645x_lag_dev_get_id(lan9645x, lag.dev));
+
+	if (IS_ERR(br))
+		return PTR_ERR(br);
+
+	mutex_lock(&lan9645x->fwd_domain_lock);
+	lag_port = lan9645x_lag_dev_get_id(lan9645x, lag.dev);
+	mutex_unlock(&lan9645x->fwd_domain_lock);
+	if (lag_port < 0)
+		return 0;
+
+	if (!vid)
+		vid = lan9645x_vlan_unaware_pvid(lan9645x, br);
+
+	return lan9645x_mact_entry_add(lan9645x, lag_port, addr, vid);
+}
+
+static int lan9645x_lag_fdb_del(struct dsa_switch *ds, struct dsa_lag lag,
+				const unsigned char *addr, u16 vid,
+				struct dsa_db db)
+{
+	struct net_device *br = lan9645x_classify_db(db);
+	struct lan9645x *lan9645x = ds->priv;
+	int lag_id;
+
+	dev_dbg(lan9645x->dev, "mac=%pM vid=%u lag_id=%d\n", addr, vid,
+		lan9645x_lag_dev_get_id(lan9645x, lag.dev));
+
+	if (IS_ERR(br))
+		return PTR_ERR(br);
+
+	mutex_lock(&lan9645x->fwd_domain_lock);
+	lag_id = lan9645x_lag_dev_get_id(lan9645x, lag.dev);
+	mutex_unlock(&lan9645x->fwd_domain_lock);
+
+	if (lag_id >= 0)
+		return __lan9645x_fdb_del(lan9645x, lag_id, addr, vid, br);
+
+	return -ENOENT;
+}
+
 static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.get_tag_protocol		= lan9645x_get_tag_protocol,
 	.connect_tag_protocol		= lan9645x_connect_tag_protocol,
@@ -1122,6 +1280,13 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.port_vlan_filtering		= lan9645x_port_vlan_filtering,
 	.port_vlan_add			= lan9645x_port_vlan_add,
 	.port_vlan_del			= lan9645x_port_vlan_del,
+
+	/* Link Aggregation Group integration */
+	.port_lag_join			= lan9645x_lag_join,
+	.port_lag_leave			= lan9645x_lag_leave,
+	.port_lag_change		= lan9645x_lag_change,
+	.lag_fdb_add			= lan9645x_lag_fdb_add,
+	.lag_fdb_del			= lan9645x_lag_fdb_del,
 };
 
 static int lan9645x_request_target_regmaps(struct lan9645x *lan9645x)
