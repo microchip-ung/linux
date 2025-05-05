@@ -2079,10 +2079,10 @@ static int sparx5_sd10g28_apply_params(struct sparx5_serdes_macro *macro,
 		      sd_inst,
 		      SD10G_LANE_LANE_50(sd_index));
 
-	sdx5_rmw(SD10G_LANE_LANE_50_CFG_SSC_RESETB_SET(1),
-		 SD10G_LANE_LANE_50_CFG_SSC_RESETB,
-		 priv,
-		 SD10G_LANE_LANE_50(sd_index));
+	sdx5_inst_rmw(SD10G_LANE_LANE_50_CFG_SSC_RESETB_SET(1),
+		      SD10G_LANE_LANE_50_CFG_SSC_RESETB,
+		      sd_inst,
+		      SD10G_LANE_LANE_50(sd_index));
 
 	sdx5_rmw(SD_LANE_MISC_SD_125_RST_DIS_SET(params->fx_100),
 		 SD_LANE_MISC_SD_125_RST_DIS,
