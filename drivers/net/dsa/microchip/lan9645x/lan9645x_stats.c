@@ -732,6 +732,18 @@ static void lan9645x_check_stats_work(struct work_struct *work)
 			   LAN9645X_STATS_CHECK_DELAY);
 }
 
+static void lan9645x_check_vcap_stats_work(struct work_struct *work)
+{
+	struct delayed_work *del_work = to_delayed_work(work);
+	struct lan9645x_stats *stats =
+		container_of(del_work, struct lan9645x_stats, vcap_work);
+
+	vcap_update_counters(stats->lan9645x->vcap_ctrl);
+
+	queue_delayed_work(stats->queue, &stats->vcap_work,
+			   LAN9645X_STATS_CHECK_DELAY);
+}
+
 static int lan9645x_stats_debugfs_show(struct seq_file *m, void *unused)
 {
 	struct lan9645x_view_stats *vstats = m->private;
@@ -822,6 +834,10 @@ int lan9645x_stats_init(struct lan9645x *lan9645x)
 
 	INIT_DELAYED_WORK(&stats->work, lan9645x_check_stats_work);
 	queue_delayed_work(stats->queue, &stats->work,
+			   LAN9645X_STATS_CHECK_DELAY);
+
+	INIT_DELAYED_WORK(&stats->vcap_work, lan9645x_check_vcap_stats_work);
+	queue_delayed_work(stats->queue, &stats->vcap_work,
 			   LAN9645X_STATS_CHECK_DELAY);
 
 	lan9645x_stats_debugfs(lan9645x, lan9645x->debugfs_root);

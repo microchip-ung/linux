@@ -9,6 +9,9 @@
 #include <linux/regmap.h>
 #include <net/dsa.h>
 
+#include <vcap_api.h>
+#include <vcap_api_client.h>
+
 #include "lan9645x_regs.h"
 
 #define lan9645x_for_each_chipport(_lan9645x, _i) \
@@ -139,6 +142,18 @@
 				 lan_rel_addr(_reg_macro), (_val),	\
 				 (_cond), RD_SLEEP_US, RD_SLEEPTIMEOUT_US)
 
+#define LAN9645X_VCAP_CID_IS1_L0 VCAP_CID_INGRESS_L0 /* IS1 lookup 0 */
+#define LAN9645X_VCAP_CID_IS1_L1 VCAP_CID_INGRESS_L1 /* IS1 lookup 1 */
+#define LAN9645X_VCAP_CID_IS1_L2 VCAP_CID_INGRESS_L2 /* IS1 lookup 2 */
+#define LAN9645X_VCAP_CID_IS1_MAX (VCAP_CID_INGRESS_L3 - 1) /* IS1 Max */
+
+#define LAN9645X_VCAP_CID_IS2_L0 VCAP_CID_INGRESS_STAGE2_L0 /* IS2 lookup 0 */
+#define LAN9645X_VCAP_CID_IS2_L1 VCAP_CID_INGRESS_STAGE2_L1 /* IS2 lookup 1 */
+#define LAN9645X_VCAP_CID_IS2_MAX (VCAP_CID_INGRESS_STAGE2_L2 - 1) /* IS2 Max */
+
+#define LAN9645X_VCAP_CID_ES0_L0 VCAP_CID_EGRESS_L0 /* ES0 lookup 0 */
+#define LAN9645X_VCAP_CID_ES0_MAX (VCAP_CID_EGRESS_L1 - 1) /* ES0 Max */
+
 /* Rewriter VLAN port tagging encoding for REW:PORT[0-10]:TAG_CFG.TAG_CFG
  *
  * 0: Port tagging disabled.
@@ -207,6 +222,38 @@ struct lan9645x_mact_entry {
 	struct net_device *bond;
 };
 
+enum vcap_is2_port_sel_ipv6 {
+	VCAP_IS2_PS_IPV6_TCPUDP_OTHER,
+	VCAP_IS2_PS_IPV6_STD,
+	VCAP_IS2_PS_IPV6_IP4_TCPUDP_IP4_OTHER,
+	VCAP_IS2_PS_IPV6_MAC_ETYPE,
+};
+
+enum vcap_is1_port_sel_other {
+	VCAP_IS1_PS_OTHER_NORMAL,
+	VCAP_IS1_PS_OTHER_7TUPLE,
+	VCAP_IS1_PS_OTHER_DBL_VID,
+	VCAP_IS1_PS_OTHER_DMAC_VID,
+};
+
+enum vcap_is1_port_sel_ipv4 {
+	VCAP_IS1_PS_IPV4_NORMAL,
+	VCAP_IS1_PS_IPV4_7TUPLE,
+	VCAP_IS1_PS_IPV4_5TUPLE_IP4,
+	VCAP_IS1_PS_IPV4_DBL_VID,
+	VCAP_IS1_PS_IPV4_DMAC_VID,
+};
+
+enum vcap_is1_port_sel_ipv6 {
+	VCAP_IS1_PS_IPV6_NORMAL,
+	VCAP_IS1_PS_IPV6_7TUPLE,
+	VCAP_IS1_PS_IPV6_5TUPLE_IP4,
+	VCAP_IS1_PS_IPV6_NORMAL_IP6,
+	VCAP_IS1_PS_IPV6_5TUPLE_IP6,
+	VCAP_IS1_PS_IPV6_DBL_VID,
+	VCAP_IS1_PS_IPV6_DMAC_VID,
+};
+
 struct lan9645x {
 	struct device *dev;
 	struct dsa_switch *ds;
@@ -250,6 +297,9 @@ struct lan9645x {
 
 	/* Statistics  */
 	struct lan9645x_stats *stats;
+
+	/* vcap */
+	struct vcap_control *vcap_ctrl;
 };
 
 struct lan9645x_port {
@@ -576,5 +626,28 @@ int lan9645x_mdb_port_del(struct lan9645x *lan9645x, int port,
 			  struct net_device *bridge);
 void lan9645x_mdb_init(struct lan9645x *lan9645x);
 void lan9645x_mdb_deinit(struct lan9645x *lan9645x);
+
+/* VCAP */
+int lan9645x_vcap_init(struct lan9645x *lan9645x);
+void lan9645x_vcap_deinit(struct lan9645x *lan9645x);
+#if defined(CONFIG_DEBUG_FS)
+int lan9645x_vcap_port_info(struct net_device *dev, struct vcap_admin *admin,
+			    struct vcap_output_print *out);
+#else
+static inline int lan9645x_vcap_port_info(struct net_device *dev,
+					  struct vcap_admin *admin,
+					  struct vcap_output_print *out)
+{
+	return 0;
+}
+#endif
+int lan9645x_vcap_get_port_keyset(struct net_device *ndev,
+				  struct vcap_admin *admin, int cid,
+				  u16 l3_proto,
+				  struct vcap_keyset_list *keysetlist);
+const char *lan9645x_vcap_keyset_name(struct lan9645x *lan9645x,
+				      enum vcap_keyfield_set keyset);
+const char *lan9645x_vcap_keyset_name_short(struct lan9645x *lan9645x,
+					    enum vcap_keyfield_set keyset);
 
 #endif /* __LAN9645X_MAIN_H__ */

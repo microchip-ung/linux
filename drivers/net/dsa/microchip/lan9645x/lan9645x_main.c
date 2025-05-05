@@ -114,6 +114,7 @@ static void lan9645x_teardown(struct dsa_switch *ds)
 	lan9645x_stats_deinit(lan9645x);
 	lan9645x_mac_deinit(lan9645x);
 	lan9645x_mdb_deinit(lan9645x);
+	lan9645x_vcap_deinit(lan9645x);
 	debugfs_remove_recursive(lan9645x->debugfs_root);
 }
 
@@ -511,6 +512,12 @@ static int lan9645x_setup(struct dsa_switch *ds)
 	err = lan9645x_parse_ports_node(lan9645x);
 	if (err) {
 		dev_err(dev, "Lan9645x setup: failed to parse ports node.");
+		return err;
+	}
+
+	err = lan9645x_vcap_init(lan9645x);
+	if (err) {
+		dev_err(dev, "Lan9645x setup: failed to setup VCAP.\n");
 		return err;
 	}
 
@@ -1525,7 +1532,6 @@ static void lan9645x_remove(struct platform_device *pdev)
 
 	/* Calls lan9645x DSA .teardown */
 	dsa_unregister_switch(lan9645x->ds);
-
 	dev_set_drvdata(&pdev->dev, NULL);
 }
 
