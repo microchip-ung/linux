@@ -755,4 +755,17 @@ config SUNPLUS_SP7021_INTC
 	  chained controller, routing all interrupt source in P-Chip to
 	  the primary controller on C-Chip.
 
+config LAN9645X_OIC
+	tristate "Microchip lan9645x OIC Support"
+    select REGMAP
+    select REGMAP_IRQ
+	select IRQ_DOMAIN
+	help
+	  Enable support for the Lan9645x Outbound Interrupt Controller.
+	  This controller is present on the Microchip Lan9645x soc and
+	  maps the internal interrupts sources to GPIO interrupt outputs.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called irq-lan9645x-oic.
+
 endmenu
