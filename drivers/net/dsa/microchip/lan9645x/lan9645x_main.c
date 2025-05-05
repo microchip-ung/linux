@@ -2,10 +2,12 @@
 /* Copyright (C) 2025 Microchip Technology Inc.
  */
 
+#include <linux/debugfs.h>
 #include <linux/platform_device.h>
 #include <linux/phy/phy.h>
 
 #include "lan9645x_main.h"
+#include "lan9645x_stats.h"
 
 static const char *lan9645x_resource_names[NUM_TARGETS] = {
 	[TARGET_ORG]          = "org",
@@ -109,8 +111,10 @@ static void lan9645x_teardown(struct dsa_switch *ds)
 	struct lan9645x *lan9645x = ds->priv;
 
 	lan9645x_npi_port_deinit(lan9645x, lan9645x->npi);
+	lan9645x_stats_deinit(lan9645x);
 	lan9645x_mac_deinit(lan9645x);
 	lan9645x_mdb_deinit(lan9645x);
+	debugfs_remove_recursive(lan9645x->debugfs_root);
 }
 
 static void lan9645x_port_phylink_get_caps(struct dsa_switch *ds, int port,
@@ -476,6 +480,8 @@ static int lan9645x_setup(struct dsa_switch *ds)
 
 	lan9645x_reset_switch(lan9645x);
 
+	lan9645x->debugfs_root = debugfs_create_dir("lan9645x_sw", NULL);
+
 	lan9645x->ports = devm_kcalloc(lan9645x->dev, lan9645x->num_phys_ports,
 				       sizeof(struct lan9645x_port *),
 				       GFP_KERNEL);
@@ -634,6 +640,12 @@ static int lan9645x_setup(struct dsa_switch *ds)
 
 	dsa_switch_for_each_user_port(dp, ds) {
 		lan9645x_igmp_snooping(lan9645x, true, dp->index);
+	}
+
+	err = lan9645x_stats_init(lan9645x);
+	if (err) {
+		dev_err(dev, "Lan9645x setup: failed to init stats.");
+		return err;
 	}
 
 	err = lan9645x_tag_npi_setup(ds);
@@ -1288,6 +1300,88 @@ static int lan9645x_mdb_del(struct dsa_switch *ds, int port,
 	return lan9645x_mdb_port_del(lan9645x, port, mdb, bridge_dev);
 }
 
+static void lan9645x_get_strings(struct dsa_switch *ds, int port, u32 stringset,
+				 uint8_t *data)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	lan9645x_stats_get_strings(lan9645x, port, stringset, data);
+}
+
+static void lan9645x_get_ethtool_stats(struct dsa_switch *ds, int port,
+				       uint64_t *data)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	lan9645x_stats_get_ethtool_stats(lan9645x, port, data);
+}
+
+static int lan9645x_get_sset_count(struct dsa_switch *ds, int port, int sset)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	return lan9645x_stats_get_sset_count(lan9645x, port, sset);
+}
+
+static void lan9645x_get_eth_mac_stats(struct dsa_switch *ds, int port,
+				       struct ethtool_eth_mac_stats *mac_stats)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	lan9645x_stats_get_eth_mac_stats(lan9645x, port, mac_stats);
+}
+
+static void
+lan9645x_get_rmon_stats(struct dsa_switch *ds, int port,
+			struct ethtool_rmon_stats *rmon_stats,
+			const struct ethtool_rmon_hist_range **ranges)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	lan9645x_stats_get_rmon_stats(lan9645x, port, rmon_stats, ranges);
+}
+
+static void lan9645x_get_stats64(struct dsa_switch *ds, int port,
+				 struct rtnl_link_stats64 *s)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	lan9645x_stats_get_stats64(lan9645x, port, s);
+}
+
+static void lan9645x_get_pause_stats(struct dsa_switch *ds, int port,
+				     struct ethtool_pause_stats *pause_stats)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	lan9645x_stats_get_pause_stats(lan9645x, port, pause_stats);
+}
+
+static void lan9645x_get_mm_stats(struct dsa_switch *ds, int port,
+				  struct ethtool_mm_stats *stats)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	lan9645x_stats_get_mm_stats(lan9645x, port, stats);
+}
+
+static void lan9645x_get_eth_phy_stats(struct dsa_switch *ds, int port,
+				       struct ethtool_eth_phy_stats *phy_stats)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	lan9645x_stats_get_eth_phy_stats(lan9645x, port, phy_stats);
+}
+
+static void
+lan9645x_get_eth_ctrl_stats(struct dsa_switch *ds, int port,
+			    struct ethtool_eth_ctrl_stats *ctrl_stats)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	lan9645x_stats_get_eth_ctrl_stats(lan9645x, port, ctrl_stats);
+}
+
 static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.get_tag_protocol		= lan9645x_get_tag_protocol,
 	.connect_tag_protocol		= lan9645x_connect_tag_protocol,
@@ -1339,6 +1433,18 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	/* Multicast database */
 	.port_mdb_add			= lan9645x_mdb_add,
 	.port_mdb_del			= lan9645x_mdb_del,
+
+	/* Port statistics counters. */
+	.get_strings			= lan9645x_get_strings,
+	.get_ethtool_stats		= lan9645x_get_ethtool_stats,
+	.get_sset_count			= lan9645x_get_sset_count,
+	.get_eth_mac_stats		= lan9645x_get_eth_mac_stats,
+	.get_rmon_stats			= lan9645x_get_rmon_stats,
+	.get_stats64			= lan9645x_get_stats64,
+	.get_pause_stats		= lan9645x_get_pause_stats,
+	.get_mm_stats			= lan9645x_get_mm_stats,
+	.get_eth_phy_stats		= lan9645x_get_eth_phy_stats,
+	.get_eth_ctrl_stats		= lan9645x_get_eth_ctrl_stats,
 };
 
 static int lan9645x_request_target_regmaps(struct lan9645x *lan9645x)

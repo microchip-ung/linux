@@ -224,6 +224,9 @@ struct lan9645x {
 	u8 num_phys_ports;
 	struct lan9645x_port **ports;
 
+	/* debugfs */
+	struct dentry *debugfs_root;
+
 	/* Forwarding Database */
 	struct list_head mac_entries;
 	struct mutex mact_lock; /* lock access to mact_table */
@@ -244,6 +247,9 @@ struct lan9645x {
 	struct list_head pgid_entries;
 	/* lock for mdb_entries and pgid_entries */
 	struct mutex mdb_lock;
+
+	/* Statistics  */
+	struct lan9645x_stats *stats;
 };
 
 struct lan9645x_port {
