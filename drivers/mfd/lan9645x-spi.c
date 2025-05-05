@@ -40,6 +40,10 @@
  */
 #define LAN9645X_REG_ACCESS_TIME_US 2
 
+static const struct resource lan9645x_irq_resources[] = {
+	DEFINE_RES_REG_NAMED(0x52001c, 0xec, "cpu_intr"),
+};
+
 static const struct resource lan9645x_pinctrl_resources[] = {
 	DEFINE_RES_REG_NAMED(0x4028, 0x6c, "gcb_gpio"),
 };
@@ -108,6 +112,12 @@ static const struct resource lan9645x_spi_resources[] = {
 };
 
 static const struct mfd_cell lan9645x_devs[] = {
+	{
+		.name = "lan9645x-irq",
+		.of_compatible = "microchip,lan9645x-oic",
+		.num_resources = ARRAY_SIZE(lan9645x_irq_resources),
+		.resources = lan9645x_irq_resources,
+	},
 	{
 		.name = "lan9645x-pinctrl",
 		.of_compatible = "microchip,lan9645x-pinctrl",
