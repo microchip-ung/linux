@@ -6,6 +6,7 @@
 #define __LAN9645X_MAIN_H__
 
 #include <linux/dsa/lan9645x.h>
+#include <linux/if_hsr.h>
 #include <linux/regmap.h>
 #include <net/dsa.h>
 
@@ -39,6 +40,10 @@
 #define LAN9645X_ESDX_MAX 128
 #define LAN9645X_SFID_MAX 256
 
+#define HSR_NETID 0x0
+#define PRP_NETID 0x5
+#define PRP_LANID_A 0x0
+#define PRP_LANID_B 0x1
 /* Reserved VLAN IDs.
  *
  * We use these to enable isolated vlan unaware standalone ports, and vlan
@@ -56,7 +61,8 @@
  */
 #define UNAWARE_PVID			0
 #define HOST_PVID			4095
-#define VLAN_MAX			(HOST_PVID - 1)
+#define VLAN_HSR_PRP			4094
+#define VLAN_MAX			(VLAN_HSR_PRP - 1)
 
 #define VLAN_N_VID 4096
 
@@ -254,6 +260,43 @@ enum vcap_is1_port_sel_ipv6 {
 	VCAP_IS1_PS_IPV6_DMAC_VID,
 };
 
+struct lan9645x_streamt_entry {
+	u32 time_last_seen;
+	u16 gen_seq_num;
+	u16 isdx;
+	u16 split_mask;
+	u16 input_port_mask;
+	bool rtag_pop_ena;
+	bool seq_gen_ena;
+	bool stream_split;
+	bool seq_gen_err_status;
+};
+
+struct lan9645x_stream {
+	struct mutex lock; /* Lock for stream table access and ISDX allocation. */
+	/* Track allocated ISDXs indices in hw */
+	DECLARE_BITMAP(isdx_mask, LAN9645X_ISDX_MAX);
+};
+
+enum lan9645x_hsr_type {
+	LAN9645X_HSR_UNSUPPORTED = 0,
+	LAN9645X_HSR,
+	LAN9645X_PRP,
+};
+
+struct lan9645x_hsr_prp {
+	unsigned char mac[ETH_ALEN];
+	struct mutex lock; /* Lock HSR/PRP management. */
+	u32 isdx_vrule_id; /* TX isdx classification for seqnum generation */
+	u32 local_ring_vrule_id; /* HSR only: kill own frames on ring */
+	u32 ptp_dd_vrule_id; /* HSR only: disable DD for ptp */
+	u16 isdx; /* Allocated ISDX for tx stream */
+	int port_a;
+	int port_b;
+	bool enabled;
+	enum lan9645x_hsr_type type; /* HSR or PRP */
+};
+
 struct lan9645x {
 	struct device *dev;
 	struct dsa_switch *ds;
@@ -300,6 +343,12 @@ struct lan9645x {
 
 	/* vcap */
 	struct vcap_control *vcap_ctrl;
+
+	/* Stream table for FRER and HSR/PRP */
+	struct lan9645x_stream *stream;
+
+	/* HSR/PRP */
+	struct lan9645x_hsr_prp hsr;
 };
 
 struct lan9645x_port {
@@ -325,6 +374,8 @@ struct lan9645x_port {
 	struct net_device *bond; /* LAG upper device */
 	enum netdev_lag_hash hash_type;
 	bool lag_tx_active;
+
+	struct net_device *hsr; /* HSR/PRP upper device */
 };
 
 struct lan9645x_path_delay {
@@ -435,6 +486,15 @@ static inline bool lan9645x_port_is_bridged(struct lan9645x_port *p)
 		return false;
 
 	return !!(p->lan9645x->bridge_mask & BIT(p->chip_port));
+}
+
+static inline bool lan9645x_port_is_hsr(struct lan9645x_port *p)
+{
+	struct lan9645x *lan9645x = p->lan9645x;
+
+	return lan9645x->hsr.enabled && lan9645x->hsr.type == LAN9645X_HSR &&
+		(lan9645x->hsr.port_a == p->chip_port ||
+		 lan9645x->hsr.port_b == p->chip_port);
 }
 
 static inline u32 __lan_rel_addr(int gbase, int ginst, int gcnt,
@@ -649,5 +709,33 @@ const char *lan9645x_vcap_keyset_name(struct lan9645x *lan9645x,
 				      enum vcap_keyfield_set keyset);
 const char *lan9645x_vcap_keyset_name_short(struct lan9645x *lan9645x,
 					    enum vcap_keyfield_set keyset);
+
+/* Stream table, ISDX management HSR/PRP and FRER */
+int lan9645x_stream_isdx_alloc(struct lan9645x *lan9645x);
+void lan9645x_stream_isdx_free(struct lan9645x *lan9645x, u16 isdx);
+int lan9645x_streamt_read(struct lan9645x *lan9645x, u16 isdx,
+			  struct lan9645x_streamt_entry *entry);
+int lan9645x_streamt_write(struct lan9645x *lan9645x, u16 isdx,
+			   struct lan9645x_streamt_entry *entry);
+int lan9645x_streamt_del(struct lan9645x *lan9645x, u16 isdx);
+int lan9645x_streamt_init(struct lan9645x *lan9645x);
+void lan9645x_streamt_deinit(struct lan9645x *lan9645x);
+
+/* HSR and PRP management lan9645x_hsr.c */
+int lan9645x_hsr_prp_init(struct lan9645x *lan9645x);
+void lan9645x_hsr_prp_deinit(struct lan9645x *lan9645x);
+int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *lrea,
+			      struct lan9645x_port *lreb,
+			      struct net_device *lrea_dev, struct net_device *hsr,
+			      enum lan9645x_hsr_type type);
+int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
+			      struct net_device *hsr);
+u32 lan9645x_hsr_prp_dev_get_mask(struct lan9645x *lan9645x,
+				  struct net_device *hsr);
+enum lan9645x_hsr_type lan9645x_hsr_prp_ver_to_type(enum hsr_version ver);
+int lan9645x_hsr_prp_prepare(struct lan9645x *lan9645x, int port,
+			     struct net_device *hsr, enum lan9645x_hsr_type type,
+			     struct netlink_ext_ack *extack);
+int lan9645x_hsr2type(struct net_device *hsr, enum lan9645x_hsr_type *type);
 
 #endif /* __LAN9645X_MAIN_H__ */

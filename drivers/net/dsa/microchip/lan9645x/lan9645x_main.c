@@ -114,6 +114,8 @@ static void lan9645x_teardown(struct dsa_switch *ds)
 	lan9645x_stats_deinit(lan9645x);
 	lan9645x_mac_deinit(lan9645x);
 	lan9645x_mdb_deinit(lan9645x);
+	lan9645x_hsr_prp_deinit(lan9645x);
+	lan9645x_streamt_deinit(lan9645x);
 	lan9645x_vcap_deinit(lan9645x);
 	debugfs_remove_recursive(lan9645x->debugfs_root);
 }
@@ -521,9 +523,16 @@ static int lan9645x_setup(struct dsa_switch *ds)
 		return err;
 	}
 
+	err = lan9645x_streamt_init(lan9645x);
+	if (err) {
+		dev_err(dev, "Lan9645x setup: failed to setup stream table err: %d\n", err);
+		return err;
+	}
+
 	lan9645x_mac_init(lan9645x);
 	lan9645x_vlan_init(lan9645x);
 	lan9645x_mdb_init(lan9645x);
+	lan9645x_hsr_prp_init(lan9645x);
 
 	/* Link Aggregation Mode: NETDEV_LAG_HASH_L2 */
 	lan_wr(ANA_AGGR_CFG_AC_SMAC_ENA |
@@ -923,6 +932,9 @@ void lan9645x_update_fwd_mask(struct lan9645x *lan9645x, bool joining)
 			if (p->bond)
 				mask &= ~lan9645x_lag_dev_get_mask(lan9645x,
 								   p->bond);
+		} else if (lan9645x_port_is_hsr(p)) {
+			mask = lan9645x_hsr_prp_dev_get_mask(lan9645x, p->hsr) &
+			       ~BIT(p->chip_port);
 		}
 
 		lan_wr(mask, lan9645x, ANA_PGID(PGID_SRC + port));
@@ -1389,6 +1401,76 @@ lan9645x_get_eth_ctrl_stats(struct dsa_switch *ds, int port,
 	lan9645x_stats_get_eth_ctrl_stats(lan9645x, port, ctrl_stats);
 }
 
+static int lan9645x_port_hsr_join(struct dsa_switch *ds, int port,
+				  struct net_device *hsr,
+				  struct netlink_ext_ack *extack)
+{
+	struct dsa_port *dslrea = NULL, *dslreb, *dp;
+	struct lan9645x *lan9645x = ds->priv;
+	enum lan9645x_hsr_type type;
+	int err;
+
+	dev_dbg(lan9645x->dev, "port=%d", port);
+
+	err = lan9645x_hsr2type(hsr, &type);
+	if (err)
+		return err;
+
+	err = lan9645x_hsr_prp_prepare(lan9645x, port, hsr, type, extack);
+	if (err)
+		return err;
+
+	dslreb = dsa_to_port(ds, port);
+	if (!dslreb)
+		return -ENOTSUPP;
+
+	dsa_hsr_foreach_port(dp, ds, hsr)
+	{
+		if (dp->index != port) {
+			dslrea = dp;
+			break;
+		}
+	}
+
+	/* We must match port A/B in HW, and rely on the order of calls to
+	 * identify which dsa interface is A and B.
+	 */
+	if (!dslrea)
+		return 0;
+
+	if (!ether_addr_equal(dslrea->mac, dslreb->mac)) {
+		NL_SET_ERR_MSG_FMT_MOD(extack,
+				       "MAC on Slave 1 (Port A) and Slave 2 (Port B) must be equal. MAC_A=%pM MAC_B=%pM",
+				       dslrea->mac, dslreb->mac);
+		return -EINVAL;
+	}
+
+	dev_dbg(lan9645x->dev, "lan_a=%d lan_b=%d type=%d\n", dslrea->index,
+		dslreb->index, type);
+
+	err = lan9645x_hsr_prp_pair_add(lan9645x, lan9645x->ports[dslrea->index],
+					lan9645x->ports[dslreb->index],
+					dslrea->user, hsr, type);
+	if (err) {
+		dev_err(lan9645x->dev,
+			"HSR/PRP pair add err=%d ds_a=%p ds_b=%p\n", err,
+			dslrea->user, dslreb->user);
+		return err;
+	}
+
+	return 0;
+}
+
+static int lan9645x_port_hsr_leave(struct dsa_switch *ds, int port,
+				   struct net_device *hsr)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	dev_dbg(lan9645x->dev, "port=%d", port);
+
+	return lan9645x_hsr_prp_pair_del(lan9645x, port, hsr);
+}
+
 static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.get_tag_protocol		= lan9645x_get_tag_protocol,
 	.connect_tag_protocol		= lan9645x_connect_tag_protocol,
@@ -1452,6 +1534,10 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.get_mm_stats			= lan9645x_get_mm_stats,
 	.get_eth_phy_stats		= lan9645x_get_eth_phy_stats,
 	.get_eth_ctrl_stats		= lan9645x_get_eth_ctrl_stats,
+
+	/* HSR/PRP integration */
+	.port_hsr_join			= lan9645x_port_hsr_join,
+	.port_hsr_leave			= lan9645x_port_hsr_leave,
 };
 
 static int lan9645x_request_target_regmaps(struct lan9645x *lan9645x)
