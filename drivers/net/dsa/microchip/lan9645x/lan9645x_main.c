@@ -1471,6 +1471,32 @@ static int lan9645x_port_hsr_leave(struct dsa_switch *ds, int port,
 	return lan9645x_hsr_prp_pair_del(lan9645x, port, hsr);
 }
 
+static int lan9645x_port_mirror_add(struct dsa_switch *ds, int from,
+				    struct dsa_mall_mirror_tc_entry *mirror,
+				    bool ingress,
+				    struct netlink_ext_ack *extack)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	dev_dbg(lan9645x->dev,
+		"port=%d to_local_port=%u m.ingress=%u ingress=%u\n", from,
+		mirror->to_local_port, mirror->ingress, ingress);
+
+	return lan9645x_mirror_port_add(lan9645x, from, mirror->to_local_port,
+					ingress, extack);
+}
+
+static void lan9645x_port_mirror_del(struct dsa_switch *ds, int from,
+				     struct dsa_mall_mirror_tc_entry *mirror)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	dev_dbg(lan9645x->dev, "port=%d to_local_port=%u m.ingress=%u\n", from,
+		mirror->to_local_port, mirror->ingress);
+
+	lan9645x_mirror_port_del(lan9645x, from, mirror->ingress);
+}
+
 static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.get_tag_protocol		= lan9645x_get_tag_protocol,
 	.connect_tag_protocol		= lan9645x_connect_tag_protocol,
@@ -1538,6 +1564,10 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	/* HSR/PRP integration */
 	.port_hsr_join			= lan9645x_port_hsr_join,
 	.port_hsr_leave			= lan9645x_port_hsr_leave,
+
+	/* TC integration */
+	.port_mirror_add		= lan9645x_port_mirror_add,
+	.port_mirror_del		= lan9645x_port_mirror_del,
 };
 
 static int lan9645x_request_target_regmaps(struct lan9645x *lan9645x)

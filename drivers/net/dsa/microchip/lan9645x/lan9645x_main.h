@@ -297,6 +297,11 @@ struct lan9645x_hsr_prp {
 	enum lan9645x_hsr_type type; /* HSR or PRP */
 };
 
+struct lan9645x_mirror {
+	refcount_t refcount;
+	int to;
+};
+
 struct lan9645x {
 	struct device *dev;
 	struct dsa_switch *ds;
@@ -349,6 +354,9 @@ struct lan9645x {
 
 	/* HSR/PRP */
 	struct lan9645x_hsr_prp hsr;
+
+	/* Port mirroring */
+	struct lan9645x_mirror *mirror;
 };
 
 struct lan9645x_port {
@@ -737,5 +745,14 @@ int lan9645x_hsr_prp_prepare(struct lan9645x *lan9645x, int port,
 			     struct net_device *hsr, enum lan9645x_hsr_type type,
 			     struct netlink_ext_ack *extack);
 int lan9645x_hsr2type(struct net_device *hsr, enum lan9645x_hsr_type *type);
+
+/* Mirroring */
+int lan9645x_mirror_port_add(struct lan9645x *lan9645x, int from, int to,
+			     bool ingress, struct netlink_ext_ack *extack);
+void lan9645x_mirror_port_del(struct lan9645x *lan9645x, int from,
+			      bool ingress);
+void lan9645x_mirror_put(struct lan9645x *lan9645x);
+struct lan9645x_mirror *lan9645x_mirror_get(struct lan9645x *lan9645x, int to,
+					    struct netlink_ext_ack *extack);
 
 #endif /* __LAN9645X_MAIN_H__ */
