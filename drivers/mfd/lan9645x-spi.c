@@ -54,10 +54,51 @@ static const struct resource lan9645x_miim1_resources[] = {
 	DEFINE_RES_REG_NAMED(0x10048, 0x1, "phy"),
 };
 
+static const struct resource lan9645x_resources[] = {
+	DEFINE_RES_REG_NAMED(0x0, 0x48, "org"),
+	DEFINE_RES_REG_NAMED(0x4000, 0x244, "gcb"),
+	DEFINE_RES_REG_NAMED(0x8000, 0x4c, "qs"),
+	DEFINE_RES_REG_NAMED(0xc000, 0x1f0, "ptp"),
+	DEFINE_RES_REG_NAMED(0x10000, 0x134, "chip_top"),
+	DEFINE_RES_REG_NAMED(0x14000, 0x2c8, "tas"),
+	DEFINE_RES_REG_NAMED(0x18000, 0x1910, "rew"),
+	DEFINE_RES_REG_NAMED(0x1c000, 0x468, "vcap"),
+	DEFINE_RES_REG_NAMED(0x24000, 0x468, "vcap1"),
+	DEFINE_RES_REG_NAMED(0x28000, 0x468, "vcap2"),
+	DEFINE_RES_REG_NAMED(0x20000, 0x1480, "mep"),
+	DEFINE_RES_REG_NAMED(0x2c000, 0x12d4, "sys"),
+	DEFINE_RES_REG_NAMED(0x30000, 0xe4, "hsio"),
+	DEFINE_RES_REG_NAMED(0x38000, 0xb8, "dev"),
+	DEFINE_RES_REG_NAMED(0x3c000, 0xb8, "dev1"),
+	DEFINE_RES_REG_NAMED(0x40000, 0xb8, "dev2"),
+	DEFINE_RES_REG_NAMED(0x44000, 0xb8, "dev3"),
+	DEFINE_RES_REG_NAMED(0x48000, 0xb8, "dev4"),
+	DEFINE_RES_REG_NAMED(0x4c000, 0xb8, "dev5"),
+	DEFINE_RES_REG_NAMED(0x50000, 0xb8, "dev6"),
+	DEFINE_RES_REG_NAMED(0x54000, 0xb8, "dev7"),
+	DEFINE_RES_REG_NAMED(0x58000, 0xb8, "dev8"),
+	DEFINE_RES_REG_NAMED(0x5c000, 0x30, "uvov"),
+	DEFINE_RES_REG_NAMED(0x100000, 0xa000, "qsys"),
+	DEFINE_RES_REG_NAMED(0x120000, 0x1998, "afi"),
+	DEFINE_RES_REG_NAMED(0x140000, 0x7468, "ana"),
+	DEFINE_RES_REG_NAMED(0x400000, 0x10000, "irom"),
+	DEFINE_RES_REG_NAMED(0x420000, 0x10000, "iram"),
+	DEFINE_RES_REG_NAMED(0x440000, 0x20000, "erom_i2c"),
+	DEFINE_RES_REG_NAMED(0x460000, 0x20000, "erom_spi"),
+	DEFINE_RES_REG_NAMED(0x480000, 0x1a00, "cuphy"),
+	DEFINE_RES_REG_NAMED(0x4a0000, 0x400, "uart"),
+	DEFINE_RES_REG_NAMED(0x4c0000, 0x400, "i2c"),
+	DEFINE_RES_REG_NAMED(0x4e0000, 0x400, "i2c1"),
+	DEFINE_RES_REG_NAMED(0x500000, 0x400, "timers"),
+	DEFINE_RES_REG_NAMED(0x520000, 0x120, "cpu"),
+	DEFINE_RES_REG_NAMED(0x540000, 0x304, "otp"),
+	DEFINE_RES_REG_NAMED(0x560000, 0x1000, "wdt"),
+};
+
 static const struct resource lan9645x_spi_resources[] = {
 	DEFINE_RES_REG_NAMED(0x4000, 0x244, "gcb"),
 #if defined(CONFIG_DEBUG_FS)
-	DEFINE_RES_REG_NAMED(0x0, 0x540305, "all"),
+	DEFINE_RES_REG_NAMED(0x0, 0x561001, "all"),
 #endif
 };
 
@@ -83,6 +124,12 @@ static const struct mfd_cell lan9645x_devs[] = {
 		.use_of_reg = true,
 		.num_resources = ARRAY_SIZE(lan9645x_miim1_resources),
 		.resources = lan9645x_miim1_resources,
+	},
+	{
+		.name = "lan9645x-switch",
+		.of_compatible = "microchip,lan9645x-switch",
+		.num_resources = ARRAY_SIZE(lan9645x_resources),
+		.resources = lan9645x_resources,
 	},
 };
 
