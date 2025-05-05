@@ -175,6 +175,38 @@ enum {
 	LAN9645X_SPEED_2500 = 4,
 };
 
+/* MAC table entry types.
+ * ENTRYTYPE_NORMAL is subject to aging.
+ * ENTRYTYPE_LOCKED is not subject to aging.
+ * ENTRYTYPE_MACv4 is not subject to aging. For IPv4 multicast.
+ * ENTRYTYPE_MACv6 is not subject to aging. For IPv6 multicast.
+ */
+enum macaccess_entry_type {
+	ENTRYTYPE_NORMAL = 0,
+	ENTRYTYPE_LOCKED,
+	ENTRYTYPE_MACV4,
+	ENTRYTYPE_MACV6,
+};
+
+struct lan9645x_mact_common {
+	struct lan9645x_mact_key {
+		u16 vid;
+		u8 mac[ETH_ALEN] __aligned(2);
+	} key;
+	u32 row: 11, /* 2048 rows, 4 buckets each */
+	    pgid: 6, /* 0-63 GP pgds. */
+	    type: 2,
+	    valid: 1,
+	    processed: 1,
+	    dyn_learned: 1;
+};
+
+struct lan9645x_mact_entry {
+	struct lan9645x_mact_common common;
+	struct list_head list;
+	struct net_device *bond;
+};
+
 struct lan9645x {
 	struct device *dev;
 	struct dsa_switch *ds;
@@ -191,6 +223,16 @@ struct lan9645x {
 
 	u8 num_phys_ports;
 	struct lan9645x_port **ports;
+
+	/* Forwarding Database */
+	struct list_head mac_entries;
+	struct mutex mact_lock; /* lock access to mact_table */
+	struct mutex mac_entry_lock; /* lock for mac_entries list */
+	struct net_device *bridge; /* Only support single bridge */
+	u16 bridge_mask; /* Mask for bridged ports */
+	u16 bridge_fwd_mask; /* Mask for forwarding bridged ports */
+	struct mutex fwd_domain_lock; /* lock forwarding configuration */
+	int ana_irq; /* mac table hw changes irq */
 };
 
 struct lan9645x_port {
@@ -320,6 +362,14 @@ lan9645x_chipport_to_ndev(struct lan9645x *lan9645x, int port)
 	return lan9645x_port_to_ndev(lan9645x_to_port(lan9645x, port));
 }
 
+static inline bool lan9645x_port_is_bridged(struct lan9645x_port *p)
+{
+	if (!p)
+		return false;
+
+	return !!(p->lan9645x->bridge_mask & BIT(p->chip_port));
+}
+
 static inline u32 __lan_rel_addr(int gbase, int ginst, int gcnt,
 				 int gwidth, int raddr, int rinst,
 				 int rcnt, int rwidth)
@@ -435,5 +485,33 @@ int lan9645x_pcs_config(struct phylink_pcs *pcs, unsigned int neg_mode,
 			bool permit_pause_to_mac);
 void lan9645x_pcs_get_state(struct phylink_pcs *pcs,
 			    struct phylink_link_state *state);
+
+/* lan9645x_main.c */
+bool lan9645x_port_is_bridged(struct lan9645x_port *p);
+u16 lan9645x_vlan_unaware_pvid(struct lan9645x *lan9645x,
+			       struct net_device *bridge);
+void lan9645x_port_set_learning(struct lan9645x *lan9645x, int port,
+				bool enabled);
+void lan9645x_update_fwd_mask(struct lan9645x *lan9645x, bool joining);
+
+/* MAC table: lan9645x_mac.c */
+int lan9645x_mact_flush(struct lan9645x *lan9645x, int port);
+int lan9645x_mact_learn(struct lan9645x *lan9645x, int port,
+			const unsigned char *addr, u16 vid,
+			enum macaccess_entry_type type);
+int lan9645x_mact_forget(struct lan9645x *lan9645x,
+			 const unsigned char mac[ETH_ALEN], unsigned int vid,
+			 enum macaccess_entry_type type);
+int lan9645x_mact_read(struct lan9645x *lan9645x, int port, int row, int bucket,
+		       struct lan9645x_mact_entry *entry);
+void lan9645x_mac_init(struct lan9645x *lan9645x);
+void lan9645x_mac_deinit(struct lan9645x *lan9645x);
+irqreturn_t lan9645x_mac_irq_handler(int virq, void *args);
+int lan9645x_mact_dsa_dump(struct lan9645x *lan9645x, int port,
+			   dsa_fdb_dump_cb_t *cb, void *data);
+int lan9645x_mact_entry_del(struct lan9645x *lan9645x, int pgid,
+			    const unsigned char *mac, u16 vid);
+int lan9645x_mact_entry_add(struct lan9645x *lan9645x, int pgid,
+			    const unsigned char *mac, u16 vid);
 
 #endif /* __LAN9645X_MAIN_H__ */
