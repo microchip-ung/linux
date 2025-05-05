@@ -238,6 +238,12 @@ struct lan9645x {
 	u16 vlan_mask[VLAN_N_VID]; /* Port mask per vlan */
 	u8 vlan_flags[VLAN_N_VID];
 	DECLARE_BITMAP(cpu_vlan_mask, VLAN_N_VID); /* CPU port VLAN membership */
+
+	/* Multicast Forwarding Database */
+	struct list_head mdb_entries;
+	struct list_head pgid_entries;
+	/* lock for mdb_entries and pgid_entries */
+	struct mutex mdb_lock;
 };
 
 struct lan9645x_port {
@@ -554,5 +560,15 @@ int lan9645x_lag_join_prepare(struct lan9645x *lan9645x,
 			      struct netlink_ext_ack *extack);
 int lan9645x_lag_reconfigure(struct lan9645x *lan9645x, struct net_device *bond,
 			     int port, bool leaving);
+
+/* Multicast Database lan9645x_mdb.c */
+int lan9645x_mdb_port_add(struct lan9645x *lan9645x, int port,
+			  const struct switchdev_obj_port_mdb *mdb,
+			  struct net_device *bridge);
+int lan9645x_mdb_port_del(struct lan9645x *lan9645x, int port,
+			  const struct switchdev_obj_port_mdb *mdb,
+			  struct net_device *bridge);
+void lan9645x_mdb_init(struct lan9645x *lan9645x);
+void lan9645x_mdb_deinit(struct lan9645x *lan9645x);
 
 #endif /* __LAN9645X_MAIN_H__ */

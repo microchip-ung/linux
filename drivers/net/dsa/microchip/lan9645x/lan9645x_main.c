@@ -110,6 +110,7 @@ static void lan9645x_teardown(struct dsa_switch *ds)
 
 	lan9645x_npi_port_deinit(lan9645x, lan9645x->npi);
 	lan9645x_mac_deinit(lan9645x);
+	lan9645x_mdb_deinit(lan9645x);
 }
 
 static void lan9645x_port_phylink_get_caps(struct dsa_switch *ds, int port,
@@ -509,6 +510,7 @@ static int lan9645x_setup(struct dsa_switch *ds)
 
 	lan9645x_mac_init(lan9645x);
 	lan9645x_vlan_init(lan9645x);
+	lan9645x_mdb_init(lan9645x);
 
 	/* Link Aggregation Mode: NETDEV_LAG_HASH_L2 */
 	lan_wr(ANA_AGGR_CFG_AC_SMAC_ENA |
@@ -1240,6 +1242,52 @@ static int lan9645x_lag_fdb_del(struct dsa_switch *ds, struct dsa_lag lag,
 	return -ENOENT;
 }
 
+static int lan9645x_mdb_add(struct dsa_switch *ds, int port,
+			    const struct switchdev_obj_port_mdb *mdb,
+			    struct dsa_db db)
+{
+	struct net_device *bridge_dev = lan9645x_classify_db(db);
+	struct lan9645x *lan9645x = ds->priv;
+
+	dev_dbg(lan9645x->dev, "port=%d vid=%u addr=%pM\n", port, mdb->vid,
+		mdb->addr);
+
+	if (IS_ERR(bridge_dev))
+		return PTR_ERR(bridge_dev);
+
+	if (dsa_is_cpu_port(ds, port) && !bridge_dev &&
+	    dsa_mdb_present_in_other_db(ds, port, mdb, db))
+		return 0;
+
+	if (port == lan9645x->npi)
+		port = CPU_PORT;
+
+	return lan9645x_mdb_port_add(lan9645x, port, mdb, bridge_dev);
+}
+
+static int lan9645x_mdb_del(struct dsa_switch *ds, int port,
+			    const struct switchdev_obj_port_mdb *mdb,
+			    struct dsa_db db)
+{
+	struct net_device *bridge_dev = lan9645x_classify_db(db);
+	struct lan9645x *lan9645x = ds->priv;
+
+	dev_dbg(lan9645x->dev, "port=%d vid=%u addr=%pM\n", port, mdb->vid,
+		mdb->addr);
+
+	if (IS_ERR(bridge_dev))
+		return PTR_ERR(bridge_dev);
+
+	if (dsa_is_cpu_port(ds, port) && !bridge_dev &&
+	    dsa_mdb_present_in_other_db(ds, port, mdb, db))
+		return 0;
+
+	if (port == lan9645x->npi)
+		port = CPU_PORT;
+
+	return lan9645x_mdb_port_del(lan9645x, port, mdb, bridge_dev);
+}
+
 static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.get_tag_protocol		= lan9645x_get_tag_protocol,
 	.connect_tag_protocol		= lan9645x_connect_tag_protocol,
@@ -1287,6 +1335,10 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.port_lag_change		= lan9645x_lag_change,
 	.lag_fdb_add			= lan9645x_lag_fdb_add,
 	.lag_fdb_del			= lan9645x_lag_fdb_del,
+
+	/* Multicast database */
+	.port_mdb_add			= lan9645x_mdb_add,
+	.port_mdb_del			= lan9645x_mdb_del,
 };
 
 static int lan9645x_request_target_regmaps(struct lan9645x *lan9645x)
