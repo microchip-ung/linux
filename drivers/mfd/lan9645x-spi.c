@@ -54,6 +54,11 @@ static const struct resource lan9645x_miim1_resources[] = {
 	DEFINE_RES_REG_NAMED(0x10048, 0x1, "phy"),
 };
 
+static const struct resource lan9645x_serdes_resources[] = {
+	DEFINE_RES_REG_NAMED(0x30000, 0xe4, "hsio"),
+	DEFINE_RES_REG_NAMED(0x10000, 0x134, "chip_top"),
+};
+
 static const struct resource lan9645x_resources[] = {
 	DEFINE_RES_REG_NAMED(0x0, 0x48, "org"),
 	DEFINE_RES_REG_NAMED(0x4000, 0x244, "gcb"),
@@ -124,6 +129,12 @@ static const struct mfd_cell lan9645x_devs[] = {
 		.use_of_reg = true,
 		.num_resources = ARRAY_SIZE(lan9645x_miim1_resources),
 		.resources = lan9645x_miim1_resources,
+	},
+	{
+		.name = "lan9645x-serdes",
+		.of_compatible = "microchip,lan9645x-serdes",
+		.num_resources = ARRAY_SIZE(lan9645x_serdes_resources),
+		.resources = lan9645x_serdes_resources,
 	},
 	{
 		.name = "lan9645x-switch",
