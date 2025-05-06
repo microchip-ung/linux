@@ -375,6 +375,10 @@ struct lan9645x {
 	/* TC / QOS Policer resource management */
 	DECLARE_BITMAP(pol_idx_mask, LAN9645X_NUM_POL_POOL);
 	struct mutex qos_lock;
+
+	/* TC chain_id to isdx management */
+	struct list_head link_isdx;
+	struct mutex link_isdx_lock;
 };
 
 struct lan9645x_port {
@@ -803,5 +807,13 @@ int lan9645x_qos_port_get_dscp_prio(struct lan9645x *lan9645x, int port,
 int lan9645x_qos_port_set_default_prio(struct lan9645x *lan9645x, int port,
 				       u8 prio);
 int lan9645x_qos_port_get_default_prio(struct lan9645x *lan9645x, int port);
+
+/* TC flower lan9645x_tc_flower.c */
+int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,
+			   bool ingress);
+int lan9645x_tc_flower_del(struct lan9645x_port *p, struct flow_cls_offload *f,
+			   bool ingress);
+int lan9645x_tc_flower_stats(struct lan9645x_port *p,
+			     struct flow_cls_offload *f);
 
 #endif /* __LAN9645X_MAIN_H__ */

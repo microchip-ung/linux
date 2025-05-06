@@ -117,6 +117,7 @@ static void lan9645x_teardown(struct dsa_switch *ds)
 	lan9645x_hsr_prp_deinit(lan9645x);
 	lan9645x_streamt_deinit(lan9645x);
 	lan9645x_vcap_deinit(lan9645x);
+	mutex_destroy(&lan9645x->link_isdx_lock);
 	debugfs_remove_recursive(lan9645x->debugfs_root);
 }
 
@@ -529,6 +530,8 @@ static int lan9645x_setup(struct dsa_switch *ds)
 		return err;
 	}
 
+	INIT_LIST_HEAD(&lan9645x->link_isdx);
+	mutex_init(&lan9645x->link_isdx_lock);
 	lan9645x_mac_init(lan9645x);
 	lan9645x_vlan_init(lan9645x);
 	lan9645x_mdb_init(lan9645x);
@@ -1599,6 +1602,52 @@ static int lan9645x_port_del_dscp_prio(struct dsa_switch *ds, int port, u8 dscp,
 	return lan9645x_qos_port_del_dscp_prio(lan9645x, port, dscp, prio);
 }
 
+static int lan9645x_cls_flower_add(struct dsa_switch *ds, int port,
+				   struct flow_cls_offload *cls, bool ingress)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	struct lan9645x_port *p;
+
+	dev_dbg(lan9645x->dev,
+		"port=%d ingress=%u cmd=%d chain=%u prio=%u proto=%x cookie=%lu",
+		port, ingress, cls->command, cls->common.chain_index,
+		cls->common.prio, ntohs(cls->common.protocol), cls->cookie);
+
+	p = lan9645x_to_port(lan9645x, port);
+
+	return lan9645x_tc_flower_add(p, cls, ingress);
+}
+
+static int lan9645x_cls_flower_del(struct dsa_switch *ds, int port,
+				   struct flow_cls_offload *cls, bool ingress)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	struct lan9645x_port *p;
+
+	dev_dbg(lan9645x->dev,
+		"port=%d ingress=%u cmd=%d chain=%u prio=%u proto=%x cookie=%lu",
+		port, ingress, cls->command, cls->common.chain_index,
+		cls->common.prio, ntohs(cls->common.protocol), cls->cookie);
+
+	p = lan9645x_to_port(lan9645x, port);
+
+	return lan9645x_tc_flower_del(p, cls, ingress);
+}
+
+static int lan9645x_cls_flower_stats(struct dsa_switch *ds, int port,
+				     struct flow_cls_offload *cls, bool ingress)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	struct lan9645x_port *p = lan9645x_to_port(lan9645x, port);
+
+	dev_dbg(lan9645x->dev,
+		"port=%d ingress=%u cmd=%d chain=%u prio=%u proto=%x cookie=%lu",
+		port, ingress, cls->command, cls->common.chain_index,
+		cls->common.prio, ntohs(cls->common.protocol), cls->cookie);
+
+	return lan9645x_tc_flower_stats(p, cls);
+}
+
 static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.get_tag_protocol		= lan9645x_get_tag_protocol,
 	.connect_tag_protocol		= lan9645x_connect_tag_protocol,
@@ -1674,6 +1723,9 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.port_policer_del		= lan9645x_port_policer_del,
 	.cls_matchall_goto_add		= lan9645x_cls_matchall_add,
 	.cls_matchall_goto_del		= lan9645x_cls_matchall_del,
+	.cls_flower_add			= lan9645x_cls_flower_add,
+	.cls_flower_del			= lan9645x_cls_flower_del,
+	.cls_flower_stats		= lan9645x_cls_flower_stats,
 
 	/* DCB integration */
 	.port_get_default_prio		= lan9645x_port_get_default_prio,
