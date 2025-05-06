@@ -160,6 +160,13 @@
 #define LAN9645X_VCAP_CID_ES0_L0 VCAP_CID_EGRESS_L0 /* ES0 lookup 0 */
 #define LAN9645X_VCAP_CID_ES0_MAX (VCAP_CID_EGRESS_L1 - 1) /* ES0 Max */
 
+/* Policer indexes */
+#define LAN9645X_POL_IX_PORT      0 /* 0-9    : 10 port policers */
+#define LAN9645X_POL_IX_QUEUE    10 /* 10-90  : 80 queue policers (10p * 8q) */
+#define LAN9645X_POL_IX_POOL     91 /* 91-344 : 263 PSFP and VCAP IS1/IS2 policers */
+#define LAN9645X_POL_IX_MAX      344
+#define LAN9645X_NUM_POL_POOL   (LAN9645X_POL_IX_MAX + 1 - LAN9645X_POL_IX_POOL)
+
 /* Rewriter VLAN port tagging encoding for REW:PORT[0-10]:TAG_CFG.TAG_CFG
  *
  * 0: Port tagging disabled.
@@ -364,6 +371,10 @@ struct lan9645x {
 
 	/* Port mirroring */
 	struct lan9645x_mirror *mirror;
+
+	/* TC / QOS Policer resource management */
+	DECLARE_BITMAP(pol_idx_mask, LAN9645X_NUM_POL_POOL);
+	struct mutex qos_lock;
 };
 
 struct lan9645x_port {
@@ -776,5 +787,21 @@ int lan9645x_tc_matchall_goto_add(struct lan9645x_port *p,
 				  struct tc_cls_matchall_offload *f);
 int lan9645x_tc_matchall_goto_del(struct lan9645x_port *p,
 				  struct tc_cls_matchall_offload *f);
+
+/* QOS quality of service */
+void lan9645x_qos_port_init(struct lan9645x_port *p);
+int lan9645x_qos_polix_alloc(struct lan9645x *lan9645x);
+void lan9645x_qos_polix_free(struct lan9645x *lan9645x, u16 polix);
+int lan9645x_qos_init(struct lan9645x *lan9645x);
+void lan9645x_qos_port_init(struct lan9645x_port *p);
+int lan9645x_qos_port_del_dscp_prio(struct lan9645x *lan9645x, int port,
+				    u8 dscp, u8 prio);
+int lan9645x_qos_port_add_dscp_prio(struct lan9645x *lan9645x, int port,
+				    u8 dscp, u8 prio);
+int lan9645x_qos_port_get_dscp_prio(struct lan9645x *lan9645x, int port,
+				    u8 dscp);
+int lan9645x_qos_port_set_default_prio(struct lan9645x *lan9645x, int port,
+				       u8 prio);
+int lan9645x_qos_port_get_default_prio(struct lan9645x *lan9645x, int port);
 
 #endif /* __LAN9645X_MAIN_H__ */

@@ -652,6 +652,7 @@ static int lan9645x_setup(struct dsa_switch *ds)
 
 	dsa_switch_for_each_available_port(dp, ds) {
 		lan9645x_port_init(lan9645x, dp->index);
+		lan9645x_qos_port_init(lan9645x->ports[dp->index]);
 		lan9645x_police_port_init(lan9645x->ports[dp->index]);
 	}
 
@@ -1550,6 +1551,54 @@ static void lan9645x_cls_matchall_del(struct dsa_switch *ds, int port,
 	lan9645x_tc_matchall_goto_del(p, cls);
 }
 
+static int lan9645x_port_get_default_prio(struct dsa_switch *ds, int port)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	dev_dbg(lan9645x->dev, "port=%d", port);
+
+	return lan9645x_qos_port_get_default_prio(lan9645x, port);
+}
+
+static int lan9645x_port_set_default_prio(struct dsa_switch *ds, int port,
+					  u8 prio)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	dev_dbg(lan9645x->dev, "port=%d prio=%u", port, prio);
+
+	return lan9645x_qos_port_set_default_prio(lan9645x, port, prio);
+}
+
+static int lan9645x_port_get_dscp_prio(struct dsa_switch *ds, int port, u8 dscp)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	dev_dbg(lan9645x->dev, "port=%d dscp=%u", port, dscp);
+
+	return lan9645x_qos_port_get_dscp_prio(lan9645x, port, dscp);
+}
+
+static int lan9645x_port_add_dscp_prio(struct dsa_switch *ds, int port, u8 dscp,
+				       u8 prio)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	dev_dbg(lan9645x->dev, "port=%d dscp=%u prio=%u", port, dscp, prio);
+
+	return lan9645x_qos_port_add_dscp_prio(lan9645x, port, dscp, prio);
+}
+
+static int lan9645x_port_del_dscp_prio(struct dsa_switch *ds, int port, u8 dscp,
+				       u8 prio)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	dev_dbg(lan9645x->dev, "port=%d dscp=%u prio=%u", port, dscp, prio);
+
+	return lan9645x_qos_port_del_dscp_prio(lan9645x, port, dscp, prio);
+}
+
 static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.get_tag_protocol		= lan9645x_get_tag_protocol,
 	.connect_tag_protocol		= lan9645x_connect_tag_protocol,
@@ -1625,6 +1674,13 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.port_policer_del		= lan9645x_port_policer_del,
 	.cls_matchall_goto_add		= lan9645x_cls_matchall_add,
 	.cls_matchall_goto_del		= lan9645x_cls_matchall_del,
+
+	/* DCB integration */
+	.port_get_default_prio		= lan9645x_port_get_default_prio,
+	.port_set_default_prio		= lan9645x_port_set_default_prio,
+	.port_get_dscp_prio		= lan9645x_port_get_dscp_prio,
+	.port_add_dscp_prio		= lan9645x_port_add_dscp_prio,
+	.port_del_dscp_prio		= lan9645x_port_del_dscp_prio,
 };
 
 static int lan9645x_request_target_regmaps(struct lan9645x *lan9645x)
