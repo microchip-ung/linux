@@ -119,8 +119,15 @@ static bool lan9645x_is_mld(struct sk_buff *skb)
 	       ipv6_mc_check_mld(skb);
 }
 
-static void lan9645x_offload_fwd_mark(struct sk_buff *skb, u32 rtagd)
+static void lan9645x_offload_fwd_mark(struct sk_buff *skb, u32 rtagd,
+				      u32 acl_id, u32 acl_hit)
 {
+	if (acl_hit && (acl_id == 1 || (acl_id >> 3) == 1)) {
+		/* frame trapped by IS2 VCAP. Let network stack handle it. */
+		skb->offload_fwd_mark = 0;
+		return;
+	}
+
 	/* IGMP/MLD are trapped to CPU, and must be forwarded by network stack.
 	 */
 	if (!ip_mc_check_igmp(skb) || lan9645x_is_mld(skb)) {
@@ -229,7 +236,7 @@ static struct sk_buff *lan9645x_xmit(struct sk_buff *skb, struct net_device *nde
 
 static struct sk_buff *lan9645x_rcv(struct sk_buff *skb, struct net_device *ndev)
 {
-	u64 vlan_tci, tag_type, popcnt, etype_ofs;
+	u64 vlan_tci, tag_type, popcnt, etype_ofs, acl_id, acl_hit;
 	u64 src_port, qos_class, rtagd, rct;
 	u8 *orig_skb_data = skb->data;
 	struct dsa_port *dp;
@@ -253,6 +260,8 @@ static struct sk_buff *lan9645x_rcv(struct sk_buff *skb, struct net_device *ndev
 	etype_ofs = LAN9645X_IFH_GET(ifh, IFH_ETYPE_OFS);
 	rct = LAN9645X_IFH_GET(ifh, IFH_RCT_AVAIL);
 	rtagd = LAN9645X_IFH_GET(ifh, IFH_RTAGD);
+	acl_id = LAN9645X_IFH_GET(ifh, IFH_ACL_IDX);
+	acl_hit = LAN9645X_IFH_GET(ifh, IFH_ACL_HIT);
 
 	/* Set skb->data at start of real header
 	 *
@@ -303,7 +312,7 @@ static struct sk_buff *lan9645x_rcv(struct sk_buff *skb, struct net_device *ndev
 		return NULL;
 	}
 
-	lan9645x_offload_fwd_mark(skb, rtagd);
+	lan9645x_offload_fwd_mark(skb, rtagd, acl_id, acl_hit);
 
 	skb->priority = qos_class;
 
