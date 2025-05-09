@@ -1924,6 +1924,9 @@ static int vcap_add_type_keyfield(struct vcap_rule *rule)
 	const struct vcap_set *kset;
 	int ret = -EINVAL;
 
+	if (vcap_contains_key(rule, VCAP_KF_TYPE))
+		return 0;
+
 	kset = vcap_keyfieldset(ri->vctrl, vt, keyset);
 	if (!kset)
 		return ret;
