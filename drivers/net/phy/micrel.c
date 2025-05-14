@@ -519,6 +519,7 @@ static struct lan8842_hw_stat lan8842_hw_stats[] = {
 struct lan8842_priv {
 	int rev;
 	struct phy_device *phydev;
+	struct kszphy_ptp_priv ptp_priv;
 };
 
 static const struct kszphy_type lan8814_type = {
@@ -6060,6 +6061,214 @@ static int lan8841_suspend(struct phy_device *phydev)
 	return kszphy_generic_suspend(phydev);
 }
 
+#define LAN8842_PTP_GPIO_NUM 16
+
+static int lan8842_ptp_probe_once(struct phy_device *phydev)
+{
+	struct lan8814_shared_priv *shared = phydev->shared->priv;
+
+	/* Initialise shared lock for clock*/
+	mutex_init(&shared->shared_lock);
+
+	shared->pin_config = devm_kmalloc_array(&phydev->mdio.dev,
+						LAN8842_PTP_GPIO_NUM,
+						sizeof(*shared->pin_config),
+						GFP_KERNEL);
+	if (!shared->pin_config)
+		return -ENOMEM;
+
+	for (int i = 0; i < LAN8842_PTP_GPIO_NUM; i++) {
+		struct ptp_pin_desc *ptp_pin = &shared->pin_config[i];
+
+		memset(ptp_pin, 0, sizeof(*ptp_pin));
+		snprintf(ptp_pin->name,
+			 sizeof(ptp_pin->name), "lan8814_ptp_pin_%02d", i);
+		ptp_pin->index = i;
+		ptp_pin->func =  PTP_PF_NONE;
+	}
+
+	shared->ptp_clock_info.owner = THIS_MODULE;
+	snprintf(shared->ptp_clock_info.name, 30, "%s", phydev->drv->name);
+	shared->ptp_clock_info.max_adj = 31249999;
+	shared->ptp_clock_info.adjfine = lan8814_ptpci_adjfine;
+	shared->ptp_clock_info.adjtime = lan8814_ptpci_adjtime;
+	shared->ptp_clock_info.gettime64 = lan8814_ptpci_gettime64;
+	shared->ptp_clock_info.settime64 = lan8814_ptpci_settime64;
+
+	shared->ptp_clock_info.n_ext_ts = LAN8814_PTP_EXTTS_NUM;
+	shared->ptp_clock_info.n_pins = LAN8842_PTP_GPIO_NUM;
+	shared->ptp_clock_info.n_per_out = LAN8814_PTP_PEROUT_NUM;
+	shared->ptp_clock_info.pps = 0;
+	shared->ptp_clock_info.pin_config = shared->pin_config;
+	shared->ptp_clock_info.enable = lan8814_ptpci_enable;
+	shared->ptp_clock_info.verify = lan8814_ptpci_verify;
+
+	shared->ptp_clock = ptp_clock_register(&shared->ptp_clock_info,
+					       &phydev->mdio.dev);
+	if (IS_ERR(shared->ptp_clock)) {
+		phydev_err(phydev, "ptp_clock_register failed %lu\n",
+			   PTR_ERR(shared->ptp_clock));
+		return -EINVAL;
+	}
+
+	/* Check if PHC support is missing at the configuration level */
+	if (!shared->ptp_clock)
+		return 0;
+
+	shared->phydev = phydev;
+
+	/* The EP.4 is shared between all the PHYs in the package and also it
+	 * can be accessed by any of the PHYs
+	 */
+	lanphy_write_page_reg(phydev, 4, LTC_HARD_RESET, LTC_HARD_RESET_);
+	lanphy_write_page_reg(phydev, 4, PTP_OPERATING_MODE,
+			      PTP_OPERATING_MODE_STANDALONE_);
+
+	/* Enable ptp to run LTC clock for ptp and gpio 1PPS operation */
+	lanphy_write_page_reg(phydev, 4, PTP_CMD_CTL, PTP_CMD_CTL_PTP_ENABLE_);
+
+	return 0;
+}
+
+static int lan8842_hwtstamp(struct mii_timestamper *mii_ts,
+			    struct kernel_hwtstamp_config *config,
+			    struct netlink_ext_ack *extack)
+{
+	struct kszphy_ptp_priv *ptp_priv =
+			  container_of(mii_ts, struct kszphy_ptp_priv, mii_ts);
+	struct lan8814_ptp_rx_ts *rx_ts, *tmp;
+	struct phy_device *phydev = ptp_priv->phydev;
+	int txcfg = 0, rxcfg = 0;
+	int pkt_ts_enable;
+	int tx_mod;
+
+	ptp_priv->hwts_tx_type = config->tx_type;
+	ptp_priv->rx_filter = config->rx_filter;
+
+	switch (config->rx_filter) {
+	case HWTSTAMP_FILTER_NONE:
+		ptp_priv->layer = 0;
+		ptp_priv->version = 0;
+		break;
+	case HWTSTAMP_FILTER_PTP_V2_L4_EVENT:
+	case HWTSTAMP_FILTER_PTP_V2_L4_SYNC:
+	case HWTSTAMP_FILTER_PTP_V2_L4_DELAY_REQ:
+		ptp_priv->layer = PTP_CLASS_L4;
+		ptp_priv->version = PTP_CLASS_V2;
+		break;
+	case HWTSTAMP_FILTER_PTP_V2_L2_EVENT:
+	case HWTSTAMP_FILTER_PTP_V2_L2_SYNC:
+	case HWTSTAMP_FILTER_PTP_V2_L2_DELAY_REQ:
+		ptp_priv->layer = PTP_CLASS_L2;
+		ptp_priv->version = PTP_CLASS_V2;
+		break;
+	case HWTSTAMP_FILTER_PTP_V2_EVENT:
+	case HWTSTAMP_FILTER_PTP_V2_SYNC:
+	case HWTSTAMP_FILTER_PTP_V2_DELAY_REQ:
+		ptp_priv->layer = PTP_CLASS_L4 | PTP_CLASS_L2;
+		ptp_priv->version = PTP_CLASS_V2;
+		break;
+	default:
+		return -ERANGE;
+	}
+
+	if (ptp_priv->layer & PTP_CLASS_L2) {
+		rxcfg = PTP_RX_PARSE_CONFIG_LAYER2_EN_;
+		txcfg = PTP_TX_PARSE_CONFIG_LAYER2_EN_;
+	} else if (ptp_priv->layer & PTP_CLASS_L4) {
+		rxcfg |= PTP_RX_PARSE_CONFIG_IPV4_EN_ | PTP_RX_PARSE_CONFIG_IPV6_EN_;
+		txcfg |= PTP_TX_PARSE_CONFIG_IPV4_EN_ | PTP_TX_PARSE_CONFIG_IPV6_EN_;
+	}
+	lanphy_write_page_reg(ptp_priv->phydev, 5, PTP_RX_PARSE_CONFIG, rxcfg);
+	lanphy_write_page_reg(ptp_priv->phydev, 5, PTP_TX_PARSE_CONFIG, txcfg);
+
+	pkt_ts_enable = PTP_TIMESTAMP_EN_SYNC_ | PTP_TIMESTAMP_EN_DREQ_ |
+			PTP_TIMESTAMP_EN_PDREQ_ | PTP_TIMESTAMP_EN_PDRES_;
+	lanphy_write_page_reg(ptp_priv->phydev, 5, PTP_RX_TIMESTAMP_EN, pkt_ts_enable);
+	lanphy_write_page_reg(ptp_priv->phydev, 5, PTP_TX_TIMESTAMP_EN, pkt_ts_enable);
+
+	tx_mod = lanphy_read_page_reg(phydev, 5, PTP_TX_MOD);
+	if (ptp_priv->hwts_tx_type == HWTSTAMP_TX_ONESTEP_SYNC)
+		tx_mod |= PTP_TX_MOD_TX_PTP_SYNC_TS_INSERT_;
+	else if (ptp_priv->hwts_tx_type == HWTSTAMP_TX_ON)
+		;
+	else
+		tx_mod &= ~PTP_TX_MOD_TX_PTP_SYNC_TS_INSERT_;
+
+	lanphy_write_page_reg(ptp_priv->phydev, 5, PTP_TX_MOD, tx_mod);
+
+	if (config->rx_filter != HWTSTAMP_FILTER_NONE)
+		lan8814_config_ts_intr(ptp_priv->phydev, true);
+	else
+		lan8814_config_ts_intr(ptp_priv->phydev, false);
+
+	/* In case of multiple starts and stops, these needs to be cleared */
+	list_for_each_entry_safe(rx_ts, tmp, &ptp_priv->rx_ts_list, list) {
+		list_del(&rx_ts->list);
+		kfree(rx_ts);
+	}
+	skb_queue_purge(&ptp_priv->rx_queue);
+	skb_queue_purge(&ptp_priv->tx_queue);
+
+	lan8814_flush_fifo(ptp_priv->phydev, false);
+	lan8814_flush_fifo(ptp_priv->phydev, true);
+
+	return 0;
+}
+
+static void lan8842_ptp_init(struct phy_device *phydev)
+{
+	struct lan8842_priv *priv = phydev->priv;
+	struct kszphy_ptp_priv *ptp_priv = &priv->ptp_priv;
+	u32 temp;
+
+	if (!IS_ENABLED(CONFIG_PTP_1588_CLOCK) ||
+	    !IS_ENABLED(CONFIG_NETWORK_PHY_TIMESTAMPING))
+		return;
+
+	lanphy_write_page_reg(phydev, 5, TSU_HARD_RESET, TSU_HARD_RESET_);
+
+	temp = lanphy_read_page_reg(phydev, 5, PTP_TX_MOD);
+	temp |= PTP_TX_MOD_BAD_UDPV4_CHKSUM_FORCE_FCS_DIS_;
+	lanphy_write_page_reg(phydev, 5, PTP_TX_MOD, temp);
+
+	temp = lanphy_read_page_reg(phydev, 5, PTP_RX_MOD);
+	temp |= PTP_RX_MOD_BAD_UDPV4_CHKSUM_FORCE_FCS_DIS_;
+	lanphy_write_page_reg(phydev, 5, PTP_RX_MOD, temp);
+
+	lanphy_write_page_reg(phydev, 5, PTP_RX_PARSE_CONFIG, 0);
+	lanphy_write_page_reg(phydev, 5, PTP_TX_PARSE_CONFIG, 0);
+
+	/* Removing default registers configs related to L2 and IP */
+	lanphy_write_page_reg(phydev, 5, PTP_TX_PARSE_L2_ADDR_EN, 0);
+	lanphy_write_page_reg(phydev, 5, PTP_RX_PARSE_L2_ADDR_EN, 0);
+	lanphy_write_page_reg(phydev, 5, PTP_TX_PARSE_IP_ADDR_EN, 0);
+	lanphy_write_page_reg(phydev, 5, PTP_RX_PARSE_IP_ADDR_EN, 0);
+
+	/* Disable checking for minorVersionPTP field */
+	lanphy_write_page_reg(phydev, 5, PTP_RX_VERSION,
+			      PTP_MAX_VERSION(0xff) | PTP_MIN_VERSION(0x0));
+	lanphy_write_page_reg(phydev, 5, PTP_TX_VERSION,
+			      PTP_MAX_VERSION(0xff) | PTP_MIN_VERSION(0x0));
+
+	skb_queue_head_init(&ptp_priv->tx_queue);
+	skb_queue_head_init(&ptp_priv->rx_queue);
+	INIT_LIST_HEAD(&ptp_priv->rx_ts_list);
+	spin_lock_init(&ptp_priv->rx_ts_lock);
+
+	ptp_priv->phydev = phydev;
+
+	ptp_priv->mii_ts.rxtstamp = lan8814_rxtstamp;
+	ptp_priv->mii_ts.txtstamp = lan8814_txtstamp;
+	ptp_priv->mii_ts.hwtstamp = lan8842_hwtstamp;
+	ptp_priv->mii_ts.ts_info  = lan8814_ts_info;
+
+	phydev->mii_ts = &ptp_priv->mii_ts;
+
+	/* Timestamp selected by default to keep legacy API */
+	phydev->default_timestamp = true;
+}
+
 #define LAN8842_STRAP_REG			0 /* 0x0 */
 #define LAN8842_STRAP_REG_PHYADDR_MASK		GENMASK(4, 0)
 #define LAN8842_SKU_REG				11 /* 0xB */
@@ -6101,6 +6310,28 @@ static int lan8842_probe(struct phy_device *phydev)
 	 */
 	if (priv->rev == 0x8832)
 		return 0;
+
+	/* This is a hack/workaround to be able to use the lan8814_ptp_*
+	 * functions without needing any changes for now. The reason why we do
+	 * this is because lan8814 has the PTP clock in the structure
+	 * lan8814_shared_priv because it is a quad phy while lan8941 is a
+	 * single PHY. The good thing about these 2 PHYs is that they __should__
+	 * have the same PTP IP block.
+	 */
+	addr = lanphy_read_page_reg(phydev, 4, LAN8842_STRAP_REG);
+	addr &= LAN8842_STRAP_REG_PHYADDR_MASK;
+	if (addr < 0)
+		return addr;
+
+	devm_phy_package_join(&phydev->mdio.dev, phydev, addr,
+			      sizeof(struct lan8814_shared_priv));
+	if (phy_package_init_once(phydev)) {
+		ret = lan8842_ptp_probe_once(phydev);
+		if (ret)
+			return ret;
+	}
+
+	lan8842_ptp_init(phydev);
 
 	return 0;
 }
@@ -6181,6 +6412,28 @@ static int lan8842_config_intr(struct phy_device *phydev)
 	return err;
 }
 
+static void lan8842_handle_ptp_interrupt(struct phy_device *phydev, u16 status)
+{
+	struct lan8842_priv *priv = phydev->priv;
+	struct kszphy_ptp_priv *ptp_priv = &priv->ptp_priv;
+
+	if (status & PTP_TSU_INT_STS_PTP_TX_TS_EN_)
+		lan8814_get_tx_ts(ptp_priv);
+
+	if (status & PTP_TSU_INT_STS_PTP_RX_TS_EN_)
+		lan8814_get_rx_ts(ptp_priv);
+
+	if (status & PTP_TSU_INT_STS_PTP_TX_TS_OVRFL_INT_) {
+		lan8814_flush_fifo(phydev, true);
+		skb_queue_purge(&ptp_priv->tx_queue);
+	}
+
+	if (status & PTP_TSU_INT_STS_PTP_RX_TS_OVRFL_INT_) {
+		lan8814_flush_fifo(phydev, false);
+		skb_queue_purge(&ptp_priv->rx_queue);
+	}
+}
+
 static irqreturn_t lan8842_handle_interrupt(struct phy_device *phydev)
 {
 	int ret = IRQ_NONE;
@@ -6196,6 +6449,18 @@ static irqreturn_t lan8842_handle_interrupt(struct phy_device *phydev)
 		phy_trigger_machine(phydev);
 		ret = IRQ_HANDLED;
 	}
+
+	while (true) {
+		irq_status = lanphy_read_page_reg(phydev, 5, PTP_TSU_INT_STS);
+		if (!irq_status)
+			break;
+
+		lan8842_handle_ptp_interrupt(phydev, irq_status);
+		ret = IRQ_HANDLED;
+	}
+
+	if (!lan8814_handle_gpio_interrupt(phydev, irq_status))
+		ret = IRQ_HANDLED;
 
 	return ret;
 }
