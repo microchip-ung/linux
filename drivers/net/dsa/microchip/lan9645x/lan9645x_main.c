@@ -8,6 +8,7 @@
 
 #include "lan9645x_main.h"
 #include "lan9645x_stats.h"
+#include "lan9645x_netlink_qos.h"
 
 static const char *lan9645x_resource_names[NUM_TARGETS] = {
 	[TARGET_ORG]          = "org",
@@ -110,6 +111,7 @@ static void lan9645x_teardown(struct dsa_switch *ds)
 {
 	struct lan9645x *lan9645x = ds->priv;
 
+	lan9645x_netlink_qos_uninit();
 	lan9645x_npi_port_deinit(lan9645x, lan9645x->npi);
 	lan9645x_stats_deinit(lan9645x);
 	lan9645x_mac_deinit(lan9645x);
@@ -697,6 +699,12 @@ static int lan9645x_setup(struct dsa_switch *ds)
 		lan_rmw(ANA_ANAINTR_INTR_ENA_SET(1),
 			ANA_ANAINTR_INTR_ENA,
 			lan9645x, ANA_ANAINTR);
+	}
+
+	err = lan9645x_netlink_qos_init(lan9645x);
+	if (err) {
+		dev_err(dev, "Failed to init QOS netlink api. err=%d", err);
+		return err;
 	}
 
 	return 0;
