@@ -23,6 +23,7 @@ struct vcap_tc_flower_parse_usage {
 	u16 tpid;
 	unsigned long long used_keys;
 	enum vcap_tc_flower_frame_type frame_type;
+	int l2_miss;
 };
 
 int vcap_tc_flower_handler_ethaddr_usage(struct vcap_tc_flower_parse_usage *st);

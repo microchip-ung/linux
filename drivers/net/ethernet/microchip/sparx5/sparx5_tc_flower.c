@@ -241,6 +241,21 @@ sparx5_tc_flower_handler_vlan_usage(struct vcap_tc_flower_parse_usage *st)
 	return err;
 }
 
+static int
+sparx5_tc_flower_handler_meta_usage(struct vcap_tc_flower_parse_usage *st)
+{
+	struct flow_match_meta mt;
+
+	flow_rule_match_meta(st->frule, &mt);
+
+	if (mt.mask->l2_miss)
+		st->l2_miss = mt.key->l2_miss;
+
+	st->used_keys |= BIT_ULL(FLOW_DISSECTOR_KEY_META);
+
+	return 0;
+}
+
 static int (*sparx5_tc_flower_usage_handlers[])(struct vcap_tc_flower_parse_usage *st) = {
 	[FLOW_DISSECTOR_KEY_ETH_ADDRS] = vcap_tc_flower_handler_ethaddr_usage,
 	[FLOW_DISSECTOR_KEY_IPV4_ADDRS] = vcap_tc_flower_handler_ipv4_usage,
@@ -253,6 +268,7 @@ static int (*sparx5_tc_flower_usage_handlers[])(struct vcap_tc_flower_parse_usag
 	[FLOW_DISSECTOR_KEY_TCP] = vcap_tc_flower_handler_tcp_usage,
 	[FLOW_DISSECTOR_KEY_ARP] = vcap_tc_flower_handler_arp_usage,
 	[FLOW_DISSECTOR_KEY_IP] = vcap_tc_flower_handler_ip_usage,
+	[FLOW_DISSECTOR_KEY_META] = sparx5_tc_flower_handler_meta_usage,
 };
 
 static int sparx5_tc_use_dissectors(struct vcap_tc_flower_parse_usage *st,
@@ -1190,6 +1206,7 @@ static int sparx5_tc_flower_replace(struct net_device *ndev,
 		.l3_proto = ETH_P_ALL,
 		.admin = admin,
 		.frame_type = VCAP_TC_FRAME_TYPE_UNKNOWN,
+		.l2_miss = -1,
 	};
 	struct sparx5_port *port = netdev_priv(ndev);
 	struct sparx5_multiple_rules multi = {};
