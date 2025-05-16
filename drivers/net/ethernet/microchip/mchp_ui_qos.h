@@ -154,7 +154,7 @@ struct mchp_frer_iflow_cfg {
 	u16 ms_id;       /* Member stream base ID */
 	bool generation; /* Enable/disable sequence generation */
 	bool pop;        /* Pop R-tag */
-	u8 split_mask;   /* Egress ports to split into */
+	u16 split_mask;   /* Egress ports to split into */
 };
 
 /* Ingress flow configuration */
