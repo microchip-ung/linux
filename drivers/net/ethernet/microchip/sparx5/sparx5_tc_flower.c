@@ -778,7 +778,7 @@ static int sparx5_tc_flower_psfp_setup(struct sparx5 *sparx5,
 				       struct sparx5_psfp_sf *sf)
 {
 	const struct sparx5_consts *consts = &sparx5->data->consts;
-	u32 psfp_sfid = 0, psfp_fmid = 0, psfp_sgid = 0;
+	u32 isdx, psfp_sfid = 0, psfp_fmid = 0, psfp_sgid = 0;
 	int ret;
 
 	/* Must always have a stream gate - max sdu (filter option) is evaluated
@@ -817,15 +817,19 @@ static int sparx5_tc_flower_psfp_setup(struct sparx5 *sparx5,
 	if (ret < 0)
 		return ret;
 
-	/* Streams are classified by ISDX - map ISDX 1:1 to sfid for now. */
-	sparx5_isdx_conf_set(sparx5, psfp_sfid, psfp_sfid, psfp_fmid);
+	ret = sparx5_isdx_get(sparx5, &isdx);
+	if (ret < 0)
+		return ret;
+
+	/* Streams are classified by ISDX */
+	sparx5_isdx_conf_set(sparx5, isdx, psfp_sfid, psfp_fmid);
 
 	ret = vcap_rule_add_action_bit(vrule, VCAP_AF_ISDX_ADD_REPLACE_SEL,
 				       VCAP_BIT_1);
 	if (ret)
 		return ret;
 
-	ret = vcap_rule_add_action_u32(vrule, VCAP_AF_ISDX_VAL, psfp_sfid);
+	ret = vcap_rule_add_action_u32(vrule, VCAP_AF_ISDX_VAL, isdx);
 	if (ret)
 		return ret;
 
@@ -1397,6 +1401,8 @@ static void sparx5_tc_free_psfp_resources(struct sparx5 *sparx5,
 		       __LINE__, sfid);
 
 	sparx5_isdx_conf_set(sparx5, isdx, 0, 0);
+
+	sparx5_isdx_put(sparx5, isdx);
 }
 
 static int sparx5_tc_free_rule_resources(struct net_device *ndev,

@@ -1268,6 +1268,7 @@ static const struct sparx5_match_data sparx5_desc = {
 		.vcap_stats = &sparx5_vcap_stats,
 		.ptp_pins = 4,
 		.bum_slb_cnt = 1024,
+		.isdx_cnt = 4096,
 	},
 };
 

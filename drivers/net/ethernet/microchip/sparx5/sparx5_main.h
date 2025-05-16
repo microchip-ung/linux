@@ -585,6 +585,7 @@ struct sparx5_consts {
 	int vmid_cnt;
 	int arp_tbl_cnt;
 	int bum_slb_cnt;
+	int isdx_cnt;
 	const struct sparx5_vcap_inst *vcaps_cfg;
 	const struct vcap_info *vcaps;
 	const struct vcap_statistics *vcap_stats;
@@ -1083,6 +1084,10 @@ int sparx5_xdp_xmit(struct net_device *dev, int n, struct xdp_frame **frames,
 int sparx5_xdp_run(struct sparx5_port *port, struct page *page, u32 len);
 void sparx5_xdp_mem_type_set(struct sparx5 *sparx5, enum xdp_mem_type type,
 			     void *allocator);
+
+/* sparx5_isdx.c */
+int sparx5_isdx_get(struct sparx5 *sparx5, u32 *isdx);
+int sparx5_isdx_put(struct sparx5 *sparx5, u32 isdx);
 
 /* FDMA return action codes for checking if the frame is valid
  * FDMA_PASS, frame is valid and can be used
