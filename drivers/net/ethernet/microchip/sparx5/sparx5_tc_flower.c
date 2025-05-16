@@ -1189,6 +1189,7 @@ static int sparx5_tc_flower_replace(struct net_device *ndev,
 		.fco = fco,
 		.l3_proto = ETH_P_ALL,
 		.admin = admin,
+		.frame_type = VCAP_TC_FRAME_TYPE_UNKNOWN,
 	};
 	struct sparx5_port *port = netdev_priv(ndev);
 	struct sparx5_multiple_rules multi = {};
