@@ -166,6 +166,14 @@ extern const u8 ifh_smac[];
 #define SPARX5_ROUTER_LEG_N_VMID 511
 #define SPARX5_ARP_TBL_SIZE 2047
 
+#define SPX5_BUM_UNKNOWN_BROADCAST BIT(0)
+#define SPX5_BUM_UNKNOWN_MULTICAST BIT(1)
+#define SPX5_BUM_UNKNOWN_UNICAST BIT(2)
+#define SPX5_BUM_KNOWN_BROADCAST BIT(3)
+#define SPX5_BUM_KNOWN_MULTICAST BIT(4)
+#define SPX5_BUM_KNOWN_UNICAST BIT(5)
+#define SPX5_BUM_LEARN_FRAMES BIT(6)
+
 struct sparx5;
 
 enum spx5_db_data_type {
@@ -943,6 +951,7 @@ bool sparx5_sdlb_group_is_first(struct sparx5 *sparx5, u32 group, u32 sdlb);
 bool sparx5_sdlb_group_is_empty(struct sparx5 *sparx5, u32 group);
 
 enum {
+	SPX5_POL_BUM,
 	SPX5_POL_STORM,
 	SPX5_POL_ACL,
 	SPX5_POL_PORT,
@@ -973,6 +982,7 @@ struct sparx5_policer {
 #define SPX5_POLICER_BYTE_BURST_UNIT 8192 /* bytes per burst */
 #define SPX5_POLICER_FRAME_BURST_UNIT 2504 /* frames per burst */
 
+/* sparx5_police.c */
 int sparx5_policer_init(struct sparx5 *sparx5);
 int sparx5_policer_port_stats_update(struct sparx5_port *port, int polidx);
 int sparx5_policer_stats_update(struct sparx5 *sparx5,
@@ -984,6 +994,11 @@ int sparx5_update_port_policer_stats(struct net_device *ndev,
 				     struct tc_cls_matchall_offload *tmo);
 int sparx5_add_port_policer(struct sparx5_mall_entry *entry);
 int sparx5_delete_port_policer(struct sparx5_mall_entry *entry);
+int sparx5_policer_bum_add(struct sparx5 *sparx5, struct sparx5_policer *pol,
+			   u32 *id);
+int sparx5_policer_bum_del(struct sparx5 *sparx5, u32 id);
+int sparx5_policer_bum_id_get(struct sparx5 *sparx5, u32 isdx);
+void sparx5_policer_bum_init(struct sparx5 *sparx5);
 
 /* sparx5_psfp.c */
 #define SPX5_PSFP_SF_CNT 1024
