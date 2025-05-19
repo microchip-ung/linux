@@ -971,6 +971,12 @@ struct dsa_switch_ops {
 				     const u8 *sel, int nsel);
 	int	(*port_get_apptrust)(struct dsa_switch *ds, int port, u8 *sel,
 				     int *nsel);
+	int	(*port_get_pcp_dei_prio)(struct dsa_switch *ds, int port,
+					 u8 pcp, u8 dei);
+	int	(*port_add_pcp_dei_prio)(struct dsa_switch *ds, int port,
+					 u8 pcp, u8 dei, u8 prio);
+	int	(*port_del_pcp_dei_prio)(struct dsa_switch *ds, int port,
+					 u8 pcp, u8 dei, u8 prio);
 
 	/*
 	 * Suspend and resume
