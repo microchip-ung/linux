@@ -160,13 +160,6 @@ int lan9645x_qos_port_add_dscp_prio(struct lan9645x *lan9645x, int port,
 	if (prio >= LAN9645X_NUM_TC)
 		return -ERANGE;
 
-	/* dcbnl does not support DSCP translation. */
-	lan_rmw(ANA_QOS_CFG_QOS_DSCP_ENA_SET(1) |
-		ANA_QOS_CFG_DSCP_TRANSLATE_ENA_SET(0),
-		ANA_QOS_CFG_QOS_DSCP_ENA |
-		ANA_QOS_CFG_DSCP_TRANSLATE_ENA,
-		lan9645x, ANA_QOS_CFG(port));
-
 	lan_rmw(ANA_DSCP_CFG_DSCP_TRUST_ENA_SET(1) |
 		ANA_DSCP_CFG_QOS_DSCP_VAL_SET(prio) |
 		ANA_DSCP_CFG_DP_DSCP_VAL_SET(0),
@@ -182,7 +175,6 @@ int lan9645x_qos_port_del_dscp_prio(struct lan9645x *lan9645x, int port,
 				    u8 dscp, u8 prio)
 {
 	u32 dscp_cfg = lan_rd(lan9645x, ANA_DSCP_CFG(dscp));
-	int i;
 
 	/* During a "dcb app replace" command, the new app table entry will be
 	 * added first, then the old one will be deleted. But the hardware only
@@ -197,17 +189,79 @@ int lan9645x_qos_port_del_dscp_prio(struct lan9645x *lan9645x, int port,
 
 	lan_wr(0x0, lan9645x, ANA_DSCP_CFG(dscp));
 
-	for (i = 0; i < LAN9645X_PORT_QOS_DSCP_COUNT; i++) {
-		dscp_cfg = lan_rd(lan9645x, ANA_DSCP_CFG(i));
+	return 0;
+}
 
-		if (ANA_DSCP_CFG_DSCP_TRUST_ENA_GET(dscp_cfg))
-			return 0;
+int lan9645x_qos_port_set_apptrust(struct lan9645x *lan9645x, int port,
+				   const u8 *sel, int nsel)
+{
+	bool trust_dscp = false, trust_pcp = false;
+
+	dev_dbg(lan9645x->dev, "port=%d nsel=%d", port, nsel);
+	for (int i = 0; i < nsel; i++)
+		dev_dbg(lan9645x->dev, "sel=%u", sel[i]);
+
+	/* We can either do PCP, DSCP or DSCP,PCP (this order) */
+
+	switch (nsel) {
+	case 0:
+		break;
+	case 1:
+		if (!(sel[0] == DCB_APP_SEL_PCP ||
+		      sel[0] == IEEE_8021QAZ_APP_SEL_DSCP))
+			return -EOPNOTSUPP;
+
+		break;
+	case 2:
+		/* DSCP always takes priority over PCP in hw */
+		if (sel[0] != IEEE_8021QAZ_APP_SEL_DSCP ||
+		    sel[1] != DCB_APP_SEL_PCP)
+			return -EOPNOTSUPP;
+		break;
+	default:
+		return -EOPNOTSUPP;
 	}
 
-	lan_rmw(0,
-		ANA_QOS_CFG_QOS_DSCP_ENA |
-		ANA_QOS_CFG_DSCP_TRANSLATE_ENA,
+	for (int i = 0; i < nsel; i++) {
+		switch (sel[i]) {
+		case DCB_APP_SEL_PCP:
+			trust_pcp = true;
+			break;
+		case IEEE_8021QAZ_APP_SEL_DSCP:
+			trust_dscp = true;
+			break;
+		default:
+			continue;
+		}
+	}
+
+	lan_rmw(ANA_QOS_CFG_QOS_PCP_ENA_SET(trust_pcp) |
+		ANA_QOS_CFG_QOS_DSCP_ENA_SET(trust_dscp),
+		ANA_QOS_CFG_QOS_PCP_ENA |
+		ANA_QOS_CFG_QOS_DSCP_ENA,
 		lan9645x, ANA_QOS_CFG(port));
+
+	return 0;
+}
+
+int lan9645x_qos_port_get_apptrust(struct lan9645x *lan9645x, int port, u8 *sel,
+				   int *nsel)
+{
+	u32 qos_cfg;
+
+	*nsel = 0;
+
+	qos_cfg = lan_rd(lan9645x, ANA_QOS_CFG(port));
+
+	if (ANA_QOS_CFG_QOS_DSCP_ENA_GET(qos_cfg))
+		sel[(*nsel)++] = IEEE_8021QAZ_APP_SEL_DSCP;
+
+	if (ANA_QOS_CFG_QOS_PCP_ENA_GET(qos_cfg))
+		sel[(*nsel)++] = DCB_APP_SEL_PCP;
+
+	dev_dbg(lan9645x->dev, "port=%d nsel=%u", port, *nsel);
+	for (int i = 0; i < *nsel; i++)
+		dev_dbg(lan9645x->dev, "sel=%u", sel[i]);
 
 	return 0;
 }

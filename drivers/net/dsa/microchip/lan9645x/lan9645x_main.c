@@ -1767,6 +1767,22 @@ static int lan9645x_port_get_mac_eee(struct dsa_switch *ds, int port,
 	return lan9645x_eee_mac_get(lan9645x, port, e);
 }
 
+static int lan9645x_port_set_apptrust(struct dsa_switch *ds, int port,
+				      const u8 *sel, int nsel)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	return lan9645x_qos_port_set_apptrust(lan9645x, port, sel, nsel);
+}
+
+static int lan9645x_port_get_apptrust(struct dsa_switch *ds, int port, u8 *sel,
+				      int *nsel)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	return lan9645x_qos_port_get_apptrust(lan9645x, port, sel, nsel);
+}
+
 static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.get_tag_protocol		= lan9645x_get_tag_protocol,
 	.connect_tag_protocol		= lan9645x_connect_tag_protocol,
@@ -1853,6 +1869,8 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.port_get_dscp_prio		= lan9645x_port_get_dscp_prio,
 	.port_add_dscp_prio		= lan9645x_port_add_dscp_prio,
 	.port_del_dscp_prio		= lan9645x_port_del_dscp_prio,
+	.port_set_apptrust		= lan9645x_port_set_apptrust,
+	.port_get_apptrust		= lan9645x_port_get_apptrust,
 
 	 /* MAC EEE settings */
 	 .set_mac_eee			= lan9645x_port_set_mac_eee,
@@ -1905,6 +1923,7 @@ static int lan9645x_probe(struct platform_device *pdev)
 	ds->dev = dev;
 	ds->num_ports = NUM_PHYS_PORTS;
 	ds->num_tx_queues = NUM_PRIO_QUEUES;
+	ds->dscp_prio_mapping_is_global = true;
 
 	ds->ops = &lan9645x_switch_ops;
 	ds->priv = lan9645x;

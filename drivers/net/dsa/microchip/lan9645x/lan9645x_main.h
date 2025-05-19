@@ -817,6 +817,10 @@ int lan9645x_qos_port_get_dscp_prio(struct lan9645x *lan9645x, int port,
 int lan9645x_qos_port_set_default_prio(struct lan9645x *lan9645x, int port,
 				       u8 prio);
 int lan9645x_qos_port_get_default_prio(struct lan9645x *lan9645x, int port);
+int lan9645x_qos_port_get_apptrust(struct lan9645x *lan9645x, int port, u8 *sel,
+				   int *nsel);
+int lan9645x_qos_port_set_apptrust(struct lan9645x *lan9645x, int port,
+				   const u8 *sel, int nsel);
 
 /* TC flower lan9645x_tc_flower.c */
 int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,
