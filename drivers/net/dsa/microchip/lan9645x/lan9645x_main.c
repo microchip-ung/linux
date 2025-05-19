@@ -1783,6 +1783,58 @@ static int lan9645x_port_get_apptrust(struct dsa_switch *ds, int port, u8 *sel,
 	return lan9645x_qos_port_get_apptrust(lan9645x, port, sel, nsel);
 }
 
+static int lan9645x_port_get_pcp_dei_prio(struct dsa_switch *ds, int port,
+					  u8 pcp, u8 dei)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	u32 pcp_dei_cfg;
+
+	dev_dbg(lan9645x->dev, "port=%d pcp=%u dei=%u", port, pcp, dei);
+
+	pcp_dei_cfg = lan_rd(lan9645x, ANA_PCP_DEI_CFG(port, 8*dei + pcp));
+
+	return ANA_PCP_DEI_CFG_QOS_PCP_DEI_VAL_GET(pcp_dei_cfg);
+}
+
+static int lan9645x_port_add_pcp_dei_prio(struct dsa_switch *ds, int port,
+					  u8 pcp, u8 dei, u8 prio)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	dev_dbg(lan9645x->dev, "port=%d pcp=%u dei=%u prio=%u", port, pcp, dei,
+		prio);
+
+	/* dcbnl can only map to prio, but HW has prio/dpl. We silently map
+	 * dei -> dpl in a 1:1 manner, even though the user did not and can not
+	 * request it.
+	 */
+	lan_wr(ANA_PCP_DEI_CFG_QOS_PCP_DEI_VAL_SET(prio) |
+	       ANA_PCP_DEI_CFG_DP_PCP_DEI_VAL_SET(dei),
+	       lan9645x,
+	       ANA_PCP_DEI_CFG(port, dei * 8 + pcp));
+
+	return 0;
+}
+
+static int lan9645x_port_del_pcp_dei_prio(struct dsa_switch *ds, int port,
+					  u8 pcp, u8 dei, u8 prio)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	u32 pcp_cfg;
+
+	dev_dbg(lan9645x->dev, "port=%d pcp=%u dei=%u prio=%u", port, pcp, dei,
+		prio);
+
+	pcp_cfg = lan_rd(lan9645x, ANA_PCP_DEI_CFG(port, dei * 8 + pcp));
+
+	if (ANA_PCP_DEI_CFG_QOS_PCP_DEI_VAL_GET(pcp_cfg) != prio)
+		return 0;
+
+	lan_wr(0x0, lan9645x, ANA_PCP_DEI_CFG(port, dei * 8 + pcp));
+
+	return 0;
+}
+
 static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.get_tag_protocol		= lan9645x_get_tag_protocol,
 	.connect_tag_protocol		= lan9645x_connect_tag_protocol,
@@ -1871,6 +1923,10 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.port_del_dscp_prio		= lan9645x_port_del_dscp_prio,
 	.port_set_apptrust		= lan9645x_port_set_apptrust,
 	.port_get_apptrust		= lan9645x_port_get_apptrust,
+
+	.port_get_pcp_dei_prio		= lan9645x_port_get_pcp_dei_prio,
+	.port_add_pcp_dei_prio		= lan9645x_port_add_pcp_dei_prio,
+	.port_del_pcp_dei_prio		= lan9645x_port_del_pcp_dei_prio,
 
 	 /* MAC EEE settings */
 	 .set_mac_eee			= lan9645x_port_set_mac_eee,
