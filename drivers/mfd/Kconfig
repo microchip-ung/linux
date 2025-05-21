@@ -2468,26 +2468,6 @@ config MFD_RSMU_SPI
 	  Additional drivers must be enabled in order to use the functionality
 	  of the device.
 
-config MFD_MICROCHIP_DPLL_SPI
-	tristate "Microchip DPLL with SPI"
-	depends on SPI && OF
-	select MFD_CORE
-	select REGMAP_SPI
-	help
-	  This driver provides common support for accessing the device.
-	  Additional drivers must be enabled in order to use the functionality
-	  of the device.
-
-config MFD_MICROCHIP_DPLL_I2C
-	tristate "Microchip DPLL with I2C"
-	depends on I2C && OF
-	select MFD_CORE
-	select REGMAP_I2C
-	help
-	  This driver provides common support for accessing the device.
-	  Additional drivers must be enabled in order to use the functionality
-	  of the device.
-
 config MFD_MICROCHIP_LAN9645X_SPI
 	tristate "Microchip LAN9645X with SPI"
 	depends on SPI && OF
