@@ -18,12 +18,19 @@
 #include "vcap_api.h"
 #include "vcap_api_private.h"
 
-static struct net_device *priv_ndev;
-static struct vcap_control *vctrl;
+struct vcap_nl {
+	struct list_head list;
+	struct vcap_control *vctrl;
+	struct net_device *(*to_ndev)(void * priv);
+	void *priv;
+};
+
+static LIST_HEAD(vcap_nl_list);
 static struct genl_family vcap_genl_family;
 
 #define VCAP_NETLINK_NAME "mchp_vcap_nl"
 #define VCAP_NETLINK_VERSION 1
+#define VCAP_NETLINK_PLATFORM_NAME_SZ 16
 
 enum vcap_nl_attr {
 	VCAP_NL_ATTR_NONE,
@@ -66,6 +73,8 @@ enum vcap_nl_attr {
 	VCAP_NL_ATTR_VCAP_INSTANCE,
 	VCAP_NL_ATTR_VCAP_INFO_ITEM,
 	VCAP_NL_ATTR_VCAP_INFO,
+	VCAP_NL_ATTR_PLATFORMS,
+	VCAP_NL_ATTR_PLATFORM_ITEM,
 	/* This must be the last entry */
 	VCAP_NL_ATTR_END,
 };
@@ -85,6 +94,10 @@ enum vcap_genl_cmd {
 	VCAP_GENL_CMD_LIST_RULES,
 	VCAP_GENL_CMD_RESET_RULE_COUNTER,
 	VCAP_GENL_CMD_GET_PORT_INFO,
+	VCAP_GENL_CMD_GET_PLATFORMS,
+	VCAP_GENL_CMD_SET_DEFAULT_PLATFORM,
+	/* This must be the last entry */
+	__VCAP_GENL_CMD_END,
 };
 
 struct nla_policy vcap_genl_policy[VCAP_NL_ATTR_END] = {
@@ -128,10 +141,55 @@ struct nla_policy vcap_genl_policy[VCAP_NL_ATTR_END] = {
 	[VCAP_NL_ATTR_VCAP_INSTANCE] = { .type = NLA_U8 },
 	[VCAP_NL_ATTR_VCAP_INFO_ITEM] = { .type = NLA_NESTED },
 	[VCAP_NL_ATTR_VCAP_INFO] = { .type = NLA_STRING },
+	[VCAP_NL_ATTR_PLATFORMS] = { .type = NLA_NESTED },
+	[VCAP_NL_ATTR_PLATFORM_ITEM] = { .type = NLA_NESTED },
 };
+
+static char *vcap_genl_name(struct vcap_nl *vnl)
+{
+	return vnl->vctrl->stats->name;
+}
+
+static bool vcap_genl_has_platforms(void)
+{
+	return !list_empty(&vcap_nl_list);
+}
+
+static struct vcap_nl *vcap_genl_by_name(char *platform)
+{
+	struct vcap_nl *pos;
+
+	list_for_each_entry(pos, &vcap_nl_list, list) {
+		if (!strncmp(platform, vcap_genl_name(pos),
+			     VCAP_NETLINK_PLATFORM_NAME_SZ)) {
+			return pos;
+		}
+	}
+
+	return NULL;
+}
+
+static struct vcap_nl *vcap_genl_get(struct genl_info *info)
+{
+	struct vcap_nl *vnl;
+	char *platform;
+
+	if (!info->attrs[VCAP_NL_ATTR_PLATFORM_NAME])
+		return list_first_entry_or_null(&vcap_nl_list,
+						struct vcap_nl, list);
+
+	platform = nla_data(info->attrs[VCAP_NL_ATTR_PLATFORM_NAME]);
+	vnl = vcap_genl_by_name(platform);
+	if (!vnl)
+		pr_err("vcap netlink '%s' error: could not get platform '%s'\n",
+		vcap_genl_family.name, platform);
+
+	return vnl;
+}
 
 static int vcap_put_keyfields(struct sk_buff *msg, struct vcap_admin *admin, struct vcap_rule *rule)
 {
+	struct vcap_control *vctrl = to_intrule(rule)->vctrl;
 	struct nlattr *start_keys, *start_key;
 	struct vcap_client_keyfield_data *key;
 	struct vcap_client_keyfield *ckf;
@@ -694,7 +752,8 @@ static int vcap_genl_rule_cb(void *arg, struct vcap_rule *rule)
 	return nla_put_u32(arg, VCAP_NL_ATTR_RULE_ID, rule->id);
 }
 
-static int vcap_genl_get_vcap_key(enum vcap_type vt,
+static int vcap_genl_get_vcap_key(struct vcap_control *vctrl,
+				  enum vcap_type vt,
 				  enum vcap_keyfield_set key,
 				  const struct vcap_field *kf,
 				  struct sk_buff *msg)
@@ -721,7 +780,8 @@ static int vcap_genl_get_vcap_key(enum vcap_type vt,
 	return 0;
 }
 
-static int vcap_genl_get_vcap_keyset_keys(enum vcap_type vt,
+static int vcap_genl_get_vcap_keyset_keys(struct vcap_control *vctrl,
+					  enum vcap_type vt,
 					  enum vcap_keyfield_set keyset,
 					  struct sk_buff *msg)
 {
@@ -739,7 +799,7 @@ static int vcap_genl_get_vcap_keyset_keys(enum vcap_type vt,
 
 	start_keys = nla_nest_start(msg, VCAP_NL_ATTR_KEYS);
 	for (key = 0; key < count; ++key) {
-		ret = vcap_genl_get_vcap_key(vt, key, &fields[key], msg);
+		ret = vcap_genl_get_vcap_key(vctrl, vt, key, &fields[key], msg);
 		if (ret)
 			return ret;
 	}
@@ -747,7 +807,8 @@ static int vcap_genl_get_vcap_keyset_keys(enum vcap_type vt,
 	return 0;
 }
 
-static int vcap_genl_get_vcap_keyset(enum vcap_type vt,
+static int vcap_genl_get_vcap_keyset(struct vcap_control *vctrl,
+				     enum vcap_type vt,
 				     enum vcap_keyfield_set keyset,
 				     struct sk_buff *msg)
 {
@@ -768,7 +829,8 @@ static int vcap_genl_get_vcap_keyset(enum vcap_type vt,
 	return 0;
 }
 
-static int vcap_genl_get_vcap_keysets(enum vcap_type vt, struct sk_buff *msg)
+static int vcap_genl_get_vcap_keysets(struct vcap_control *vctrl,
+				      enum vcap_type vt, struct sk_buff *msg)
 {
 	struct nlattr *start_keysets;
 	enum vcap_keyfield_set keyset;
@@ -776,7 +838,7 @@ static int vcap_genl_get_vcap_keysets(enum vcap_type vt, struct sk_buff *msg)
 
 	start_keysets = nla_nest_start(msg, VCAP_NL_ATTR_KEYSETS);
 	for (keyset = 0; keyset < vctrl->vcaps[vt].keyfield_set_size; ++keyset) {
-		ret = vcap_genl_get_vcap_keyset(vt, keyset, msg);
+		ret = vcap_genl_get_vcap_keyset(vctrl, vt, keyset, msg);
 		if (ret)
 			return ret;
 	}
@@ -784,10 +846,11 @@ static int vcap_genl_get_vcap_keysets(enum vcap_type vt, struct sk_buff *msg)
 	return 0;
 }
 
-static int vcap_genl_get_vcap_action(enum vcap_type vt,
-				  enum vcap_actionfield_set action,
-				  const struct vcap_field *af,
-				  struct sk_buff *msg)
+static int vcap_genl_get_vcap_action(struct vcap_control *vctrl,
+				     enum vcap_type vt,
+				     enum vcap_actionfield_set action,
+				     const struct vcap_field *af,
+				     struct sk_buff *msg)
 {
 	struct nlattr *start_action;
 
@@ -811,7 +874,8 @@ static int vcap_genl_get_vcap_action(enum vcap_type vt,
 	return 0;
 }
 
-static int vcap_genl_get_vcap_actionset_actions(enum vcap_type vt,
+static int vcap_genl_get_vcap_actionset_actions(struct vcap_control *vctrl,
+						enum vcap_type vt,
 						enum vcap_actionfield_set actionset,
 						struct sk_buff *msg)
 {
@@ -829,7 +893,7 @@ static int vcap_genl_get_vcap_actionset_actions(enum vcap_type vt,
 
 	start_actions = nla_nest_start(msg, VCAP_NL_ATTR_ACTIONS);
 	for (action = 0; action < count; ++action) {
-		ret = vcap_genl_get_vcap_action(vt, action, &fields[action], msg);
+		ret = vcap_genl_get_vcap_action(vctrl, vt, action, &fields[action], msg);
 		if (ret)
 			return ret;
 	}
@@ -837,9 +901,10 @@ static int vcap_genl_get_vcap_actionset_actions(enum vcap_type vt,
 	return 0;
 }
 
-static int vcap_genl_get_vcap_actionset(enum vcap_type vt,
-				     enum vcap_actionfield_set actionset,
-				     struct sk_buff *msg)
+static int vcap_genl_get_vcap_actionset(struct vcap_control *vctrl,
+					enum vcap_type vt,
+					enum vcap_actionfield_set actionset,
+					struct sk_buff *msg)
 {
 	struct nlattr *start_actionset;
 
@@ -858,7 +923,8 @@ static int vcap_genl_get_vcap_actionset(enum vcap_type vt,
 	return 0;
 }
 
-static int vcap_genl_get_vcap_actionsets(enum vcap_type vt, struct sk_buff *msg)
+static int vcap_genl_get_vcap_actionsets(struct vcap_control *vctrl,
+					 enum vcap_type vt, struct sk_buff *msg)
 {
 	struct nlattr *start_actionsets;
 	enum vcap_actionfield_set actionset;
@@ -866,7 +932,7 @@ static int vcap_genl_get_vcap_actionsets(enum vcap_type vt, struct sk_buff *msg)
 
 	start_actionsets = nla_nest_start(msg, VCAP_NL_ATTR_ACTIONSETS);
 	for (actionset = 0; actionset < vctrl->vcaps[vt].actionfield_set_size; ++actionset) {
-		ret = vcap_genl_get_vcap_actionset(vt, actionset, msg);
+		ret = vcap_genl_get_vcap_actionset(vctrl, vt, actionset, msg);
 		if (ret)
 			return ret;
 	}
@@ -891,10 +957,17 @@ static int vcap_genl_get_port_info(struct sk_buff *skb, struct genl_info *info)
 	struct vcap_admin *admin_itr, *admin = NULL;
 	struct vcap_output_print out;
 	struct nlattr *start_list;
+	struct vcap_control *vctrl;
+	struct vcap_nl *vnl;
 	enum vcap_type vtype;
 	struct sk_buff *msg;
 	void *hdr;
 	int err;
+
+	vnl = vcap_genl_get(info);
+	if (!vnl)
+		return -EINVAL;
+	vctrl = vnl->vctrl;
 
 	if (!info->attrs[VCAP_NL_ATTR_VCAP_TYPE]) {
 		NL_SET_ERR_MSG_MOD(info->extack, "VCAP_ID is missing");
@@ -947,7 +1020,7 @@ static int vcap_genl_get_port_info(struct sk_buff *skb, struct genl_info *info)
 	out.prf = (void *)vcap_genl_port_printf;
 	out.dst = msg;
 
-	if (vctrl->ops->port_info(priv_ndev, admin, &out))
+	if (vctrl->ops->port_info(vnl->to_ndev(vnl->priv), admin, &out))
 		goto nla_put_failure;
 
 	nla_nest_end(msg, start_list);
@@ -970,11 +1043,18 @@ invalid_info:
 static int vcap_genl_reset_rule_counter(struct sk_buff *skb, struct genl_info *info)
 {
 	struct vcap_counter ctr = {0};
+	struct vcap_control *vctrl;
+	struct vcap_nl *vnl;
 	struct vcap_rule *rule;
 	struct sk_buff *msg;
 	u32 rule_id;
 	void *hdr;
 	int err;
+
+	vnl = vcap_genl_get(info);
+	if (!vnl)
+		return -EINVAL;
+	vctrl = vnl->vctrl;
 
 	if (!info->attrs[VCAP_NL_ATTR_RULE_ID]) {
 		NL_SET_ERR_MSG_MOD(info->extack, "RULE_ID is missing");
@@ -1028,10 +1108,17 @@ invalid_info:
 
 static int vcap_genl_list_rules(struct sk_buff *skb, struct genl_info *info)
 {
+	struct vcap_control *vctrl;
 	struct nlattr *start_list;
+	struct vcap_nl *vnl;
 	struct sk_buff *msg;
 	void *hdr;
 	int err;
+
+	vnl = vcap_genl_get(info);
+	if (!vnl)
+		return -EINVAL;
+	vctrl = vnl->vctrl;
 
 	/* Create the response with the rule id */
 	msg = genlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
@@ -1074,13 +1161,20 @@ invalid_info:
 static int vcap_genl_mod_rule(struct sk_buff *skb, struct genl_info *info)
 {
 	const struct vcap_field *fields;
+	struct vcap_control *vctrl;
 	struct vcap_admin *admin;
+	struct vcap_nl *vnl;
 	struct vcap_rule *rule;
 	struct sk_buff *msg;
 	int field_count;
 	u32 rule_id;
 	void *hdr;
 	int err;
+
+	vnl = vcap_genl_get(info);
+	if (!vnl)
+		return -EINVAL;
+	vctrl = vnl->vctrl;
 
 	if (!info->attrs[VCAP_NL_ATTR_RULE_ID]) {
 		NL_SET_ERR_MSG_MOD(info->extack, "RULE_ID is missing");
@@ -1182,13 +1276,20 @@ static int vcap_genl_get_rule(struct sk_buff *skb, struct genl_info *info)
 {
 	struct vcap_counter counter;
 	struct vcap_address address;
+	struct vcap_control *vctrl;
 	struct vcap_admin *admin;
+	struct vcap_nl *vnl;
 	struct sk_buff *msg;
 	struct vcap_rule *rule;
 	u32 rule_id;
 	int vlookup;
 	void *hdr;
 	int err;
+
+	vnl = vcap_genl_get(info);
+	if (!vnl)
+		return -EINVAL;
+	vctrl = vnl->vctrl;
 
 	if (!info->attrs[VCAP_NL_ATTR_RULE_ID]) {
 		NL_SET_ERR_MSG_MOD(info->extack, "RULE_ID is missing");
@@ -1286,10 +1387,17 @@ invalid_info:
 
 static int vcap_genl_del_rule(struct sk_buff *skb, struct genl_info *info)
 {
+	struct vcap_control *vctrl;
+	struct vcap_nl *vnl;
 	struct sk_buff *msg;
 	u32 rule_id;
 	void *hdr;
 	int err;
+
+	vnl = vcap_genl_get(info);
+	if (!vnl)
+		return -EINVAL;
+	vctrl = vnl->vctrl;
 
 	if (!info->attrs[VCAP_NL_ATTR_RULE_ID]) {
 		NL_SET_ERR_MSG_MOD(info->extack, "RULE_ID is missing");
@@ -1299,7 +1407,7 @@ static int vcap_genl_del_rule(struct sk_buff *skb, struct genl_info *info)
 	rule_id = nla_get_u32(info->attrs[VCAP_NL_ATTR_RULE_ID]);
 
 	/* Delete the rule specified by the rule id */
-	if (vcap_del_rule(vctrl, priv_ndev, rule_id)) {
+	if (vcap_del_rule(vctrl, vnl->to_ndev(vnl->priv), rule_id)) {
 		NL_SET_ERR_MSG_MOD(info->extack, "Rule could not be deleted");
 		err = -EINVAL;
 		goto invalid_info;
@@ -1344,10 +1452,12 @@ static int vcap_genl_add_rule(struct sk_buff *skb, struct genl_info *info)
 	enum vcap_keyfield_set keyset_id;
 	enum vcap_actionfield_set actionset_id;
 	const struct vcap_field *fields;
+	struct vcap_control *vctrl;
 	struct vcap_admin *admin;
 	struct vcap_rule *rule;
 	struct sk_buff *msg;
 	enum vcap_type vtype;
+	struct vcap_nl *vnl;
 	int field_count;
 	int vlookup;
 	u16 priority;
@@ -1355,6 +1465,11 @@ static int vcap_genl_add_rule(struct sk_buff *skb, struct genl_info *info)
 	void *hdr;
 	int cid;
 	int err;
+
+	vnl = vcap_genl_get(info);
+	if (!vnl)
+		return -EINVAL;
+	vctrl = vnl->vctrl;
 
 	if (!info->attrs[VCAP_NL_ATTR_VCAP_TYPE]) {
 		NL_SET_ERR_MSG_MOD(info->extack, "VCAP_ID is missing");
@@ -1410,7 +1525,7 @@ static int vcap_genl_add_rule(struct sk_buff *skb, struct genl_info *info)
 	}
 	actionset_id = nla_get_u16(info->attrs[VCAP_NL_ATTR_ACTIONSET_ID]);
 
-	rule = vcap_alloc_rule(vctrl, priv_ndev, cid, VCAP_USER_VCAP_UTIL,
+	rule = vcap_alloc_rule(vctrl, vnl->to_ndev(vnl->priv), cid, VCAP_USER_VCAP_UTIL,
 			       priority, rule_id);
 
 	if (!rule || IS_ERR(rule)) {
@@ -1524,10 +1639,17 @@ static int vcap_genl_get_actionset_info(struct sk_buff *skb,
 					struct genl_info *info)
 {
 	enum vcap_actionfield_set actionset;
+	struct vcap_control *vctrl;
+	struct vcap_nl *vnl;
 	struct sk_buff *msg;
 	enum vcap_type vt;
 	void *hdr;
 	int err;
+
+	vnl = vcap_genl_get(info);
+	if (!vnl)
+		return -EINVAL;
+	vctrl = vnl->vctrl;
 
 	if (!info->attrs[VCAP_NL_ATTR_VCAP_TYPE]) {
 		NL_SET_ERR_MSG_MOD(info->extack, "VCAP_ID is missing");
@@ -1573,7 +1695,7 @@ static int vcap_genl_get_actionset_info(struct sk_buff *skb,
 		goto nla_put_failure;
 	if (nla_put_string(msg, VCAP_NL_ATTR_ACTIONSET_NAME, vctrl->stats->actionfield_set_names[actionset]))
 		goto nla_put_failure;
-	if (vcap_genl_get_vcap_actionset_actions(vt, actionset, msg))
+	if (vcap_genl_get_vcap_actionset_actions(vctrl, vt, actionset, msg))
 		goto nla_put_failure;
 
 	genlmsg_end(msg, hdr);
@@ -1595,10 +1717,17 @@ static int vcap_genl_get_keyset_info(struct sk_buff *skb,
 				   struct genl_info *info)
 {
 	enum vcap_keyfield_set keyset;
+	struct vcap_control *vctrl;
+	struct vcap_nl *vnl;
 	struct sk_buff *msg;
 	enum vcap_type vt;
 	void *hdr;
 	int err;
+
+	vnl = vcap_genl_get(info);
+	if (!vnl)
+		return -EINVAL;
+	vctrl = vnl->vctrl;
 
 	if (!info->attrs[VCAP_NL_ATTR_VCAP_TYPE]) {
 		NL_SET_ERR_MSG_MOD(info->extack, "VCAP_ID is missing");
@@ -1644,7 +1773,7 @@ static int vcap_genl_get_keyset_info(struct sk_buff *skb,
 		goto nla_put_failure;
 	if (nla_put_string(msg, VCAP_NL_ATTR_KEYSET_NAME, vctrl->stats->keyfield_set_names[keyset]))
 		goto nla_put_failure;
-	if (vcap_genl_get_vcap_keyset_keys(vt, keyset, msg))
+	if (vcap_genl_get_vcap_keyset_keys(vctrl, vt, keyset, msg))
 		goto nla_put_failure;
 
 	genlmsg_end(msg, hdr);
@@ -1665,11 +1794,18 @@ invalid_info:
 static int vcap_genl_get_vcap_info(struct sk_buff *skb,
 				   struct genl_info *info)
 {
+	struct vcap_control *vctrl;
+	struct vcap_nl *vnl;
 	struct sk_buff *msg;
 	enum vcap_type vtype;
 	void *hdr;
 	int vcount;
 	int err;
+
+	vnl = vcap_genl_get(info);
+	if (!vnl)
+		return -EINVAL;
+	vctrl = vnl->vctrl;
 
 	if (!info->attrs[VCAP_NL_ATTR_VCAP_TYPE]) {
 		NL_SET_ERR_MSG_MOD(info->extack, "VCAP_ID is missing");
@@ -1705,9 +1841,9 @@ static int vcap_genl_get_vcap_info(struct sk_buff *skb,
 		goto nla_put_failure;
 	if (nla_put_u8(msg, VCAP_NL_ATTR_VCAP_INSTANCE, vcount))
 		goto nla_put_failure;
-	if (vcap_genl_get_vcap_keysets(vtype, msg))
+	if (vcap_genl_get_vcap_keysets(vctrl, vtype, msg))
 		goto nla_put_failure;
-	if (vcap_genl_get_vcap_actionsets(vtype, msg))
+	if (vcap_genl_get_vcap_actionsets(vctrl, vtype, msg))
 		goto nla_put_failure;
 
 	genlmsg_end(msg, hdr);
@@ -1737,7 +1873,8 @@ static int vcap_genl_vcap_printf(void *out, const char *fmt, ...)
 	return nla_put_string(msg, VCAP_NL_ATTR_VCAP_INFO, buffer);
 }
 
-static int vcap_genl_vcap_info(enum vcap_type vtype, int vinst, struct sk_buff *msg)
+static int vcap_genl_vcap_info(struct vcap_control *ctrl, enum vcap_type vtype,
+			       int vinst, struct sk_buff *msg)
 {
 	struct nlattr *start_vcap;
 	struct vcap_admin *admin;
@@ -1746,10 +1883,10 @@ static int vcap_genl_vcap_info(enum vcap_type vtype, int vinst, struct sk_buff *
 		.dst = msg,
 	};
 
-	list_for_each_entry(admin, &vctrl->list, list) {
+	list_for_each_entry(admin, &ctrl->list, list) {
 		if (admin->vtype == vtype && admin->vinst == vinst) {
 			start_vcap = nla_nest_start(msg, VCAP_NL_ATTR_VCAP_INFO_ITEM);
-			vcap_show_admin_info(vctrl, admin, &out);
+			vcap_show_admin_info(ctrl, admin, &out);
 			nla_nest_end(msg, start_vcap);
 			break;
 		}
@@ -1760,11 +1897,18 @@ static int vcap_genl_vcap_info(enum vcap_type vtype, int vinst, struct sk_buff *
 static int vcap_genl_get_vcap_instance_info(struct sk_buff *skb,
 					    struct genl_info *info)
 {
+	struct vcap_control *vctrl;
+	struct vcap_nl *vnl;
 	struct sk_buff *msg;
 	enum vcap_type vtype;
 	void *hdr;
 	int vinst;
 	int err;
+
+	vnl = vcap_genl_get(info);
+	if (!vnl)
+		return -EINVAL;
+	vctrl = vnl->vctrl;
 
 	if (!info->attrs[VCAP_NL_ATTR_VCAP_TYPE]) {
 		NL_SET_ERR_MSG_MOD(info->extack, "VCAP_ID is missing");
@@ -1803,8 +1947,111 @@ static int vcap_genl_get_vcap_instance_info(struct sk_buff *skb,
 		goto nla_put_failure;
 	if (nla_put_u8(msg, VCAP_NL_ATTR_VCAP_INSTANCE, vinst))
 		goto nla_put_failure;
-	if (vcap_genl_vcap_info(vtype, vinst, msg))
+	if (vcap_genl_vcap_info(vctrl, vtype, vinst, msg))
 		goto nla_put_failure;
+
+	genlmsg_end(msg, hdr);
+	return genlmsg_reply(msg, info);
+
+nla_put_failure:
+	NL_SET_ERR_MSG_MOD(info->extack, "Could not add field to response");
+	genlmsg_cancel(msg, hdr);
+
+err_msg_free:
+	err = -EMSGSIZE;
+	nlmsg_free(msg);
+
+invalid_info:
+	return err;
+}
+
+static int vcap_genl_set_default_platform(struct sk_buff *skb, struct genl_info *info)
+{
+	struct vcap_nl *vnl;
+	struct sk_buff *msg;
+	void *hdr;
+	int err;
+
+	if (!info->attrs[VCAP_NL_ATTR_PLATFORM_NAME])
+		return -EINVAL;
+
+	vnl = vcap_genl_by_name(nla_data(info->attrs[VCAP_NL_ATTR_PLATFORM_NAME]));
+	if (!vnl)
+		return -EINVAL;
+
+	list_del(&vnl->list);
+	list_add(&vnl->list, &vcap_nl_list);
+
+	/* Create the response */
+	msg = genlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
+	if (!msg) {
+		NL_SET_ERR_MSG_MOD(info->extack, "Could not create netlink response");
+		err = -EINVAL;
+		goto invalid_info;
+	}
+
+	hdr = genlmsg_put(msg, info->snd_portid, info->snd_seq,
+			  &vcap_genl_family, 0,
+			  VCAP_GENL_CMD_ADD_RULE);
+	if (!hdr) {
+		NL_SET_ERR_MSG_MOD(info->extack, "Could not add netlink header");
+		goto err_msg_free;
+	}
+
+	genlmsg_end(msg, hdr);
+	return genlmsg_reply(msg, info);
+
+err_msg_free:
+	err = -EMSGSIZE;
+	nlmsg_free(msg);
+
+invalid_info:
+	return err;
+
+	return 0;
+}
+
+static int vcap_genl_get_platforms(struct sk_buff *skb, struct genl_info *info)
+{
+	struct nlattr *devs;
+	struct vcap_nl *vnl;
+	struct sk_buff *msg;
+	int err = 0;
+	void *hdr;
+
+	msg = genlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
+	if (!msg) {
+		NL_SET_ERR_MSG_MOD(info->extack, "Could not create netlink response");
+		err = -EINVAL;
+		goto invalid_info;
+	}
+
+	hdr = genlmsg_put(msg, info->snd_portid, info->snd_seq,
+			  &vcap_genl_family, 0,
+			  VCAP_GENL_CMD_GET_PLATFORMS);
+	if (!hdr) {
+		NL_SET_ERR_MSG_MOD(info->extack, "Could not add netlink header");
+		goto err_msg_free;
+	}
+
+	devs = nla_nest_start(msg, VCAP_NL_ATTR_PLATFORMS);
+	if (!devs)
+		goto nla_put_failure;
+
+	list_for_each_entry(vnl, &vcap_nl_list, list) {
+		struct nlattr *ditem;
+
+		ditem = nla_nest_start(msg, VCAP_NL_ATTR_PLATFORM_ITEM);
+		if (!ditem)
+			goto nla_put_failure;
+
+		if (nla_put_string(msg, VCAP_NL_ATTR_PLATFORM_NAME, vcap_genl_name(vnl)))
+			goto nla_put_failure;
+
+		nla_nest_end(msg, ditem);
+	}
+
+	nla_nest_end(msg, devs);
 
 	genlmsg_end(msg, hdr);
 	return genlmsg_reply(msg, info);
@@ -1825,10 +2072,17 @@ static int vcap_genl_get_platform_info(struct sk_buff *skb,
 				       struct genl_info *info)
 {
 	struct nlattr *start_vcaps;
+	struct vcap_control *vctrl;
+	struct vcap_nl *vnl;
 	struct sk_buff *msg;
 	enum vcap_type vtype;
 	void *hdr;
 	int err;
+
+	vnl = vcap_genl_get(info);
+	if (!vnl)
+		return -EINVAL;
+	vctrl = vnl->vctrl;
 
 	msg = genlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
 	if (!msg) {
@@ -1944,8 +2198,38 @@ static struct genl_ops vcap_genl_ops[] = {
 		.doit     = vcap_genl_get_port_info,
 		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags    = GENL_ADMIN_PERM,
-	},
+	}, {
+		.cmd      = VCAP_GENL_CMD_GET_PLATFORMS,
+		.doit     = vcap_genl_get_platforms,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
+		.flags    = GENL_ADMIN_PERM,
+	}, {
+		.cmd      = VCAP_GENL_CMD_SET_DEFAULT_PLATFORM,
+		.doit     = vcap_genl_set_default_platform,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
+		.flags    = GENL_ADMIN_PERM,
+	}
 };
+
+static struct net_device *vcap_genl_to_ndev_default(void *priv)
+{
+	return priv;
+};
+
+static int vcap_genl_pre_doit(const struct genl_split_ops *ops,
+			      struct sk_buff *skb,
+			      struct genl_info *info)
+{
+	rtnl_lock();
+	return 0;
+}
+
+static void vcap_genl_post_doit(const struct genl_split_ops *ops,
+				struct sk_buff *skb,
+				struct genl_info *info)
+{
+	rtnl_unlock();
+}
 
 static struct genl_family vcap_genl_family = {
 	.name		= VCAP_NETLINK_NAME,
@@ -1955,25 +2239,73 @@ static struct genl_family vcap_genl_family = {
 	.policy		= vcap_genl_policy,
 	.ops		= vcap_genl_ops,
 	.n_ops		= ARRAY_SIZE(vcap_genl_ops),
-	.resv_start_op	= VCAP_GENL_CMD_GET_PORT_INFO + 1,
+	.resv_start_op	= __VCAP_GENL_CMD_END,
+	.pre_doit	= vcap_genl_pre_doit,
+	.post_doit	= vcap_genl_post_doit,
 };
+
+int vcap_netlink_init_from_priv(void *priv,
+				struct net_device *(*to_ndev)(void * priv),
+				struct vcap_control *ctrl)
+{
+	struct vcap_nl *vnl;
+	bool first_platform;
+	int err = 0;
+
+	vnl = kzalloc(sizeof(*vnl), GFP_KERNEL);
+	if (!vnl) {
+		err = -ENOMEM;
+		pr_err("vcap_netlink_init failed: '%s' err: %d\n",
+		       vcap_genl_family.name, err);
+		return err;
+	}
+
+	rtnl_lock();
+	first_platform = !vcap_genl_has_platforms();
+	vnl->priv = priv;
+	vnl->to_ndev = to_ndev;
+	vnl->vctrl = ctrl;
+	list_add(&vnl->list, &vcap_nl_list);
+	if (first_platform)
+		err = genl_register_family(&vcap_genl_family);
+	rtnl_unlock();
+
+	if (err) {
+		pr_err("genl_register_family() vcap netlink failed: '%s' %d",
+		       vcap_genl_family.name, err);
+		return err;
+	}
+
+	pr_info("Registered netlink family for VCAP '%s' platform: '%s'",
+		vcap_genl_family.name, vcap_genl_name(vnl));
+
+	return 0;
+}
 
 int vcap_netlink_init(struct vcap_control *ctrl, struct net_device *ndev)
 {
-	int err;
-
-	vctrl = ctrl;
-	priv_ndev = ndev;
-	err = genl_register_family(&vcap_genl_family);
-	if (err)
-		pr_err("genl_register_family() failed\n");
-
-	return err;
+	return vcap_netlink_init_from_priv(ndev, vcap_genl_to_ndev_default,
+					   ctrl);
 }
 
-void vcap_netlink_uninit(void)
+void vcap_netlink_uninit(struct vcap_control *vctrl)
 {
-	vctrl = NULL;
-	priv_ndev = NULL;
-	genl_unregister_family(&vcap_genl_family);
+	struct vcap_nl *vnl;
+
+	rtnl_lock();
+	vnl = vcap_genl_by_name(vctrl->stats->name);
+	if (!vnl)
+		goto out;
+
+	list_del(&vnl->list);
+	kfree(vnl);
+
+	if (!vcap_genl_has_platforms()) {
+		genl_unregister_family(&vcap_genl_family);
+		pr_info("Unregistered netlink family for VCAP '%s'",
+			vcap_genl_family.name);
+	}
+
+out:
+	rtnl_unlock();
 }
