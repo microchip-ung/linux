@@ -111,6 +111,9 @@
 #define LAN9645X_IFH_SET(_ifh, _fld, _val) \
 	lan9645x_ifh_set((_ifh), LAN9645X_IFH_LEN, (_val), (_fld), _fld##_SZ)
 
+/* Get mask of ports which mirror traffic egressing dp */
+u32 lan9645x_emirror_get_dst(struct dsa_port *dp);
+
 static inline u8 merge_mask(u8 on_zero, u8 on_one, u8 mask)
 {
 	return on_zero ^ ((on_zero ^ on_one) & mask);

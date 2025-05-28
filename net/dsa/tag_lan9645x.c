@@ -228,7 +228,13 @@ static struct sk_buff *lan9645x_xmit(struct sk_buff *skb, struct net_device *nde
 		LAN9645X_IFH_SET(ifh, IFH_QOS_CLASS, qos_class);
 		LAN9645X_IFH_SET(ifh, IFH_TCI, vlan_tci);
 		LAN9645X_IFH_SET(ifh, IFH_TAG_TYPE, tag_type);
-		LAN9645X_IFH_SET(ifh, IFH_DSTS, BIT_ULL(dp->index));
+		/* Mirroring is calculated by the forwarding engine, which
+		 * we are bypassing. To implement egress mirroring of standalone
+		 * ports, we need to query mirroring state from switch driver.
+		 */
+		LAN9645X_IFH_SET(ifh, IFH_DSTS,
+				 BIT_ULL(dp->index) |
+				 (u64)lan9645x_emirror_get_dst(dp));
 	}
 
 	return skb;
