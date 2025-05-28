@@ -100,6 +100,7 @@ dtb-$(CONFIG_SOC_LAN966) += \
 	lan966x-pcb8281.dtb \
 	lan966x-pcb8281-rgmii.dtb \
 	lan966x-pcb8385.dtb \
+	lan966x-pcb8385-lan9645x.dtb \
 	lan966x-mesa-pcb8291.dtb \
 	lan966x-mesa-pcb8309.dtb \
 	lan966x-mesa-pcb8290.dtb \
