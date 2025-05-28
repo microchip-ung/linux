@@ -251,11 +251,31 @@
 				};
 			};
 
+            lan9645x_irq: lan9645x_irq@52001c {
+				compatible = "microchip,lan9645x-oic";
+				reg = <0 0>;
+
+				pinctrl-names = "default";
+				pinctrl-0 = <&irq_pins>, <&lan9645x_irq_pins>;
+
+                 microchip,dst_target = < 2 >;
+                 microchip,drv_mode = < 0x1 >;
+
+			   interrupt-controller;
+			   #interrupt-cells = <1>;
+               interrupt-parent = <&lan9645x_irq>;
+               interrupts-extended = <&gpio 54 IRQ_TYPE_LEVEL_LOW>;
+               interrupt-names = "external-irq";
+            };
+
 			// See *bindings/net/dsa.yaml
 			// See *bindings/net/dsa-port.yaml
 			lan9645x: ethernet-switch@1 {
 				compatible = "microchip,lan9645x-switch";
 				reg = <0 0>;
+
+               interrupts-extended = <&lan9645x_irq 17>;
+               interrupt-names = "lan9645x-ana";
 
 				ethernet-ports {
 					#address-cells = <1>;
