@@ -6,6 +6,7 @@
 
 #include <linux/if_bridge.h>
 #include <linux/if_hsr.h>
+#include <net/bonding.h>
 #include <net/switchdev.h>
 
 #include "lan969x/lan969x.h"
@@ -20,6 +21,7 @@ struct sparx5_switchdev_event_work {
 	struct work_struct work;
 	struct switchdev_notifier_fdb_info fdb_info;
 	struct net_device *dev;
+	struct net_device *orig_dev;
 	struct sparx5 *sparx5;
 	unsigned long event;
 };
@@ -71,7 +73,7 @@ void sparx5_attr_stp_state_set(struct sparx5_port *port, u8 state)
 {
 	struct sparx5 *sparx5 = port->sparx5;
 
-	if (!test_bit(port->portno, sparx5->bridge_mask)) {
+	if (!test_bit(port->portno, sparx5->bridge_mask) && !port->lag_master) {
 		netdev_err(port->ndev,
 			   "Controlling non-bridged port %d?\n", port->portno);
 		return;
@@ -180,6 +182,7 @@ static int sparx5_port_attr_set(struct net_device *dev, const void *ctx,
 }
 
 static int sparx5_port_bridge_join(struct sparx5_port *port,
+				   struct net_device *brport_dev,
 				   struct net_device *bridge,
 				   struct netlink_ext_ack *extack)
 {
@@ -199,7 +202,7 @@ static int sparx5_port_bridge_join(struct sparx5_port *port,
 
 	set_bit(port->portno, sparx5->bridge_mask);
 
-	err = switchdev_bridge_port_offload(ndev, ndev, NULL, NULL, NULL,
+	err = switchdev_bridge_port_offload(brport_dev, ndev, NULL, NULL, NULL,
 					    false, extack);
 	if (err)
 		goto err_switchdev_offload;
@@ -224,8 +227,6 @@ static void sparx5_port_bridge_leave(struct sparx5_port *port,
 {
 	struct sparx5 *sparx5 = port->sparx5;
 
-	switchdev_bridge_port_unoffload(port->ndev, NULL, NULL, NULL);
-
 	clear_bit(port->portno, sparx5->bridge_mask);
 	if (bitmap_empty(sparx5->bridge_mask, SPX5_PORTS))
 		sparx5->hw_bridge_dev = NULL;
@@ -243,7 +244,37 @@ static void sparx5_port_bridge_leave(struct sparx5_port *port,
 	__dev_mc_sync(port->ndev, sparx5_mc_sync, sparx5_mc_unsync);
 }
 
-static int sparx5_port_changeupper(struct net_device *dev,
+int
+sparx5_port_prechangeupper(struct net_device *dev,
+			   struct net_device *brport_dev,
+			   struct netdev_notifier_changeupper_info *info)
+{
+	struct sparx5_port *port = netdev_priv(dev);
+	int err = NOTIFY_DONE;
+
+	if (netif_is_bridge_master(info->upper_dev)) {
+		if (info->linking)
+			return 0;
+		else
+			switchdev_bridge_port_unoffload(dev, port, NULL, NULL);
+	}
+
+	if (netif_is_lag_master(info->upper_dev)) {
+		err = sparx5_lag_aggr_code_set(dev, info);
+		if (err)
+			return err;
+
+		if (info->linking)
+			return 0;
+
+		switchdev_bridge_port_unoffload(brport_dev, port, NULL, NULL);
+	}
+
+	return err;
+}
+
+int sparx5_port_changeupper(struct net_device *dev,
+				   struct net_device *brport_dev,
 				   struct netdev_notifier_changeupper_info *info)
 {
 	struct sparx5_port *port = netdev_priv(dev);
@@ -254,7 +285,9 @@ static int sparx5_port_changeupper(struct net_device *dev,
 
 	if (netif_is_bridge_master(info->upper_dev)) {
 		if (info->linking)
-			err = sparx5_port_bridge_join(port, info->upper_dev,
+			err = sparx5_port_bridge_join(port,
+						      brport_dev,
+						      info->upper_dev,
 						      extack);
 		else
 			sparx5_port_bridge_leave(port, info->upper_dev);
@@ -272,7 +305,45 @@ static int sparx5_port_changeupper(struct net_device *dev,
 			lan969x_hsr_leave(info->upper_dev, dev);
 	}
 
+	if (netif_is_lag_master(info->upper_dev)) {
+		/* Upper device is a LAG master, add this device to the LAG. */
+		if (info->linking)
+			err = sparx5_lag_join(port,
+					      info->upper_dev,
+					      info->upper_dev,
+					      extack);
+		else
+			sparx5_lag_leave(port, info->upper_dev);
+	}
+
 	return err;
+}
+
+static int
+sparx5_port_changelower(struct net_device *dev,
+			struct netdev_notifier_changelowerstate_info *info)
+{
+	struct netdev_lag_lower_state_info *lag = info->lower_state_info;
+	struct sparx5_port *port = netdev_priv(dev);
+	struct sparx5 *sparx5 = port->sparx5;
+	bool is_active;
+
+	if (netif_is_lag_port(dev)) {
+		if (!port->lag_master)
+			return NOTIFY_DONE;
+
+		is_active = lag->link_up && lag->tx_enabled;
+
+		if (port->lag_tx_active == is_active)
+			return NOTIFY_DONE;
+
+		port->lag_tx_active = is_active;
+
+		sparx5_update_dst_fwd(sparx5);
+		sparx5_lag_aggr_masks_set(port, false);
+	}
+
+	return NOTIFY_OK;
 }
 
 static int sparx5_port_add_addr(struct net_device *dev, bool up)
@@ -296,14 +367,25 @@ static int sparx5_netdevice_port_event(struct net_device *dev,
 {
 	int err = 0;
 
-	if (!sparx5_netdevice_check(dev))
-		return 0;
-
 	sparx5_qos_port_event(dev, event);
 
 	switch (event) {
+	case NETDEV_PRECHANGEUPPER:
+		/* When a port is directly attached to a bridge, the brport_dev
+		 * and dev are identical.
+		 */
+
+		sparx5_port_prechangeupper(dev, dev, ptr);
+		break;
 	case NETDEV_CHANGEUPPER:
-		err = sparx5_port_changeupper(dev, ptr);
+		/* When a port is directly attached to a bridge, the brport_dev
+		 * and dev are identical.
+		 */
+
+		err = sparx5_port_changeupper(dev, dev, ptr);
+		break;
+	case NETDEV_CHANGELOWERSTATE:
+		err = sparx5_port_changelower(dev, ptr);
 		break;
 	case NETDEV_PRE_UP:
 		err = sparx5_port_add_addr(dev, true);
@@ -316,13 +398,81 @@ static int sparx5_netdevice_port_event(struct net_device *dev,
 	return err;
 }
 
+static int
+sparx5_netdevice_lag_event(struct net_device *dev, struct notifier_block *nb,
+			   unsigned long event,
+			   struct netdev_notifier_changeupper_info *info)
+{
+	/* Event for lag master. Walk the lower devices. */
+	struct sparx5_port *port;
+	struct net_device *lower;
+	struct list_head *iter;
+	int err = 0;
+
+	netdev_for_each_lower_dev(dev, lower, iter) {
+		if (!sparx5_netdevice_check(lower))
+			continue;
+
+		port = netdev_priv(lower);
+		if (port->lag_master != dev)
+			continue;
+
+		switch (event) {
+		case NETDEV_PRECHANGEUPPER:
+			err = sparx5_port_prechangeupper(lower, dev, info);
+			break;
+		case NETDEV_CHANGEUPPER:
+			err = sparx5_port_changeupper(lower, dev, info);
+			break;
+		default:
+			break;
+		}
+
+		if (err)
+			return err;
+	}
+
+	return NOTIFY_DONE;
+}
+
+static int
+sparx5_netdevice_foreign_event(struct net_device *dev,
+			       struct notifier_block *nb, unsigned long event,
+			       struct netdev_notifier_changeupper_info *info)
+{
+	switch (event) {
+	case NETDEV_PRECHANGEUPPER:
+	case NETDEV_CHANGEUPPER:
+		/* Do not allow bridging or bonding of foreign devices. */
+		pr_info("Bridging or bonding of foreign devices is not supported");
+		return -EOPNOTSUPP;
+	default:
+		return NOTIFY_DONE;
+	}
+}
+
 static int sparx5_netdevice_event(struct notifier_block *nb,
 				  unsigned long event, void *ptr)
 {
 	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	int ret = 0;
 
-	ret = sparx5_netdevice_port_event(dev, nb, event, ptr);
+	if (netif_is_lag_master(dev)) {
+		/* This event is for a lag master device e.g bond0 */
+
+		ret = sparx5_netdevice_lag_event(dev, nb, event, ptr);
+	} else if (netif_is_bridge_master(dev)) {
+		/* This event is for a bridge master device e.g br0 */
+
+		ret = 0;
+	} else if (sparx5_netdevice_check(dev)) {
+		/* This event is for a sparx5 port device e.g eth0 */
+
+		ret = sparx5_netdevice_port_event(dev, nb, event, ptr);
+	} else {
+		/* Anything else */
+		ret = sparx5_netdevice_foreign_event(dev, nb, event, ptr);
+	}
 
 	return notifier_from_errno(ret);
 }
@@ -331,6 +481,7 @@ static void sparx5_switchdev_bridge_fdb_event_work(struct work_struct *work)
 {
 	struct sparx5_switchdev_event_work *switchdev_work =
 		container_of(work, struct sparx5_switchdev_event_work, work);
+	struct net_device *orig_dev = switchdev_work->orig_dev;
 	struct net_device *dev = switchdev_work->dev;
 	struct switchdev_notifier_fdb_info *fdb_info;
 	struct sparx5_port *port;
@@ -338,14 +489,35 @@ static void sparx5_switchdev_bridge_fdb_event_work(struct work_struct *work)
 	bool host_addr;
 	u16 vid;
 
+	sparx5 = switchdev_work->sparx5;
+
 	rtnl_lock();
-	if (!sparx5_netdevice_check(dev)) {
-		host_addr = true;
-		sparx5 = switchdev_work->sparx5;
-	} else {
+
+	if (sparx5_netdevice_check(orig_dev)) {
+		/* The notification was for a netdevice */
+
+		port = netdev_priv(orig_dev);
 		host_addr = false;
-		sparx5 = switchdev_work->sparx5;
+	} else if (netif_is_bridge_master(orig_dev)) {
+		/* The notification was for a bridge master - add host addr */
+
+		port = netdev_priv(orig_dev);
+		host_addr = true;
+	} else if (netif_is_lag_master(orig_dev)) {
+		/* The notification was for a LAG master - add FDB for first
+		 * port in LAG. LAG ports can join and leave the LAG while FDB
+		 * events are being handled.
+		 */
+
+		if (!sparx5_lag_is_first(orig_dev, dev))
+			goto out;
+
 		port = netdev_priv(dev);
+		host_addr = false;
+	} else {
+		/* Foreign device - do nothing */
+
+		goto out;
 	}
 
 	fdb_info = &switchdev_work->fdb_info;
@@ -373,6 +545,7 @@ static void sparx5_switchdev_bridge_fdb_event_work(struct work_struct *work)
 		break;
 	}
 
+out:
 	rtnl_unlock();
 	kfree(switchdev_work->fdb_info.addr);
 	kfree(switchdev_work);
@@ -384,41 +557,37 @@ static void sparx5_schedule_work(struct work_struct *work)
 	queue_work(sparx5_owq, work);
 }
 
-static int sparx5_switchdev_event(struct notifier_block *nb,
-				  unsigned long event, void *ptr)
+static int
+sparx5_switchdev_handle_fdb(struct net_device *dev,
+			    struct net_device *orig_dev,
+			    unsigned long event, const void *ctx,
+			    const struct switchdev_notifier_fdb_info *fdb_info)
 {
-	struct net_device *dev = switchdev_notifier_info_to_dev(ptr);
 	struct sparx5_switchdev_event_work *switchdev_work;
-	struct switchdev_notifier_fdb_info *fdb_info;
-	struct switchdev_notifier_info *info = ptr;
-	struct sparx5 *spx5;
-	int err;
-
-	spx5 = container_of(nb, struct sparx5, switchdev_nb);
+	struct sparx5_port *port = netdev_priv(dev);
+	struct sparx5 *sparx5 = port->sparx5;
 
 	switch (event) {
-	case SWITCHDEV_PORT_ATTR_SET:
-		err = switchdev_handle_port_attr_set(dev, ptr,
-						     sparx5_netdevice_check,
-						     sparx5_port_attr_set);
-		return notifier_from_errno(err);
 	case SWITCHDEV_FDB_ADD_TO_DEVICE:
 		fallthrough;
 	case SWITCHDEV_FDB_DEL_TO_DEVICE:
+		if (sparx5_netdevice_check(orig_dev) &&
+		    !fdb_info->added_by_user)
+			break;
+
 		switchdev_work = kzalloc(sizeof(*switchdev_work), GFP_ATOMIC);
 		if (!switchdev_work)
 			return NOTIFY_BAD;
 
 		switchdev_work->dev = dev;
+		switchdev_work->orig_dev = orig_dev;
 		switchdev_work->event = event;
-		switchdev_work->sparx5 = spx5;
+		switchdev_work->sparx5 = sparx5;
 
-		fdb_info = container_of(info,
-					struct switchdev_notifier_fdb_info,
-					info);
 		INIT_WORK(&switchdev_work->work,
 			  sparx5_switchdev_bridge_fdb_event_work);
-		memcpy(&switchdev_work->fdb_info, ptr,
+		memcpy(&switchdev_work->fdb_info,
+		       fdb_info,
 		       sizeof(switchdev_work->fdb_info));
 		switchdev_work->fdb_info.addr = kzalloc(ETH_ALEN, GFP_ATOMIC);
 		if (!switchdev_work->fdb_info.addr)
@@ -438,6 +607,40 @@ err_addr_alloc:
 	return NOTIFY_BAD;
 }
 
+static bool sparx5_foreign_device_check(const struct net_device *dev,
+					const struct net_device *foreign_dev)
+{
+	return false;
+}
+
+static int sparx5_switchdev_event(struct notifier_block *nb,
+				  unsigned long event, void *ptr)
+{
+	struct net_device *dev = switchdev_notifier_info_to_dev(ptr);
+	int err;
+
+	switch (event) {
+	case SWITCHDEV_PORT_ATTR_SET:
+		err = switchdev_handle_port_attr_set(dev,
+						     ptr,
+						     sparx5_netdevice_check,
+						     sparx5_port_attr_set);
+		return notifier_from_errno(err);
+	case SWITCHDEV_FDB_ADD_TO_DEVICE:
+			fallthrough;
+	case SWITCHDEV_FDB_DEL_TO_DEVICE:
+		err = switchdev_handle_fdb_event_to_device(dev,
+							   event,
+							   ptr,
+							   sparx5_netdevice_check,
+							   sparx5_foreign_device_check,
+							   sparx5_switchdev_handle_fdb);
+		return notifier_from_errno(err);
+	}
+
+	return NOTIFY_DONE;
+}
+
 static int sparx5_handle_port_vlan_add(struct net_device *dev,
 				       struct notifier_block *nb,
 				       const struct switchdev_obj_port_vlan *v)
@@ -453,6 +656,34 @@ static int sparx5_handle_port_vlan_add(struct net_device *dev,
 		sparx5_mact_learn(sparx5, sparx5_get_pgid_index(sparx5, PGID_BCAST),
 				  dev->broadcast,
 				  v->vid);
+
+		return 0;
+	}
+
+	if (netif_is_lag_master(dev)) {
+		/* Walk lower devices and make each port member of the bridge
+		 * VLAN.
+		 */
+		struct net_device *lower;
+		struct list_head *iter;
+		int err;
+
+		 netdev_for_each_lower_dev(dev, lower, iter) {
+			if (!sparx5_netdevice_check(lower))
+				continue;
+
+			port = netdev_priv(lower);
+			if (port->lag_master != dev)
+				continue;
+
+			err = sparx5_vlan_vid_add(port,
+						  v->vid,
+						  v->flags & BRIDGE_VLAN_INFO_PVID,
+						  v->flags & BRIDGE_VLAN_INFO_UNTAGGED);
+			if (err)
+				return err;
+		}
+
 		return 0;
 	}
 
@@ -712,6 +943,29 @@ static int sparx5_handle_port_vlan_del(struct net_device *dev,
 				     switchdev_blocking_nb);
 
 		sparx5_mact_forget(sparx5, dev->broadcast, vid);
+		return 0;
+	}
+
+	if (netif_is_lag_master(dev)) {
+		/* Walk lower devices and make each port member of the bridge
+		 * VLAN.
+		 */
+		struct net_device *lower;
+		struct list_head *iter;
+
+		netdev_for_each_lower_dev(dev, lower, iter) {
+			if (!sparx5_netdevice_check(lower))
+				continue;
+
+			port = netdev_priv(lower);
+			if (port->lag_master != dev)
+				continue;
+
+			ret = sparx5_vlan_vid_del(port, vid);
+			if (ret)
+				return ret;
+		}
+
 		return 0;
 	}
 

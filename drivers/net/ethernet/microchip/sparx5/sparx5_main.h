@@ -302,6 +302,12 @@ struct sparx5_port {
 	struct mrp_port *mrp_port;
 	struct bpf_prog *xdp_prog;
 	struct xdp_rxq_info xdp_rxq;
+
+	/* LAG */
+	struct net_device *lag_master;
+	enum netdev_lag_hash lag_hash_type;
+	bool lag_tx_active;
+
 };
 
 enum sparx5_core_clockfreq {
@@ -617,6 +623,13 @@ bool sparx5_has_feature(struct sparx5 *sparx5, enum sparx5_feature feature);
 int sparx5_register_notifier_blocks(struct sparx5 *sparx5);
 void sparx5_unregister_notifier_blocks(struct sparx5 *sparx5);
 void sparx5_attr_stp_state_set(struct sparx5_port *port, u8 state);
+int sparx5_port_prechangeupper(struct net_device *dev,
+			       struct net_device *brport_dev,
+			       struct netdev_notifier_changeupper_info *info);
+
+int sparx5_port_changeupper(struct net_device *dev,
+			    struct net_device *brport_dev,
+			    struct netdev_notifier_changeupper_info *info);
 
 /* sparx5_packet.c */
 struct frame_info {
@@ -656,6 +669,18 @@ void sparx5_fdma_llp_configure(struct sparx5 *sparx5, u64 addr, u32 channel_id);
 int sparx5_fdma_resize(struct sparx5 *sparx5);
 
 /* sparx5_mactable.c */
+struct sparx5_mact_entry {
+	struct list_head list;
+	unsigned char mac[ETH_ALEN];
+	u32 flags;
+#define MAC_ENT_ALIVE	BIT(0)
+#define MAC_ENT_MOVED	BIT(1)
+#define MAC_ENT_LOCK	BIT(2)
+	u16 vid;
+	u16 port;
+	bool lag;
+};
+
 int sparx5_mact_learn(struct sparx5 *sparx5, int port,
 		      const unsigned char mac[ETH_ALEN], u16 vid);
 bool sparx5_mact_getnext(struct sparx5 *sparx5,
@@ -678,6 +703,7 @@ int sparx5_mact_init(struct sparx5 *sparx5);
 void sparx5_mact_deinit(struct sparx5 *sparx5);
 
 /* sparx5_vlan.c */
+void sparx5_update_dst_fwd(struct sparx5 *sparx5);
 void sparx5_pgid_update_mask(struct sparx5_port *port, int pgid, bool enable);
 void sparx5_pgid_clear(struct sparx5 *spx5, int pgid);
 void sparx5_pgid_read_mask(struct sparx5 *sparx5, int pgid, u32 portmask[3]);
@@ -1071,6 +1097,17 @@ enum sparx5_fdma_action {
 	FDMA_TX,
 	FDMA_REDIRECT,
 };
+
+/* sparx5_lag.c */
+int sparx5_lag_join(struct sparx5_port *port, struct net_device *brport_dev,
+		    struct net_device *bond, struct netlink_ext_ack *extack);
+void sparx5_lag_leave(struct sparx5_port *port, struct net_device *bond);
+int sparx5_lag_aggr_code_set(struct net_device *dev,
+			     struct netdev_notifier_changeupper_info *info);
+int sparx5_lag_aggr_masks_set(struct sparx5_port *port, bool leaving);
+bool sparx5_lag_is_first(struct net_device *lag_master, struct net_device *dev);
+void sparx5_lag_mask_get(struct sparx5 *sparx5, struct net_device *lag_master,
+			 unsigned long *lag_mask);
 
 /* Clock period in picoseconds */
 static inline u32 sparx5_clk_period(enum sparx5_core_clockfreq cclock)
