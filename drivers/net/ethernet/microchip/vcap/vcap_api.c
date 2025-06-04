@@ -1124,6 +1124,30 @@ int vcap_lookup_rule_by_cookie(struct vcap_control *vctrl, u64 cookie)
 }
 EXPORT_SYMBOL_GPL(vcap_lookup_rule_by_cookie);
 
+/* Find a rule id with a provided cookie and net_device. */
+int vcap_lookup_rule_by_cookie_ndev(struct vcap_control *vctrl, u64 cookie,
+				    struct net_device *ndev)
+{
+	struct vcap_rule_internal *ri;
+	struct vcap_admin *admin;
+	int id = 0;
+
+	list_for_each_entry(admin, &vctrl->list, list) {
+		mutex_lock(&admin->lock);
+		list_for_each_entry(ri, &admin->rules, list) {
+			if (ri->data.cookie == cookie && ri->ndev == ndev) {
+				id = ri->data.id;
+				break;
+			}
+		}
+		mutex_unlock(&admin->lock);
+		if (id)
+			return id;
+	}
+	return -ENOENT;
+}
+EXPORT_SYMBOL_GPL(vcap_lookup_rule_by_cookie_ndev);
+
 /* Get number of rules in a vcap instance lookup chain id range */
 int vcap_admin_rule_count(struct vcap_admin *admin, int cid)
 {
