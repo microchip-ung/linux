@@ -118,6 +118,13 @@ int sparx5_vlan_vid_del(struct sparx5_port *port, u16 vid)
 	return 0;
 }
 
+void sparx5_pgid_cpu_copy_ena(struct sparx5 *spx5, u16 pgid, bool enable)
+{
+	spx5_rmw(ANA_AC_PGID_MISC_CFG_PGID_CPU_COPY_ENA_SET(enable),
+		 ANA_AC_PGID_MISC_CFG_PGID_CPU_COPY_ENA, spx5,
+		 ANA_AC_PGID_MISC_CFG(pgid));
+}
+
 void sparx5_pgid_update_mask(struct sparx5_port *port, int pgid, bool enable)
 {
 	struct sparx5 *sparx5 = port->sparx5;

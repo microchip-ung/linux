@@ -714,6 +714,7 @@ void sparx5_mact_deinit(struct sparx5 *sparx5);
 
 /* sparx5_vlan.c */
 void sparx5_update_dst_fwd(struct sparx5 *sparx5);
+void sparx5_pgid_cpu_copy_ena(struct sparx5 *spx5, u16 pgid, bool enable);
 void sparx5_pgid_update_mask(struct sparx5_port *port, int pgid, bool enable);
 void sparx5_pgid_clear(struct sparx5 *spx5, int pgid);
 void sparx5_pgid_read_mask(struct sparx5 *sparx5, int pgid, u32 portmask[3]);

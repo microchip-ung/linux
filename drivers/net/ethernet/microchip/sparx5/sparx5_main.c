@@ -760,10 +760,10 @@ static int sparx5_start(struct sparx5 *sparx5)
 	sparx5_update_fwd(sparx5);
 
 	/* CPU copy CPU pgids */
-	spx5_wr(ANA_AC_PGID_MISC_CFG_PGID_CPU_COPY_ENA_SET(1),
-		sparx5, ANA_AC_PGID_MISC_CFG(sparx5_get_pgid_index(sparx5, PGID_CPU)));
-	spx5_wr(ANA_AC_PGID_MISC_CFG_PGID_CPU_COPY_ENA_SET(1),
-		sparx5, ANA_AC_PGID_MISC_CFG(sparx5_get_pgid_index(sparx5, PGID_BCAST)));
+	sparx5_pgid_cpu_copy_ena(sparx5,
+				 sparx5_get_pgid_index(sparx5, PGID_CPU), true);
+	sparx5_pgid_cpu_copy_ena(sparx5,
+				 sparx5_get_pgid_index(sparx5, PGID_BCAST), true);
 
 	/* Recalc injected frame FCS */
 	for (idx = sparx5_get_internal_port(sparx5, PORT_CPU_0);

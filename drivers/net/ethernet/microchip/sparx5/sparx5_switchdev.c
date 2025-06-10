@@ -767,13 +767,6 @@ out:
 	return found;
 }
 
-static void sparx5_cpu_copy_ena(struct sparx5 *spx5, u16 pgid, bool enable)
-{
-	spx5_rmw(ANA_AC_PGID_MISC_CFG_PGID_CPU_COPY_ENA_SET(enable),
-		 ANA_AC_PGID_MISC_CFG_PGID_CPU_COPY_ENA, spx5,
-		 ANA_AC_PGID_MISC_CFG(pgid));
-}
-
 static int sparx5_handle_port_mdb_add(struct net_device *dev,
 				      struct notifier_block *nb,
 				      const struct switchdev_obj_port_mdb *v)
@@ -821,7 +814,7 @@ static int sparx5_handle_port_mdb_add(struct net_device *dev,
 							true);
 
 	if (is_host && !entry->cpu_copy) {
-		sparx5_cpu_copy_ena(spx5, entry->pgid_idx, true);
+		sparx5_pgid_cpu_copy_ena(spx5, entry->pgid_idx, true);
 		entry->cpu_copy = true;
 	} else if (!is_host) {
 		sparx5_pgid_update_mask(port, entry->pgid_idx, true);
@@ -860,7 +853,7 @@ static int sparx5_handle_port_mdb_del(struct net_device *dev,
 
 	mutex_lock(&spx5->mdb_lock);
 	if (is_host && entry->cpu_copy) {
-		sparx5_cpu_copy_ena(spx5, entry->pgid_idx, false);
+		sparx5_pgid_cpu_copy_ena(spx5, entry->pgid_idx, false);
 		entry->cpu_copy = false;
 	} else if (!is_host) {
 		clear_bit(port->portno, entry->port_mask);
