@@ -62,6 +62,7 @@ struct mscc_miim_dev {
 	int mii_status_offset;
 	bool ignore_read_errors;
 	struct regmap *phy_regs;
+	struct mutex reg_lock;
 	const struct mscc_miim_info *info;
 	struct clk *clk;
 	u32 bus_freq;
@@ -77,6 +78,16 @@ struct mscc_miim_dev {
 					  timeout_us);			  \
 	readx_poll_timeout(op, addr, val, cond, delay_us, timeout_us);	  \
 })
+
+static void mscc_miim_reg_lock(struct mscc_miim_dev *miim)
+{
+       mutex_lock(&miim->reg_lock);
+}
+
+static void mscc_miim_reg_unlock(struct mscc_miim_dev *miim)
+{
+       mutex_unlock(&miim->reg_lock);
+}
 
 static int mscc_miim_status(struct mii_bus *bus)
 {
@@ -111,7 +122,7 @@ static int mscc_miim_wait_pending(struct mii_bus *bus)
 				       50, 10000);
 }
 
-static int mscc_miim_read(struct mii_bus *bus, int mii_id, int regnum)
+static int mscc_miim_read_safe(struct mii_bus *bus, int mii_id, int regnum)
 {
 	struct mscc_miim_dev *miim = bus->priv;
 	u32 val;
@@ -162,7 +173,17 @@ out:
 	return ret;
 }
 
-static int mscc_miim_write(struct mii_bus *bus, int mii_id,
+static int mscc_miim_read(struct mii_bus *bus, int mii_id, int regnum)
+{
+	int ret;
+	struct mscc_miim_dev *miim = bus->priv;
+	mscc_miim_reg_lock(miim);
+	ret = mscc_miim_read_safe(bus, mii_id, regnum);
+	mscc_miim_reg_unlock(miim);
+	return ret;
+}
+
+static int mscc_miim_write_safe(struct mii_bus *bus, int mii_id,
 			   int regnum, u16 value)
 {
 	struct mscc_miim_dev *miim = bus->priv;
@@ -194,7 +215,19 @@ out:
 	return ret;
 }
 
-static int mscc_miim_read_c45(struct mii_bus *bus, int addr, int devnum, int regnum)
+static int mscc_miim_write(struct mii_bus *bus, int mii_id,
+			   int regnum, u16 value)
+{
+	struct mscc_miim_dev *miim = bus->priv;
+	int ret;
+
+	mscc_miim_reg_lock(miim);
+	ret = mscc_miim_write_safe(bus, mii_id, regnum, value);
+	mscc_miim_reg_unlock(miim);
+	return ret;
+}
+
+static int mscc_miim_read_c45_safe(struct mii_bus *bus, int addr, int devnum, int regnum)
 {
 	struct mscc_miim_dev *miim = bus->priv;
 	u32 val;
@@ -259,7 +292,18 @@ out:
 	return ret;
 }
 
-static int mscc_miim_write_c45(struct mii_bus *bus, int addr, int devnum,
+static int mscc_miim_read_c45(struct mii_bus *bus, int addr, int devnum, int regnum)
+{
+	struct mscc_miim_dev *miim = bus->priv;
+	int ret;
+
+	mscc_miim_reg_lock(miim);
+	ret = mscc_miim_read_c45_safe(bus, addr, devnum, regnum);
+	mscc_miim_reg_unlock(miim);
+	return ret;
+}
+
+static int mscc_miim_write_c45_safe(struct mii_bus *bus, int addr, int devnum,
 			       int regnum, u16 value)
 {
 	struct mscc_miim_dev *miim = bus->priv;
@@ -305,7 +349,19 @@ out:
 	return ret;
 }
 
-static int mscc_miim_reset(struct mii_bus *bus)
+static int mscc_miim_write_c45(struct mii_bus *bus, int addr, int devnum,
+			       int regnum, u16 value)
+{
+	struct mscc_miim_dev *miim = bus->priv;
+	int ret;
+
+	mscc_miim_reg_lock(miim);
+	ret = mscc_miim_write_c45_safe(bus, addr, devnum, regnum, value);
+	mscc_miim_reg_unlock(miim);
+	return ret;
+}
+
+static int mscc_miim_reset_safe(struct mii_bus *bus)
 {
 	struct mscc_miim_dev *miim = bus->priv;
 	unsigned int offset, bits;
@@ -332,6 +388,17 @@ static int mscc_miim_reset(struct mii_bus *bus)
 	mdelay(500);
 
 	return 0;
+}
+
+static int mscc_miim_reset(struct mii_bus *bus)
+{
+	struct mscc_miim_dev *miim = bus->priv;
+	int ret;
+
+	mscc_miim_reg_lock(miim);
+	ret = mscc_miim_reset_safe(bus);
+	mscc_miim_reg_unlock(miim);
+	return ret;
 }
 
 static int lan9668_miim_reset(struct mii_bus *bus)
