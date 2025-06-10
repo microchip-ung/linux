@@ -300,6 +300,7 @@ struct sparx5_port {
 	u16 ts_id;
 	struct sk_buff_head tx_skbs;
 	bool is_mrouter;
+	bool mcast_ena;
 	/* QOS port configuration */
 	struct mchp_qos_port_conf qos_port_conf;
 	/* Frame preemption configuration */
@@ -1113,6 +1114,9 @@ int sparx5_handle_mdb_add(struct net_device *dev, struct notifier_block *nb,
 
 int sparx5_handle_mdb_del(struct net_device *dev, struct notifier_block *nb,
 			  const struct switchdev_obj_port_mdb *v);
+int sparx5_mdb_entries_clear(struct sparx5 *sparx5);
+int sparx5_mdb_entries_restore(struct sparx5 *sparx5);
+
 
 /* FDMA return action codes for checking if the frame is valid
  * FDMA_PASS, frame is valid and can be used

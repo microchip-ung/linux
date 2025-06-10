@@ -138,6 +138,30 @@ static void sparx5_port_attr_mrouter_set(struct sparx5_port *port,
 	sparx5_port_update_mcast_ip_flood(port, flood_flag);
 }
 
+static void sparx5_port_attr_mc_set(struct sparx5_port *port, bool mcast_ena)
+{
+	struct sparx5 *sparx5 = port->sparx5;
+
+	port->mcast_ena = mcast_ena;
+
+	if (mcast_ena)
+		/* Forward multicast frames according to PGID mask. */
+		sparx5_mdb_entries_restore(sparx5);
+	else
+		/* Flood multicast frames according to MC flood mask. */
+		sparx5_mdb_entries_clear(sparx5);
+
+	spx5_rmw(ANA_CL_CAPTURE_CFG_CPU_IGMP_REDIR_ENA_SET(mcast_ena) |
+		 ANA_CL_CAPTURE_CFG_CPU_MLD_REDIR_ENA_SET(mcast_ena),
+		 ANA_CL_CAPTURE_CFG_CPU_IGMP_REDIR_ENA |
+		 ANA_CL_CAPTURE_CFG_CPU_MLD_REDIR_ENA,
+		 sparx5, ANA_CL_CAPTURE_CFG(port->portno));
+
+	spx5_rmw(ANA_L3_L3MC_CTRL_IPMC_TTL_COPY_ENA_SET(mcast_ena),
+		 ANA_L3_L3MC_CTRL_IPMC_TTL_COPY_ENA,
+		 sparx5, ANA_L3_L3MC_CTRL(port->portno));
+}
+
 static int sparx5_port_attr_set(struct net_device *dev, const void *ctx,
 				const struct switchdev_attr *attr,
 				struct netlink_ext_ack *extack)
@@ -173,6 +197,9 @@ static int sparx5_port_attr_set(struct net_device *dev, const void *ctx,
 		break;
 	case SWITCHDEV_ATTR_ID_MRP_PORT_ROLE:
 		sparx5_handle_mrp_port_role(port, attr->u.mrp_port_role);
+		break;
+	case SWITCHDEV_ATTR_ID_BRIDGE_MC_DISABLED:
+		sparx5_port_attr_mc_set(port, !attr->u.mc_disabled);
 		break;
 	default:
 		return -EOPNOTSUPP;

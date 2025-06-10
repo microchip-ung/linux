@@ -12,6 +12,31 @@
 #include "sparx5_mrp.h"
 #include "sparx5_tc.h"
 
+int sparx5_mdb_entries_clear(struct sparx5 *sparx5)
+{
+	struct sparx5_mdb_entry *mdb_entry;
+
+	mutex_lock(&sparx5->mdb_lock);
+	list_for_each_entry(mdb_entry, &sparx5->mdb_entries, list)
+		sparx5_mact_forget(sparx5, mdb_entry->addr, mdb_entry->vid);
+	mutex_unlock(&sparx5->mdb_lock);
+
+	return 0;
+}
+
+int sparx5_mdb_entries_restore(struct sparx5 *sparx5)
+{
+	struct sparx5_mdb_entry *mdb_entry;
+
+	mutex_lock(&sparx5->mdb_lock);
+	list_for_each_entry(mdb_entry, &sparx5->mdb_entries, list)
+		sparx5_mact_learn(sparx5, mdb_entry->pgid_idx, mdb_entry->addr,
+				  mdb_entry->vid);
+	mutex_unlock(&sparx5->mdb_lock);
+
+	return 0;
+}
+
 static int sparx5_mdb_entry_alloc(struct sparx5 *sparx5,
 				  const unsigned char *addr,
 				  u16 vid,
