@@ -1105,6 +1105,14 @@ void sparx5_xdp_mem_type_set(struct sparx5 *sparx5, enum xdp_mem_type type,
 int sparx5_isdx_get(struct sparx5 *sparx5, u32 *isdx);
 int sparx5_isdx_put(struct sparx5 *sparx5, u32 isdx);
 
+/* sparx5_mdb.c */
+struct switchdev_obj_port_mdb;
+int sparx5_handle_mdb_add(struct net_device *dev, struct notifier_block *nb,
+			  const struct switchdev_obj_port_mdb *v);
+
+int sparx5_handle_mdb_del(struct net_device *dev, struct notifier_block *nb,
+			  const struct switchdev_obj_port_mdb *v);
+
 /* FDMA return action codes for checking if the frame is valid
  * FDMA_PASS, frame is valid and can be used
  * FDMA_ERROR, something went wrong, stop getting more frames
