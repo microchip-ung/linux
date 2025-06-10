@@ -1081,6 +1081,7 @@ u32 sparx5_mirror_monitor_get(struct sparx5 *sparx5, u32 idx);
 /* sparx5_packet.c */
 u32 sparx5_get_packet_pipeline_pt(enum sparx5_packet_pipeline_pt pt);
 void sparx5_consume_skb(struct sk_buff *skb);
+bool sparx5_skb_offloaded(struct sparx5 *sparx5, u32 port, struct sk_buff *skb);
 
 /* sparx5_afi.c */
 int sparx5_afi_init(struct sparx5 *sparx5);

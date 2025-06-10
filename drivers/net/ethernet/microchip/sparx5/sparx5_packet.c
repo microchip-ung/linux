@@ -4,6 +4,9 @@
  * Copyright (c) 2021 Microchip Technology Inc. and its subsidiaries.
  */
 
+#include <net/addrconf.h>
+#include <net/switchdev.h>
+
 #include "sparx5_main_regs.h"
 #include "sparx5_main.h"
 
@@ -196,8 +199,12 @@ static void sparx5_xtr_grp(struct sparx5 *sparx5, u8 grp, bool byte_swap)
 	/* Everything we see on an interface that is in the HW bridge
 	 * has already been forwarded
 	 */
-	if (test_bit(port->portno, sparx5->bridge_mask))
+	if (test_bit(port->portno, sparx5->bridge_mask)) {
 		skb->offload_fwd_mark = 1;
+
+		if (!sparx5_skb_offloaded(sparx5, fi.src_port, skb))
+			skb->offload_fwd_mark = 0;
+	}
 
 	/* Finish up skb */
 	skb_put(skb, byte_cnt - ETH_FCS_LEN);
@@ -451,4 +458,38 @@ void sparx5_consume_skb(struct sk_buff *skb)
 
 	if (!ptp)
 		dev_consume_skb_any(skb);
+}
+
+bool sparx5_skb_offloaded(struct sparx5 *sparx5, u32 port, struct sk_buff *skb)
+{
+	u32 val;
+
+	/* IGMP and MLD frames are not forwarded by hardware when
+	 * multicast snooping is enabled. Therefore, do not mark these
+	 * frames as offloaded, allowing the software to forward them
+	 * as needed.
+	 */
+
+	val = spx5_rd(sparx5, ANA_CL_CAPTURE_CFG(port));
+	if (!(val & (ANA_CL_CAPTURE_CFG_CPU_IGMP_REDIR_ENA |
+		     ANA_CL_CAPTURE_CFG_CPU_MLD_REDIR_ENA)))
+		return true;
+
+	if (eth_type_vlan(skb->protocol)) {
+		skb = skb_vlan_untag(skb);
+		if (unlikely(!skb))
+			return false;
+	}
+
+	if (skb->protocol == htons(ETH_P_IP) &&
+	    ip_hdr(skb)->protocol == IPPROTO_IGMP)
+		return false;
+
+	if (IS_ENABLED(CONFIG_IPV6) &&
+	    skb->protocol == htons(ETH_P_IPV6) &&
+	    ipv6_addr_is_multicast(&ipv6_hdr(skb)->daddr) &&
+	    !ipv6_mc_check_mld(skb))
+		return false;
+
+	return true;
 }
