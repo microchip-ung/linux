@@ -6567,6 +6567,96 @@ static void lan8842_get_stats(struct phy_device *phydev,
 		data[i] = lan8842_get_stat(phydev, i);
 }
 
+#define LAN8832_1000BT_FIX_LATENCY_ENABLE 0xf
+
+static int lan8832_config_init(struct phy_device *phydev)
+{
+	int val;
+
+	/* MDI-X setting for swap A,B transmit */
+	val = lanphy_read_page_reg(phydev, 2, LAN8804_ALIGN_SWAP);
+	val &= ~LAN8804_ALIGN_TX_A_B_SWAP_MASK;
+	val |= LAN8804_ALIGN_TX_A_B_SWAP;
+	lanphy_write_page_reg(phydev, 2, LAN8804_ALIGN_SWAP, val);
+
+	lanphy_write_page_reg(phydev, 2, LAN8832_1000BT_FIX_LATENCY_ENABLE, 1);
+	/* Make sure that the PHY will not stop generating the clock when the
+	 * link partner goes down
+	 */
+	lanphy_write_page_reg(phydev, 31, LAN8814_CLOCK_MANAGEMENT, 0x27e);
+	val = lanphy_read_page_reg(phydev, 1, LAN8814_LINK_QUALITY);
+
+	/* Enable Cr_debug_mode OPERATION_MODE_STRAP_LOW */
+	val = lanphy_read_page_reg(phydev, 2, LAN8814_OPERATION_MODE_STRAP_LOW);
+	val |= 0x8;
+	lanphy_write_page_reg(phydev, 2, LAN8814_OPERATION_MODE_STRAP_LOW, val);
+
+	/* Enable the Fast link failure, at the top level, at the bottom level
+	 * it would be set/cleared inside lan8832_config_intr
+	 */
+	val = lanphy_read_page_reg(phydev, 0, LAN8842_FLF);
+	val |= LAN8842_FLF_ENA | LAN8842_FLF_ENA_LINK_DOWN;
+	lanphy_write_page_reg(phydev, 0, LAN8842_FLF, val);
+
+	return 0;
+}
+
+static int lan8832_config_intr(struct phy_device *phydev)
+{
+	int err;
+
+	/* enable / disable interrupts */
+	if (phydev->interrupts == PHY_INTERRUPT_ENABLED) {
+		/* This is an internal PHY of lan9645x and is not possible to
+		 * change the polarity of irq sources in the OIC (CPU_INTR)
+		 * found in lan9645x. Therefore change the polarity of the
+		 * interrupt in the PHY from being active low instead of active
+		 * high.
+		 */
+		phy_write(phydev, LAN8804_CONTROL,
+			  LAN8804_CONTROL_INTR_POLARITY);
+
+		/* By default interrupt buffer is open-drain in which case the
+		 * interrupt can be active only low. Therefore change the
+		 * interrupt buffer to be push-pull to be able to change
+		 * interrupt polarity.
+		 */
+		phy_write(phydev, LAN8804_OUTPUT_CONTROL,
+			  LAN8804_OUTPUT_CONTROL_INTR_BUFFER);
+
+		err = lan8814_ack_interrupt(phydev);
+		if (err)
+			return err;
+
+		err = phy_write(phydev, LAN8814_INTC,
+				LAN8814_INT_LINK | LAN8814_INT_FLF);
+	} else {
+		err = phy_write(phydev, LAN8814_INTC, 0);
+		if (err)
+			return err;
+
+		err = lan8814_ack_interrupt(phydev);
+	}
+
+	return err;
+}
+
+static irqreturn_t lan8832_handle_interrupt(struct phy_device *phydev)
+{
+	int status;
+
+	status = phy_read(phydev, LAN8814_INTS);
+	if (status < 0) {
+		phy_error(phydev);
+		return IRQ_NONE;
+	}
+
+	if (status & (LAN8814_INT_LINK | LAN8814_INT_FLF))
+		phy_trigger_machine(phydev);
+
+	return IRQ_HANDLED;
+}
+
 static struct phy_driver ksphy_driver[] = {
 {
 	.phy_id		= PHY_ID_KS8737,
@@ -6781,6 +6871,22 @@ static struct phy_driver ksphy_driver[] = {
 	.config_intr	= lan8804_config_intr,
 	.handle_interrupt = lan8804_handle_interrupt,
 }, {
+	.phy_id		= PHY_ID_LAN8832,
+	.phy_id_mask	= MICREL_PHY_ID_MASK,
+	.name		= "Microchip LAN9645X Gigabit PHY",
+	.config_init	= lan8832_config_init,
+	.driver_data	= &ksz9021_type,
+	.probe		= kszphy_probe,
+	.soft_reset	= genphy_soft_reset,
+	.get_sset_count	= kszphy_get_sset_count,
+	.get_strings	= kszphy_get_strings,
+	.get_stats	= kszphy_get_stats,
+	.suspend	= lan8804_suspend,
+	.resume		= lan8804_resume,
+	.config_intr	= lan8832_config_intr,
+	.handle_interrupt = lan8832_handle_interrupt,
+},
+{
 	.phy_id		= PHY_ID_LAN8841,
 	.phy_id_mask	= MICREL_PHY_ID_MASK,
 	.name		= "Microchip LAN8841 Gigabit PHY",
@@ -6906,6 +7012,7 @@ static struct mdio_device_id __maybe_unused micrel_tbl[] = {
 	{ PHY_ID_LAN8804, MICREL_PHY_ID_MASK },
 	{ PHY_ID_LAN8841, MICREL_PHY_ID_MASK },
 	{ PHY_ID_LAN8842, MICREL_PHY_ID_MASK },
+	{ PHY_ID_LAN8832, MICREL_PHY_ID_MASK },
 	{ }
 };
 
