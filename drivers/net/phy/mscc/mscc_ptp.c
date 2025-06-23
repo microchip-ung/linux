@@ -1166,12 +1166,14 @@ static void vsc85xx_txtstamp(struct mii_timestamper *mii_ts,
 		container_of(mii_ts, struct vsc8531_private, mii_ts);
 
 	if (!vsc8531->ptp->configured)
-		return;
+		goto out;
 
-	if (vsc8531->ptp->tx_type == HWTSTAMP_TX_OFF) {
-		kfree_skb(skb);
-		return;
-	}
+	if (vsc8531->ptp->tx_type == HWTSTAMP_TX_OFF)
+		goto out;
+
+	if (vsc8531->ptp->tx_type == HWTSTAMP_TX_ONESTEP_SYNC)
+		if (ptp_msg_is_sync(skb, type))
+			goto out;
 
 	if (vsc8531->ptp->tx_type == HWTSTAMP_TX_ONESTEP_SYNC) {
 		if (ptp_msg_is_sync(skb, type)) {
@@ -1183,6 +1185,10 @@ static void vsc85xx_txtstamp(struct mii_timestamper *mii_ts,
 	skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
 
 	skb_queue_tail(&vsc8531->ptp->tx_queue, skb);
+	return;
+
+out:
+	kfree_skb(skb);
 }
 
 static bool vsc85xx_rxtstamp(struct mii_timestamper *mii_ts,
