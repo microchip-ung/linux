@@ -6,6 +6,13 @@
 #ifndef __VCAP_TC__
 #define __VCAP_TC__
 
+enum vcap_tc_flower_frame_type {
+	VCAP_TC_FRAME_TYPE_BROADCAST,
+	VCAP_TC_FRAME_TYPE_MULTICAST,
+	VCAP_TC_FRAME_TYPE_UNICAST,
+	VCAP_TC_FRAME_TYPE_UNKNOWN,
+};
+
 struct vcap_tc_flower_parse_usage {
 	struct flow_cls_offload *fco;
 	struct flow_rule *frule;
@@ -15,6 +22,8 @@ struct vcap_tc_flower_parse_usage {
 	u8 l4_proto;
 	u16 tpid;
 	unsigned long long used_keys;
+	enum vcap_tc_flower_frame_type frame_type;
+	int l2_miss;
 };
 
 int vcap_tc_flower_handler_ethaddr_usage(struct vcap_tc_flower_parse_usage *st);

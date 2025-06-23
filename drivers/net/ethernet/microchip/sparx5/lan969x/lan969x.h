@@ -87,6 +87,7 @@ int lan969x_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
 			      struct sparx5_calendar_data *data, u32 *cal_len);
 int lan969x_fdma_napi_poll(struct napi_struct *napi, int weight);
 int lan969x_fdma_xmit(struct sparx5 *sparx5, u32 *ifh, struct sk_buff *skb);
+int lan969x_fdma_xmit_xdp(struct sparx5_port *port, void *data, u32 len);
 int lan969x_fdma_init(struct sparx5 *sparx5);
 int lan969x_fdma_deinit(struct sparx5 *sparx5);
 int lan969x_fdma_resize(struct sparx5 *sparx5);

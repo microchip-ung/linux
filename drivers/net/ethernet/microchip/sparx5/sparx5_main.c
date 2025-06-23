@@ -401,6 +401,9 @@ static int sparx5_create_port(struct sparx5 *sparx5,
 	/* Setup QoS */
 	sparx5_qos_port_setup(sparx5, spx5_port->portno);
 
+	/* Setup XDP */
+	sparx5_xdp_port_init(spx5_port);
+
 	/* Create a phylink for PHY management.  Also handles SFPs */
 	spx5_port->phylink_config.dev = &spx5_port->ndev->dev;
 	spx5_port->phylink_config.type = PHYLINK_NETDEV;
@@ -757,10 +760,10 @@ static int sparx5_start(struct sparx5 *sparx5)
 	sparx5_update_fwd(sparx5);
 
 	/* CPU copy CPU pgids */
-	spx5_wr(ANA_AC_PGID_MISC_CFG_PGID_CPU_COPY_ENA_SET(1),
-		sparx5, ANA_AC_PGID_MISC_CFG(sparx5_get_pgid_index(sparx5, PGID_CPU)));
-	spx5_wr(ANA_AC_PGID_MISC_CFG_PGID_CPU_COPY_ENA_SET(1),
-		sparx5, ANA_AC_PGID_MISC_CFG(sparx5_get_pgid_index(sparx5, PGID_BCAST)));
+	sparx5_pgid_cpu_copy_ena(sparx5,
+				 sparx5_get_pgid_index(sparx5, PGID_CPU), true);
+	sparx5_pgid_cpu_copy_ena(sparx5,
+				 sparx5_get_pgid_index(sparx5, PGID_BCAST), true);
 
 	/* Recalc injected frame FCS */
 	for (idx = sparx5_get_internal_port(sparx5, PORT_CPU_0);
@@ -1264,6 +1267,8 @@ static const struct sparx5_match_data sparx5_desc = {
 		.vcaps_cfg = sparx5_vcap_inst_cfg,
 		.vcap_stats = &sparx5_vcap_stats,
 		.ptp_pins = 4,
+		.bum_slb_cnt = 1024,
+		.isdx_cnt = 4096,
 	},
 };
 

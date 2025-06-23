@@ -460,7 +460,7 @@ static void vsc85xx_dequeue_skb(struct vsc85xx_ptp *ptp)
 		return;
 
 	while (len--) {
-		skb = __skb_dequeue(&ptp->tx_queue);
+		skb = skb_dequeue(&ptp->tx_queue);
 		if (!skb)
 			return;
 
@@ -485,7 +485,7 @@ static void vsc85xx_dequeue_skb(struct vsc85xx_ptp *ptp)
 		 * packet in the FIFO right now, reschedule it for later
 		 * packets.
 		 */
-		__skb_queue_tail(&ptp->tx_queue, skb);
+		skb_queue_tail(&ptp->tx_queue, skb);
 	}
 }
 
@@ -897,6 +897,7 @@ static int vsc85xx_eth1_conf(struct phy_device *phydev, enum ts_blk blk,
 				     get_unaligned_be32(ptp_multicast));
 	} else {
 		val |= ANA_ETH1_FLOW_ADDR_MATCH2_ANY_MULTICAST;
+		val |= ANA_ETH1_FLOW_ADDR_MATCH2_ANY_UNICAST;
 		vsc85xx_ts_write_csr(phydev, blk,
 				     MSCC_ANA_ETH1_FLOW_ADDR_MATCH2(0), val);
 		vsc85xx_ts_write_csr(phydev, blk,
@@ -943,7 +944,9 @@ static int vsc85xx_ip1_conf(struct phy_device *phydev, enum ts_blk blk,
 	/* UDP checksum offset in IPv4 packet
 	 * according to: https://tools.ietf.org/html/rfc768
 	 */
-	val |= IP1_NXT_PROT_UDP_CHKSUM_OFF(26) | IP1_NXT_PROT_UDP_CHKSUM_CLEAR;
+	val |= IP1_NXT_PROT_UDP_CHKSUM_OFF(26);
+	if (enable)
+		val |= IP1_NXT_PROT_UDP_CHKSUM_CLEAR;
 	vsc85xx_ts_write_csr(phydev, blk, MSCC_ANA_IP1_NXT_PROT_UDP_CHKSUM,
 			     val);
 
@@ -1087,7 +1090,7 @@ static int vsc85xx_hwtstamp(struct mii_timestamper *mii_ts,
 	mutex_lock(&vsc8531->ts_lock);
 
 	__skb_queue_purge(&vsc8531->ptp->tx_queue);
-	__skb_queue_head_init(&vsc8531->ptp->tx_queue);
+	skb_queue_head_init(&vsc8531->ptp->tx_queue);
 
 	/* Disable predictor while configuring the 1588 block */
 	val = vsc85xx_ts_read_csr(phydev, PROCESSOR,
@@ -1170,11 +1173,16 @@ static void vsc85xx_txtstamp(struct mii_timestamper *mii_ts,
 		return;
 	}
 
+	if (vsc8531->ptp->tx_type == HWTSTAMP_TX_ONESTEP_SYNC) {
+		if (ptp_msg_is_sync(skb, type)) {
+			kfree_skb(skb);
+			return;
+		}
+	}
+
 	skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
 
-	mutex_lock(&vsc8531->ts_lock);
-	__skb_queue_tail(&vsc8531->ptp->tx_queue, skb);
-	mutex_unlock(&vsc8531->ts_lock);
+	skb_queue_tail(&vsc8531->ptp->tx_queue, skb);
 }
 
 static bool vsc85xx_rxtstamp(struct mii_timestamper *mii_ts,
@@ -1201,7 +1209,7 @@ static bool vsc85xx_rxtstamp(struct mii_timestamper *mii_ts,
 
 	ns = ntohl(ptphdr->rsrvd2);
 
-	rx_skb = kmalloc(sizeof(*rx_skb), GFP_KERNEL);
+	rx_skb = kmalloc(sizeof(*rx_skb), GFP_ATOMIC);
 	if (!rx_skb)
 		return false;
 
@@ -1568,7 +1576,7 @@ irqreturn_t vsc8584_handle_ts_interrupt(struct phy_device *phydev)
 	if (rc & VSC85XX_1588_INT_FIFO_ADD) {
 		vsc85xx_get_tx_ts(priv->ptp);
 	} else if (rc & VSC85XX_1588_INT_FIFO_OVERFLOW) {
-		__skb_queue_purge(&priv->ptp->tx_queue);
+		skb_queue_purge(&priv->ptp->tx_queue);
 		vsc85xx_ts_reset_fifo(phydev);
 	}
 

@@ -192,6 +192,13 @@
 			interrupts = <GIC_SPI 6 IRQ_TYPE_LEVEL_HIGH>;
 		};
 
+		watchdog: watchdog@600106000 {
+			compatible = "snps,dw-wdt";
+			reg = <0x6 0x00106000 0x1000>;
+			interrupts = <GIC_SPI 5 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&ahb_clk>;
+		};
+
 		sdhci0: mmc@600800000 {
 			compatible = "microchip,dw-sparx5-sdhci";
 			status = "disabled";
@@ -291,19 +298,44 @@
 				function = "emmc";
 			};
 
+			/* MDC and MDIO pins need different drive strength.
+			 * That is why we provide a way to reference them
+			 * inividually
+			 */
 			miim1_pins: miim1-pins {
-				pins = "GPIO_56", "GPIO_57";
-				function = "miim";
+				mdc_miim1_pins: mdc-miim1-pins {
+					pins = "GPIO_56";
+					function = "miim";
+				};
+
+				mdio_miim1_pins: mdio-miim1-pins {
+					pins = "GPIO_57";
+					function = "miim";
+				};
 			};
 
 			miim2_pins: miim2-pins {
-				pins = "GPIO_58", "GPIO_59";
-				function = "miim";
+				mdc_miim2_pins: mdc-miim2-pins {
+					pins = "GPIO_58";
+					function = "miim";
+				};
+
+				mdio_miim2_pins: mdio-miim2-pins {
+					pins = "GPIO_59";
+					function = "miim";
+				};
 			};
 
 			miim3_pins: miim3-pins {
-				pins = "GPIO_52", "GPIO_53";
-				function = "miim";
+				mdc_miim3_pins: mdc-miim3-pins {
+					pins = "GPIO_52";
+					function = "miim";
+				};
+
+				mdio_miim3_pins: mdio-miim3-pins {
+					pins = "GPIO_53";
+					function = "miim";
+				};
 			};
 		};
 

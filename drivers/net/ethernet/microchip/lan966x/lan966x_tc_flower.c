@@ -1126,7 +1126,7 @@ static int lan966x_tc_flower_add(struct lan966x_port *port,
 							   "Unknown error");
 					break;
 				}
-				return err;
+				goto out;
 			}
 			/* VCAP_AF_MIRROR_ENA: W1, lan966x: is2 */
 			err = vcap_rule_add_action_bit(vrule, VCAP_AF_MIRROR_ENA, VCAP_BIT_1);
@@ -1294,23 +1294,27 @@ static int lan966x_tc_flower_add(struct lan966x_port *port,
 			    (act->gate.prio > LAN966X_PSFP_SG_MAX_IPV)) {
 				NL_SET_ERR_MSG_MOD(f->common.extack,
 						   "Invalid initial priority");
-				return -EINVAL;
+				err = -EINVAL;
+				goto out;
 			}
 			if ((act->gate.cycletime < LAN966X_PSFP_SG_MIN_CYCLE_TIME_NS) ||
 			    (act->gate.cycletime > LAN966X_PSFP_SG_MAX_CYCLE_TIME_NS)) {
 				NL_SET_ERR_MSG_MOD(f->common.extack,
 						   "Invalid cycle time");
-				return -EINVAL;
+				err = -EINVAL;
+				goto out;
 			}
 			if (act->gate.cycletimeext > LAN966X_PSFP_SG_MAX_CYCLE_TIME_NS) {
 				NL_SET_ERR_MSG_MOD(f->common.extack,
 						   "Invalid cycle time ext");
-				return -EINVAL;
+				err = -EINVAL;
+				goto out;
 			}
 			if (act->gate.num_entries >= LAN966X_PSFP_NUM_GCE) {
 				NL_SET_ERR_MSG_MOD(f->common.extack,
 						   "Invalid number of entries");
-				return -EINVAL;
+				err = -EINVAL;
+				goto out;
 			}
 
 			sg.gate_state = true;

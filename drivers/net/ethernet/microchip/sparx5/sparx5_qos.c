@@ -1802,5 +1802,7 @@ int sparx5_qos_init(struct sparx5 *sparx5)
 
 	sparx5_qos_debugfs(sparx5);
 
+	sparx5_policer_bum_init(sparx5);
+
 	return err;
 }

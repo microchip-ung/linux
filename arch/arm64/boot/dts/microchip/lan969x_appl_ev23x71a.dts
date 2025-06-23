@@ -131,7 +131,6 @@
 		i2c-digital-filter;
 		i2c-digital-filter-width-ns = <35>;
 		i2c-sda-hold-time-ns = <1500>;
-		clock-frequency = <400000>;
 		status = "okay";
 	};
 };

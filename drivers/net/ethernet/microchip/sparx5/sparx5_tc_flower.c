@@ -241,6 +241,21 @@ sparx5_tc_flower_handler_vlan_usage(struct vcap_tc_flower_parse_usage *st)
 	return err;
 }
 
+static int
+sparx5_tc_flower_handler_meta_usage(struct vcap_tc_flower_parse_usage *st)
+{
+	struct flow_match_meta mt;
+
+	flow_rule_match_meta(st->frule, &mt);
+
+	if (mt.mask->l2_miss)
+		st->l2_miss = mt.key->l2_miss;
+
+	st->used_keys |= BIT_ULL(FLOW_DISSECTOR_KEY_META);
+
+	return 0;
+}
+
 static int (*sparx5_tc_flower_usage_handlers[])(struct vcap_tc_flower_parse_usage *st) = {
 	[FLOW_DISSECTOR_KEY_ETH_ADDRS] = vcap_tc_flower_handler_ethaddr_usage,
 	[FLOW_DISSECTOR_KEY_IPV4_ADDRS] = vcap_tc_flower_handler_ipv4_usage,
@@ -253,6 +268,7 @@ static int (*sparx5_tc_flower_usage_handlers[])(struct vcap_tc_flower_parse_usag
 	[FLOW_DISSECTOR_KEY_TCP] = vcap_tc_flower_handler_tcp_usage,
 	[FLOW_DISSECTOR_KEY_ARP] = vcap_tc_flower_handler_arp_usage,
 	[FLOW_DISSECTOR_KEY_IP] = vcap_tc_flower_handler_ip_usage,
+	[FLOW_DISSECTOR_KEY_META] = sparx5_tc_flower_handler_meta_usage,
 };
 
 static int sparx5_tc_use_dissectors(struct vcap_tc_flower_parse_usage *st,
@@ -771,6 +787,101 @@ static int sparx5_tc_flower_parse_act_police(struct sparx5_policer *pol,
 	return 0;
 }
 
+static u32 sparx5_tc_bum_mask_get(enum vcap_tc_flower_frame_type frame_type,
+				  bool l2_miss)
+{
+	bool known = !l2_miss;
+	u32 event_mask = 0;
+
+	switch (frame_type) {
+	case VCAP_TC_FRAME_TYPE_BROADCAST:
+		event_mask |= known ? SPX5_BUM_KNOWN_BROADCAST :
+				      SPX5_BUM_UNKNOWN_BROADCAST;
+		break;
+	case VCAP_TC_FRAME_TYPE_UNKNOWN:
+		/* Treat unknown frame types as unicast frames. */
+		fallthrough;
+	case VCAP_TC_FRAME_TYPE_UNICAST:
+		event_mask |= known ? SPX5_BUM_KNOWN_UNICAST :
+				      SPX5_BUM_UNKNOWN_UNICAST;
+		break;
+	case VCAP_TC_FRAME_TYPE_MULTICAST:
+		event_mask |= known ? SPX5_BUM_KNOWN_MULTICAST :
+				      SPX5_BUM_UNKNOWN_MULTICAST;
+		break;
+	}
+
+	return event_mask;
+}
+
+static int sparx5_tc_flower_bum_setup(struct sparx5 *sparx5,
+				      struct vcap_rule *vrule,
+				      struct sparx5_policer *pol,
+				      u32 frame_type,
+				      bool l2_miss)
+{
+	u32 isdx;
+	int ret;
+
+	pol->event_mask = sparx5_tc_bum_mask_get(frame_type, l2_miss);
+
+	ret = sparx5_policer_bum_add(sparx5, pol, &isdx);
+	if (ret)
+		return ret;
+
+	switch (frame_type) {
+	case VCAP_TC_FRAME_TYPE_BROADCAST:
+		ret = vcap_rule_add_key_bit(vrule, VCAP_KF_L2_BC_IS,
+					    VCAP_BIT_1);
+		if (ret)
+			return ret;
+		break;
+	case VCAP_TC_FRAME_TYPE_UNKNOWN:
+		/* Treat unknown frame types as unicast frames. */
+		fallthrough;
+	case VCAP_TC_FRAME_TYPE_UNICAST:
+		/* Broadcast and multicast frames will match this rule, unless
+		 * we explicitly tell the VCAP to ditch them.
+		 */
+		ret = vcap_rule_add_key_bit(vrule, VCAP_KF_L2_MC_IS,
+					    VCAP_BIT_0);
+		if (ret)
+			return ret;
+
+		ret = vcap_rule_add_key_bit(vrule, VCAP_KF_L2_BC_IS,
+					    VCAP_BIT_0);
+		if (ret)
+			return ret;
+		break;
+	case VCAP_TC_FRAME_TYPE_MULTICAST:
+		ret = vcap_rule_add_key_bit(vrule, VCAP_KF_L2_MC_IS,
+					    VCAP_BIT_1);
+		if (ret)
+			return ret;
+
+		/* Broadcast frames will match this rule, unless we explicitly
+		 * tell the VCAP to ditch them.
+		 */
+		ret = vcap_rule_add_key_bit(vrule, VCAP_KF_L2_BC_IS,
+					    VCAP_BIT_0);
+		if (ret)
+			return ret;
+		break;
+	}
+
+	ret = vcap_rule_add_action_bit(vrule,
+				       VCAP_AF_ISDX_ADD_REPLACE_SEL,
+				       VCAP_BIT_1);
+	if (ret)
+		return ret;
+
+	ret = vcap_rule_add_action_u32(vrule, VCAP_AF_ISDX_VAL, isdx);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
 static int sparx5_tc_flower_psfp_setup(struct sparx5 *sparx5,
 				       struct vcap_rule *vrule, int sg_idx,
 				       int pol_idx, struct sparx5_psfp_sg *sg,
@@ -778,7 +889,7 @@ static int sparx5_tc_flower_psfp_setup(struct sparx5 *sparx5,
 				       struct sparx5_psfp_sf *sf)
 {
 	const struct sparx5_consts *consts = &sparx5->data->consts;
-	u32 psfp_sfid = 0, psfp_fmid = 0, psfp_sgid = 0;
+	u32 isdx, psfp_sfid = 0, psfp_fmid = 0, psfp_sgid = 0;
 	int ret;
 
 	/* Must always have a stream gate - max sdu (filter option) is evaluated
@@ -817,15 +928,19 @@ static int sparx5_tc_flower_psfp_setup(struct sparx5 *sparx5,
 	if (ret < 0)
 		return ret;
 
-	/* Streams are classified by ISDX - map ISDX 1:1 to sfid for now. */
-	sparx5_isdx_conf_set(sparx5, psfp_sfid, psfp_sfid, psfp_fmid);
+	ret = sparx5_isdx_get(sparx5, &isdx);
+	if (ret < 0)
+		return ret;
+
+	/* Streams are classified by ISDX */
+	sparx5_isdx_conf_set(sparx5, isdx, psfp_sfid, psfp_fmid);
 
 	ret = vcap_rule_add_action_bit(vrule, VCAP_AF_ISDX_ADD_REPLACE_SEL,
 				       VCAP_BIT_1);
 	if (ret)
 		return ret;
 
-	ret = vcap_rule_add_action_u32(vrule, VCAP_AF_ISDX_VAL, psfp_sfid);
+	ret = vcap_rule_add_action_u32(vrule, VCAP_AF_ISDX_VAL, isdx);
 	if (ret)
 		return ret;
 
@@ -908,6 +1023,24 @@ static int sparx5_tc_action_vlan_pop(struct vcap_admin *admin,
 	return err;
 }
 
+static int sparx5_tc_action_vlan_modify_is0(struct vcap_rule *vrule,
+					    struct flow_cls_offload *fco,
+					    struct flow_action_entry *act)
+{
+	int err;
+
+	/* VID_REPLACE: New VID = VID_VAL*/
+	err = vcap_rule_add_action_u32(vrule, VCAP_AF_CLS_VID_SEL, 2);
+	if (err)
+		return err;
+
+	err = vcap_rule_add_action_u32(vrule, VCAP_AF_VID_VAL, act->vlan.vid);
+	if (err)
+		return err;
+
+	return 0;
+}
+
 static int sparx5_tc_action_vlan_modify(struct vcap_admin *admin,
 					struct vcap_rule *vrule,
 					struct flow_cls_offload *fco,
@@ -917,6 +1050,8 @@ static int sparx5_tc_action_vlan_modify(struct vcap_admin *admin,
 	int err = 0;
 
 	switch (admin->vtype) {
+	case VCAP_TYPE_IS0:
+		return sparx5_tc_action_vlan_modify_is0(vrule, fco, act);
 	case VCAP_TYPE_ES0:
 		err = vcap_rule_add_action_u32(vrule,
 					       VCAP_AF_PUSH_OUTER_TAG,
@@ -1165,6 +1300,8 @@ static int sparx5_tc_flower_replace(struct net_device *ndev,
 		.fco = fco,
 		.l3_proto = ETH_P_ALL,
 		.admin = admin,
+		.frame_type = VCAP_TC_FRAME_TYPE_UNKNOWN,
+		.l2_miss = -1,
 	};
 	struct sparx5_port *port = netdev_priv(ndev);
 	struct sparx5_multiple_rules multi = {};
@@ -1301,8 +1438,20 @@ static int sparx5_tc_flower_replace(struct net_device *ndev,
 		}
 	}
 
-	/* Setup PSFP */
-	if (tc_sg_idx >= 0 || tc_pol_idx >= 0) {
+	/* The policer action can be for PSFP flow-meters or BUM policers.
+	 * We use the flower meta-key 'l2_miss' to differentiate between the
+	 * two.
+	 */
+	if (state.l2_miss > -1) {
+		/* Setup BUM policer */
+		err = sparx5_tc_flower_bum_setup(sparx5, vrule,
+						 &fm.pol,
+						 state.frame_type,
+						 !!state.l2_miss);
+		if (err)
+			goto out;
+	} else if (tc_sg_idx >= 0 || tc_pol_idx >= 0) {
+		/* Setup PSFP */
 		if (!sparx5_has_feature(sparx5, SPX5_FEATURE_PSFP)) {
 			err = -EOPNOTSUPP;
 			goto out;
@@ -1336,10 +1485,28 @@ static int sparx5_tc_flower_replace(struct net_device *ndev,
 	if (state.l3_proto == ETH_P_ALL)
 		err = sparx5_tc_add_remaining_rules(vctrl, fco, vrule, admin,
 						    &multi);
-
 out:
 	vcap_free_rule(vrule);
 	return err;
+}
+
+static void sparx5_tc_free_bum_resources(struct sparx5 *sparx5,
+					 struct vcap_rule *vrule)
+{
+	struct vcap_client_actionfield *afield;
+	u32 isdx, pol_idx;
+
+	afield = vcap_find_actionfield(vrule, VCAP_AF_ISDX_VAL);
+	if (!afield)
+		return;
+
+	isdx = afield->data.u32.value;
+
+	pol_idx = sparx5_policer_bum_id_get(sparx5, isdx);
+	if (!pol_idx)
+		return;
+
+	sparx5_policer_bum_del(sparx5, isdx);
 }
 
 static void sparx5_tc_free_psfp_resources(struct sparx5 *sparx5,
@@ -1377,6 +1544,8 @@ static void sparx5_tc_free_psfp_resources(struct sparx5 *sparx5,
 		       __LINE__, sfid);
 
 	sparx5_isdx_conf_set(sparx5, isdx, 0, 0);
+
+	sparx5_isdx_put(sparx5, isdx);
 }
 
 static int sparx5_tc_free_rule_resources(struct net_device *ndev,
@@ -1409,6 +1578,7 @@ static int sparx5_tc_free_rule_resources(struct net_device *ndev,
 	}
 
 	sparx5_tc_free_psfp_resources(sparx5, vrule);
+	sparx5_tc_free_bum_resources(sparx5, vrule);
 
 	vcap_free_rule(vrule);
 	return ret;

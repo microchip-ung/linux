@@ -2079,10 +2079,10 @@ static int sparx5_sd10g28_apply_params(struct sparx5_serdes_macro *macro,
 		      sd_inst,
 		      SD10G_LANE_LANE_50(sd_index));
 
-	sdx5_rmw(SD10G_LANE_LANE_50_CFG_SSC_RESETB_SET(1),
-		 SD10G_LANE_LANE_50_CFG_SSC_RESETB,
-		 priv,
-		 SD10G_LANE_LANE_50(sd_index));
+	sdx5_inst_rmw(SD10G_LANE_LANE_50_CFG_SSC_RESETB_SET(1),
+		      SD10G_LANE_LANE_50_CFG_SSC_RESETB,
+		      sd_inst,
+		      SD10G_LANE_LANE_50(sd_index));
 
 	sdx5_rmw(SD_LANE_MISC_SD_125_RST_DIS_SET(params->fx_100),
 		 SD_LANE_MISC_SD_125_RST_DIS,
@@ -2189,6 +2189,15 @@ static int sparx5_serdes_power_save(struct sparx5_serdes_macro *macro, u32 pwdn)
 		sdx5_inst_rmw(SD_LANE_25G_QUIET_MODE_6G_QUIET_MODE_SET(SPX5_SERDES_QUIET_MODE_VAL),
 			      SD_LANE_25G_QUIET_MODE_6G_QUIET_MODE,
 			      sd_lane_inst, SD_LANE_25G_QUIET_MODE_6G(0));
+
+		sdx5_inst_rmw(SD25G_LANE_LANE_04_LN_CFG_PD_DRIVER_SET(pwdn) |
+			      SD25G_LANE_LANE_04_LN_CFG_PD_CLK_SET(pwdn) |
+			      SD25G_LANE_LANE_04_LN_CFG_PD_CML_SET(pwdn),
+			      SD25G_LANE_LANE_04_LN_CFG_PD_DRIVER |
+			      SD25G_LANE_LANE_04_LN_CFG_PD_CLK |
+			      SD25G_LANE_LANE_04_LN_CFG_PD_CML,
+			      sd_lane_inst,
+			      SD25G_LANE_LANE_04(0));
 	} else { /* 6G and 10G */
 		/* Take serdes out of reset */
 		sdx5_inst_rmw(SD_LANE_SD_LANE_CFG_EXT_CFG_RST_SET(0),
@@ -2199,6 +2208,15 @@ static int sparx5_serdes_power_save(struct sparx5_serdes_macro *macro, u32 pwdn)
 		sdx5_inst_rmw(SD_LANE_QUIET_MODE_6G_QUIET_MODE_SET(SPX5_SERDES_QUIET_MODE_VAL),
 			      SD_LANE_QUIET_MODE_6G_QUIET_MODE,
 			      sd_lane_inst, SD_LANE_QUIET_MODE_6G(0));
+
+		sdx5_inst_rmw(SD10G_LANE_LANE_06_CFG_PD_DRIVER_SET(pwdn) |
+			      SD10G_LANE_LANE_06_CFG_PD_CLK_SET(pwdn) |
+			      SD10G_LANE_LANE_06_CFG_PD_CML_SET(pwdn),
+			      SD10G_LANE_LANE_06_CFG_PD_DRIVER |
+			      SD10G_LANE_LANE_06_CFG_PD_CLK |
+			      SD10G_LANE_LANE_06_CFG_PD_CML,
+			      sd_lane_inst,
+			      SD10G_LANE_LANE_06(0));
 	}
 	return 0;
 }

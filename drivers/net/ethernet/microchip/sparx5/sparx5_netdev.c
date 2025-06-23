@@ -307,6 +307,13 @@ static int sparx5_port_hwtstamp_set(struct net_device *dev,
 	    cfg->source != HWTSTAMP_SOURCE_PHYLIB)
 		return -EOPNOTSUPP;
 
+	if((sparx5_port->ptp_rx_cmd && cfg->rx_filter)) {
+		// Looks like timestamping doesn't get disabled by upper layers
+		// This is a quick workaround, to prevent failing, if the filters
+		// are already enabled.
+		return 0;
+	}
+
 	err = sparx5_ptp_setup_traps(sparx5_port, cfg);
 	if (err)
 		return err;
@@ -340,6 +347,8 @@ static const struct net_device_ops sparx5_port_netdev_ops = {
 	.ndo_setup_tc           = sparx5_port_setup_tc,
 	.ndo_hwtstamp_get       = sparx5_port_hwtstamp_get,
 	.ndo_hwtstamp_set       = sparx5_port_hwtstamp_set,
+	.ndo_bpf		= sparx5_xdp,
+	.ndo_xdp_xmit		= sparx5_xdp_xmit,
 };
 
 bool sparx5_netdevice_check(const struct net_device *dev)
@@ -362,7 +371,11 @@ struct net_device *sparx5_create_netdev(struct sparx5 *sparx5, u32 portno)
 	if (!is_sparx5(sparx5)) {
 		ndev->hw_features |= LAN969X_SUPPORTED_HSR_FEATURES;
 		ndev->features |= LAN969X_SUPPORTED_HSR_FEATURES;
+		ndev->xdp_features = NETDEV_XDP_ACT_BASIC |
+				     NETDEV_XDP_ACT_REDIRECT |
+				     NETDEV_XDP_ACT_NDO_XMIT;
 	}
+
 	/* The MAC supports frame lengths of up to 14,000 bytes */
 	ndev->max_mtu = 14000;
 
@@ -432,7 +445,12 @@ void sparx5_unregister_netdevs(struct sparx5 *sparx5)
 	const struct sparx5_consts *consts = &sparx5->data->consts;
 	int portno;
 
-	for (portno = 0; portno < consts->chip_ports; portno++)
-		if (sparx5->ports[portno])
-			unregister_netdev(sparx5->ports[portno]->ndev);
+	for (portno = 0; portno < consts->chip_ports; portno++) {
+		struct sparx5_port *port = sparx5->ports[portno];
+
+		if (port) {
+			sparx5_xdp_port_deinit(port);
+			unregister_netdev(port->ndev);
+		}
+	}
 }

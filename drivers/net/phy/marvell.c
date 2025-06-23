@@ -852,6 +852,21 @@ static int m88e3016_config_init(struct phy_device *phydev)
 	return marvell_config_init(phydev);
 }
 
+static int m88e1100_config_init(struct phy_device *phydev)
+{
+	int err;
+
+	phy_write(phydev, 27, 0x9084); /* SGMII mode */
+	phy_write(phydev, 9, 0x0f00); /* Advertise 1000BASE-T Full/Half-Duplex */
+	phy_write(phydev, 0, 0x8140); /* Apply Software reset */
+	phy_write(phydev, 4, 0x0de1); /* Advertise 10/100BASE-T Full/Half-Duplex */
+	phy_write(phydev, 0, 0x9140); /* Apply Software reset, enable aneg */
+	err = genphy_read_abilities(phydev);
+	linkmode_or(phydev->advertising, phydev->advertising,
+		    phydev->supported);
+	return err;
+}
+
 static int m88e1111_config_init_hwcfg_mode(struct phy_device *phydev,
 					   u16 mode,
 					   int fibre_copper_auto)
@@ -4129,6 +4144,24 @@ static struct phy_driver marvell_drivers[] = {
 		.led_hw_control_set = m88e1318_led_hw_control_set,
 		.led_hw_control_get = m88e1318_led_hw_control_get,
 	},
+	{
+		.phy_id = MARVELL_PHY_ID_88E1100,
+		.phy_id_mask = MARVELL_PHY_ID_MASK,
+		.name = "Marvell 88E1100",
+		.features = PHY_GBIT_FEATURES,
+		.probe = marvell_probe,
+		.config_init = m88e1100_config_init,
+		.config_aneg = genphy_config_aneg,
+		.read_status = genphy_read_status,
+		.aneg_done = genphy_aneg_done,
+		.resume = genphy_resume,
+		.suspend = genphy_suspend,
+		.read_page = marvell_read_page,
+		.write_page = marvell_write_page,
+		.get_sset_count = marvell_get_sset_count,
+		.get_strings = marvell_get_strings,
+		.get_stats = marvell_get_stats,
+	},
 };
 
 module_phy_driver(marvell_drivers);
@@ -4156,6 +4189,7 @@ static struct mdio_device_id __maybe_unused marvell_tbl[] = {
 	{ MARVELL_PHY_ID_88E6393_FAMILY, MARVELL_PHY_ID_MASK },
 	{ MARVELL_PHY_ID_88E1340S, MARVELL_PHY_ID_MASK },
 	{ MARVELL_PHY_ID_88E1548P, MARVELL_PHY_ID_MASK },
+	{ MARVELL_PHY_ID_88E1100, MARVELL_PHY_ID_MASK },
 	{ }
 };
 

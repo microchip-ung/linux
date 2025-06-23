@@ -147,22 +147,27 @@ static void lan966x_port_link_up(struct lan966x_port *port)
 	struct lan966x *lan966x = port->lan966x;
 	struct lan966x_path_delay *path_delay;
 	int speed = 0, mode = 0;
+	int fc_speed = 0;
 	int atop_wm = 0;
 	u8 tweaks = 5;
 
 	switch (config->speed) {
 	case SPEED_10:
 		speed = LAN966X_SPEED_10;
+		fc_speed = LAN966X_FC_SPEED_10;
 		break;
 	case SPEED_100:
 		speed = LAN966X_SPEED_100;
+		fc_speed = LAN966X_FC_SPEED_100;
 		break;
 	case SPEED_1000:
 		speed = LAN966X_SPEED_1000;
+		fc_speed = LAN966X_FC_SPEED_1000;
 		mode = DEV_MAC_MODE_CFG_GIGA_MODE_ENA_SET(1);
 		break;
 	case SPEED_2500:
 		speed = LAN966X_SPEED_2500;
+		fc_speed = LAN966X_SPEED_2500;
 		mode = DEV_MAC_MODE_CFG_GIGA_MODE_ENA_SET(1);
 		break;
 	}
@@ -207,7 +212,7 @@ static void lan966x_port_link_up(struct lan966x_port *port)
 	}
 
 	/* No PFC */
-	lan_wr(ANA_PFC_CFG_FC_LINK_SPEED_SET(speed),
+	lan_wr(ANA_PFC_CFG_FC_LINK_SPEED_SET(fc_speed),
 	       lan966x, ANA_PFC_CFG(port->chip_port));
 
 	lan_rmw(DEV_PCS1G_CFG_PCS_ENA_SET(1),
@@ -229,7 +234,7 @@ static void lan966x_port_link_up(struct lan966x_port *port)
 	lan_wr(0, lan966x, DEV_FC_MAC_HIGH_CFG(port->chip_port));
 
 	/* Flow control */
-	lan_rmw(SYS_MAC_FC_CFG_FC_LINK_SPEED_SET(speed) |
+	lan_rmw(SYS_MAC_FC_CFG_FC_LINK_SPEED_SET(fc_speed) |
 		SYS_MAC_FC_CFG_FC_LATENCY_CFG_SET(7) |
 		SYS_MAC_FC_CFG_ZERO_PAUSE_ENA_SET(1) |
 		SYS_MAC_FC_CFG_PAUSE_VAL_CFG_SET(0xffff) |
