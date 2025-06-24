@@ -31,6 +31,8 @@
 	aliases {
 		serial0 = &usart3;
 		serial1 = &usart2;
+		i2c_sfp0 = &i2c_sfp0;
+		i2c_sfp1 = &i2c_sfp1;
 	};
 
 	leds {
@@ -220,14 +222,98 @@
 			#address-cells = <1>;
 			#size-cells = <1>;
 
+			lan9645x_i2c0: i2c@4c0000 {
+				reg = <0x4c0000 0x400>;
+				compatible = "mchp,lan9645x-i2c";
+				status = "ok";
+				pinctrl-0 = <&lan9645x_i2c0_pins_sda>;
+				pinctrl-names = "default";
+				//scl-gpios = <&gpio 31 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				interrupt-parent = <&lan9645x_irq>;
+				interrupts = <&lan9645x_irq 9>;
+				i2c-sda-hold-time-ns = <300>;
+				clock-frequency = <100000>;
+				clocks = <&lan9645x_clock>;
+			};
+
+			i2c-mux {
+				reg = <0x4001 0x10>;
+				compatible = "i2c-mux-pinctrl";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				i2c-parent = <&lan9645x_i2c0>;
+				pinctrl-names = "i2c_sfp0", "i2c_sfp1", "idle";
+				pinctrl-0 = <&lan9645x_i2c0_pins_scl0>;
+				pinctrl-1 = <&lan9645x_i2c0_pins_scl1>;
+				pinctrl-2 = <&lan9645x_i2cmux_pins>;
+
+				i2c_sfp0: i2c-sfp@0 {
+					reg = <0>;
+					#address-cells = <1>;
+					#size-cells = <0>;
+				};
+
+				i2c_sfp1: i2c-sfp@1 {
+					reg = <1>;
+					#address-cells = <1>;
+					#size-cells = <0>;
+				};
+			};
+
+			lan_sfp0: lan9645x-sfp0 {
+				compatible = "sff,sfp";
+				i2c-bus = <&i2c_sfp0>;
+				//pinctrl-names = "default";
+				//pinctrl-0 = <&lan9645x_sd0_pins>,<&lan9645x_sfp0_input_pins>,<&lan9645x_sfp0_output_pins>;
+
+				// MODE 9 pins
+				//tx-disable-gpios = <&gpio_lan9645x 6 GPIO_ACTIVE_HIGH>;
+				//mod-def0-gpios   = <&gpio_lan9645x 4 GPIO_ACTIVE_LOW>;
+				//los-gpios		= <&gpio_lan9645x 7 GPIO_ACTIVE_HIGH>;
+				//rate-select0-gpios = <&gpio_lan9645x 5 GPIO_ACTIVE_HIGH>;
+
+				// MODE 8
+				//tx-disable-gpios = <&gpio_lan9645x 11 GPIO_ACTIVE_HIGH>;
+				//mod-def0-gpios   = <&gpio_lan9645x 5 GPIO_ACTIVE_LOW>;
+				//los-gpios		= <&gpio_lan9645x 7 GPIO_ACTIVE_HIGH>;
+				//rate-select0-gpios = <&gpio_lan9645x 39 GPIO_ACTIVE_HIGH>;
+
+				// SGPIO
+				tx-disable-gpios = <&sgpio_lan9645x_out 5 2 GPIO_ACTIVE_HIGH>;
+				mod-def0-gpios   = <&sgpio_lan9645x_in 5 0 GPIO_ACTIVE_LOW>;
+				los-gpios		= <&sgpio_lan9645x_in 5 1 GPIO_ACTIVE_HIGH>;
+				tx-fault-gpios = <&sgpio_lan9645x_in 5 2 GPIO_ACTIVE_HIGH>;
+			};
+
+			lan_sfp1: lan9645x-sfp1 {
+				compatible = "sff,sfp";
+				i2c-bus = <&i2c_sfp1>;
+				//pinctrl-names = "default";
+				//pinctrl-0 = <&lan9645x_sd1_pins>,<&lan9645x_sfp1_input_pins>,<&lan9645x_sfp1_output_pins>;
+
+				// MODE 8
+				//tx-disable-gpios = <&gpio_lan9645x 6 GPIO_ACTIVE_HIGH>;
+				//mod-def0-gpios   = <&gpio_lan9645x 4 GPIO_ACTIVE_LOW>;
+				//los-gpios		= <&gpio_lan9645x 8 GPIO_ACTIVE_HIGH>;
+				//rate-select0-gpios = <&gpio_lan9645x 12 GPIO_ACTIVE_HIGH>;
+
+				// SGPIO
+				tx-disable-gpios = <&sgpio_lan9645x_out 6 2 GPIO_ACTIVE_HIGH>;
+				mod-def0-gpios   = <&sgpio_lan9645x_in 6 0 GPIO_ACTIVE_LOW>;
+				los-gpios		= <&sgpio_lan9645x_in 6 1 GPIO_ACTIVE_HIGH>;
+				tx-fault-gpios = <&sgpio_lan9645x_in 6 2 GPIO_ACTIVE_HIGH>;
+			};
+
 			mdio@4098 { // miim0
 				reg = <0x4098 0x28>;
 				compatible = "microchip,lan966x-miim";
 				#address-cells = <1>;
 				#size-cells = <0>;
 				pinctrl-names = "default";
-				pinctrl-0 = <&miim0_pins>, <&rgmii0_pins>, <&rgmii1_pins>;
-
+				//pinctrl-0 = <&miim0_pins>, <&rgmii0_pins>, <&rgmii1_pins>;
+				pinctrl-0 = <&miim0_pins>, <&rgmii0_pins>;
 
 				sw_phy7: ethernet-phy@0 {
 					reg = <0>;
@@ -358,21 +444,21 @@
 						reg = <5>;
 						label = "lan5";
 						phys = <&lan9645x_serdes 5 LAN9645X_SERDES6G(0)>;
-						status = "disabled";
+						status = "ok";
 						//phy-handle = <&sw_phy5>;
 						phy-mode = "sgmii";
 						managed = "in-band-status";
-						//sfp = <&sfp0>;
+						sfp = <&lan_sfp0>;
 					};
 
 					port@6 {
 						reg = <6>;
 						label = "lan6";
-						status = "disabled";
+						status = "ok";
 						phy-mode = "sgmii";
 						managed = "in-band-status";
 						phys = <&lan9645x_serdes 6 LAN9645X_SERDES6G(1)>;
-						//sfp = <&sfp1>;
+						sfp = <&lan_sfp1>;
 					};
 
 					port@7 {
@@ -413,7 +499,7 @@
 					function = "sgpio_a";
 				};
 
-				miim0_pins: miim0-pins { // miim0: 28,29. there are many choices here?
+				miim0_pins: miim0-pins {
 					pins = "GPIO_28", "GPIO_29";
 					function = "miim";
 				};
@@ -441,27 +527,72 @@
 				lan9645x_i2c0_pins_scl0: lan9645x-i2c0-pins-scl0 {
 					pins = "GPIO_31";
 					function = "twi_scl_m";
+					output-high;
 				};
 
 				lan9645x_i2c0_pins_scl1: lan9645x-i2c0-pins-scl1 {
 					pins = "GPIO_32";
 					function = "twi_scl_m";
+					output-high;
 				};
+
+				lan9645x_i2cmux_pins: lan9645x-i2cmux-pins {
+					pins = "GPIO_31","GPIO_32";
+					function = "twi_scl_m";
+					output-low;
+				};
+
+				lan9645x_sd0_pins: lan9645x-sd0-pins {
+					pins = "GPIO_7";
+					function = "sfp";
+				};
+
+				lan9645x_sfp0_input_pins: lan9645x-sfp0-input-pins {
+					// MOD-det
+					pins = "GPIO_5";
+					function = "gpio";
+					};
+
+				lan9645x_sfp0_output_pins: lan9645x-sfp0-output-pins {
+					// tx-dis, rate_sel
+					pins = "GPIO_11","GPIO_39";
+					function = "gpio";
+					output-high;
+					};
+
+				lan9645x_sd1_pins: lan9645x-sd1-pins {
+					pins = "GPIO_8";
+					function = "sfp";
+				};
+
+				lan9645x_sfp1_input_pins: lan9645x-sfp1-input-pins {
+					// MOD-det
+					pins = "GPIO_4";
+					function = "gpio";
+					};
+
+				lan9645x_sfp1_output_pins: lan9645x-sfp1-output-pins {
+					// tx-dis, rate_sel
+					pins = "GPIO_6","GPIO_12";
+					function = "gpio";
+					output-high;
+					};
 			};
 
 			lan9645x_sgpio: gpio@40d4 {
-				compatible = "mscc,ocelot-sgpio";
+				compatible = "microchip,lan9645x-sgpio";
 				reg = <0x40d4 0x46>;
 				#address-cells = <1>;
 				#size-cells = <0>;
 				clocks = <&lan9645x_clock>;
-				status = "okay";
+				status = "ok";
 				pinctrl-names = "default";
 				pinctrl-0 = <&sgpio_pins>;
 				microchip,sgpio-port-ranges = <5 6>;
+				bus-frequency = <1000000>;
 
 				sgpio_lan9645x_in: gpio@0 {
-					compatible = "microchip,ocelot-sgpio-bank";
+					compatible = "microchip,sparx5-sgpio-bank";
 					reg = <0>;
 					gpio-controller;
 					#gpio-cells = <3>;
@@ -469,7 +600,7 @@
 				};
 
 				sgpio_lan9645x_out: gpio@1 {
-					compatible = "microchip,ocelot-sgpio-bank";
+					compatible = "microchip,sparx5-sgpio-bank";
 					reg = <1>;
 					gpio-controller;
 					#gpio-cells = <3>;
@@ -555,13 +686,13 @@
 
 &mdio0 {
 	pinctrl-0 = <&miim_a_pins>;
-    pinctrl-names = "default";
-    status = "okay";
+	pinctrl-names = "default";
+	status = "okay";
 
 	phy2: ethernet-phy {
 		reg = <1>;
-        interrupts = <24 IRQ_TYPE_LEVEL_LOW>;
-        interrupt-parent = <&gpio>;
+		interrupts = <24 IRQ_TYPE_LEVEL_LOW>;
+		interrupt-parent = <&gpio>;
 	};
 };
 
