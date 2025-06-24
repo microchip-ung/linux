@@ -63,6 +63,14 @@ static const struct resource lan9645x_serdes_resources[] = {
 	DEFINE_RES_REG_NAMED(0x10000, 0x134, "chip_top"),
 };
 
+static const struct resource lan9645x_i2c_resources[] = {
+	DEFINE_RES_REG_NAMED(0x4c0000, 0x400, "i2c"),
+};
+
+static const struct resource lan9645x_sgpio_resources[] = {
+	DEFINE_RES_REG_NAMED(0x40e0, 0x118, "gcb_sio"),
+};
+
 static const struct resource lan9645x_resources[] = {
 	DEFINE_RES_REG_NAMED(0x0, 0x48, "org"),
 	DEFINE_RES_REG_NAMED(0x4000, 0x244, "gcb"),
@@ -125,6 +133,20 @@ static const struct mfd_cell lan9645x_devs[] = {
 		.resources = lan9645x_pinctrl_resources,
 	},
 	{
+		.name = "lan9645x-i2c",
+		.of_compatible = "mchp,lan9645x-i2c",
+		.num_resources = ARRAY_SIZE(lan9645x_i2c_resources),
+		.resources = lan9645x_i2c_resources,
+	},
+	{
+		.name = "lan9645x-sgpio",
+		.of_compatible = "microchip,lan9645x-sgpio",
+		.of_reg = 0x40d4,
+		.use_of_reg = true,
+		.num_resources = ARRAY_SIZE(lan9645x_sgpio_resources),
+		.resources = lan9645x_sgpio_resources,
+	},
+	{
 		.name = "lan9645x-miim0",
 		.of_compatible = "microchip,lan966x-miim",
 		.of_reg = 0x4098,
@@ -145,6 +167,18 @@ static const struct mfd_cell lan9645x_devs[] = {
 		.of_compatible = "microchip,lan9645x-serdes",
 		.num_resources = ARRAY_SIZE(lan9645x_serdes_resources),
 		.resources = lan9645x_serdes_resources,
+	},
+	{
+		.name = "lan9645x-i2c-mux",
+		.of_compatible = "i2c-mux-pinctrl",
+	},
+	{
+		.name = "lan9645x-sfp0",
+		.of_compatible = "sff,sfp",
+	},
+	{
+		.name = "lan9645x-sfp1",
+		.of_compatible = "sff,sfp",
 	},
 	{
 		.name = "lan9645x-switch",
