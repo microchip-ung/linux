@@ -110,6 +110,31 @@ static int txgbe_i2c_request_regs(struct dw_i2c_dev *dev)
 	return 0;
 }
 
+static int mscc_ocelot_request_regs(struct dw_i2c_dev *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev->dev);
+	struct device *device = &pdev->dev;
+	struct resource *res;
+
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (res) {
+		dev->base = devm_ioremap_resource(device, res);
+		return PTR_ERR_OR_ZERO(dev->base);
+	}
+
+	if (device->parent) {
+		res = platform_get_resource(pdev, IORESOURCE_REG, 0);
+		if (!res)
+			return -ENODEV;
+
+		dev->map = dev_get_regmap(device->parent, res->name);
+		if (dev->map)
+			return 0;
+	}
+
+	return -ENODEV;
+}
+
 static void dw_i2c_plat_pm_cleanup(struct dw_i2c_dev *dev)
 {
 	pm_runtime_disable(dev->dev);
@@ -129,6 +154,9 @@ static int dw_i2c_plat_request_regs(struct dw_i2c_dev *dev)
 		break;
 	case MODEL_WANGXUN_SP:
 		ret = txgbe_i2c_request_regs(dev);
+		break;
+	case MODEL_MSCC_OCELOT:
+		ret = mscc_ocelot_request_regs(dev);
 		break;
 	default:
 		dev->base = devm_platform_ioremap_resource(pdev, 0);
@@ -337,6 +365,8 @@ static const struct of_device_id dw_i2c_of_match[] = {
 	{ .compatible = "snps,designware-i2c", },
 	{ .compatible = "mscc,ocelot-i2c", .data = (void *)MODEL_MSCC_OCELOT },
 	{ .compatible = "baikal,bt1-sys-i2c", .data = (void *)MODEL_BAIKAL_BT1 },
+	{ .compatible = "mchp,lan9645x-i2c",
+	  .data = (void *)(MODEL_MSCC_OCELOT | ACCESS_POLLING) },
 	{}
 };
 MODULE_DEVICE_TABLE(of, dw_i2c_of_match);
