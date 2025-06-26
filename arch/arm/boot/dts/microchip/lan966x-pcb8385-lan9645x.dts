@@ -12,6 +12,7 @@
 
 #include "lan966x.dtsi"
 #include "dt-bindings/phy/phy-lan966x-serdes.h"
+#include "dt-bindings/phy/phy-lan9645x-serdes.h"
 
 / {
 	model = "Microchip EDS - LAN9668";
@@ -20,7 +21,7 @@
 	lan9645x_clock: lan9645x-clock {
 		compatible = "fixed-clock";
 		#clock-cells = <0>;
-		clock-frequency = <66116000>; // fpga clock 66.116mhz, 15.125ns period
+		clock-frequency = <165625000>;
 	};
 
 	chosen {
@@ -134,10 +135,16 @@
 		function = "usb_host_a";
 	};
 
-    lan9645x_irq_pins: lan9645x-irq-pins {
-        pins = "GPIO_54";
-        function = "irq_in_b";
-    };
+	lan9645x_irq_pins: lan9645x-irq-pins {
+		pins = "GPIO_54";
+		function = "irq_in_b";
+	};
+
+	miim_a_pins: mdio-pins {
+		/* MDC, MDIO */
+		pins =  "GPIO_28", "GPIO_29";
+		function = "miim_a";
+	};
 };
 
 &flx0 {
@@ -208,75 +215,96 @@
 
 		lan9645x_soc: soc@0 {
 			compatible = "microchip,lan9645x-spi";
-			spi-max-frequency = <11000000>;
+			spi-max-frequency = <16000000>;
 			reg = <0>;
 			#address-cells = <1>;
 			#size-cells = <1>;
 
 			mdio@4098 { // miim0
+				reg = <0x4098 0x28>;
 				compatible = "microchip,lan966x-miim";
 				#address-cells = <1>;
 				#size-cells = <0>;
-				reg = <0x4098 0x28>;
 				pinctrl-names = "default";
-				pinctrl-0 = <&miim0_pins>;
+				pinctrl-0 = <&miim0_pins>, <&rgmii0_pins>, <&rgmii1_pins>;
+
+
+				sw_phy7: ethernet-phy@0 {
+					reg = <0>;
+					status = "ok";
+				};
+
+				sw_phy8: ethernet-phy@1 {
+					reg = <1>;
+					status = "disabled";
+				};
+
+				sw_phy5: ethernet-phy@2 {
+					reg = <2>;
+					status = "disabled";
+				};
+
+				sw_phy6: ethernet-phy@3 {
+					reg = <3>;
+					status = "disabled";
+				};
 			};
 
 			mdio@40bc { // miim1
+				reg = <0x40bc 0x28>;
 				compatible = "microchip,lan966x-miim";
 				#address-cells = <1>;
 				#size-cells = <0>;
-				reg = <0x40bc 0x28>;
-				pinctrl-names = "default";
-				pinctrl-0 = <&miim1_pins>;
+				//pinctrl-names = "default";
+				//pinctrl-0 = <&miim1_pins>;
 
-				sw_phy4: ethernet-phy@0 {
-					reg = <0x0>;
-				};
-
-				sw_phy5: ethernet-phy@1 {
+				sw_phy0: ethernet-phy@1 {
 					reg = <0x1>;
+					interrupts-extended = <&lan9645x_irq 12>;
 				};
 
-				sw_phy6: ethernet-phy@2 {
+				sw_phy1: ethernet-phy@2 {
 					reg = <0x2>;
+					interrupts-extended = <&lan9645x_irq 13>;
 				};
 
-				sw_phy7: ethernet-phy@3 {
+				sw_phy2: ethernet-phy@3 {
 					reg = <0x3>;
+					interrupts-extended = <&lan9645x_irq 14>;
 				};
 
-				sw_phy8: ethernet-phy@4 {
+				sw_phy3: ethernet-phy@4 {
 					reg = <0x4>;
+					interrupts-extended = <&lan9645x_irq 15>;
+				};
+
+				sw_phy4: ethernet-phy@5 {
+					reg = <0x5>;
+					interrupts-extended = <&lan9645x_irq 16>;
 				};
 			};
 
-            lan9645x_irq: lan9645x_irq@52001c {
+			lan9645x_irq: lan9645x_irq@52001c {
 				compatible = "microchip,lan9645x-oic";
 				reg = <0 0>;
-
 				pinctrl-names = "default";
 				pinctrl-0 = <&irq_pins>, <&lan9645x_irq_pins>;
-
-                 microchip,dst_target = < 2 >;
-                 microchip,drv_mode = < 0x1 >;
-
-			   interrupt-controller;
-			   #interrupt-cells = <1>;
-               interrupt-parent = <&lan9645x_irq>;
-               interrupts-extended = <&gpio 54 IRQ_TYPE_LEVEL_LOW>;
-               interrupt-names = "external-irq";
-            };
+				microchip,dst_target = <2>;
+				microchip,drv_mode   = <1>;
+				interrupt-controller;
+				#interrupt-cells = <1>;
+				interrupt-parent = <&lan9645x_irq>;
+				interrupts-extended = <&gpio 54 IRQ_TYPE_LEVEL_LOW>;
+				interrupt-names = "external-irq";
+			};
 
 			// See *bindings/net/dsa.yaml
 			// See *bindings/net/dsa-port.yaml
 			lan9645x: ethernet-switch@1 {
 				compatible = "microchip,lan9645x-switch";
 				reg = <0 0>;
-
-               interrupts-extended = <&lan9645x_irq 17>;
-               interrupt-names = "lan9645x-ana";
-
+				interrupts-extended = <&lan9645x_irq 17>;
+				interrupt-names = "lan9645x-ana";
 				ethernet-ports {
 					#address-cells = <1>;
 					#size-cells = <0>;
@@ -285,41 +313,85 @@
 						reg = <0>;
 						label = "lan0";
 						phy-mode = "gmii";
-						phy-handle = <&sw_phy4>;
+						phy-handle = <&sw_phy0>;
+						phys = <&lan9645x_serdes 0 LAN9645X_CU(0)>;
 					};
-
 					port@1 {
 						reg = <1>;
 						label = "lan1";
 						phy-mode = "gmii";
-						phy-handle = <&sw_phy5>;
+						phy-handle = <&sw_phy1>;
+						phys = <&lan9645x_serdes 1 LAN9645X_CU(1)>;
 					};
 
 					port@2 {
 						reg = <2>;
 						label = "lan2";
 						phy-mode = "gmii";
-						phy-handle = <&sw_phy6>;
+						phy-handle = <&sw_phy2>;
+						phys = <&lan9645x_serdes 2 LAN9645X_CU(2)>;
 					};
 
 					port@3 {
 						reg = <3>;
+						label = "lan3";
 						phy-mode = "gmii";
-						phy-handle = <&sw_phy7>;
-
-						//DSA cpu port to maserati
-						ethernet = <&port1>;
-						fixed-link {
-								speed = <1000>;
-								full-duplex;
-						};
+						phy-handle = <&sw_phy3>;
+						phys = <&lan9645x_serdes 3 LAN9645X_CU(3)>;
 					};
 
 					port@4 {
 						reg = <4>;
 						label = "lan4";
 						phy-mode = "gmii";
+						phy-handle = <&sw_phy4>;
+						phys = <&lan9645x_serdes 4 LAN9645X_CU(4)>;
+						//DSA cpu port to maserati npi
+						//ethernet = <&port1>;
+						//fixed-link {
+						//		speed = <1000>;
+						//		full-duplex;
+						//};
+					};
+
+					port@5 {
+						reg = <5>;
+						label = "lan5";
+						phys = <&lan9645x_serdes 5 LAN9645X_SERDES6G(0)>;
+						status = "disabled";
+						//phy-handle = <&sw_phy5>;
+						phy-mode = "sgmii";
+						managed = "in-band-status";
+						//sfp = <&sfp0>;
+					};
+
+					port@6 {
+						reg = <6>;
+						label = "lan6";
+						status = "disabled";
+						phy-mode = "sgmii";
+						managed = "in-band-status";
+						phys = <&lan9645x_serdes 6 LAN9645X_SERDES6G(1)>;
+						//sfp = <&sfp1>;
+					};
+
+					port@7 {
+						reg = <7>;
+						label = "lan7";
+						phy-handle = <&sw_phy7>;
+						phy-mode = "rgmii-id";
+						phys = <&lan9645x_serdes 7 LAN9645X_RGMII(0)>;
+						status = "ok";
+						ethernet = <&port2>;
+					};
+
+					port@8 {
+						reg = <8>;
+						label = "lan8";
 						phy-handle = <&sw_phy8>;
+						phy-mode = "rgmii-id";
+						phys = <&lan9645x_serdes 8 LAN9645X_RGMII(1)>;
+						status = "disabled";
 					};
 				};
 			};
@@ -331,8 +403,13 @@
 				#gpio-cells = <2>;
 				gpio-ranges = <&gpio_lan9645x 0 0 44>;
 
+				interrupt-controller;
+				interrupt-parent = <&lan9645x_irq>;
+				interrupts = <&lan9645x_irq 18>;
+				#interrupt-cells = <2>;
+
 				sgpio_pins: sgpio-pins {
-					pins = "GPIO_7", "GPIO_8", "GPIO_9", "GPIO_10";
+					pins = "GPIO_40", "GPIO_41", "GPIO_42", "GPIO_43";
 					function = "sgpio_a";
 				};
 
@@ -341,55 +418,72 @@
 					function = "miim";
 				};
 
-				miim1_pins: miim1-pins { // miim1: 0,1. there are many choices here?
-					pins = "GPIO_0", "GPIO_1";
-					function = "miim";
+				irq_pins: irq-pins {
+					pins = "GPIO_33";
+					function = "irq0";
 				};
 
-                irq_pins: irq-pins {
-                    pins = "GPIO_33";
-                    function = "irq0";
-                };
+				rgmii0_pins: rgmii0-pins {
+					pins = "GPIO_16","GPIO_17","GPIO_18","GPIO_19","GPIO_20","GPIO_21","GPIO_22","GPIO_23","GPIO_24","GPIO_25","GPIO_26","GPIO_27";
+					function = "rgmii";
+				};
+
+				rgmii1_pins: rgmii1-pins {
+					pins = "GPIO_4","GPIO_5","GPIO_6","GPIO_7","GPIO_8","GPIO_9","GPIO_10","GPIO_11","GPIO_12","GPIO_13","GPIO_14","GPIO_15";
+					function = "rgmii";
+				};
+
+				lan9645x_i2c0_pins_sda: lan9645x-i2c0-pins-sda {
+					pins = "GPIO_30";
+					function = "i2c";
+				};
+
+				lan9645x_i2c0_pins_scl0: lan9645x-i2c0-pins-scl0 {
+					pins = "GPIO_31";
+					function = "twi_scl_m";
+				};
+
+				lan9645x_i2c0_pins_scl1: lan9645x-i2c0-pins-scl1 {
+					pins = "GPIO_32";
+					function = "twi_scl_m";
+				};
 			};
 
-			gpio@40d4 {
-				compatible = "microchip,sparx5-sgpio";
+			lan9645x_sgpio: gpio@40d4 {
+				compatible = "mscc,ocelot-sgpio";
 				reg = <0x40d4 0x46>;
-
-				bus-frequency = <6611600>;
-				clocks = <&lan9645x_clock>; // 1/10th of lan9645x clock
-
 				#address-cells = <1>;
 				#size-cells = <0>;
-
+				clocks = <&lan9645x_clock>;
+				status = "okay";
 				pinctrl-names = "default";
 				pinctrl-0 = <&sgpio_pins>;
-				status = "okay";
+				microchip,sgpio-port-ranges = <5 6>;
 
 				sgpio_lan9645x_in: gpio@0 {
-					compatible = "microchip,sparx5-sgpio-bank";
+					compatible = "microchip,ocelot-sgpio-bank";
 					reg = <0>;
 					gpio-controller;
 					#gpio-cells = <3>;
-					// interrupts = <18>;
-					// interrupt-controller;
-					// #interrupt-cells = <1>;
+					ngpios = <128>;
 				};
 
 				sgpio_lan9645x_out: gpio@1 {
-					compatible = "microchip,sparx5-sgpio-bank";
+					compatible = "microchip,ocelot-sgpio-bank";
 					reg = <1>;
 					gpio-controller;
 					#gpio-cells = <3>;
+					ngpios = <128>;
 				};
 			};
 
-				lan9645x_serdes: serdes@b0000 {
-					compatible = "microchip,lan9645x-serdes";
-					reg = <0xb0000 0x390>;
-					#phy-cells = <2>;
-					status = "okay";
-				};
+			lan9645x_serdes: serdes@b0000 {
+				compatible = "microchip,lan9645x-serdes";
+				reg = <0xb0000 0x390>;
+				#phy-cells = <2>;
+				status = "okay";
+			};
+
 		};
 	};
 };
@@ -452,15 +546,6 @@
 	};
 };
 
-&spi4 {
-	spidev: spidev@0 {
-		compatible = "linux,spidev";
-		reg = <0>;
-		spi-max-frequency = <2000000>;
-		status = "okay";
-	};
-};
-
 &usb {
 	dr_mode = "host";
 	pinctrl-0 = <&usb_host_a_pins>;
@@ -468,6 +553,17 @@
 	status = "okay";
 };
 
+&mdio0 {
+	pinctrl-0 = <&miim_a_pins>;
+    pinctrl-names = "default";
+    status = "okay";
+
+	phy2: ethernet-phy {
+		reg = <1>;
+        interrupts = <24 IRQ_TYPE_LEVEL_LOW>;
+        interrupt-parent = <&gpio>;
+	};
+};
 
 &mdio1 {
 	status = "okay";
@@ -494,14 +590,23 @@
 	phys = <&serdes 1 CU(1)>;
 	status = "okay";
 
-	// lan9645x DSA port
-	#address-cells = <1>;
-	#size-cells = <0>;
 
-	fixed-link {
-		speed = <1000>;
-		full-duplex;
-	};
+	// lan9645x DSA conduit port
+	//#address-cells = <1>;
+	//#size-cells = <0>;
+
+	//fixed-link {
+	//	speed = <1000>;
+	//	full-duplex;
+	//};
+};
+
+&port2 {
+	reg = <2>;
+	status = "okay";
+	phy-handle = <&phy2>;
+	phy-mode = "rgmii";
+	phys = <&serdes 2 RGMII(0)>;
 };
 
 &serdes {
