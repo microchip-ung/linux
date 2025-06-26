@@ -6364,6 +6364,39 @@ static int lan8842_probe(struct phy_device *phydev)
 #define LAN8842_FLF_ENA				BIT(1)
 #define LAN8842_FLF_ENA_LINK_DOWN		BIT(0)
 
+static void lan8842_erratas(struct phy_device *phydev)
+{
+	/* Magjack center tapped ports */
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_3_ANEG_MDI,
+			      LAN8814_POWER_MGMT_VAL1_);
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_4_ANEG_MDIX,
+			      LAN8814_POWER_MGMT_VAL1_);
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_5_10BT_MDI,
+			      LAN8814_POWER_MGMT_VAL1_);
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_6_10BT_MDIX,
+			      LAN8814_POWER_MGMT_VAL1_);
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_7_100BT_TRAIN,
+			      LAN8814_POWER_MGMT_VAL2_);
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_8_100BT_MDI,
+			      LAN8814_POWER_MGMT_VAL3_);
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_9_100BT_EEE_MDI_TX,
+			      LAN8814_POWER_MGMT_VAL3_);
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_10_100BT_EEE_MDI_RX,
+			      LAN8814_POWER_MGMT_VAL4_);
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_11_100BT_MDIX,
+			      LAN8814_POWER_MGMT_VAL5_);
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_12_100BT_EEE_MDIX_TX,
+			      LAN8814_POWER_MGMT_VAL5_);
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_13_100BT_EEE_MDIX_RX,
+			      LAN8814_POWER_MGMT_VAL4_);
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_14_100BTX_EEE_TX_RX,
+			      LAN8814_POWER_MGMT_VAL4_);
+
+	/* Refresh time Waketx timer */
+	lanphy_write_page_reg(phydev, 3, LAN8814_EEE_WAKE_TX_TIMER,
+			      LAN8814_EEE_WAKE_TX_TIMER_MAX_VAL_);
+}
+
 static int lan8842_config_init(struct phy_device *phydev)
 {
 	int val;
@@ -6403,6 +6436,8 @@ static int lan8842_config_init(struct phy_device *phydev)
 	val = lanphy_read_page_reg(phydev, 0, LAN8842_FLF);
 	val |= LAN8842_FLF_ENA | LAN8842_FLF_ENA_LINK_DOWN;
 	lanphy_write_page_reg(phydev, 0, LAN8842_FLF, val);
+
+	lan8842_erratas(phydev);
 
 	return 0;
 }
