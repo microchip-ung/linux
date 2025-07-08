@@ -1599,6 +1599,17 @@ static int lan966x_gpio_request_enable(struct pinctrl_dev *pctldev,
 	return 0;
 }
 
+static int lan9645x_gpio_request_enable(struct pinctrl_dev *pctldev,
+					struct pinctrl_gpio_range *range,
+					unsigned int offset)
+{
+	/* The signal detect control line for SFPs are given as a GPIO, which
+	 * means this callback is called, but they require a special alt mode.
+	 * So overwriting the alt-mode will break SD.
+	 */
+	return 0;
+}
+
 static const struct pinmux_ops ocelot_pmx_ops = {
 	.get_functions_count = ocelot_get_functions_count,
 	.get_function_name = ocelot_get_function_name,
@@ -1615,6 +1626,15 @@ static const struct pinmux_ops lan966x_pmx_ops = {
 	.set_mux = lan966x_pinmux_set_mux,
 	.gpio_set_direction = ocelot_gpio_set_direction,
 	.gpio_request_enable = lan966x_gpio_request_enable,
+};
+
+static const struct pinmux_ops lan9645x_pmx_ops = {
+	.get_functions_count = ocelot_get_functions_count,
+	.get_function_name = ocelot_get_function_name,
+	.get_function_groups = ocelot_get_function_groups,
+	.set_mux = lan966x_pinmux_set_mux,
+	.gpio_set_direction = ocelot_gpio_set_direction,
+	.gpio_request_enable = lan9645x_gpio_request_enable,
 };
 
 static int ocelot_pctl_get_groups_count(struct pinctrl_dev *pctldev)
@@ -2055,7 +2075,7 @@ static struct ocelot_match_data lan9645x_desc = {
 		.pins = lan9645x_pins,
 		.npins = ARRAY_SIZE(lan9645x_pins),
 		.pctlops = &ocelot_pctl_ops,
-		.pmxops = &lan966x_pmx_ops,
+		.pmxops = &lan9645x_pmx_ops,
 		.confops = &ocelot_confops,
 		.owner = THIS_MODULE,
 	},
