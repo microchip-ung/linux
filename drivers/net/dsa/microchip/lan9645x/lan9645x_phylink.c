@@ -28,7 +28,17 @@ void lan9645x_phylink_mac_config(struct lan9645x *lan9645x, int port,
 				 unsigned int mode,
 				 const struct phylink_link_state *state)
 {
-	dev_dbg(lan9645x->dev, "port=%d mode=%d\n", port, mode);
+	struct lan9645x_port *p = lan9645x->ports[port];
+
+	dev_dbg(lan9645x->dev, "%s: port=%d mode=%d interface=%d\n", __func__, port, mode, state->interface);
+
+	if (p->serdes) {
+		if (phy_set_mode_ext(p->serdes, PHY_MODE_ETHERNET, state->interface)) {
+			dev_err(lan9645x->dev,
+				"Could not set mode of serdes port=%d mode=%u",
+				port, state->interface);
+		}
+	}
 }
 
 static int lan9645x_port_is_cuphy(struct lan9645x *lan9645x, int port,
@@ -55,13 +65,8 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 		port, link_an_mode, interface, speed, duplex, tx_pause,
 		rx_pause);
 
-	if (p->serdes) {
-		if (phy_set_mode_ext(p->serdes, PHY_MODE_ETHERNET, interface)) {
-			dev_err(lan9645x->dev,
-				"Could not set mode of serdes port=%d mode=%u",
-				port, interface);
-		}
-	}
+	if (phy_interface_mode_is_rgmii(interface) && p->serdes)
+		phy_set_speed(p->serdes, speed);
 
 	if (duplex == DUPLEX_FULL) {
 		mode |= DEV_MAC_MODE_CFG_FDX_ENA_SET(1);
@@ -223,7 +228,6 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 	lan9645x_cut_through_fwd(lan9645x);
 	mutex_unlock(&lan9645x->fwd_domain_lock);
 
-	usleep_range(2 * USEC_PER_MSEC, 3 * USEC_PER_MSEC);
 	/* TODO: Enable phase detector */
 
 	/* Core: Enable port for frame transfer */
@@ -466,7 +470,7 @@ int lan9645x_pcs_config(struct phylink_pcs *pcs, unsigned int neg_mode,
 	}
 
 	/* Take PCS out of reset */
-	lan_rmw(DEV_CLOCK_CFG_LINK_SPEED_SET(LAN9645X_SPEED_1000) |
+	lan_rmw(DEV_CLOCK_CFG_LINK_SPEED_SET(1) |
 		DEV_CLOCK_CFG_PCS_RX_RST_SET(0) |
 		DEV_CLOCK_CFG_PCS_TX_RST_SET(0),
 		DEV_CLOCK_CFG_LINK_SPEED |
