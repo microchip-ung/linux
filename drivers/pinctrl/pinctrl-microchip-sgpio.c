@@ -49,6 +49,7 @@ enum {
 	SGPIO_ARCH_LUTON,
 	SGPIO_ARCH_OCELOT,
 	SGPIO_ARCH_SPARX5,
+	SGPIO_ARCH_LAN9645X,
 };
 
 enum {
@@ -77,6 +78,8 @@ struct sgpio_properties {
 #define SGPIO_SPARX5_PORT_WIDTH  GENMASK(4, 3)
 #define SGPIO_SPARX5_CLK_FREQ    GENMASK(19, 8)
 #define SGPIO_SPARX5_BIT_SOURCE  GENMASK(23, 12)
+#define SGPIO_SPARX5_BURST_GAP_DIS BIT(13)
+#define SGPIO_SPARX5_LD_POLARITY BIT(5)
 
 #define SGPIO_MASTER_INTR_ENA    BIT(0)
 
@@ -102,6 +105,17 @@ static const struct sgpio_properties properties_sparx5 = {
 	.arch   = SGPIO_ARCH_SPARX5,
 	.flags  = SGPIO_FLAGS_HAS_IRQ,
 	.regoff = { 0x00, 0x06, 0x26, 0x04, 0x05, 0x2a, 0x32, 0x3a, 0x3e, 0x42 },
+};
+
+/* Register offsets are the same as ocelot, but the fields have different
+ * positions.
+ * The block has the interrupt controller functionality similar to Sparx5, but
+ * the current implementation will not work, since it relies on MMIO, where
+ * register IO can not sleep.
+ */
+static const struct sgpio_properties properties_lan9645x = {
+	.arch = SGPIO_ARCH_LAN9645X,
+	.regoff = { 0x00, 0x06, 0x26, 0x04, 0x05 },
 };
 
 static const char * const functions[] = { "gpio" };
@@ -198,6 +212,12 @@ static inline void sgpio_configure_bitstream(struct sgpio_priv *priv)
 		set = SGPIO_OCELOT_AUTO_REPEAT |
 			FIELD_PREP(SGPIO_OCELOT_PORT_WIDTH, width);
 		break;
+	case SGPIO_ARCH_LAN9645X:
+		clr = SGPIO_SPARX5_PORT_WIDTH;
+		set = SGPIO_SPARX5_AUTO_REPEAT |
+			SGPIO_SPARX5_BURST_GAP_DIS |
+			FIELD_PREP(SGPIO_SPARX5_PORT_WIDTH, width);
+		break;
 	case SGPIO_ARCH_SPARX5:
 		clr = SGPIO_SPARX5_PORT_WIDTH;
 		set = SGPIO_SPARX5_AUTO_REPEAT |
@@ -222,6 +242,7 @@ static inline void sgpio_configure_clock(struct sgpio_priv *priv, u32 clkfrq)
 		clr = SGPIO_OCELOT_CLK_FREQ;
 		set = FIELD_PREP(SGPIO_OCELOT_CLK_FREQ, clkfrq);
 		break;
+	case SGPIO_ARCH_LAN9645X:
 	case SGPIO_ARCH_SPARX5:
 		clr = SGPIO_SPARX5_CLK_FREQ;
 		set = FIELD_PREP(SGPIO_SPARX5_CLK_FREQ, clkfrq);
@@ -248,6 +269,9 @@ static int sgpio_single_shot(struct sgpio_priv *priv)
 		single_shot = SGPIO_OCELOT_SINGLE_SHOT;
 		auto_repeat = SGPIO_OCELOT_AUTO_REPEAT;
 		break;
+	case SGPIO_ARCH_LAN9645X:
+		/* avoid burst */
+		return 0;
 	case SGPIO_ARCH_SPARX5:
 		single_shot = SGPIO_SPARX5_SINGLE_SHOT;
 		auto_repeat = SGPIO_SPARX5_AUTO_REPEAT;
@@ -300,6 +324,7 @@ static int sgpio_output_set(struct sgpio_priv *priv,
 		clr = FIELD_PREP(SGPIO_OCELOT_BIT_SOURCE, BIT(bit));
 		set = FIELD_PREP(SGPIO_OCELOT_BIT_SOURCE, value << bit);
 		break;
+	case SGPIO_ARCH_LAN9645X:
 	case SGPIO_ARCH_SPARX5:
 		clr = FIELD_PREP(SGPIO_SPARX5_BIT_SOURCE, BIT(bit));
 		set = FIELD_PREP(SGPIO_SPARX5_BIT_SOURCE, value << bit);
@@ -335,6 +360,7 @@ static int sgpio_output_get(struct sgpio_priv *priv,
 	case SGPIO_ARCH_OCELOT:
 		val = FIELD_GET(SGPIO_OCELOT_BIT_SOURCE, portval);
 		break;
+	case SGPIO_ARCH_LAN9645X:
 	case SGPIO_ARCH_SPARX5:
 		val = FIELD_GET(SGPIO_SPARX5_BIT_SOURCE, portval);
 		break;
@@ -865,7 +891,7 @@ static int microchip_sgpio_register_bank(struct device *dev,
 	gc->of_gpio_n_cells     = 3;
 	gc->base		= -1;
 	gc->ngpio		= ngpios;
-	gc->can_sleep		= !bank->is_input;
+	gc->can_sleep		= regmap_might_sleep(priv->regs) || !bank->is_input;
 
 	if (bank->is_input && priv->properties->flags & SGPIO_FLAGS_HAS_IRQ) {
 		int irq;
@@ -995,6 +1021,9 @@ static const struct of_device_id microchip_sgpio_gpio_of_match[] = {
 	}, {
 		.compatible = "mscc,ocelot-sgpio",
 		.data = &properties_ocelot,
+	}, {
+		.compatible = "microchip,lan9645x-sgpio",
+		.data = &properties_lan9645x,
 	}, {
 		/* sentinel */
 	}
