@@ -6567,11 +6567,12 @@ static void lan8842_get_stats(struct phy_device *phydev,
 		data[i] = lan8842_get_stat(phydev, i);
 }
 
-#define LAN8832_1000BT_FIX_LATENCY_ENABLE 0xf
+#define LAN8832_1000BT_FIX_LATENCY_ENABLE	0xf
+#define LAN8832_DAC_ICAS_AMP_POWER_DOWN	0x47
 
 static int lan8832_config_init(struct phy_device *phydev)
 {
-	int val;
+	int val, err;
 
 	/* MDI-X setting for swap A,B transmit */
 	val = lanphy_read_page_reg(phydev, 2, LAN8804_ALIGN_SWAP);
@@ -6598,7 +6599,13 @@ static int lan8832_config_init(struct phy_device *phydev)
 	val |= LAN8842_FLF_ENA | LAN8842_FLF_ENA_LINK_DOWN;
 	lanphy_write_page_reg(phydev, 0, LAN8842_FLF, val);
 
-	return 0;
+	/* Perform the existing fixes for indy */
+	err = lan8814_rev_workaround(phydev);
+
+	/* Disable power down. Must be final step. */
+	lanphy_write_page_reg(phydev, 28, LAN8832_DAC_ICAS_AMP_POWER_DOWN, 0);
+
+	return err;
 }
 
 static int lan8832_config_intr(struct phy_device *phydev)
@@ -6881,8 +6888,8 @@ static struct phy_driver ksphy_driver[] = {
 	.get_sset_count	= kszphy_get_sset_count,
 	.get_strings	= kszphy_get_strings,
 	.get_stats	= kszphy_get_stats,
-	.suspend	= lan8804_suspend,
-	.resume		= lan8804_resume,
+	.suspend		= kszphy_generic_suspend,
+	.resume		= kszphy_generic_resume,
 	.config_intr	= lan8832_config_intr,
 	.handle_interrupt = lan8832_handle_interrupt,
 },
