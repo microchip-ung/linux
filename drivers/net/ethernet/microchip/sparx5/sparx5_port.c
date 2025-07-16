@@ -1232,10 +1232,13 @@ int sparx5_port_init(struct sparx5 *sparx5,
 	}
 	if (conf->portmode == PHY_INTERFACE_MODE_QSGMII) {
 		// All ports must be PCS enabled in QSGMII mode
-		spx5_rmw(DEV2G5_DEV_RST_CTRL_PCS_TX_RST_SET(0),
-			 DEV2G5_DEV_RST_CTRL_PCS_TX_RST,
-			 sparx5,
-			 DEV2G5_DEV_RST_CTRL(port->portno));
+		u16 base_port = (port->portno / 4) * 4;
+		for (u16 p = 0; p < 4; ++p) {
+			spx5_rmw(DEV2G5_DEV_RST_CTRL_PCS_TX_RST_SET(0),
+				 DEV2G5_DEV_RST_CTRL_PCS_TX_RST,
+				 sparx5,
+				 DEV2G5_DEV_RST_CTRL(base_port + p));
+		}
 	}
 	/* Default IFGs for 1G */
 	spx5_wr(DEV2G5_MAC_IFG_CFG_TX_IFG_SET(6) |
