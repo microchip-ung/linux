@@ -289,6 +289,7 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 	const struct sparx5_ops *ops;
 	u32 ifh[IFH_LEN];
 	netdev_tx_t ret;
+	unsigned int skb_len = skb->len;
 
 	ops = &sparx5->data->ops;
 
@@ -329,7 +330,7 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 	if (ret < 0)
 		goto drop;
 
-	stats->tx_bytes += skb->len;
+	stats->tx_bytes += skb_len;
 	stats->tx_packets++;
 	sparx5->tx.packets++;
 
