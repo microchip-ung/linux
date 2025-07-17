@@ -16,6 +16,7 @@ sparx5-switch-y  := sparx5_main.o \
 		    sparx5_calendar.o \
 		    sparx5_ethtool.o \
 		    sparx5_fdma.o \
+		    lan969x/lan969x_fdma.o \
 		    sparx5_ptp.o \
 		    sparx5_pgid.o \
 		    sparx5_tc.o \
