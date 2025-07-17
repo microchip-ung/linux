@@ -1109,10 +1109,10 @@ int sparx5_isdx_put(struct sparx5 *sparx5, u32 isdx);
 
 /* sparx5_mdb.c */
 struct switchdev_obj_port_mdb;
-int sparx5_handle_mdb_add(struct net_device *dev, struct notifier_block *nb,
+int sparx5_handle_mdb_add(struct net_device *dev,
 			  const struct switchdev_obj_port_mdb *v);
 
-int sparx5_handle_mdb_del(struct net_device *dev, struct notifier_block *nb,
+int sparx5_handle_mdb_del(struct net_device *dev,
 			  const struct switchdev_obj_port_mdb *v);
 int sparx5_mdb_entries_clear(struct sparx5 *sparx5);
 int sparx5_mdb_entries_restore(struct sparx5 *sparx5);

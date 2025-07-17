@@ -722,6 +722,29 @@ static int sparx5_handle_port_vlan_add(struct net_device *dev,
 				  v->flags & BRIDGE_VLAN_INFO_UNTAGGED);
 }
 
+static int sparx5_handle_port_obj_add_mdb(struct net_device *dev, const void *ctx,
+					  const struct switchdev_obj *obj,
+					  struct netlink_ext_ack *extack)
+{
+	struct sparx5_port *port = netdev_priv(dev);
+	int err;
+
+	if (ctx && ctx != port)
+		return 0;
+
+	switch (obj->id) {
+	case SWITCHDEV_OBJ_ID_PORT_MDB:
+	case SWITCHDEV_OBJ_ID_HOST_MDB:
+		err = sparx5_handle_mdb_add(dev, SWITCHDEV_OBJ_PORT_MDB(obj));
+		break;
+	default:
+		err = -EOPNOTSUPP;
+		break;
+	}
+
+	return err;
+}
+
 static int sparx5_handle_port_obj_add(struct net_device *dev,
 				      struct notifier_block *nb,
 				      struct switchdev_notifier_port_obj_info *info)
@@ -736,8 +759,9 @@ static int sparx5_handle_port_obj_add(struct net_device *dev,
 		break;
 	case SWITCHDEV_OBJ_ID_PORT_MDB:
 	case SWITCHDEV_OBJ_ID_HOST_MDB:
-		err = sparx5_handle_mdb_add(dev, nb,
-					    SWITCHDEV_OBJ_PORT_MDB(obj));
+		err = switchdev_handle_port_obj_add(dev, info,
+						    sparx5_netdevice_check,
+						    sparx5_handle_port_obj_add_mdb);
 		break;
 	case SWITCHDEV_OBJ_ID_MRP:
 		err = sparx5_handle_mrp_add(dev, obj);
@@ -819,6 +843,29 @@ static int sparx5_handle_port_vlan_del(struct net_device *dev,
 	return 0;
 }
 
+static int sparx5_handle_port_obj_del_mdb(struct net_device *dev,
+					  const void *ctx,
+					  const struct switchdev_obj *obj)
+{
+	struct sparx5_port *port = netdev_priv(dev);
+	int err;
+
+	if (ctx && ctx != port)
+		return 0;
+
+	switch (obj->id) {
+	case SWITCHDEV_OBJ_ID_PORT_MDB:
+	case SWITCHDEV_OBJ_ID_HOST_MDB:
+		err = sparx5_handle_mdb_del(dev, SWITCHDEV_OBJ_PORT_MDB(obj));
+		break;
+	default:
+		err = -EOPNOTSUPP;
+		break;
+	}
+
+	return err;
+}
+
 static int sparx5_handle_port_obj_del(struct net_device *dev,
 				      struct notifier_block *nb,
 				      struct switchdev_notifier_port_obj_info *info)
@@ -833,8 +880,9 @@ static int sparx5_handle_port_obj_del(struct net_device *dev,
 		break;
 	case SWITCHDEV_OBJ_ID_PORT_MDB:
 	case SWITCHDEV_OBJ_ID_HOST_MDB:
-		err = sparx5_handle_mdb_del(dev, nb,
-					    SWITCHDEV_OBJ_PORT_MDB(obj));
+		err = switchdev_handle_port_obj_del(dev, info,
+						    sparx5_netdevice_check,
+						    sparx5_handle_port_obj_del_mdb);
 		break;
 	case SWITCHDEV_OBJ_ID_MRP:
 		err = sparx5_handle_mrp_del(dev, obj);
