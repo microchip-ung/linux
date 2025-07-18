@@ -7,6 +7,7 @@
 #ifndef __LAN969X_H__
 #define __LAN969X_H__
 
+#include <asm-generic/errno-base.h>
 #include <linux/netdev_features.h>
 #include <linux/if_hsr.h>
 
