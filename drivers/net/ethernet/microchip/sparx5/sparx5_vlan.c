@@ -280,8 +280,8 @@ static void sparx5_update_auto_learn(struct sparx5 *sparx5,
 
 void sparx5_update_fwd(struct sparx5 *sparx5)
 {
-	const struct sparx5_consts *consts = &sparx5->data->consts;
 #ifdef CONFIG_LAN969X_SWITCH
+	const struct sparx5_consts *consts = &sparx5->data->consts;
 	DECLARE_BITMAP(redbox_floodmask, SPX5_PORTS) = {0};
 #endif
 	DECLARE_BITMAP(floodmask, SPX5_PORTS) = {0};
