@@ -4,6 +4,7 @@
  * Copyright (c) 2021 Microchip Technology Inc. and its subsidiaries.
  */
 
+#include <asm-generic/errno-base.h>
 #include <net/switchdev.h>
 #include <linux/if_bridge.h>
 #include <linux/iopoll.h>
@@ -110,18 +111,38 @@ int sparx5_mc_unsync(struct net_device *dev, const unsigned char *addr)
 {
 	struct sparx5_port *port = netdev_priv(dev);
 	struct sparx5 *sparx5 = port->sparx5;
+	struct sparx5_mact_op op = {
+		.port = port,
+		.op = SPARX5_MACT_OP_DEL,
+	};
+	int ret;
+	memcpy(op.mac, addr, ETH_ALEN);
 
-	return sparx5_mact_forget(sparx5, addr, port->pvid);
+	ret = kfifo_in_spinlocked(&sparx5->mact_op, &op, 1, &sparx5->mact_op_lock);
+	if(ret!=0) {
+		return -EBUSY;
+	}
+	schedule_work(&sparx5->mact_op_work);
+	return 0;
 }
 
 int sparx5_mc_sync(struct net_device *dev, const unsigned char *addr)
 {
 	struct sparx5_port *port = netdev_priv(dev);
 	struct sparx5 *sparx5 = port->sparx5;
+	struct sparx5_mact_op op = {
+		.port = port,
+		.op = SPARX5_MACT_OP_ADD,
+	};
+	int ret;
+	memcpy(op.mac, addr, ETH_ALEN);
 
-	return sparx5_mact_learn(sparx5,
-				 sparx5_get_pgid_index(sparx5, PGID_CPU), addr,
-				 port->pvid);
+	ret = kfifo_in_spinlocked(&sparx5->mact_op, &op, 1, &sparx5->mact_op_lock);
+	if(ret!=0) {
+		return -EBUSY;
+	}
+	schedule_work(&sparx5->mact_op_work);
+	return 0;
 }
 
 static int sparx5_mact_get(struct sparx5 *sparx5,
@@ -498,11 +519,32 @@ void sparx5_set_ageing(struct sparx5 *sparx5, int msecs)
 		 LRN_AUTOAGE_CFG(0));
 }
 
+void sparx5_mact_op_work(struct work_struct* work)
+{
+	struct sparx5 *sparx5 = container_of(work, struct sparx5, mact_op_work);
+	struct sparx5_mact_op mact_op;
+	while(kfifo_out(&sparx5->mact_op, &mact_op, 1)) {
+		switch(mact_op.op) {
+			case SPARX5_MACT_OP_ADD:
+				sparx5_mact_learn(sparx5,
+				 sparx5_get_pgid_index(sparx5, PGID_CPU), mact_op.mac,
+				 mact_op.port->pvid);
+				break;
+			case SPARX5_MACT_OP_DEL:
+				sparx5_mact_forget(sparx5, mact_op.mac, mact_op.port->pvid);
+				break;
+		}
+	}
+}
+
 int sparx5_mact_init(struct sparx5 *sparx5)
 {
 	char queue_name[32];
 
 	spin_lock_init(&sparx5->lock);
+	INIT_WORK(&sparx5->mact_op_work, sparx5_mact_op_work);
+	spin_lock_init(&sparx5->mact_op_lock);
+	INIT_KFIFO(sparx5->mact_op);
 
 	/*  Flush MAC table */
 	spx5_wr(LRN_COMMON_ACCESS_CTRL_CPU_ACCESS_CMD_SET(MAC_CMD_CLEAR_ALL) |

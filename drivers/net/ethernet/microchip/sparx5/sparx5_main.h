@@ -19,6 +19,7 @@
 #include <linux/hrtimer.h>
 #include "sparx5_qos.h"
 #include <linux/debugfs.h>
+#include <linux/kfifo.h>
 #include <uapi/linux/mrp_bridge.h>
 #include <net/flow_offload.h>
 #include <net/pkt_cls.h>
@@ -385,6 +386,16 @@ struct sparx5_mall_entry {
 #define SPARX5_SKB_CB(skb) \
 	((struct sparx5_skb_cb *)((skb)->cb))
 
+#define SPARX5_MACT_OP_FIFO_SIZE 128
+#define SPARX5_MACT_OP_ADD 1
+#define SPARX5_MACT_OP_DEL 2
+
+struct sparx5_mact_op {
+	struct sparx5_port *port;
+	uint8_t mac[ETH_ALEN];
+	int op;
+};
+
 struct sparx5 {
 	struct platform_device *pdev;
 	struct device *dev;
@@ -395,6 +406,9 @@ struct sparx5 {
 	void __iomem *regs[NUM_TARGETS];
 	int port_count;
 	spinlock_t lock; /* MAC reg lock */
+	DECLARE_KFIFO(mact_op, struct sparx5_mact_op, SPARX5_MACT_OP_FIFO_SIZE);
+	spinlock_t mact_op_lock;
+	struct work_struct mact_op_work;
 	/* port structures are in net device */
 	struct sparx5_port *ports[SPX5_PORTS];
 	enum sparx5_core_clockfreq coreclock;
