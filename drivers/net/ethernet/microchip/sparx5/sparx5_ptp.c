@@ -568,6 +568,13 @@ int sparx5_ptp_txtstamp_request(struct sparx5_port *port,
 	}
 
 	skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
+	/* Increase reference count, in order to prevent double-free,
+	   in case PTP IRQ happens after DMA is kicked off, but before
+	   dev_consume_skb_any is called.
+	   For PTP packets, skb is freed extra time by the PTP IRQ handler,
+	   so we need to increase the reference count here.
+	*/
+	skb_get(skb);
 
 	skb_queue_tail(&port->tx_skbs, skb);
 	SPARX5_SKB_CB(skb)->ts_id = port->ts_id;
@@ -593,6 +600,7 @@ void sparx5_ptp_txtstamp_release(struct sparx5_port *port,
 	port->ts_id--;
 	sparx5->ptp_skbs--;
 	skb_unlink(skb, &port->tx_skbs);
+	dev_kfree_skb_any(skb);
 	spin_unlock_irqrestore(&sparx5->ptp_ts_id_lock, flags);
 }
 
