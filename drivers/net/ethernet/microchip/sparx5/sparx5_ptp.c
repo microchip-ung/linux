@@ -671,7 +671,7 @@ irqreturn_t sparx5_ptp_irq_handler(int irq, void *args)
 
 		val = spx5_rd(sparx5, REW_PTP_TWOSTEP_CTRL);
 
-		/* Check if a timestamp can be retried */
+		/* Check if a timestamp can be retrieved */
 		if (!(val & REW_PTP_TWOSTEP_CTRL_PTP_VLD))
 			break;
 
