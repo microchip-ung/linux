@@ -179,6 +179,27 @@ static int lan969x_port_mux_set(struct sparx5 *sparx5, struct sparx5_port *port,
 		inst = (portno - portno % 4) / 4;
 		spx5_rmw(BIT(inst), BIT(inst), sparx5, PORT_CONF_QSGMII_ENA);
 		break;
+	case PHY_INTERFACE_MODE_10G_QXGMII:
+		if (portno >= 8 && portno <= 23) {
+			/* equals index 2-5 */
+			inst = portno / 4;
+
+			spx5_rmw(PORT_CONF_USXGMII_CFG_TX_ENA_SET(1) |
+				 PORT_CONF_USXGMII_CFG_RX_ENA_SET(1) |
+				 PORT_CONF_USXGMII_CFG_NUM_PORTS_SET(SPX5_USXGMII_QUAD),
+				 PORT_CONF_USXGMII_CFG_TX_ENA |
+				 PORT_CONF_USXGMII_CFG_RX_ENA |
+				 PORT_CONF_USXGMII_CFG_NUM_PORTS,
+				 sparx5,
+				 PORT_CONF_USXGMII_CFG(inst));
+
+			spx5_rmw(BIT(inst),
+				 BIT(inst),
+				 sparx5,
+				 PORT_CONF_USXGMII_ENA);
+		} else {
+			return -EINVAL;
+		}
 	default:
 		break;
 	}
@@ -377,6 +398,27 @@ lan969x_get_internal_port_cal_speed(struct sparx5 *sparx5, u32 portno)
 	return SPX5_CAL_SPEED_NONE;
 }
 
+static int lan969x_port_get_10g_qxgmii_idx(struct sparx5 *sparx5,
+					   struct sparx5_port *port,
+					   size_t idx)
+{
+	uint8_t map[][4] = { { 8,  9, 10, 11},
+			     {12, 13, 14, 15},
+			     {16, 17, 18, 19},
+			     {20, 21, 22, 23}};
+
+	for (int i = 0; i < ARRAY_SIZE(map); ++i) {
+		for (int j = 0; j < ARRAY_SIZE(map[i]); ++j) {
+			if (port->portno != map[i][j])
+				continue;
+
+			return map[i][idx];
+		}
+	}
+
+	return -ENODEV;
+}
+
 const struct sparx5_match_data lan969x_desc = {
 	.iomap = lan969x_main_iomap,
 	.iomap_size = ARRAY_SIZE(lan969x_main_iomap),
@@ -422,6 +464,7 @@ const struct sparx5_match_data lan969x_desc = {
 		.ptp_irq_handler = lan969x_ptp_irq_handler,
 		.get_internal_port_cal_speed = &lan969x_get_internal_port_cal_speed,
 		.dsm_calendar_calc = &lan969x_dsm_calendar_calc,
+		.port_get_10g_qxgmii_idx = &lan969x_port_get_10g_qxgmii_idx,
 	},
 	.consts = {
 		.chip_ports = 30,
