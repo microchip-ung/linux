@@ -459,6 +459,7 @@ static int gpy_config_aneg(struct phy_device *phydev)
 		return ret;
 
 	if (phydev->interface == PHY_INTERFACE_MODE_USXGMII ||
+	    phydev->interface == PHY_INTERFACE_MODE_10G_QXGMII ||
 	    phydev->interface == PHY_INTERFACE_MODE_INTERNAL)
 		return 0;
 
@@ -539,6 +540,7 @@ static int gpy_update_interface(struct phy_device *phydev)
 
 	/* Interface mode is fixed for USXGMII and integrated PHY */
 	if (phydev->interface == PHY_INTERFACE_MODE_USXGMII ||
+	    phydev->interface == PHY_INTERFACE_MODE_10G_QXGMII ||
 	    phydev->interface == PHY_INTERFACE_MODE_INTERNAL)
 		return 0;
 
