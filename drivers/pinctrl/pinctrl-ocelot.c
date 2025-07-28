@@ -1397,6 +1397,13 @@ LAN9645X_P(40,    GPIO,      SPI,      PHY_LED,    SGPIO_a,       NONE,   MACLED
 LAN9645X_P(41,    GPIO,      SPI,      PHY_LED,    SGPIO_a,       IRQ1,   MACLED,     NONE,          R);
 LAN9645X_P(42,    GPIO,      SPI,      PHY_LED,    SGPIO_a,       IRQ2,   MACLED,      SFP,          R);
 LAN9645X_P(43,    GPIO,      SPI,      PHY_LED,    SGPIO_a,       IRQ3,   MACLED,      SFP,          R);
+LAN9645X_P(44,    GPIO,     MIIM,          I2C,      NONE,        NONE,     NONE,     NONE,          R);
+LAN9645X_P(45,    GPIO,     MIIM,          I2C,      NONE,        NONE,     NONE,     NONE,          R);
+LAN9645X_P(46,    GPIO,     NONE,      PHY_LED,      NONE,        NONE,     NONE,     NONE,          R);
+LAN9645X_P(47,    GPIO,     NONE,      PHY_LED,      NONE,        NONE,     NONE,     NONE,          R);
+LAN9645X_P(48,    GPIO,  MIIM_Sa,      PHY_LED,      NONE,        NONE,     NONE,     NONE,          R);
+LAN9645X_P(49,    GPIO,  MIIM_Sa,      PHY_LED,    I2C_Sa,        NONE,     NONE,     NONE,          R);
+LAN9645X_P(50,    GPIO,  MIIM_Sa,      PHY_LED,    I2C_Sa,        NONE,     NONE,     NONE,          R);
 
 #define LAN9645X_PIN(n) {                                       \
 	.number = n,                                           \
@@ -1449,6 +1456,13 @@ static const struct pinctrl_pin_desc lan9645x_pins[] = {
 	LAN9645X_PIN(41),
 	LAN9645X_PIN(42),
 	LAN9645X_PIN(43),
+	LAN9645X_PIN(44),
+	LAN9645X_PIN(45),
+	LAN9645X_PIN(46),
+	LAN9645X_PIN(47),
+	LAN9645X_PIN(48),
+	LAN9645X_PIN(49),
+	LAN9645X_PIN(50),
 };
 
 static int ocelot_get_functions_count(struct pinctrl_dev *pctldev)
