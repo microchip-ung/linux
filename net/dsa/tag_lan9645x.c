@@ -17,14 +17,6 @@
 
 #define LAN9645X_NAME "lan9645x"
 
-/* The switch allows any DMAC/SMAC pairs in the long prefix for injection. For
- * extraction the chip uses SMAC 0xfeffffffffff. For injection we pick
- * SMAC=0xfcffffffffff to make it easier to distinguish the two cases.
- */
-static u8 LONG_PREFIX[] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-			    0xfc, 0xff, 0xff, 0xff, 0xff, 0xff,
-			    0x88, 0x80, 0x00, 0x11 };
-
 /* The HSR header is 6 bytes, but lan9645x must align it to a 32bit boundary. This
  * means the HSR eth type is stripped from the frame in the chip. This is
  * automatically rectified on front-port egress, but not during CPU extraction.
@@ -153,11 +145,8 @@ static struct sk_buff *lan9645x_xmit(struct sk_buff *skb, struct net_device *nde
 	struct dsa_switch *ds = dp->ds;
 	u32 cpu_port = ds->num_ports;
 	u64 vlan_tci, tag_type;
-	void *long_prefix;
 	u64 qos_class;
 	void *ifh;
-
-	BUILD_BUG_ON(ARRAY_SIZE(LONG_PREFIX) != LAN9645X_LONG_PREFIX_LEN);
 
 	lan9645x_xmit_get_vlan_info(skb, dsa_port_bridge_dev_get(dp), &vlan_tci,
 				    &tag_type);
@@ -170,9 +159,6 @@ static struct sk_buff *lan9645x_xmit(struct sk_buff *skb, struct net_device *nde
 	ifh = skb_push(skb, LAN9645X_IFH_LEN);
 	memset(ifh, 0, LAN9645X_IFH_LEN);
 
-	/* Add long prefix to start of frame */
-	long_prefix = skb_push(skb, ARRAY_SIZE(LONG_PREFIX));
-	memcpy(long_prefix, LONG_PREFIX, ARRAY_SIZE(LONG_PREFIX));
 
 	if (dp->hsr_dev) {
 		/* At the moment the HSR driver does not implement special

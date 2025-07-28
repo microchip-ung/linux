@@ -138,27 +138,7 @@ lan9645x_port_phylink_mac_config(struct dsa_switch *ds, int port,
 				 unsigned int mode,
 				 const struct phylink_link_state *state)
 {
-	struct ethtool_pauseparam pauseparam = {
-		.cmd = ETHTOOL_SPAUSEPARAM,
-		.autoneg = 0,
-		.rx_pause = 0,
-		.tx_pause = 0,
-	};
 	struct lan9645x *lan9645x = ds->priv;
-	struct phylink *pl;
-
-	pl = dsa_to_port(ds, port)->pl;
-
-	if (lan9645x->npi == port && pl) {
-		/* Pause frames to the NPI port cause problems for the chip, as
-		 * they lack the configured prefix format. Make sure to disable
-		 * pause aneg if there is a PHY present on the link.
-		 */
-		if (!phylink_ethtool_set_pauseparam(pl, &pauseparam))
-			dev_info_once(lan9645x->dev,
-				      "Disabled pause autoneg on phy of NPI port=%d\n",
-				      port);
-	}
 
 	lan9645x_phylink_mac_config(lan9645x, port, mode, state);
 }

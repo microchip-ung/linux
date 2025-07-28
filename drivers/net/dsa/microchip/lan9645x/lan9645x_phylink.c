@@ -12,14 +12,9 @@ void lan9645x_phylink_get_caps(struct lan9645x *lan9645x, int port,
 {
 	dev_dbg(lan9645x->dev, "port=%d\n", port);
 
-	if (lan9645x->npi == port) {
-		config->mac_capabilities = MAC_10 | MAC_100 | MAC_1000FD |
-					   MAC_25000FD;
-	} else {
-		config->mac_capabilities = MAC_ASYM_PAUSE | MAC_SYM_PAUSE |
-					   MAC_10 | MAC_100 | MAC_1000FD |
-					   MAC_25000FD;
-	}
+	config->mac_capabilities = MAC_ASYM_PAUSE | MAC_SYM_PAUSE |
+		MAC_10 | MAC_100 | MAC_1000FD |
+		MAC_25000FD;
 
 	__set_bit(lan9645x->ports[port]->phy_mode, config->supported_interfaces);
 }
@@ -162,11 +157,9 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 		DEV_PCS1G_SD_CFG_SD_ENA,
 		lan9645x, DEV_PCS1G_SD_CFG(p->chip_port));
 
-	/* No pause frames on NPI */
-	if (port != lan9645x->npi)
-		lan_rmw(SYS_PAUSE_CFG_PAUSE_ENA_SET(1),
-			SYS_PAUSE_CFG_PAUSE_ENA,
-			lan9645x, SYS_PAUSE_CFG(p->chip_port));
+	lan_rmw(SYS_PAUSE_CFG_PAUSE_ENA_SET(1),
+		SYS_PAUSE_CFG_PAUSE_ENA,
+		lan9645x, SYS_PAUSE_CFG(p->chip_port));
 
 	/* Set SMAC of Pause frame (00:00:00:00:00:00) */
 	lan_wr(0, lan9645x, DEV_FC_MAC_LOW_CFG(p->chip_port));

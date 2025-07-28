@@ -52,15 +52,11 @@ void lan9645x_npi_port_init(struct lan9645x *lan9645x,
 
 	/* Configure IFH prefix mode for NPI port. */
 	lan_rmw(SYS_PORT_MODE_INCL_XTR_HDR_SET(LAN9645X_TAG_PREFIX_LONG) |
-		SYS_PORT_MODE_INCL_INJ_HDR_SET(LAN9645X_TAG_PREFIX_LONG),
+		SYS_PORT_MODE_INCL_INJ_HDR_SET(LAN9645X_TAG_PREFIX_NONE),
 		SYS_PORT_MODE_INCL_XTR_HDR |
 		SYS_PORT_MODE_INCL_INJ_HDR,
 		lan9645x,
 		SYS_PORT_MODE(p->chip_port));
-
-	/* Disable pause frames on NPI port. */
-	lan_rmw(0, SYS_PAUSE_CFG_PAUSE_ENA, lan9645x,
-		SYS_PAUSE_CFG(p->chip_port));
 
 	/* Rewriting and extraction with IFH does not play nice together. A VLAN
 	 * tag pushed into the frame by REW will cause 4 bytes at the end of the
@@ -97,9 +93,4 @@ void lan9645x_npi_port_deinit(struct lan9645x *lan9645x, int port)
 		SYS_PORT_MODE_INCL_INJ_HDR,
 		lan9645x,
 		SYS_PORT_MODE(p->chip_port));
-
-	/* Enable pause frames on port. */
-	lan_rmw(1, SYS_PAUSE_CFG_PAUSE_ENA,
-		lan9645x,
-		SYS_PAUSE_CFG(p->chip_port));
 }
