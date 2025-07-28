@@ -6569,10 +6569,14 @@ static void lan8842_get_stats(struct phy_device *phydev,
 
 #define LAN8832_1000BT_FIX_LATENCY_ENABLE	0xf
 #define LAN8832_DAC_ICAS_AMP_POWER_DOWN	0x47
+#define LAN8832_BTRX_QBIAS_POWER_DOWN		0x46
+#define LAN8832_TX_LOW_I_CH_CD_POWER_MGMT	0x45
+#define LAN8832_TX_LOW_I_CH_B_POWER_MGMT	0x44
+#define LAN8832_TX_LOW_I_CH_A_POWER_MGMT	0x43
 
 static int lan8832_config_init(struct phy_device *phydev)
 {
-	int val, err;
+	int val;
 
 	/* MDI-X setting for swap A,B transmit */
 	val = lanphy_read_page_reg(phydev, 2, LAN8804_ALIGN_SWAP);
@@ -6599,13 +6603,84 @@ static int lan8832_config_init(struct phy_device *phydev)
 	val |= LAN8842_FLF_ENA | LAN8842_FLF_ENA_LINK_DOWN;
 	lanphy_write_page_reg(phydev, 0, LAN8842_FLF, val);
 
-	/* Perform the existing fixes for indy */
-	err = lan8814_rev_workaround(phydev);
+	/* Magjack center tapped ports */
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_3_ANEG_MDI,
+			      LAN8814_POWER_MGMT_VAL1_);
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_4_ANEG_MDIX,
+			      LAN8814_POWER_MGMT_VAL1_);
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_5_10BT_MDI,
+			      LAN8814_POWER_MGMT_VAL1_);
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_6_10BT_MDIX,
+			      LAN8814_POWER_MGMT_VAL1_);
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_7_100BT_TRAIN,
+			      LAN8814_POWER_MGMT_VAL2_);
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_8_100BT_MDI,
+			      LAN8814_POWER_MGMT_VAL3_);
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_9_100BT_EEE_MDI_TX,
+			      LAN8814_POWER_MGMT_VAL3_);
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_10_100BT_EEE_MDI_RX,
+			      LAN8814_POWER_MGMT_VAL4_);
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_11_100BT_MDIX,
+			      LAN8814_POWER_MGMT_VAL5_);
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_12_100BT_EEE_MDIX_TX,
+			      LAN8814_POWER_MGMT_VAL5_);
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_13_100BT_EEE_MDIX_RX,
+			      LAN8814_POWER_MGMT_VAL4_);
+	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_14_100BTX_EEE_TX_RX,
+			      LAN8814_POWER_MGMT_VAL4_);
 
-	/* Disable power down. Must be final step. */
+	/* Refresh time Waketx timer */
+	lanphy_write_page_reg(phydev, 3, LAN8814_EEE_WAKE_TX_TIMER,
+			      LAN8814_EEE_WAKE_TX_TIMER_MAX_VAL_);
+
+	val = phy_read(phydev, UNH_TEST_REGISTER);
+	val |= UNH_TEST_REGISTER_INDY_F_TEST_RX_CLK_;
+	phy_write(phydev, UNH_TEST_REGISTER, val);
+
+	/* Force channel A/B/C/D TX on */
 	lanphy_write_page_reg(phydev, 28, LAN8832_DAC_ICAS_AMP_POWER_DOWN, 0);
+	/* Force channel A/B/C/D QBias on */
+	lanphy_write_page_reg(phydev, 28, LAN8832_BTRX_QBIAS_POWER_DOWN, 0xaa);
+	/* tx low I on channel C/D overwrite */
+	lanphy_write_page_reg(phydev, 28, LAN8832_TX_LOW_I_CH_CD_POWER_MGMT, 0xbfff);
+	/* channel B low I overwrite */
+	lanphy_write_page_reg(phydev, 28, LAN8832_TX_LOW_I_CH_B_POWER_MGMT, 0xabbf);
+	/* channel A low I overwrite */
+	lanphy_write_page_reg(phydev, 28, LAN8832_TX_LOW_I_CH_A_POWER_MGMT, 0xbd3f);
 
-	return err;
+	return 0;
+}
+
+static int lan8832_suspend(struct phy_device *phydev)
+{
+	int aneg_en_state, ret;
+
+	/* Force link down before software power down, by restarting aneg. */
+	aneg_en_state = phy_read(phydev, MII_BMCR) & BMCR_ANENABLE;
+
+	ret = phy_restart_aneg(phydev);
+	if (ret)
+		return ret;
+
+	/* Allow time for system FIFO flush data */
+	msleep(10);
+
+	ret = genphy_suspend(phydev);
+	if (ret)
+		return ret;
+
+	if (!aneg_en_state) {
+		ret = phy_modify(phydev, MII_BMCR, BMCR_ANENABLE, 0);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+static int lan8832_resume(struct phy_device *phydev)
+{
+	return genphy_resume(phydev);
 }
 
 static int lan8832_config_intr(struct phy_device *phydev)
@@ -6888,8 +6963,8 @@ static struct phy_driver ksphy_driver[] = {
 	.get_sset_count	= kszphy_get_sset_count,
 	.get_strings	= kszphy_get_strings,
 	.get_stats	= kszphy_get_stats,
-	.suspend		= kszphy_generic_suspend,
-	.resume		= kszphy_generic_resume,
+	.suspend	= lan8832_suspend,
+	.resume		= lan8832_resume,
 	.config_intr	= lan8832_config_intr,
 	.handle_interrupt = lan8832_handle_interrupt,
 },
