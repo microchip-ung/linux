@@ -364,8 +364,10 @@ static int lan9645x_parse_ports_node(struct lan9645x *lan9645x)
 
 		serdes = devm_of_phy_optional_get(lan9645x->dev,
 						  to_of_node(portnp), NULL);
-		if (IS_ERR(serdes))
-			return PTR_ERR(serdes);
+		if (IS_ERR(serdes)) {
+			err = PTR_ERR(serdes);
+			goto err_free_ports;
+		}
 		lan9645x->ports[p]->serdes = serdes;
 	}
 
@@ -455,7 +457,6 @@ static int lan9645x_setup(struct dsa_switch *ds)
 {
 	struct lan9645x *lan9645x = ds->priv;
 	struct device *dev = lan9645x->dev;
-	phy_interface_t *port_phy_modes;
 	u32 all_phys_ports, all_ports;
 	struct dsa_port *dp;
 	int err = 0;
@@ -484,7 +485,6 @@ static int lan9645x_setup(struct dsa_switch *ds)
 		if (!p) {
 			dev_err(lan9645x->dev,
 				"failed to allocate port memory\n");
-			kfree(port_phy_modes);
 			return -ENOMEM;
 		}
 
