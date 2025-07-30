@@ -331,28 +331,28 @@
 
 				sw_phy0: ethernet-phy@1 {
 					reg = <0x1>;
-					//interrupts-extended = <&lan9645x_irq 12>;
+					interrupts-extended = <&lan9645x_irq 12>;
 				};
 
 				sw_phy1: ethernet-phy@2 {
 					reg = <0x2>;
-					//interrupts-extended = <&lan9645x_irq 13>;
+					interrupts-extended = <&lan9645x_irq 13>;
 				};
 
 				sw_phy2: ethernet-phy@3 {
 					reg = <0x3>;
-					//interrupts-extended = <&lan9645x_irq 14>;
+					interrupts-extended = <&lan9645x_irq 14>;
 				};
 
 				sw_phy3: ethernet-phy@4 {
 					reg = <0x4>;
-					//interrupts-extended = <&lan9645x_irq 15>;
+					interrupts-extended = <&lan9645x_irq 15>;
 				};
 
 				sw_phy4: ethernet-phy@5 {
 					reg = <0x5>;
 					status = "disabled";
-					//interrupts-extended = <&lan9645x_irq 16>;
+					interrupts-extended = <&lan9645x_irq 16>;
 				};
 
 			};
@@ -365,11 +365,10 @@
 				// dst=2 is external IRQ0
 				microchip,dst_target = <2>;
 				microchip,drv_mode   = <1>;
-				microchip,dst_pol    = <1>;
 				interrupt-controller;
 				#interrupt-cells = <1>;
-				interrupt-parent = <&gic>;
-				interrupts = <GIC_SPI 15 IRQ_TYPE_LEVEL_HIGH>;
+				interrupt-parent = <&gpio>;
+				interrupts-extended = <&gpio 24 IRQ_TYPE_LEVEL_LOW>;
 				interrupt-names = "external-irq";
 			};
 
