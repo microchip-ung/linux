@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: GPL-2.0
-/* Copyright (C) 2025 Microchip Technology Inc.
+/* SPDX-License-Identifier: GPL-2.0
+ * Copyright (C) 2025 Microchip Technology Inc.
  */
 
 #ifndef _NET_DSA_TAG_LAN9645X_H_
