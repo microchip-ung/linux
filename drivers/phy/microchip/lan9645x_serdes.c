@@ -582,10 +582,10 @@ static int serdes_set_mode(struct phy *phy, enum phy_mode mode, int submode)
 
 	if (submode == PHY_INTERFACE_MODE_1000BASEX ||
 	    submode == PHY_INTERFACE_MODE_2500BASEX)
-		submode = PHY_INTERFACE_MODE_SGMII;
+		needle.submode = PHY_INTERFACE_MODE_SGMII;
 
 	if (submode == PHY_INTERFACE_MODE_QUSGMII)
-		submode = PHY_INTERFACE_MODE_QSGMII;
+		needle.submode = PHY_INTERFACE_MODE_QSGMII;
 
 	for (i = 0; i < d->num_muxes; i++) {
 		mux = &d->muxes[i];
