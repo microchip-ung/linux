@@ -8,15 +8,34 @@
 #include "lan9645x_main.h"
 
 void lan9645x_phylink_get_caps(struct lan9645x *lan9645x, int port,
-			       struct phylink_config *config)
+			       struct phylink_config *c)
 {
 	dev_dbg(lan9645x->dev, "port=%d\n", port);
 
-	config->mac_capabilities = MAC_ASYM_PAUSE | MAC_SYM_PAUSE |
-		MAC_10 | MAC_100 | MAC_1000FD |
-		MAC_25000FD;
+	c->mac_capabilities = MAC_ASYM_PAUSE | MAC_SYM_PAUSE | MAC_10 |
+			      MAC_100 | MAC_1000FD | MAC_25000FD;
 
-	__set_bit(lan9645x->ports[port]->phy_mode, config->supported_interfaces);
+	switch (port) {
+	case 0 ... 3:
+		__set_bit(PHY_INTERFACE_MODE_GMII, c->supported_interfaces);
+		break;
+	case 4:
+		__set_bit(PHY_INTERFACE_MODE_GMII, c->supported_interfaces);
+		phy_interface_set_rgmii(c->supported_interfaces);
+		break;
+	case 5 ... 6:
+		__set_bit(PHY_INTERFACE_MODE_QSGMII, c->supported_interfaces);
+		__set_bit(PHY_INTERFACE_MODE_1000BASEX, c->supported_interfaces);
+		__set_bit(PHY_INTERFACE_MODE_2500BASEX, c->supported_interfaces);
+		__set_bit(PHY_INTERFACE_MODE_SGMII, c->supported_interfaces);
+		break;
+	case 7 ... 8:
+		__set_bit(PHY_INTERFACE_MODE_QSGMII, c->supported_interfaces);
+		phy_interface_set_rgmii(c->supported_interfaces);
+		break;
+	default:
+		break;
+	}
 }
 
 void lan9645x_phylink_mac_config(struct lan9645x *lan9645x, int port,
