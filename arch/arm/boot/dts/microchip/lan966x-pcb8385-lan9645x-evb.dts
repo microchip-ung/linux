@@ -230,10 +230,8 @@
 			lan9645x_i2c0: i2c@4c0000 {
 				reg = <0x4c0000 0x400>;
 				compatible = "mchp,lan9645x-i2c";
-				status = "disabled";
-				pinctrl-0 = <&lan9645x_i2c0_pins_sda>, <&lan9645x_i2c0_pins_scl1>;
+				pinctrl-0 = <&lan9645x_i2c0_pins_sda>;
 				pinctrl-names = "default";
-				//scl-gpios = <&gpio_lan9645x 31 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
 				#address-cells = <1>;
 				#size-cells = <0>;
 				interrupt-parent = <&lan9645x_irq>;
@@ -244,14 +242,13 @@
 			};
 
 			i2c-mux {
-				reg = <0x4001 0x10>;
 				compatible = "i2c-mux-pinctrl";
 				#address-cells = <1>;
 				#size-cells = <0>;
 				i2c-parent = <&lan9645x_i2c0>;
 				pinctrl-names = "i2c_sfp0", "i2c_sfp1", "idle";
 				pinctrl-0 = <&lan9645x_i2c0_pins_scl0>;
-				//pinctrl-1 = <&lan9645x_i2c0_pins_scl1>;
+				pinctrl-1 = <&lan9645x_i2c0_pins_scl1>;
 				pinctrl-2 = <&lan9645x_i2cmux_pins>;
 
 				i2c_sfp0: i2c-sfp@0 {
@@ -511,7 +508,7 @@
 
 				lan9645x_i2cmux_pins: lan9645x-i2cmux-pins {
 					pins = "GPIO_31","GPIO_32";
-					function = "twi_scl_m";
+					function = "gpio";
 					output-low;
 				};
 
