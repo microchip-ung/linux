@@ -267,9 +267,7 @@
 			lan_sfp0: lan9645x-sfp0 {
 				compatible = "sff,sfp";
 				i2c-bus = <&i2c_sfp0>;
-				status = "disabled";
 				pinctrl-names = "default";
-				pinctrl-0 = <&lan9645x_sd0_pins>,<&lan9645x_sfp0_input_pins>,<&lan9645x_sfp0_output_pins>;
 
 				tx-disable-gpios   = <&gpio_lan9645x 11 GPIO_ACTIVE_HIGH>;
 				mod-def0-gpios     = <&gpio_lan9645x 29 GPIO_ACTIVE_LOW>;
@@ -281,12 +279,10 @@
 			lan_sfp1: lan9645x-sfp1 {
 				compatible = "sff,sfp";
 				i2c-bus = <&i2c_sfp1>;
-				status = "disabled";
 				pinctrl-names = "default";
-				pinctrl-0 = <&lan9645x_sd1_pins>,<&lan9645x_sfp1_input_pins>,<&lan9645x_sfp1_output_pins>;
 
 				tx-disable-gpios   = <&gpio_lan9645x 44 GPIO_ACTIVE_HIGH>;
-				mod-def0-gpios     = <&gpio_lan9645x 29 GPIO_ACTIVE_LOW>;
+				mod-def0-gpios     = <&gpio_lan9645x 28 GPIO_ACTIVE_LOW>;
 				los-gpios          = <&gpio_lan9645x 8 GPIO_ACTIVE_HIGH>;
 				rate-select0-gpios = <&gpio_lan9645x 12 GPIO_ACTIVE_HIGH>;
 			};
@@ -425,7 +421,6 @@
 						reg = <5>;
 						label = "lan5";
 						phys = <&lan9645x_serdes 5 LAN9645X_SERDES6G(0)>;
-						status = "disabled";
 						phy-mode = "sgmii";
 						managed = "in-band-status";
 						sfp = <&lan_sfp0>;
@@ -434,7 +429,6 @@
 					port@6 {
 						reg = <6>;
 						label = "lan6";
-						status = "disabled";
 						phy-mode = "sgmii";
 						managed = "in-band-status";
 						phys = <&lan9645x_serdes 6 LAN9645X_SERDES6G(1)>;
@@ -516,37 +510,6 @@
 					pins = "GPIO_42";
 					function = "sfp";
 				};
-
-				lan9645x_sfp0_input_pins: lan9645x-sfp0-input-pins {
-					// MOD-det
-					pins = "GPIO_29";
-					function = "gpio";
-					};
-
-				lan9645x_sfp0_output_pins: lan9645x-sfp0-output-pins {
-					// tx-dis, rate_sel
-					pins = "GPIO_11","GPIO_39";
-					function = "gpio";
-					output-high;
-					};
-
-				lan9645x_sd1_pins: lan9645x-sd1-pins {
-					pins = "GPIO_8";
-					function = "sfp";
-				};
-
-				lan9645x_sfp1_input_pins: lan9645x-sfp1-input-pins {
-					// MOD-det
-					pins = "GPIO_28";
-					function = "gpio";
-					};
-
-				lan9645x_sfp1_output_pins: lan9645x-sfp1-output-pins {
-					// tx-dis, rate_sel
-					pins = "GPIO_44","GPIO_12";
-					function = "gpio";
-					output-high;
-					};
 			};
 
 			lan9645x_sgpio: gpio@40d4 {
