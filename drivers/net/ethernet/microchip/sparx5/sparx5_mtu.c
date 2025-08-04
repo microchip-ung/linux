@@ -12,27 +12,19 @@
 static u32 sparx5_mtu_get(struct sparx5_port *port)
 {
 	struct sparx5 *sparx5 = port->sparx5;
-	const struct sparx5_ops *ops;
-	u32 idx, val;
+	const struct sparx5_ops *ops = &sparx5->data->ops;
+	u32 val;
 
-	ops = &sparx5->data->ops;
-	idx = ops->port_get_dev_index(sparx5, port->portno);
-
+	/* We always set 2G5 MTU, so there is no point in trying to
+	   read high-speed MAC MTU here */
 	if (ops->port_is_rgmii(port->portno)) {
+		const struct sparx5_ops *ops = &sparx5->data->ops;
+		u32 idx = ops->port_get_dev_index(sparx5, port->portno);
 		val = spx5_rd(sparx5, DEVRGMII_MAC_MAXLEN_CFG(idx));
 		return DEVRGMII_MAC_MAXLEN_CFG_MAX_LEN_GET(val);
-	} else if (ops->port_is_2g5(port->portno)) {
+	} else {
 		val = spx5_rd(sparx5, DEV2G5_MAC_MAXLEN_CFG(port->portno));
 		return DEV2G5_MAC_MAXLEN_CFG_MAX_LEN_GET(val);
-	} else if (ops->port_is_5g(port->portno)) {
-		val = spx5_rd(sparx5, DEV5G_MAC_MAXLEN_CFG(idx));
-		return DEV5G_MAC_MAXLEN_CFG_MAX_LEN_GET(val);
-	} else if (ops->port_is_10g(port->portno)) {
-		val = spx5_rd(sparx5, DEV10G_MAC_MAXLEN_CFG(idx));
-		return DEV10G_MAC_MAXLEN_CFG_MAX_LEN_GET(val);
-	} else {
-		val = spx5_rd(sparx5, DEV25G_MAC_MAXLEN_CFG(idx));
-		return DEV25G_MAC_MAXLEN_CFG_MAX_LEN_GET(val);
 	}
 }
 
@@ -56,7 +48,11 @@ static void sparx5_mtu_set(struct sparx5_port *port, u32 new_mtu)
 		 DEV2G5_MAC_MAXLEN_CFG_MAX_LEN, sparx5,
 		 DEV2G5_MAC_MAXLEN_CFG(port->portno));
 
-	if (ops->port_is_5g(port->portno))
+	if (ops->port_is_rgmii(port->portno)) {
+		spx5_rmw(DEVRGMII_MAC_MAXLEN_CFG_MAX_LEN_SET(hw_mtu),
+			DEVRGMII_MAC_MAXLEN_CFG_MAX_LEN, sparx5,
+			DEVRGMII_MAC_MAXLEN_CFG(idx));
+	} else if (ops->port_is_5g(port->portno))
 		spx5_rmw(DEV5G_MAC_MAXLEN_CFG_MAX_LEN_SET(hw_mtu),
 			 DEV5G_MAC_MAXLEN_CFG_MAX_LEN, sparx5,
 			 DEV5G_MAC_MAXLEN_CFG(idx));
