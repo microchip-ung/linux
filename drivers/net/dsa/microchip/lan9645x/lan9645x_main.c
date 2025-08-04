@@ -118,6 +118,7 @@ static void lan9645x_teardown(struct dsa_switch *ds)
 	lan9645x_stats_deinit(lan9645x);
 	lan9645x_mac_deinit(lan9645x);
 	lan9645x_mdb_deinit(lan9645x);
+	lan9645x_ptp_deinit(lan9645x);
 	lan9645x_hsr_prp_deinit(lan9645x);
 	lan9645x_streamt_deinit(lan9645x);
 	lan9645x_vcap_deinit(lan9645x);
@@ -514,11 +515,22 @@ static int lan9645x_setup(struct dsa_switch *ds)
 		return err;
 	}
 
+	lan9645x->ptp_irq = platform_get_irq_byname(to_platform_device(dev),
+						    "lan9645x-ptp");
+	lan9645x->ptp = !!(lan9645x->ptp_irq > 0);
+	if (lan9645x->ptp) {
+		lan9645x->ptp_ext_irq = platform_get_irq_byname(to_platform_device(dev),
+								"lan9645x-ptp-ext");
+	}
+
 	INIT_LIST_HEAD(&lan9645x->link_isdx);
 	mutex_init(&lan9645x->link_isdx_lock);
 	lan9645x_mac_init(lan9645x);
 	lan9645x_vlan_init(lan9645x);
 	lan9645x_mdb_init(lan9645x);
+	err = lan9645x_ptp_init(lan9645x);
+	if (err)
+		return dev_err_probe(dev, err, "PTP init error");
 	lan9645x_hsr_prp_init(lan9645x);
 
 	/* Link Aggregation Mode: NETDEV_LAG_HASH_L2 */
@@ -681,6 +693,28 @@ static int lan9645x_setup(struct dsa_switch *ds)
 		lan_rmw(ANA_ANAINTR_INTR_ENA_SET(1),
 			ANA_ANAINTR_INTR_ENA,
 			lan9645x, ANA_ANAINTR);
+	}
+
+	if (lan9645x->ptp) {
+		err = devm_request_threaded_irq(dev, lan9645x->ptp_irq, NULL,
+						lan9645x_ptp_irq_handler,
+						IRQF_ONESHOT,
+						"lan9645x ptp irq", lan9645x);
+		if (err)
+			return dev_err_probe(dev, err, "Unable to use ptp irq");
+
+		if (lan9645x->ptp_ext_irq > 0) {
+			err = devm_request_threaded_irq(dev,
+							lan9645x->ptp_ext_irq,
+							NULL,
+							lan9645x_ptp_ext_irq_handler,
+							IRQF_ONESHOT,
+							"lan9645x ptp-ext irq",
+							lan9645x);
+			if (err)
+				return dev_err_probe(dev, err,
+						     "Unable to use ptp-ext irq");
+		}
 	}
 
 	err = lan9645x_netlink_qos_init(lan9645x);
@@ -1911,6 +1945,15 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	 /* MAC EEE settings */
 	 .set_mac_eee			= lan9645x_port_set_mac_eee,
 	 .get_mac_eee			= lan9645x_port_get_mac_eee,
+
+	/*  ethtool timestamp info */
+	.get_ts_info			= lan9645x_get_ts_info,
+
+	/* PTP functionality */
+	 .port_hwtstamp_get		= lan9645x_port_hwtstamp_get,
+	 .port_hwtstamp_set		= lan9645x_port_hwtstamp_set,
+	 .port_txtstamp			= lan9645x_txtstamp,
+	 .port_rxtstamp			= lan9645x_rxtstamp_defer,
 };
 
 static int lan9645x_request_target_regmaps(struct lan9645x *lan9645x)

@@ -9,6 +9,22 @@
 #include <linux/if_vlan.h>
 #include <net/dsa.h>
 
+struct lan9645x_skb_cb {
+	struct sk_buff *clone;
+	unsigned long jiffies;
+	u32 rx_ts_ns;
+	u16 ts_id;
+	u8 rew_op;
+	u8 pdu_type;
+};
+
+#define LAN9645X_SKB_CB(skb) \
+	((struct lan9645x_skb_cb *)((skb)->cb))
+
+#define IFH_REW_OP_NOOP			0x0
+#define IFH_REW_OP_ONE_STEP_PTP		0x3
+#define IFH_REW_OP_TWO_STEP_PTP		0x4
+
 #define LAN9645X_IFH_TAG_TYPE_C 0
 #define LAN9645X_IFH_TAG_TYPE_S 1
 #define LAN9645X_IFH_LEN_U32 7

@@ -8,6 +8,7 @@
 #include <linux/dsa/lan9645x.h>
 #include <linux/if_hsr.h>
 #include <linux/regmap.h>
+#include <linux/ptp_clock_kernel.h>
 #include <net/dsa.h>
 
 #include <vcap_api.h>
@@ -177,6 +178,14 @@
 #define LAN9645X_POL_IX_MAX      344
 #define LAN9645X_NUM_POL_POOL   (LAN9645X_POL_IX_MAX + 1 - LAN9645X_POL_IX_POOL)
 
+#define LAN9645X_PHC_COUNT		3
+#define LAN9645X_PHC_PORT		0
+#define LAN9645X_PHC_PINS_NUM		4
+
+#define IFH_PDU_TYPE_NONE		0
+#define IFH_PDU_TYPE_IPV4		7
+#define IFH_PDU_TYPE_IPV6		8
+
 /* Rewriter VLAN port tagging encoding for REW:PORT[0-10]:TAG_CFG.TAG_CFG
  *
  * 0: Port tagging disabled.
@@ -326,6 +335,15 @@ struct lan9645x_policer {
 	u32 burst;
 };
 
+struct lan9645x_phc {
+	struct ptp_clock *clock;
+	struct ptp_clock_info info;
+	struct ptp_pin_desc pins[LAN9645X_PHC_PINS_NUM];
+	struct hwtstamp_config hwtstamp_config;
+	struct lan9645x *lan9645x;
+	u8 index;
+};
+
 struct lan9645x {
 	struct device *dev;
 	struct dsa_switch *ds;
@@ -397,6 +415,16 @@ struct lan9645x {
 	/* TC chain_id to isdx management */
 	struct list_head link_isdx;
 	struct mutex link_isdx_lock;
+
+	/* PTP */
+	bool ptp;
+	struct lan9645x_phc phc[LAN9645X_PHC_COUNT];
+	struct mutex ptp_clock_lock; /* lock for phc */
+	spinlock_t ptp_ts_id_lock; /* lock for ts_id */
+	struct mutex ptp_lock; /* lock for ptp interface state */
+	u16 ptp_skbs;
+	int ptp_ext_irq;
+	int ptp_irq;
 };
 
 struct lan9645x_port {
@@ -424,6 +452,13 @@ struct lan9645x_port {
 	bool lag_tx_active;
 
 	struct net_device *hsr; /* HSR/PRP upper device */
+
+	/* PTP */
+	struct sk_buff_head tx_skbs;
+	struct sk_buff_head rx_skbs;
+	u16 ts_id;
+	u8 ptp_tx_cmd;
+	bool ptp_rx_cmd;
 };
 
 struct lan9645x_path_delay {
@@ -868,5 +903,20 @@ int lan9645x_eee_mac_get(struct lan9645x *lan9645x, int port,
 			 struct ethtool_keee *e);
 int lan9645x_eee_mac_set(struct lan9645x *lan9645x, int port,
 			 struct ethtool_keee *e);
+
+/* lan9645x_ptp.c */
+int lan9645x_port_hwtstamp_get(struct dsa_switch *ds, int port,
+			       struct ifreq *ifr);
+int lan9645x_port_hwtstamp_set(struct dsa_switch *ds, int port,
+			       struct ifreq *ifr);
+void lan9645x_txtstamp(struct dsa_switch *ds, int port, struct sk_buff *skb);
+bool lan9645x_rxtstamp_defer(struct dsa_switch *ds, int port,
+			     struct sk_buff *skb, unsigned int type);
+int lan9645x_get_ts_info(struct dsa_switch *ds, int port,
+			 struct kernel_ethtool_ts_info *info);
+int lan9645x_ptp_init(struct lan9645x *lan9645x);
+void lan9645x_ptp_deinit(struct lan9645x *lan9645x);
+irqreturn_t lan9645x_ptp_irq_handler(int irq, void *args);
+irqreturn_t lan9645x_ptp_ext_irq_handler(int irq, void *args);
 
 #endif /* __LAN9645X_MAIN_H__ */
