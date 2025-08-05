@@ -392,6 +392,7 @@
 						phy-mode = "gmii";
 						phy-handle = <&sw_phy1>;
 						phys = <&lan9645x_serdes 1 LAN9645X_CU(1)>;
+						microchip,led-drive_mode = <1 3>;
 					};
 
 					port@2 {
