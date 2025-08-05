@@ -509,11 +509,6 @@
 					output-low;
 				};
 
-				lan9645x_sd0_pins: lan9645x-sd0-pins {
-					pins = "GPIO_42";
-					function = "sfp";
-				};
-
 				lan9645x_leds: lan9645x-leds {
 					pins = "GPIO_49", "GPIO_43", "GPIO_47", "GPIO_48", "GPIO_46", "GPIO_38", "GPIO_37", "GPIO_36";
 					function = "phy_led";
