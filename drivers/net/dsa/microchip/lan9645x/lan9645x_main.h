@@ -186,6 +186,10 @@
 #define IFH_PDU_TYPE_IPV4		7
 #define IFH_PDU_TYPE_IPV6		8
 
+#define LAN9645X_LED_PROP_CNT		2
+#define LAN9645X_LED_PROP_IDX		0
+#define LAN9645X_LED_PROP_DRIVE		1
+
 /* Rewriter VLAN port tagging encoding for REW:PORT[0-10]:TAG_CFG.TAG_CFG
  *
  * 0: Port tagging disabled.

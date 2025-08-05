@@ -314,6 +314,25 @@ static int lan9645x_port_parse_delays(struct lan9645x_port *port,
 	return 0;
 }
 
+static int lan9645x_port_setup_leds(struct lan9645x *lan9645x,
+				    struct fwnode_handle *portnp)
+{
+	u32 val[LAN9645X_LED_PROP_CNT];
+	int err;
+
+	err = fwnode_property_read_u32_array(portnp, "microchip,led-drive_mode",
+					    val, LAN9645X_LED_PROP_CNT);
+	if (err)
+		return err;
+
+	lan_rmw(CHIP_TOP_CUPHY_LED_CFG_LED_DRIVE_MODE_SET(val[LAN9645X_LED_PROP_DRIVE]),
+		CHIP_TOP_CUPHY_LED_CFG_LED_DRIVE_MODE,
+		lan9645x,
+		CHIP_TOP_CUPHY_LED_CFG(val[LAN9645X_LED_PROP_IDX]));
+
+	return 0;
+}
+
 static int lan9645x_parse_ports_node(struct lan9645x *lan9645x)
 {
 	struct fwnode_handle *ports, *portnp;
@@ -362,6 +381,7 @@ static int lan9645x_parse_ports_node(struct lan9645x *lan9645x)
 		lan9645x->ports[p]->phy_mode = phy_mode;
 		lan9645x->ports[p]->fwnode = fwnode_handle_get(portnp);
 		lan9645x_port_parse_delays(lan9645x->ports[p], portnp);
+		lan9645x_port_setup_leds(lan9645x, portnp);
 
 		serdes = devm_of_phy_optional_get(lan9645x->dev,
 						  to_of_node(portnp), NULL);
