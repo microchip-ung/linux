@@ -139,6 +139,19 @@ static void lan9645x_offload_fwd_mark(struct sk_buff *skb, u32 rtagd,
 	return dsa_default_offload_fwd_mark(skb);
 }
 
+static void lan9645x_xmit_ptp(struct sk_buff *skb, void *ifh)
+{
+	struct sk_buff *clone = LAN9645X_SKB_CB(skb)->clone;
+
+	if (LAN9645X_SKB_CB(skb)->rew_op != IFH_REW_OP_NOOP) {
+		LAN9645X_IFH_SET(ifh, IFH_REW_CMD, LAN9645X_SKB_CB(skb)->rew_op);
+		LAN9645X_IFH_SET(ifh, IFH_PDU_TYPE, LAN9645X_SKB_CB(skb)->pdu_type);
+		if (clone)
+			LAN9645X_IFH_SET(ifh, IFH_INJ_TIMESTAMP,
+					 LAN9645X_SKB_CB(clone)->ts_id << 2);
+	}
+}
+
 static struct sk_buff *lan9645x_xmit(struct sk_buff *skb, struct net_device *ndev)
 {
 	struct dsa_port *dp = dsa_user_to_port(ndev);
@@ -158,7 +171,6 @@ static struct sk_buff *lan9645x_xmit(struct sk_buff *skb, struct net_device *nde
 	/* Make room for IFH */
 	ifh = skb_push(skb, LAN9645X_IFH_LEN);
 	memset(ifh, 0, LAN9645X_IFH_LEN);
-
 
 	if (dp->hsr_dev) {
 		/* At the moment the HSR driver does not implement special
@@ -223,13 +235,15 @@ static struct sk_buff *lan9645x_xmit(struct sk_buff *skb, struct net_device *nde
 				 (u64)lan9645x_emirror_get_dst(dp));
 	}
 
+	lan9645x_xmit_ptp(skb, ifh);
+
 	return skb;
 }
 
 static struct sk_buff *lan9645x_rcv(struct sk_buff *skb, struct net_device *ndev)
 {
 	u64 vlan_tci, tag_type, popcnt, etype_ofs, acl_id, acl_hit;
-	u64 src_port, qos_class, rtagd, rct;
+	u64 src_port, qos_class, rtagd, rct, rx_ts;
 	u8 *orig_skb_data = skb->data;
 	struct dsa_port *dp;
 	u32 ifh_gap_len = 0;
@@ -254,6 +268,7 @@ static struct sk_buff *lan9645x_rcv(struct sk_buff *skb, struct net_device *ndev
 	rtagd = LAN9645X_IFH_GET(ifh, IFH_RTAGD);
 	acl_id = LAN9645X_IFH_GET(ifh, IFH_ACL_IDX);
 	acl_hit = LAN9645X_IFH_GET(ifh, IFH_ACL_HIT);
+	rx_ts = LAN9645X_IFH_GET(ifh, IFH_TIMESTAMP);
 
 	/* Set skb->data at start of real header
 	 *
@@ -307,6 +322,7 @@ static struct sk_buff *lan9645x_rcv(struct sk_buff *skb, struct net_device *ndev
 	lan9645x_offload_fwd_mark(skb, rtagd, acl_id, acl_hit);
 
 	skb->priority = qos_class;
+	LAN9645X_SKB_CB(skb)->rx_ts_ns = rx_ts >> 8;
 
 	/* Pushing tags is disabled in the rewriter must be disabled on
 	 * NPI/CPU_PORT with NO_REWRITE=1. Any rewrite action is communicated via

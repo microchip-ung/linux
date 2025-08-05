@@ -71,6 +71,7 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 	int rx_ifg1, rx_ifg2, tx_ifg, gtx_clk = 0;
 	struct lan9645x_path_delay *path_delay;
 	int gspeed = LAN9645X_SPEED_DISABLED;
+	u8 tweaks = 5;
 	int mode = 0;
 	int fc_spd;
 
@@ -240,7 +241,43 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 	lan9645x_cut_through_fwd(lan9645x);
 	mutex_unlock(&lan9645x->fwd_domain_lock);
 
-	/* TODO: Enable phase detector */
+	/* Enable phase detector */
+	/* When running at 10 these tweaks need to be set */
+	if (gspeed == LAN9645X_SPEED_10)
+		tweaks = 7;
+	else
+		tweaks = 5;
+	/* First it is needed to disable and then enable it and after that it
+	 * needed to clear the failed bit which is set by default. Also there
+	 * are 2 phase detector ctrl one for TX and one for RX
+	 */
+	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(0),
+		DEV_PHAD_CTRL_PHAD_ENA,
+		lan9645x, DEV_PHAD_CTRL(p->chip_port, 0));
+
+	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(0),
+		DEV_PHAD_CTRL_PHAD_ENA,
+		lan9645x, DEV_PHAD_CTRL(p->chip_port, 1));
+
+	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(1) |
+		DEV_PHAD_CTRL_TWEAKS_SET(tweaks) |
+		DEV_PHAD_CTRL_PHAD_FAILED_SET(1) |
+		DEV_PHAD_CTRL_LOCK_ACC_SET(0),
+		DEV_PHAD_CTRL_PHAD_ENA |
+		DEV_PHAD_CTRL_TWEAKS |
+		DEV_PHAD_CTRL_PHAD_FAILED |
+		DEV_PHAD_CTRL_LOCK_ACC,
+		lan9645x, DEV_PHAD_CTRL(p->chip_port, 0));
+
+	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(1) |
+		DEV_PHAD_CTRL_TWEAKS_SET(tweaks) |
+		DEV_PHAD_CTRL_PHAD_FAILED_SET(1) |
+		DEV_PHAD_CTRL_LOCK_ACC_SET(0),
+		DEV_PHAD_CTRL_PHAD_ENA |
+		DEV_PHAD_CTRL_TWEAKS |
+		DEV_PHAD_CTRL_PHAD_FAILED |
+		DEV_PHAD_CTRL_LOCK_ACC,
+		lan9645x, DEV_PHAD_CTRL(p->chip_port, 1));
 
 	/* Core: Enable port for frame transfer */
 	lan_rmw(QSYS_SW_PORT_MODE_PORT_ENA_SET(1) |
