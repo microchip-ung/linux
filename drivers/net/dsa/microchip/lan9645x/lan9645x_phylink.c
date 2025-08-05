@@ -209,6 +209,11 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 		}
 	}
 
+	/* port _must_ be taken out of reset before MAC. */
+	lan_rmw(DEV_CLOCK_CFG_PORT_RST_SET(0),
+		DEV_CLOCK_CFG_PORT_RST,
+		lan9645x, DEV_CLOCK_CFG(p->chip_port));
+
 	/* Take out the clock from reset. Note this write will set all these
 	 * fields to zero:
 	 *
@@ -218,6 +223,9 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 	 * DEV_CLOCK_CFG[*].PCS_RX_RST
 	 * DEV_CLOCK_CFG[*].PORT_RST
 	 * DEV_CLOCK_CFG[*].PHY_RST
+	 *
+	 * Note link_down will assert PORT_RST, MAC_RX_RST and MAC_TX_RST, so
+	 * we are effectively taking the mac tx/rx clocks out of reset.
 	 *
 	 * This linkspeed field has a slightly different encoding from others:
 	 *
@@ -231,7 +239,6 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 	       lan9645x,
 	       DEV_CLOCK_CFG(p->chip_port));
 
-	/* This needs to be at the end */
 	/* Enable MAC module */
 	lan_wr(DEV_MAC_ENA_CFG_RX_ENA_SET(1) |
 	       DEV_MAC_ENA_CFG_TX_ENA_SET(1),
