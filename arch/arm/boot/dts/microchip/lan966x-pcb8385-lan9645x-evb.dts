@@ -372,6 +372,8 @@
 				reg = <0 0>;
 				interrupts-extended = <&lan9645x_irq 17>, <&lan9645x_irq 27>, <&lan9645x_irq 26>;
 				interrupt-names = "lan9645x-ana", "lan9645x-ptp", "lan9645x-ptp-ext";
+				pinctrl-0 = <&lan9645x_leds>;
+				pinctrl-names = "default";
 				ethernet-ports {
 					#address-cells = <1>;
 					#size-cells = <0>;
@@ -509,6 +511,11 @@
 				lan9645x_sd0_pins: lan9645x-sd0-pins {
 					pins = "GPIO_42";
 					function = "sfp";
+				};
+
+				lan9645x_leds: lan9645x-leds {
+					pins = "GPIO_49", "GPIO_43", "GPIO_47", "GPIO_48", "GPIO_46", "GPIO_38", "GPIO_37", "GPIO_36";
+					function = "phy_led";
 				};
 			};
 
