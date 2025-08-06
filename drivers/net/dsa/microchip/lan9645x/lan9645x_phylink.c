@@ -209,6 +209,11 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 		}
 	}
 
+	/* Enable MAC module */
+	lan_wr(DEV_MAC_ENA_CFG_RX_ENA_SET(1) |
+	       DEV_MAC_ENA_CFG_TX_ENA_SET(1),
+	       lan9645x, DEV_MAC_ENA_CFG(p->chip_port));
+
 	/* port _must_ be taken out of reset before MAC. */
 	lan_rmw(DEV_CLOCK_CFG_PORT_RST_SET(0),
 		DEV_CLOCK_CFG_PORT_RST,
@@ -238,11 +243,6 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 	lan_wr(DEV_CLOCK_CFG_LINK_SPEED_SET(fc_spd == 0 ? 1 : fc_spd),
 	       lan9645x,
 	       DEV_CLOCK_CFG(p->chip_port));
-
-	/* Enable MAC module */
-	lan_wr(DEV_MAC_ENA_CFG_RX_ENA_SET(1) |
-	       DEV_MAC_ENA_CFG_TX_ENA_SET(1),
-	       lan9645x, DEV_MAC_ENA_CFG(p->chip_port));
 
 	mutex_lock(&lan9645x->fwd_domain_lock);
 	lan9645x_cut_through_fwd(lan9645x);
