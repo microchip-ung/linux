@@ -281,6 +281,11 @@ static int sparx5_port_verify_speed(struct sparx5 *sparx5,
 			return sparx5_port_error(port, conf, SPX5_PERR_IFTYPE);
 		fallthrough;
 	case PHY_INTERFACE_MODE_SGMII:
+		if (conf->speed != SPEED_1000 &&
+		    conf->speed != SPEED_100 &&
+		    conf->speed != SPEED_10)
+			return sparx5_port_error(port, conf, SPX5_PERR_SPEED);
+		break;
 	case PHY_INTERFACE_MODE_10G_QXGMII:
 		if (conf->speed != SPEED_1000 &&
 		    conf->speed != SPEED_100 &&
