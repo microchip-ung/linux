@@ -3996,6 +3996,27 @@ static int lan8814_gpio_process_cap(struct lan8814_shared_priv *shared)
 	return 0;
 }
 
+/* Check if the PHY has 1588 support. There are multiple skus of the PHY and
+ * some of the support PTP while others don't support it. This function will
+ * return true is the sku supports it, otherwise will return false.
+ */
+static bool lan8814_has_ptp(struct phy_device *phydev)
+{
+	int reg;
+
+	reg = lanphy_read_page_reg(phydev, 4, 11);
+	/* To be backward compatible return true if we failed to read the sku
+	 * because before we were not checking this
+	 */
+	if (reg < 0)
+		return true;
+
+	if (reg == 0x8804 || reg == 0x8808)
+		return false;
+
+	return true;
+}
+
 static int lan8814_handle_gpio_interrupt(struct phy_device *phydev, u16 status)
 {
 	struct lan8814_shared_priv *shared = phydev->shared->priv;
@@ -4121,6 +4142,9 @@ static irqreturn_t lan8814_handle_interrupt(struct phy_device *phydev)
 		ret = IRQ_HANDLED;
 	}
 
+	if (!lan8814_has_ptp(phydev))
+		return ret;
+
 	while (true) {
 		irq_status = lanphy_read_page_reg(phydev, 5, PTP_TSU_INT_STS);
 		if (!irq_status)
@@ -4223,27 +4247,6 @@ static int lan8814_ptp_pll_init(struct phy_device *phydev)
 	return 0;
 }
 
-/* Check if the PHY has 1588 support. There are multiple skus of the PHY and
- * some of the support PTP while others don't support it. This function will
- * return true is the sku supports it, otherwise will return false.
- */
-static bool lan8814_has_ptp(struct phy_device *phydev)
-{
-	int reg;
-
-	reg = lanphy_read_page_reg(phydev, 4, 11);
-	/* To be backward compatible return true if we failed to read the sku
-	 * because before we were not checking this
-	 */
-	if (reg < 0)
-		return true;
-
-	if (reg == 0x8804 || reg == 0x8808)
-		return false;
-
-	return true;
-}
-
 static void lan8814_ptp_init(struct phy_device *phydev)
 {
 	struct kszphy_priv *priv = phydev->priv;
@@ -4252,6 +4255,9 @@ static void lan8814_ptp_init(struct phy_device *phydev)
 
 	if (!IS_ENABLED(CONFIG_PTP_1588_CLOCK) ||
 	    !IS_ENABLED(CONFIG_NETWORK_PHY_TIMESTAMPING))
+		return;
+
+	if (!lan8814_has_ptp(phydev))
 		return;
 
 	lanphy_write_page_reg(phydev, 5, TSU_HARD_RESET, TSU_HARD_RESET_);
@@ -4286,14 +4292,12 @@ static void lan8814_ptp_init(struct phy_device *phydev)
 
 	ptp_priv->phydev = phydev;
 
-	if (lan8814_has_ptp(phydev)) {
-		ptp_priv->mii_ts.rxtstamp = lan8814_rxtstamp;
-		ptp_priv->mii_ts.txtstamp = lan8814_txtstamp;
-		ptp_priv->mii_ts.hwtstamp = lan8814_hwtstamp;
-		ptp_priv->mii_ts.ts_info  = lan8814_ts_info;
+	ptp_priv->mii_ts.rxtstamp = lan8814_rxtstamp;
+	ptp_priv->mii_ts.txtstamp = lan8814_txtstamp;
+	ptp_priv->mii_ts.hwtstamp = lan8814_hwtstamp;
+	ptp_priv->mii_ts.ts_info  = lan8814_ts_info;
 
-		phydev->mii_ts = &ptp_priv->mii_ts;
-	}
+	phydev->mii_ts = &ptp_priv->mii_ts;
 
 	/* Timestamp selected by default to keep legacy API */
 	phydev->default_timestamp = true;
@@ -4307,6 +4311,9 @@ static int lan8814_ptp_probe_once(struct phy_device *phydev)
 
 	/* Initialise shared lock for clock*/
 	mutex_init(&shared->shared_lock);
+
+	if (!lan8814_has_ptp(phydev))
+		return 0;
 
 	shared->pin_config = devm_kmalloc_array(&phydev->mdio.dev,
 						LAN8814_PTP_GPIO_NUM,
