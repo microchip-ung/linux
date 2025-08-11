@@ -124,7 +124,10 @@ int lan9645x_qos_port_conf_get(struct lan9645x_netlink_qos *q,
 
 	dev_dbg(q->lan9645x->dev, "port=%d", p->chip_port);
 
+	mutex_lock(&p->qos_lock);
+	q->qos_map[p->chip_port].pfc_enable = p->qos.pfc_enable;
 	*cfg = q->qos_map[p->chip_port];
+	mutex_unlock(&p->qos_lock);
 
 	return 0;
 }
