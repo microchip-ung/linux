@@ -431,6 +431,10 @@ struct lan9645x {
 	int ptp_irq;
 };
 
+struct lan9645x_qos {
+	u8 pfc_enable;
+};
+
 struct lan9645x_port {
 	struct lan9645x *lan9645x;
 
@@ -456,6 +460,9 @@ struct lan9645x_port {
 	bool lag_tx_active;
 
 	struct net_device *hsr; /* HSR/PRP upper device */
+
+	struct mutex qos_lock;
+	struct lan9645x_qos qos;
 
 	/* PTP */
 	struct sk_buff_head tx_skbs;
@@ -868,6 +875,9 @@ int lan9645x_qos_port_get_apptrust(struct lan9645x *lan9645x, int port, u8 *sel,
 				   int *nsel);
 int lan9645x_qos_port_set_apptrust(struct lan9645x *lan9645x, int port,
 				   const u8 *sel, int nsel);
+int lan9645x_qos_getpfc(struct lan9645x *lan9645x, int port,
+			struct ieee_pfc *pfc);
+int lan9645x_qos_setpfc(struct lan9645x *lan9645x, int port, u8 pfc_enable);
 
 /* TC flower lan9645x_tc_flower.c */
 int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,

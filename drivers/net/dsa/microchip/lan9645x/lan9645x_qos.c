@@ -71,6 +71,7 @@ void lan9645x_qos_port_init(struct lan9645x_port *p)
 	int pcp, dei, qos, dpl;
 	u8 tag_cfg;
 
+	mutex_init(&p->qos_lock);
 	/* Setup ingress 1:1 mapping between tag [PCP,DEI] and [PRIO,DPL].
 	 * PCP determines the priority (0..7) of the frame and
 	 * DEI determines the color (green og yellow) of the frame.
@@ -264,4 +265,98 @@ int lan9645x_qos_port_get_apptrust(struct lan9645x *lan9645x, int port, u8 *sel,
 		dev_dbg(lan9645x->dev, "sel=%u", sel[i]);
 
 	return 0;
+}
+
+static int __lan9645x_qos_setpfc(struct lan9645x *lan9645x, int port,
+				 u8 pfc_enable)
+{
+	struct lan9645x_port *p;
+	struct net_device *dev;
+	int fc_cfg;
+
+	p = lan9645x_to_port(lan9645x, port);
+	dev = lan9645x_port_to_ndev(p);
+
+	lockdep_assert_held(&p->qos_lock);
+
+	if (pfc_enable) {
+		fc_cfg = lan_rd(lan9645x, SYS_MAC_FC_CFG(p->chip_port));
+		if ((SYS_MAC_FC_CFG_RX_FC_ENA_GET(fc_cfg) != 0) ||
+		    (SYS_MAC_FC_CFG_TX_FC_ENA_GET(fc_cfg) != 0)) {
+			netdev_err(dev,
+				   "802.3X FC and 802.1Qbb PFC cannot both be enabled.\n");
+			return -EOPNOTSUPP;
+		}
+	}
+
+	if (p->qos.pfc_enable != pfc_enable) {
+		lan_rmw(ANA_VLAN_CFG_VLAN_PFC_ENA_SET(pfc_enable ? 1 : 0),
+			ANA_VLAN_CFG_VLAN_PFC_ENA, lan9645x,
+			ANA_VLAN_CFG(p->chip_port));
+
+		lan_rmw(DEV_PORT_MISC_FWD_CTRL_ENA_SET(pfc_enable ? 1 : 0),
+			DEV_PORT_MISC_FWD_CTRL_ENA, lan9645x,
+			DEV_PORT_MISC(p->chip_port));
+
+		lan_rmw(ANA_PFC_CFG_RX_PFC_ENA_SET(pfc_enable),
+			ANA_PFC_CFG_RX_PFC_ENA, lan9645x,
+			ANA_PFC_CFG(p->chip_port));
+
+		lan_rmw(QSYS_SW_PORT_MODE_TX_PFC_ENA_SET(pfc_enable),
+			QSYS_SW_PORT_MODE_TX_PFC_ENA, lan9645x,
+			QSYS_SW_PORT_MODE(p->chip_port));
+
+		p->qos.pfc_enable = pfc_enable;
+
+		if (dev->flags & IFF_UP) {
+			dev_close(dev);
+			return dev_open(dev, NULL);
+		}
+	}
+
+	return 0;
+}
+
+static int __lan9645x_qos_getpfc(struct lan9645x *lan9645x, int port,
+				 struct ieee_pfc *pfc)
+{
+	struct lan9645x_port *p;
+
+	p = lan9645x_to_port(lan9645x, port);
+
+	lockdep_assert_held(&p->qos_lock);
+
+	pfc->pfc_en = p->qos.pfc_enable;
+	pfc->pfc_cap = LAN9645X_NUM_TC;
+
+	return 0;
+}
+
+int lan9645x_qos_setpfc(struct lan9645x *lan9645x, int port, u8 pfc_enable)
+{
+	struct lan9645x_port *p;
+	int err;
+
+	p = lan9645x_to_port(lan9645x, port);
+
+	mutex_lock(&p->qos_lock);
+	err =  __lan9645x_qos_setpfc(lan9645x, port, pfc_enable);
+	mutex_unlock(&p->qos_lock);
+
+	return err;
+}
+
+int lan9645x_qos_getpfc(struct lan9645x *lan9645x, int port,
+			struct ieee_pfc *pfc)
+{
+	struct lan9645x_port *p;
+	int err;
+
+	p = lan9645x_to_port(lan9645x, port);
+
+	mutex_lock(&p->qos_lock);
+	err = __lan9645x_qos_getpfc(lan9645x, port, pfc);
+	mutex_unlock(&p->qos_lock);
+
+	return err;
 }

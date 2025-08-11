@@ -16,6 +16,7 @@ int lan9645x_qos_port_conf_set(struct lan9645x_netlink_qos *q,
 	struct lan9645x_port *p;
 	u32 pcp, dei, e_mode;
 	u8 prio, dpl;
+	int err = 0;
 
 	ASSERT_RTNL();
 
@@ -100,9 +101,13 @@ int lan9645x_qos_port_conf_set(struct lan9645x_netlink_qos *q,
 		REW_TAG_CFG_TAG_DEI_CFG,
 		lan9645x, REW_TAG_CFG(p->chip_port));
 
+	err = lan9645x_qos_setpfc(lan9645x, p->chip_port, cfg->pfc_enable);
+	if (err)
+		cfg->pfc_enable = p->qos.pfc_enable;
+
 	q->qos_map[p->chip_port] = *cfg;
 
-	return 0;
+	return err;
 }
 
 int lan9645x_qos_port_conf_get(struct lan9645x_netlink_qos *q,

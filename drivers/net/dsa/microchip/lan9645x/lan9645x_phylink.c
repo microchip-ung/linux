@@ -165,9 +165,21 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 		DEV_MAC_HDX_CFG_SEED_LOAD, lan9645x,
 		DEV_MAC_HDX_CFG(p->chip_port));
 
-	/* Disable PFC, but set speed cfg.  */
-	lan_wr(ANA_PFC_CFG_FC_LINK_SPEED_SET(fc_spd),
-	       lan9645x, ANA_PFC_CFG(p->chip_port));
+	if (rx_pause || tx_pause) {
+		if (p->qos.pfc_enable)
+			dev_info(lan9645x->dev,
+				 "802.3X FC and 802.1Qbb PFC cannot both be enabled on port=%d, disabling 802.1Qbb PFC.",
+				 port);
+
+		p->qos.pfc_enable = 0;
+	}
+
+	/* Set PFC link speed and enable map */
+	lan_rmw(ANA_PFC_CFG_FC_LINK_SPEED_SET(fc_spd) |
+		ANA_PFC_CFG_RX_PFC_ENA_SET(p->qos.pfc_enable),
+		ANA_PFC_CFG_FC_LINK_SPEED |
+		ANA_PFC_CFG_RX_PFC_ENA,
+		lan9645x, ANA_PFC_CFG(p->chip_port));
 
 	lan_rmw(DEV_PCS1G_CFG_PCS_ENA_SET(1),
 		DEV_PCS1G_CFG_PCS_ENA, lan9645x,
@@ -289,10 +301,12 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 	/* Core: Enable port for frame transfer */
 	lan_rmw(QSYS_SW_PORT_MODE_PORT_ENA_SET(1) |
 		QSYS_SW_PORT_MODE_SCH_NEXT_CFG_SET(1) |
-		QSYS_SW_PORT_MODE_INGRESS_DROP_MODE_SET(1),
+		QSYS_SW_PORT_MODE_INGRESS_DROP_MODE_SET(1) |
+		QSYS_SW_PORT_MODE_TX_PFC_ENA_SET(p->qos.pfc_enable),
 		QSYS_SW_PORT_MODE_PORT_ENA |
 		QSYS_SW_PORT_MODE_SCH_NEXT_CFG |
-		QSYS_SW_PORT_MODE_INGRESS_DROP_MODE,
+		QSYS_SW_PORT_MODE_INGRESS_DROP_MODE |
+		QSYS_SW_PORT_MODE_TX_PFC_ENA,
 		lan9645x, QSYS_SW_PORT_MODE(p->chip_port));
 
 	lan_rmw(AFI_PORT_CFG_FC_SKIP_TTI_INJ_SET(0) |

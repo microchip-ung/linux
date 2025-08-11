@@ -1887,6 +1887,26 @@ static int lan9645x_port_del_pcp_dei_prio(struct dsa_switch *ds, int port,
 	return 0;
 }
 
+static int lan9645x_port_get_pfc(struct dsa_switch *ds, int port,
+				 struct ieee_pfc *pfc)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	dev_dbg(lan9645x->dev, "port=%d", port);
+
+	return lan9645x_qos_getpfc(lan9645x, port, pfc);
+}
+
+static int lan9645x_port_set_pfc(struct dsa_switch *ds, int port,
+				 struct ieee_pfc *pfc)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	dev_dbg(lan9645x->dev, "port=%d pfc=%x", port, pfc->pfc_en);
+
+	return lan9645x_qos_setpfc(lan9645x, port, pfc->pfc_en);
+}
+
 static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.get_tag_protocol		= lan9645x_get_tag_protocol,
 	.connect_tag_protocol		= lan9645x_connect_tag_protocol,
@@ -1975,6 +1995,8 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.port_del_dscp_prio		= lan9645x_port_del_dscp_prio,
 	.port_set_apptrust		= lan9645x_port_set_apptrust,
 	.port_get_apptrust		= lan9645x_port_get_apptrust,
+	.port_getpfc			= lan9645x_port_get_pfc,
+	.port_setpfc			= lan9645x_port_set_pfc,
 
 	.port_get_pcp_dei_prio		= lan9645x_port_get_pcp_dei_prio,
 	.port_add_pcp_dei_prio		= lan9645x_port_add_pcp_dei_prio,
