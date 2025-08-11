@@ -2492,6 +2492,32 @@ static int __maybe_unused dsa_user_dcbnl_ieee_delapp(struct net_device *dev,
 	}
 }
 
+static int dsa_user_dcbnl_ieee_getpfc(struct net_device *dev,
+				      struct ieee_pfc *pfc)
+{
+	struct dsa_port *dp = dsa_user_to_port(dev);
+	struct dsa_switch *ds = dp->ds;
+	int port = dp->index;
+
+	if (!ds->ops->port_getpfc)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_getpfc(ds, port, pfc);
+}
+
+static int dsa_user_dcbnl_ieee_setpfc(struct net_device *dev,
+				      struct ieee_pfc *pfc)
+{
+	struct dsa_port *dp = dsa_user_to_port(dev);
+	struct dsa_switch *ds = dp->ds;
+	int port = dp->index;
+
+	if (!ds->ops->port_setpfc)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_setpfc(ds, port, pfc);
+}
+
 /* Pre-populate the DCB application priority table with the priorities
  * configured during switch setup, which we read from hardware here.
  */
@@ -2610,6 +2636,8 @@ static const struct dcbnl_rtnl_ops __maybe_unused dsa_user_dcbnl_ops = {
 	.ieee_delapp		= dsa_user_dcbnl_ieee_delapp,
 	.dcbnl_setapptrust	= dsa_user_dcbnl_set_apptrust,
 	.dcbnl_getapptrust	= dsa_user_dcbnl_get_apptrust,
+	.ieee_getpfc		= dsa_user_dcbnl_ieee_getpfc,
+	.ieee_setpfc		= dsa_user_dcbnl_ieee_setpfc,
 };
 
 static void dsa_user_get_stats64(struct net_device *dev,

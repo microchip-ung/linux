@@ -977,6 +977,10 @@ struct dsa_switch_ops {
 					 u8 pcp, u8 dei, u8 prio);
 	int	(*port_del_pcp_dei_prio)(struct dsa_switch *ds, int port,
 					 u8 pcp, u8 dei, u8 prio);
+	int	(*port_getpfc)(struct dsa_switch *ds, int port,
+			       struct ieee_pfc *pfc);
+	int	(*port_setpfc)(struct dsa_switch *ds, int port,
+			       struct ieee_pfc *pfc);
 
 	/*
 	 * Suspend and resume
