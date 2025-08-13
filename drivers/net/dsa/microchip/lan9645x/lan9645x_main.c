@@ -641,11 +641,29 @@ static int lan9645x_setup(struct dsa_switch *ds)
 		       lan9645x, ANA_CPU_FWD_BPDU_CFG(p));
 	}
 
-	/* Set source buffer size for each priority and each port to 1500 bytes */
+	/* Set source buffer size for each priority and each port to 1700 bytes */
 	for (int i = 0; i <= QSYS_Q_RSRV; ++i) {
-		lan_wr(1500 / 64, lan9645x, QSYS_RES_CFG(i));
-		lan_wr(1500 / 64, lan9645x, QSYS_RES_CFG(512 + i));
+		lan_wr(1700 / 64, lan9645x, QSYS_RES_CFG(i));
+		lan_wr(1700 / 64, lan9645x, QSYS_RES_CFG(512 + i));
 	}
+
+	/* The CPU will only use its reserved buffer in the shared queue system
+	 * and none of the shared buffer space, therefore we disable resource
+	 * sharing in egress direction. We must not disable resource sharing in
+	 * the ingress direction, because some traffic test scenarios require
+	 * loads of buffer memory for frames initiated by the CPU.
+	 */
+	lan_rmw(QSYS_EGR_NO_SHARING_EGR_NO_SHARING_SET(BIT(CPU_PORT)),
+		QSYS_EGR_NO_SHARING_EGR_NO_SHARING_SET(BIT(CPU_PORT)),
+		lan9645x, QSYS_EGR_NO_SHARING);
+
+	/* The CPU should also discard frames forwarded to it if it has run
+	 * out of the reserved buffer space. Otherwise they will be held back
+	 * in the ingress queues with potential head-of-line blocking effects.
+	 */
+	lan_rmw(QSYS_EGR_DROP_MODE_EGRESS_DROP_MODE_SET(BIT(CPU_PORT)),
+		QSYS_EGR_DROP_MODE_EGRESS_DROP_MODE_SET(BIT(CPU_PORT)),
+		lan9645x, QSYS_EGR_DROP_MODE);
 
 	/* Configure and enable the CPU port */
 	lan9645x_cpu_port_init(lan9645x);
