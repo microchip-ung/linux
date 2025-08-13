@@ -160,6 +160,7 @@ static void vcoreiii_bb_cs_activate(struct spi_vcoreiii *priv, struct spi_device
 
 	/* Enable the CS in HW, Initial clock value */
 	vcoreiii_bb_writel_hold(priv, priv->svalue | priv->clk1);
+	ndelay(1);
 }
 
 static void vcoreiii_bb_cs_deactivate(struct spi_vcoreiii *priv, struct spi_device *spi)
@@ -211,9 +212,11 @@ static void vcoreiii_bb_do_transfer(struct spi_vcoreiii *priv,
                          * end of this loop.
                          */
 			vcoreiii_bb_writel_hold(priv, value | priv->clk1);
+			ndelay(1);
 
 			/* Drive the clock high. */
 			vcoreiii_bb_writel_hold(priv, value | priv->clk2);
+			ndelay(1);
 
 			/* We sample as close to the next falling edge
 			 * as possible.
