@@ -7,10 +7,16 @@
 void lan9645x_cut_through_fwd(struct lan9645x *lan9645x)
 {
 	struct lan9645x_port *p;
+	int max_speed = 0;
 	u32 tcs, spd;
 	int port;
 
 	lockdep_assert_held(&lan9645x->fwd_domain_lock);
+
+	lan9645x_for_each_port(lan9645x, port, p) {
+		if (lan9645x_port_is_bridged(p))
+			max_speed = p->speed > max_speed ? p->speed : max_speed;
+	}
 
 	/* A frame forwarded from port A to port B is cut-thru forwarded if
 	 * these conditions are met:
@@ -19,14 +25,19 @@ void lan9645x_cut_through_fwd(struct lan9645x *lan9645x)
 	 *  - TC queue bit set in port.CUT_THRU_ENA
 	 *  - A.CUT_THRU_SPD <= B.CUT_THRU_SPD
 	 *
-	 *  TODO: Can handle this with a locel/per-port API instead of modifying
-	 *  all ports every time.
+	 * However, due to a bug in the hw, we can not cut-thru from A to B,
+	 * unless they run the same speed. So we have to restrict cut-thru
+	 * to the fastest ports in the forwarding domain.
 	 */
 	lan9645x_for_each_port(lan9645x, port, p)
 	{
 		spd = 0;
 		tcs = 0;
-		if (p->speed) {
+
+		/* Only enable cut-through for the fastest ports in the
+		 * forwarding domain.
+		 */
+		if (max_speed > 0 && p->speed == max_speed) {
 			spd = p->speed + 1;
 			tcs = GENMASK(7, 0);
 		}
