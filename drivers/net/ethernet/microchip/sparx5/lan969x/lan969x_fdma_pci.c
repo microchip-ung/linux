@@ -299,12 +299,7 @@ int lan969x_fdma_pci_xmit(struct sparx5 *sparx5, u32 *ifh, struct sk_buff *skb)
 		sparx5_fdma_reload(sparx5, fdma);
 	}
 
-	if (skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP &&
-	    SPARX5_SKB_CB(skb)->rew_op == IFH_REW_OP_TWO_STEP_PTP)
-		ptp = true;
-
-	if (!ptp)
-		dev_consume_skb_any(skb);
+	dev_consume_skb_any(skb);
 
 	return NETDEV_TX_OK;
 }
