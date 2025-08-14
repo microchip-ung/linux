@@ -114,6 +114,7 @@ static void lan9645x_teardown(struct dsa_switch *ds)
 
 	lan9645x_netlink_frer_uninit();
 	lan9645x_netlink_qos_uninit();
+	lan9645x_taprio_deinit(lan9645x);
 	lan9645x_npi_port_deinit(lan9645x, lan9645x->npi);
 	lan9645x_stats_deinit(lan9645x);
 	lan9645x_mac_deinit(lan9645x);
@@ -738,6 +739,8 @@ static int lan9645x_setup(struct dsa_switch *ds)
 						     "Unable to use ptp-ext irq");
 		}
 	}
+
+	lan9645x_taprio_init(lan9645x);
 
 	err = lan9645x_netlink_qos_init(lan9645x);
 	if (err) {
@@ -1777,6 +1780,21 @@ static int lan9645x_port_setup_ets(struct dsa_switch *ds, int port,
 	}
 }
 
+static int lan9645x_tc_setup_qdisc_taprio(struct dsa_switch *ds, int port,
+					  struct tc_taprio_qopt_offload *taprio)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	switch (taprio->cmd) {
+	case TAPRIO_CMD_REPLACE:
+		return lan9645x_taprio_add(lan9645x, port, taprio);
+	case TAPRIO_CMD_DESTROY:
+		return lan9645x_taprio_del(lan9645x, port);
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+
 static int lan9645x_port_setup_tc(struct dsa_switch *ds, int port,
 				  enum tc_setup_type type, void *type_data)
 {
@@ -1793,6 +1811,8 @@ static int lan9645x_port_setup_tc(struct dsa_switch *ds, int port,
 		return lan9645x_port_setup_tbf(ds, port, type_data);
 	case TC_SETUP_QDISC_ETS:
 		return lan9645x_port_setup_ets(ds, port, type_data);
+	case TC_SETUP_QDISC_TAPRIO:
+		return lan9645x_tc_setup_qdisc_taprio(ds, port, type_data);
 	/* BLOCK and FT handled by dsa */
 	default:
 		return -ENOTSUPP;

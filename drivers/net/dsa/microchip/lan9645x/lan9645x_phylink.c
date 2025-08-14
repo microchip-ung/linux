@@ -132,7 +132,7 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 	p->speed = gspeed;
 	fc_spd = lan9645x_speed_fc_enc(p->speed);
 
-	/* TODO: add taprio speed set */
+	lan9645x_taprio_speed_set(p, speed);
 
 	if (phy_interface_num_ports(interface) == 4 ||
 	    interface == PHY_INTERFACE_MODE_SGMII)
