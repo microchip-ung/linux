@@ -995,5 +995,7 @@ int lan9645x_ptp_init(struct lan9645x *lan9645x);
 void lan9645x_ptp_deinit(struct lan9645x *lan9645x);
 irqreturn_t lan9645x_ptp_irq_handler(int irq, void *args);
 irqreturn_t lan9645x_ptp_ext_irq_handler(int irq, void *args);
+int lan9645x_ptp_gettime64(struct ptp_clock_info *ptp, struct timespec64 *ts);
+u32 lan9645x_ptp_get_period_ps(void);
 
 #endif /* __LAN9645X_MAIN_H__ */

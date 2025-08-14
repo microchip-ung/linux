@@ -741,8 +741,7 @@ static int lan9645x_ptp_settime64(struct ptp_clock_info *ptp,
 	return 0;
 }
 
-static int lan9645x_ptp_gettime64(struct ptp_clock_info *ptp,
-				  struct timespec64 *ts)
+int lan9645x_ptp_gettime64(struct ptp_clock_info *ptp, struct timespec64 *ts)
 {
 	struct lan9645x_phc *phc = container_of(ptp, struct lan9645x_phc, info);
 	struct lan9645x *lan9645x = phc->lan9645x;
@@ -1259,4 +1258,10 @@ int lan9645x_get_ts_info(struct dsa_switch *ds, int port,
 			   BIT(HWTSTAMP_FILTER_ALL);
 
 	return 0;
+}
+
+u32 lan9645x_ptp_get_period_ps(void)
+{
+	 /* System clock period in picoseconds. */
+	return 6038;
 }

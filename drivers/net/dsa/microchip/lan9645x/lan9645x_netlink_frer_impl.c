@@ -353,12 +353,6 @@ static int lan9645x_frer_show(struct seq_file *m, void *unused)
 }
 DEFINE_SHOW_ATTRIBUTE(lan9645x_frer);
 
-static u32 lan9645x_ptp_get_period_ps(void)
-{
-	 /* System clock period in picoseconds. */
-	return 6038;
-}
-
 int lan9645x_frer_init(struct lan9645x_nl_frer *frer)
 {
 	struct lan9645x *lan9645x = frer->lan9645x;
