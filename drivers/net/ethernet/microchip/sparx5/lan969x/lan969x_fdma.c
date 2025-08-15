@@ -77,7 +77,8 @@ static void lan969x_fdma_tx_clear_buf(struct sparx5 *sparx5, int weight)
 					 db->len,
 					 DMA_TO_DEVICE);
 
-			napi_consume_skb(db->skb, weight);
+			if (!db->ptp)
+				napi_consume_skb(db->skb, weight);
 			break;
 		case SPX5_DB_DATA_TYPE_XDPF:
 			/* XDP_REDIRECT or AF_XDP */
