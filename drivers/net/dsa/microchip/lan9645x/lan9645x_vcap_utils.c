@@ -36,27 +36,3 @@ int lan9645x_vcap_rule_val_add(struct vcap_rule *rule, u16 l3_proto)
 
 	return err;
 }
-
-void lan9645x_dmac_enable(struct lan9645x_port *port, int lookup, bool enable)
-{
-	struct lan9645x *lan9645x = port->lan9645x;
-	u32 value;
-
-	if (enable) {
-		value = lan_rd(lan9645x, ANA_VCAP_CFG(port->chip_port));
-		value = ANA_VCAP_CFG_S1_DMAC_DIP_ENA_GET(value);
-		value |= BIT(lookup);
-
-		lan_rmw(ANA_VCAP_CFG_S1_DMAC_DIP_ENA_SET(value),
-			ANA_VCAP_CFG_S1_DMAC_DIP_ENA,
-			lan9645x, ANA_VCAP_CFG(port->chip_port));
-	} else {
-		value = lan_rd(lan9645x, ANA_VCAP_CFG(port->chip_port));
-		value = ANA_VCAP_CFG_S1_DMAC_DIP_ENA_GET(value);
-		value &= ~BIT(lookup);
-
-		lan_rmw(ANA_VCAP_CFG_S1_DMAC_DIP_ENA_SET(value),
-			ANA_VCAP_CFG_S1_DMAC_DIP_ENA,
-			lan9645x, ANA_VCAP_CFG(port->chip_port));
-	}
-}

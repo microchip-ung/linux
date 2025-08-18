@@ -2138,11 +2138,6 @@ int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,
 		goto out;
 	}
 
-	/* TODO: vrule may not have keyset yet. Do we need to run through all
-	 * used keysets in multi?
-	 */
-	lan9645x_dmac_enable(p, lookup, !!(vrule->keyset == VCAP_KFS_NORMAL_DMAC));
-
 	err = lan9645x_tc_add_rule_counter(admin, vrule);
 	if (err) {
 		vcap_set_tc_exterr(f, vrule);
