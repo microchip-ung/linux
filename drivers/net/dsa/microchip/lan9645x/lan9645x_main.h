@@ -467,6 +467,10 @@ struct lan9645x {
 	 * */
 	struct mutex psfp_lock;
 
+	/* Polling FP verify status */
+	struct delayed_work fp_work;
+	struct workqueue_struct *queue;
+
 	/* TC chain_id to isdx management */
 	struct list_head link_isdx;
 	struct mutex link_isdx_lock;
@@ -516,8 +520,25 @@ struct lan9645x_port_qos {
 	u8 pfc_enable;
 };
 
+struct lan9645x_fp_port_conf {
+	u8 admin_status;        /* IEEE802.1Qbu: framePreemptionStatusTable */
+	bool enable_tx;         /* IEEE802.3br: aMACMergeEnableTx */
+	bool verify_disable_tx; /* IEEE802.3br: aMACMergeVerifyDisableTx */
+	u8 verify_time;         /* IEEE802.3br: aMACMergeVerifyTime [msec] */
+	u8 add_frag_size;       /* IEEE802.3br: aMACMergeAddFragSize */
+};
+
+struct lan9645x_fp_port_status {
+	u32 hold_advance;      // TBD: IEEE802.1Qbu: holdAdvance [nsec]
+	u32 release_advance;   // TBD: IEEE802.1Qbu: releaseAdvance [nsec]
+	u8 preemption_active;  // IEEE802.1Qbu: preemptionActive, IEEE802.3br: aMACMergeStatusTx
+	u8 hold_request;       // TBD: IEEE802.1Qbu: holdRequest
+	int status_verify;     // IEEE802.3br: aMACMergeStatusVerify
+};
+
 struct lan9645x_port {
 	struct lan9645x *lan9645x;
+	const char *name;
 
 	u16 pvid;
 	u16 untagged_vid;
@@ -533,6 +554,7 @@ struct lan9645x_port {
 	struct fwnode_handle *fwnode;
 
 	int speed; /* internal speed value LAN9645X_SPEED_* */
+	u8 duplex;
 	struct list_head path_delays;
 	u32 rx_delay;
 
@@ -544,6 +566,10 @@ struct lan9645x_port {
 
 	struct mutex qos_lock; /* Port QOS config */
 	struct lan9645x_port_qos qos;
+
+	/* Frame preemption */
+	struct lan9645x_fp_port_conf fp;
+	struct mutex fp_lock; /* Lock port FP config */
 
 	/* PTP */
 	struct sk_buff_head tx_skbs;
@@ -671,13 +697,13 @@ static inline bool lan9645x_port_is_bridged(struct lan9645x_port *p)
 
 static inline bool lan9645x_port_is_used(struct lan9645x *lan9645x, int port)
 {
-	struct dsa_port *dsa_port;
+	struct dsa_port *dp;
 
-	dsa_port = dsa_to_port(lan9645x->ds, port);
-	if (!dsa_port)
+	dp = dsa_to_port(lan9645x->ds, port);
+	if (!dp)
 		return false;
 
-	return dsa_port->type != DSA_PORT_TYPE_UNUSED;
+	return dp->type != DSA_PORT_TYPE_UNUSED;
 }
 
 static inline bool lan9645x_port_is_hsr(struct lan9645x_port *p)
@@ -1110,5 +1136,22 @@ int lan9645x_psfp_tc_action_set(struct lan9645x *lan9645x,
 				struct netlink_ext_ack *extack,
 				u32 *sfi_ix, u32 *sgi_ix);
 
+
+/* lan9645x_fp.c */
+int lan9645x_fp_status(struct lan9645x_port *p,
+		       struct lan9645x_fp_port_status *s);
+int lan9645x_fp_set(struct lan9645x_port *p,
+		    struct lan9645x_fp_port_conf *c, bool link);
+int lan9645x_fp_get(struct lan9645x_port *p,
+		    struct lan9645x_fp_port_conf *c);
+int lan9645x_fp_init(struct lan9645x *lan9645x);
+void lan9645x_fp_link_change(struct lan9645x_port *p, bool link);
+void lan9645x_fp_change_preemptable_tcs(struct lan9645x_port *p,
+					unsigned long preemptible_tcs);
+int lan9645x_fp_ethtool_get_mm(struct lan9645x *lan9645x, int port,
+			       struct ethtool_mm_state *state);
+int lan9645x_fp_ethtool_set_mm(struct lan9645x *lan9645x, int port,
+			       struct ethtool_mm_cfg *cfg,
+			       struct netlink_ext_ack *extack);
 
 #endif /* __LAN9645X_MAIN_H__ */

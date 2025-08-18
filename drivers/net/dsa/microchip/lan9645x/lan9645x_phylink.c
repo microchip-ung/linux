@@ -130,6 +130,7 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 	}
 
 	p->speed = gspeed;
+	p->duplex = duplex;
 	fc_spd = lan9645x_speed_fc_enc(p->speed);
 
 	lan9645x_taprio_speed_set(p, speed);
@@ -314,6 +315,8 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 		AFI_PORT_CFG_FC_SKIP_TTI_INJ |
 		AFI_PORT_CFG_FRM_OUT_MAX,
 		lan9645x, AFI_PORT_CFG(p->chip_port));
+
+	lan9645x_fp_link_change(p, true);
 }
 
 void lan9645x_phylink_port_down(struct lan9645x *lan9645x, int port)
@@ -370,6 +373,7 @@ void lan9645x_phylink_port_down(struct lan9645x *lan9645x, int port)
 
 	mutex_lock(&lan9645x->fwd_domain_lock);
 	p->speed = LAN9645X_SPEED_DISABLED;
+	p->duplex = DUPLEX_UNKNOWN;
 	lan9645x_cut_through_fwd(lan9645x);
 	mutex_unlock(&lan9645x->fwd_domain_lock);
 
@@ -468,6 +472,8 @@ void lan9645x_phylink_mac_link_down(struct lan9645x *lan9645x, int port,
 		DEV_CLOCK_CFG_PCS_RX_RST |
 		DEV_CLOCK_CFG_PCS_TX_RST,
 		lan9645x, DEV_CLOCK_CFG(p->chip_port));
+
+	lan9645x_fp_link_change(p, false);
 }
 
 struct phylink_pcs *lan9645x_phylink_mac_select_pcs(struct lan9645x *lan9645x,

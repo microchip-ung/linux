@@ -10,6 +10,7 @@
 #include "lan9645x_stats.h"
 #include "lan9645x_netlink_qos.h"
 #include "lan9645x_netlink_frer.h"
+#include "lan9645x_netlink_fp.h"
 
 static const char *lan9645x_resource_names[NUM_TARGETS] = {
 	[TARGET_ORG]          = "org",
@@ -112,6 +113,7 @@ static void lan9645x_teardown(struct dsa_switch *ds)
 {
 	struct lan9645x *lan9645x = ds->priv;
 
+	lan9645x_netlink_fp_uninit();
 	lan9645x_netlink_frer_uninit();
 	lan9645x_netlink_qos_uninit();
 	lan9645x_taprio_deinit(lan9645x);
@@ -380,6 +382,9 @@ static int lan9645x_parse_ports_node(struct lan9645x *lan9645x)
 			goto err_free_ports;
 		}
 
+		fwnode_property_read_string(portnp, "label",
+					    &lan9645x->ports[p]->name);
+
 		lan9645x->ports[p]->phy_mode = phy_mode;
 		lan9645x->ports[p]->fwnode = fwnode_handle_get(portnp);
 		lan9645x_port_parse_delays(lan9645x->ports[p], portnp);
@@ -545,6 +550,12 @@ static int lan9645x_setup(struct dsa_switch *ds)
 								"lan9645x-ptp-ext");
 	}
 
+	err = lan9645x_tag_npi_setup(ds);
+	if (err) {
+		dev_err(dev, "Lan9645x setup: failed to setup NPI port.\n");
+		return err;
+	}
+
 	INIT_LIST_HEAD(&lan9645x->link_isdx);
 	mutex_init(&lan9645x->link_isdx_lock);
 	mutex_init(&lan9645x->psfp_lock);
@@ -560,6 +571,7 @@ static int lan9645x_setup(struct dsa_switch *ds)
 	lan9645x_hsr_prp_init(lan9645x);
 	/* ESDX index 0 is not useful and counts as no-esdx, similar to ISDX */
 	set_bit(0, lan9645x->esdx_mask);
+	lan9645x_fp_init(lan9645x);
 
 	/* Link Aggregation Mode: NETDEV_LAG_HASH_L2 */
 	lan_wr(ANA_AGGR_CFG_AC_SMAC_ENA |
@@ -710,12 +722,6 @@ static int lan9645x_setup(struct dsa_switch *ds)
 		return err;
 	}
 
-	err = lan9645x_tag_npi_setup(ds);
-	if (err) {
-		dev_err(dev, "Lan9645x setup: failed to setup NPI port.\n");
-		return err;
-	}
-
 	lan9645x_set_tail_drop_wm(lan9645x);
 
 	ds->mtu_enforcement_ingress = true;
@@ -752,9 +758,15 @@ static int lan9645x_setup(struct dsa_switch *ds)
 		return err;
 	}
 
-	lan9645x_netlink_frer_init(lan9645x);
+	err = lan9645x_netlink_frer_init(lan9645x);
 	if (err) {
 		dev_err(dev, "Failed to init FRER netlink api. err=%d", err);
+		return err;
+	}
+
+	err = lan9645x_netlink_fp_init(lan9645x);
+	if (err) {
+		dev_err(dev, "Failed to init Frame Preemption netlink api. err=%d", err);
 		return err;
 	}
 
@@ -1969,6 +1981,23 @@ lan9645x_port_hsr_node_del(struct dsa_switch *ds, int port,
 	return 0;
 }
 
+static int lan9645x_get_mm(struct dsa_switch *ds, int port,
+			   struct ethtool_mm_state *state)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	return lan9645x_fp_ethtool_get_mm(lan9645x, port, state);
+}
+
+static int lan9645x_set_mm(struct dsa_switch *ds, int port,
+			   struct ethtool_mm_cfg *cfg,
+			   struct netlink_ext_ack *extack)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	return lan9645x_fp_ethtool_set_mm(lan9645x, port, cfg, extack);
+}
+
 static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.get_tag_protocol		= lan9645x_get_tag_protocol,
 	.connect_tag_protocol		= lan9645x_connect_tag_protocol,
@@ -2082,6 +2111,10 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	 .port_hwtstamp_set		= lan9645x_port_hwtstamp_set,
 	 .port_txtstamp			= lan9645x_txtstamp,
 	 .port_rxtstamp			= lan9645x_rxtstamp_defer,
+
+	 /* MAC merge */
+	.get_mm				= lan9645x_get_mm,
+	.set_mm				= lan9645x_set_mm,
 };
 
 static int lan9645x_request_target_regmaps(struct lan9645x *lan9645x)
