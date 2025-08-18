@@ -455,9 +455,10 @@ static int lan9645x_vcap_is1_get_port_keysets(struct net_device *ndev, int looku
 {
 	struct lan9645x_port *port = lan9645x_port_from_netdev(ndev);
 	struct lan9645x *lan9645x = port->lan9645x;
-	u32 val;
+	u32 val, vcap_cfg;
 
 	val = lan_rd(lan9645x, ANA_VCAP_S1_CFG(port->chip_port, lookup));
+	vcap_cfg = lan_rd(lan9645x, ANA_VCAP_CFG(port->chip_port));
 
 	/* Collect all keysets for the port in a list */
 	if (l3_proto == ETH_P_ALL || l3_proto == ETH_P_IP) {
@@ -512,8 +513,11 @@ static int lan9645x_vcap_is1_get_port_keysets(struct net_device *ndev, int looku
 		vcap_keyset_list_add(keysetlist, VCAP_KFS_7TUPLE);
 		break;
 	case VCAP_IS1_PS_OTHER_NORMAL:
-		vcap_keyset_list_add(keysetlist, VCAP_KFS_NORMAL);
-		vcap_keyset_list_add(keysetlist, VCAP_KFS_NORMAL_DMAC);
+		if (ANA_VCAP_CFG_S1_DMAC_DIP_ENA_GET(vcap_cfg) & BIT(lookup)) {
+			vcap_keyset_list_add(keysetlist, VCAP_KFS_NORMAL_DMAC);
+		} else {
+			vcap_keyset_list_add(keysetlist, VCAP_KFS_NORMAL);
+		}
 		break;
 	case VCAP_IS1_PS_OTHER_DBL_VID:
 		vcap_keyset_list_add(keysetlist, VCAP_KFS_DBL_VID);
