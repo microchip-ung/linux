@@ -44,12 +44,13 @@ void lan9645x_cut_through_fwd(struct lan9645x *lan9645x)
 			continue;
 
 		/* Only enable cut-through for the fastest ports in the
-		 * forwarding domain.
-		 * We must exclude queues with PFC enabled.
+		 * forwarding domain. We must exclude
+		 * 1) Queues with PFC enabled.
+		 * 2) Preemptible queues
 		 */
 		if (max_speed > 0 && p->speed == max_speed) {
 			spd = p->speed + 1;
-			tcs = GENMASK(7, 0) & ~p->qos.pfc_enable;
+			tcs = GENMASK(7, 0) & ~p->qos.pfc_enable & ~p->fp.admin_status;
 		}
 
 		/* For HSR the chip needs to know the LSDU size before it can
