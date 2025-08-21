@@ -454,6 +454,8 @@ static int lan966x_netdevice_port_event(struct net_device *dev,
 {
 	int err = 0;
 
+	lan966x_qos_port_event(dev, event);
+
 	if (!lan966x_netdevice_check(dev)) {
 		switch (event) {
 		case NETDEV_CHANGEUPPER:

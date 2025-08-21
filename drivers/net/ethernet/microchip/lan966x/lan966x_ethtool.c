@@ -662,6 +662,7 @@ static void lan966x_check_stats_work(struct work_struct *work)
 					       stats_work);
 
 	lan966x_stats_update(lan966x);
+	lan966x_qos_update_stats(lan966x);
 
 	queue_delayed_work(lan966x->stats_queue, &lan966x->stats_work,
 			   LAN966X_STATS_CHECK_DELAY);
