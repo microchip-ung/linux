@@ -715,24 +715,6 @@ static int lan9645x_setup(struct dsa_switch *ds)
 	ds->assisted_learning_on_cpu_port = true;
 	ds->fdb_isolation = true;
 
-	lan9645x->ana_irq = platform_get_irq_byname(to_platform_device(lan9645x->dev),
-						    "lan9645x-ana");
-
-	if (lan9645x->ana_irq > 0) {
-		err = devm_request_threaded_irq(lan9645x->dev, lan9645x->ana_irq,
-						NULL, lan9645x_mac_irq_handler,
-						IRQF_ONESHOT, "lan9645x mac irq",
-						lan9645x);
-		if (err)
-			return dev_err_probe(lan9645x->dev, err,
-					     "Unable to use ana irq");
-
-		/* Enable Analyzer interrupt (MAC table changes) */
-		lan_rmw(ANA_ANAINTR_INTR_ENA_SET(1),
-			ANA_ANAINTR_INTR_ENA,
-			lan9645x, ANA_ANAINTR);
-	}
-
 	if (lan9645x->ptp) {
 		err = devm_request_threaded_irq(dev, lan9645x->ptp_irq, NULL,
 						lan9645x_ptp_irq_handler,
@@ -821,12 +803,12 @@ static void lan9645x_port_fast_age(struct dsa_switch *ds, int port)
 	struct lan9645x *lan9645x = ds->priv;
 	int err;
 
-	dev_dbg(lan9645x->dev, "port_fast_age port=%d\n", port);
+	dev_dbg(lan9645x->dev, "port=%d", port);
 
 	err = lan9645x_mact_flush(lan9645x, port);
 	if (err)
-		dev_err(ds->dev, "Flushing MAC table on port %d returned %pe\n",
-			port, ERR_PTR(err));
+		dev_err(ds->dev, "Error flushing MAC table on port %d err=%d",
+			port, err);
 }
 
 static int lan9645x_fdb_dump(struct dsa_switch *ds, int port,
@@ -1227,7 +1209,22 @@ static int lan9645x_lag_join(struct dsa_switch *ds, int port,
 	p->hash_type = info->hash_type;
 	new_lag_id = lan9645x_lag_reconfigure(lan9645x, lag.dev, port, false);
 
-	/* Update LAG logical port */
+	/* We could skip all migration on lag join. It does not matter
+	 * that an entry is learned on a bond port != lag_id. On lag leave we
+	 * would just have to migrate any entries remaining on the leaving port,
+	 * to the lag_id, and flush it's dynamic entries.
+	 *
+	 * With that approach the bond mac entries in HW would point to some
+	 * bond port, but not necessarily the lag_id.
+	 *
+	 * The current approach makes sure all static entries point to the
+	 * current lag_id.
+	 *
+	 * We are keeping dynamic entries for the old_lag_id in HW without
+	 * migration. New macs on the bond1 are learned on the new_lag_id,
+	 * but doing fdb_dump will show old entries on old_lag_id until
+	 * they are relearned or aged out.
+	 */
 	if (old_lag_id >= 0 && old_lag_id != new_lag_id)
 		lan9645x_migrate_lag_fdb(lan9645x, lag.dev, old_lag_id,
 					 new_lag_id);
@@ -1266,9 +1263,6 @@ static int lan9645x_lag_leave(struct dsa_switch *ds, int port,
 	 * NOTE: This will clear our hw, but the static entries will remain in
 	 * software as offload static. Fear not - if you add a port back to the
 	 * bond, DSA will kindly call you with lag_fdb_add
-	 *
-	 * When a port leaves (not last) - dsa will also flush (fast_age) the port.
-	 * so we only need to migrate static entries
 	 */
 	if (new_lag_id >= 0 && old_lag_id != new_lag_id)
 		lan9645x_migrate_lag_fdb(lan9645x, lag.dev, old_lag_id,
@@ -1939,7 +1933,7 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 
 	/* MAC table integration */
 	.port_fast_age			= lan9645x_port_fast_age,
-	/* .port_fdb_dump		= lan9645x_fdb_dump, */
+	.port_fdb_dump			= lan9645x_fdb_dump,
 	.port_fdb_add			= lan9645x_fdb_add,
 	.port_fdb_del			= lan9645x_fdb_del,
 

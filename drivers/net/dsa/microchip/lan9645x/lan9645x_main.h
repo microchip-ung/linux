@@ -245,7 +245,7 @@ struct lan9645x_mact_common {
 		u8 mac[ETH_ALEN] __aligned(2);
 	} key;
 	u32 row: 11, /* 2048 rows, 4 buckets each */
-	    pgid: 6, /* 0-63 GP pgds. */
+	    pgid: 6, /* 0-63 general purpose pgids. */
 	    type: 2,
 	    valid: 1,
 	    processed: 1,
@@ -376,7 +376,6 @@ struct lan9645x {
 	u16 bridge_mask; /* Mask for bridged ports */
 	u16 bridge_fwd_mask; /* Mask for forwarding bridged ports */
 	struct mutex fwd_domain_lock; /* lock forwarding configuration */
-	int ana_irq; /* mac table hw changes irq */
 
 	/* VLAN */
 	u16 vlan_mask[VLAN_N_VID]; /* Port mask per vlan */

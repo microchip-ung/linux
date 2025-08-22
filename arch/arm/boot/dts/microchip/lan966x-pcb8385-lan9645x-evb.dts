@@ -370,8 +370,8 @@
 			lan9645x: ethernet-switch@1 {
 				compatible = "microchip,lan9645x-switch";
 				reg = <0 0>;
-				interrupts-extended = <&lan9645x_irq 17>, <&lan9645x_irq 27>, <&lan9645x_irq 26>;
-				interrupt-names = "lan9645x-ana", "lan9645x-ptp", "lan9645x-ptp-ext";
+				interrupts-extended = <&lan9645x_irq 27>, <&lan9645x_irq 26>;
+				interrupt-names = "lan9645x-ptp", "lan9645x-ptp-ext";
 				pinctrl-0 = <&lan9645x_leds>, <&lan9645x_ptp1_pins>, <&lan9645x_ptp2_pins>;
 				pinctrl-names = "default";
 				ethernet-ports {

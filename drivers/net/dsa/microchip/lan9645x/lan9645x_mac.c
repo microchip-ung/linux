@@ -302,85 +302,9 @@ int lan9645x_mact_learn(struct lan9645x *lan9645x, int port,
 	return ret;
 }
 
-static void __lan9645x_mac_notifiers(struct lan9645x *lan9645x,
-				     enum switchdev_notifier_type type,
-				     int port, const unsigned char *mac,
-				     u16 vid, struct net_device *ndev)
-{
-	struct switchdev_notifier_fdb_info info = { 0 };
-
-	if (WARN_ON(port > lan9645x->num_phys_ports))
-		return;
-
-	/* When HW learns on LAG ports, the pgid used is the lag_id. So same
-	 * (vid,mac) hitting another port in the bond will not change the mac
-	 * table
-	 */
-	if (!ndev)
-		return;
-
-	info.addr = mac;
-	info.vid = vid;
-	info.offloaded = true;
-	call_switchdev_notifiers(type, ndev, &info.info, NULL);
-}
-
-static void lan9645x_mac_notifiers(struct lan9645x *lan9645x,
-				   enum switchdev_notifier_type type, int port,
-				   const unsigned char *mac, u16 vid,
-				   struct net_device *ndev)
-{
-	rtnl_lock();
-	__lan9645x_mac_notifiers(lan9645x, type, port, mac, vid, ndev);
-	rtnl_unlock();
-}
-
 int lan9645x_mact_flush(struct lan9645x *lan9645x, int port)
 {
-	struct lan9645x_mact_entry *entry, *tmp;
-	struct list_head deleted;
 	int err = 0;
-
-	ASSERT_RTNL();
-	/* Forced aging (flush) triggers mact table changes irq, so if the port
-	 * has a very large number of hw learned entries, the irq handler can get
-	 * overwhelmed.
-	 *
-	 * On the contrary, the automatic aging scans has some ratelimiting so
-	 * this is avoided even if the mac table is filled at line rate.
-	 *
-	 * For flushing, we can ease pressure on the irq handler, by manually
-	 * forgetting our entries.
-	 */
-
-	INIT_LIST_HEAD(&deleted);
-
-	mutex_lock(&lan9645x->mac_entry_lock);
-	list_for_each_entry_safe(entry, tmp, &lan9645x->mac_entries, list) {
-		if (entry->common.type == ENTRYTYPE_NORMAL &&
-		    entry->common.pgid == port) {
-			list_del(&entry->list);
-			list_add_tail(&entry->list, &deleted);
-		}
-	}
-	mutex_unlock(&lan9645x->mac_entry_lock);
-
-	mutex_lock(&lan9645x->mact_lock);
-	list_for_each_entry(entry, &deleted, list)
-		__lan9645x_mact_forget(lan9645x, entry->common.key.mac,
-				       entry->common.key.vid,
-				       entry->common.type);
-	mutex_unlock(&lan9645x->mact_lock);
-
-	list_for_each_entry_safe(entry, tmp, &deleted, list) {
-		__lan9645x_mac_notifiers(lan9645x, SWITCHDEV_FDB_DEL_TO_BRIDGE,
-					 entry->common.pgid,
-					 entry->common.key.mac,
-					 entry->common.key.vid, entry->bond);
-		lan9645x_mact_entry_dealloc(lan9645x, entry);
-	}
-
-	 /* For good measure, we flush explicitly. */
 
 	mutex_lock(&lan9645x->mact_lock);
 	/* MAC table entries with dst index maching port are aged on scan. */
@@ -472,195 +396,6 @@ forget:
 	return lan9645x_mact_forget(lan9645x, mac, vid, ENTRYTYPE_LOCKED);
 }
 
-static void lan9645x_mac_irq_process(struct lan9645x *lan9645x, int row,
-				     struct lan9645x_mact_common *raw)
-{
-	struct lan9645x_mact_entry *entry, *tmp;
-	struct list_head deleted;
-	struct net_device *ndev;
-	int col;
-
-	INIT_LIST_HEAD(&deleted);
-
-	/* The changes2sw bit can not reliably be used to detect which columns
-	 * in a row was actually changed.
-	 */
-
-	mutex_lock(&lan9645x->mac_entry_lock);
-	list_for_each_entry_safe(entry, tmp, &lan9645x->mac_entries, list) {
-		bool found = false;
-
-		/* This implicitly also filters on ENTRYTYE_NORMAL */
-		if (entry->common.row != row)
-			continue;
-
-		for (col = 0; col < LAN9645X_MAC_COLUMNS; ++col) {
-			/* All the valid entries are at the start of the row */
-			if (!raw[col].valid)
-				break;
-
-			if (raw[col].processed ||
-			    raw[col].pgid >= lan9645x->num_phys_ports ||
-			    raw[col].type != ENTRYTYPE_NORMAL)
-				continue;
-
-			if (lan9645x_mact_entry_equal(entry, raw[col].key.mac,
-						      raw[col].key.vid)) {
-				/* (vid,mac) either got aged flag set, moved port
-				 * or is collateral.
-				 */
-				if (entry->common.pgid == raw[col].pgid) {
-					raw[col].processed = true;
-					found = true;
-					break;
-				}
-			}
-		}
-
-		if (!found) {
-			/* aged out or moved */
-			list_del(&entry->list);
-			list_add_tail(&entry->list, &deleted);
-		}
-	}
-	mutex_unlock(&lan9645x->mac_entry_lock);
-
-	list_for_each_entry_safe(entry, tmp, &deleted, list) {
-		lan9645x_mac_notifiers(lan9645x, SWITCHDEV_FDB_DEL_TO_BRIDGE,
-				       entry->common.pgid,
-				       entry->common.key.mac,
-				       entry->common.key.vid, entry->bond);
-		lan9645x_mact_entry_dealloc(lan9645x, entry);
-	}
-
-	/* Now go to the list of columns and see if any entry was not in the SW
-	 * list, then that means that the entry is new so it needs to notify the
-	 * bridge.
-	 */
-	for (col = 0; col < LAN9645X_MAC_COLUMNS; ++col) {
-		if (!raw[col].valid)
-			break;
-		if (raw[col].processed ||
-		    raw[col].pgid >= lan9645x->num_phys_ports ||
-		    raw[col].type != ENTRYTYPE_NORMAL)
-			continue;
-
-		mutex_lock(&lan9645x->mac_entry_lock);
-		entry = lan9645x_mact_entry_lookup(lan9645x, raw[col].key.mac,
-						   raw[col].key.vid);
-		if (entry) {
-			WARN_ON(entry->common.pgid != raw[col].pgid);
-			dev_info(lan9645x->dev,
-				 "found SKIPPED not added mac=%pM vid=%u pgid=%u epgid=%u",
-				 raw[col].key.mac, raw[col].key.vid,
-				 raw[col].pgid, entry->common.pgid);
-			mutex_unlock(&lan9645x->mac_entry_lock);
-			continue;
-		}
-
-		entry = lan9645x_mact_entry_alloc(lan9645x, raw[col].key.mac,
-						  raw[col].key.vid,
-						  raw[col].pgid,
-						  ENTRYTYPE_NORMAL);
-		if (!entry) {
-			mutex_unlock(&lan9645x->mac_entry_lock);
-			return;
-		}
-
-		ndev = entry->bond;
-		entry->common.row = row;
-		list_add_tail(&entry->list, &lan9645x->mac_entries);
-		mutex_unlock(&lan9645x->mac_entry_lock);
-
-		WARN_ON(entry->common.pgid != raw[col].pgid);
-
-		lan9645x_mac_notifiers(lan9645x, SWITCHDEV_FDB_ADD_TO_BRIDGE,
-				       raw[col].pgid, raw[col].key.mac,
-				       raw[col].key.vid, ndev);
-	}
-}
-
-irqreturn_t lan9645x_mac_irq_handler(int virq, void *args)
-{
-	struct lan9645x_mact_common rentry[LAN9645X_MAC_COLUMNS] = { 0 };
-	struct lan9645x *lan9645x = args;
-	u32 mach, macl, maca = 0;
-	int nrows = 0, rnds = 0;
-	u64 t0 = ktime_get_ns();
-	u32 index, column;
-	bool stop = true;
-	u32 val;
-
-	if (!(ANA_ANAINTR_INTR_GET(lan_rd(lan9645x, ANA_ANAINTR))))
-		return IRQ_HANDLED;
-
-	mutex_lock(&lan9645x->mact_lock);
-	/* Start the scan from 0, 0 */
-	lan_wr(ANA_MACTINDX_M_INDEX_SET(0) | ANA_MACTINDX_BUCKET_SET(0),
-	       lan9645x, ANA_MACTINDX);
-
-	while (1) {
-		lan_rmw(ANA_MACACCESS_MAC_TABLE_CMD_SET(CMD_SYNC_GET_NEXT),
-			ANA_MACACCESS_MAC_TABLE_CMD, lan9645x,
-			ANA_MACACCESS);
-		if (WARN_ON(lan9645x_mac_wait_for_completion(lan9645x,
-							     &maca))) {
-			break;
-		}
-
-		val = lan_rd(lan9645x, ANA_MACTINDX);
-		index = ANA_MACTINDX_M_INDEX_GET(val);
-		column = ANA_MACTINDX_BUCKET_GET(val);
-
-		/* The SYNC-GET-NEXT returns all the entries(4) in a row in
-		 * which is suffered a change. By change it means that new entry
-		 * was added or an entry was removed because of ageing.
-		 * It would return all the columns for that row. And after that
-		 * it would return the next row.
-		 * The stop conditions of the SYNC-GET-NEXT is when it reaches
-		 * 'directly' to row 0 column 3. So if SYNC-GET-NEXT returns
-		 * row 0 and column 0 then it is required to continue to read
-		 * more even if it reaches row 0 and column 3.
-		 */
-		if (index == 0 && column == 0)
-			stop = false;
-
-		if (column == LAN9645X_MAC_COLUMNS - 1 && index == 0 && stop)
-			break;
-
-		rentry[column].valid = ANA_MACACCESS_VALID_GET(maca);
-		rentry[column].processed = ANA_MACACCESS_ENTRYTYPE_GET(maca) !=
-			ENTRYTYPE_NORMAL;
-		if (rentry[column].valid && !rentry[column].processed) {
-			mach = lan_rd(lan9645x, ANA_MACHDATA);
-			macl = lan_rd(lan9645x, ANA_MACLDATA);
-			lan9645x_mact_parse(mach, macl, maca, &rentry[column]);
-		}
-
-		/* Once all the columns are read process them */
-		if (column == LAN9645X_MAC_COLUMNS - 1) {
-			lan9645x_mac_irq_process(lan9645x, index, rentry);
-			/* A row was processed so it is safe to assume that the
-			 * next row/column can be the stop condition
-			 */
-			stop = true;
-			nrows++;
-		}
-	}
-
-	mutex_unlock(&lan9645x->mact_lock);
-
-	lan_rmw(ANA_ANAINTR_INTR_SET(0), ANA_ANAINTR_INTR, lan9645x,
-		ANA_ANAINTR);
-
-	dev_dbg(lan9645x->dev,
-		"ana irq nrows=%d rnds=%d struct_sz=%d idx,col=(%u,%u) nsec=%llu",
-		nrows, rnds, sizeof(struct lan9645x_mact_common), index, column,
-		ktime_get_ns() - t0);
-
-	return IRQ_HANDLED;
-}
-
 void lan9645x_mac_init(struct lan9645x *lan9645x)
 {
 	/* Clear the MAC table */
@@ -684,7 +419,7 @@ int lan9645x_mact_dsa_dump(struct lan9645x *lan9645x, int port,
 			   dsa_fdb_dump_cb_t *cb, void *data)
 {
 	struct lan9645x_mact_entry entry = { 0 };
-	u32 mach, macl, maca, type;
+	u32 mach, macl, maca;
 	u64 t0 = ktime_get_ns();
 	int err = 0;
 	u32 autoage;
@@ -692,7 +427,7 @@ int lan9645x_mact_dsa_dump(struct lan9645x *lan9645x, int port,
 
 	mach = 0;
 	macl = 0;
-	type = ENTRYTYPE_NORMAL;
+	entry.common.type = ENTRYTYPE_NORMAL;
 
 	mutex_lock(&lan9645x->mact_lock);
 
@@ -700,22 +435,26 @@ int lan9645x_mact_dsa_dump(struct lan9645x *lan9645x, int port,
 
 	/* Disable automatic aging temporarily */
 	autoage = lan_rd(lan9645x, ANA_AUTOAGE);
-	lan_wr(autoage & ~ANA_AUTOAGE_AGE_PERIOD, lan9645x, ANA_AUTOAGE);
+
+	lan_rmw(ANA_AUTOAGE_AGE_PERIOD_SET(0),
+		ANA_AUTOAGE_AGE_PERIOD,
+		lan9645x, ANA_AUTOAGE);
 
 	/* Setup filter on our port */
-	lan_wr(ANA_ANAGEFIL_PID_EN_SET(1) | ANA_ANAGEFIL_PID_VAL_SET(port),
+	lan_wr(ANA_ANAGEFIL_PID_EN_SET(1) |
+	       ANA_ANAGEFIL_PID_VAL_SET(port),
 	       lan9645x, ANA_ANAGEFIL);
 
 	lan_wr(0, lan9645x, ANA_MACHDATA);
 	lan_wr(0, lan9645x, ANA_MACLDATA);
 
 	while (1) {
-		/* NOTE: we rely on mach, macl and type being set correctly from
-		 * previous round, vs the GET_NEXT semantics, so locking entire
-		 * loop is important.
+		/* NOTE: we rely on mach, macl and type being set correctly in
+		 * the registers from previous round, vis a vis the GET_NEXT
+		 * semantics, so locking entire loop is important.
 		 */
 		lan_wr(ANA_MACACCESS_MAC_TABLE_CMD_SET(CMD_GET_NEXT) |
-		       ANA_MACACCESS_ENTRYTYPE_SET(type),
+		       ANA_MACACCESS_ENTRYTYPE_SET(entry.common.type),
 		       lan9645x, ANA_MACACCESS);
 
 		if (lan9645x_mac_wait_for_completion(lan9645x, &maca))
@@ -730,11 +469,14 @@ int lan9645x_mact_dsa_dump(struct lan9645x *lan9645x, int port,
 		lan9645x_mact_parse(mach, macl, maca, &entry.common);
 
 		if (ANA_MACACCESS_DEST_IDX_GET(maca) == port &&
-		    (entry.common.type == ENTRYTYPE_NORMAL ||
-		     entry.common.type == ENTRYTYPE_LOCKED)) {
+		    entry.common.type == ENTRYTYPE_NORMAL) {
 			cnt++;
+
+			if (entry.common.key.vid > VLAN_MAX)
+				entry.common.key.vid = 0;
+
 			err = cb(entry.common.key.mac, entry.common.key.vid,
-				 entry.common.type == ENTRYTYPE_LOCKED, data);
+				 false, data);
 			if (err)
 				break;
 		}
@@ -742,11 +484,14 @@ int lan9645x_mact_dsa_dump(struct lan9645x *lan9645x, int port,
 
 	/* Remove aging filters and reenable aging */
 	lan_wr(0, lan9645x, ANA_ANAGEFIL);
-	lan_wr(autoage, lan9645x, ANA_AUTOAGE);
+	lan_rmw(ANA_AUTOAGE_AGE_PERIOD_SET(ANA_AUTOAGE_AGE_PERIOD_GET(autoage)),
+		ANA_AUTOAGE_AGE_PERIOD,
+		lan9645x, ANA_AUTOAGE);
 
 	mutex_unlock(&lan9645x->mact_lock);
 
-	dev_dbg(lan9645x->dev, "dump elapsed=%llu", ktime_get_ns() - t0);
+	dev_dbg(lan9645x->dev, "dump port=%d cnt=%u elapsed=%llu", port, cnt,
+		ktime_get_ns() - t0);
 
 	return err;
 }
