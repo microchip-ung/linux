@@ -1630,7 +1630,7 @@ static int lan9645x_port_get_default_prio(struct dsa_switch *ds, int port)
 
 	dev_dbg(lan9645x->dev, "port=%d", port);
 
-	return lan9645x_qos_port_get_default_prio(lan9645x, port);
+	return lan9645x_dcb_port_get_default_prio(lan9645x, port);
 }
 
 static int lan9645x_port_set_default_prio(struct dsa_switch *ds, int port,
@@ -1640,7 +1640,7 @@ static int lan9645x_port_set_default_prio(struct dsa_switch *ds, int port,
 
 	dev_dbg(lan9645x->dev, "port=%d prio=%u", port, prio);
 
-	return lan9645x_qos_port_set_default_prio(lan9645x, port, prio);
+	return lan9645x_dcb_port_set_default_prio(lan9645x, port, prio);
 }
 
 static int lan9645x_port_get_dscp_prio(struct dsa_switch *ds, int port, u8 dscp)
@@ -1649,7 +1649,7 @@ static int lan9645x_port_get_dscp_prio(struct dsa_switch *ds, int port, u8 dscp)
 
 	dev_dbg(lan9645x->dev, "port=%d dscp=%u", port, dscp);
 
-	return lan9645x_qos_port_get_dscp_prio(lan9645x, port, dscp);
+	return lan9645x_dcb_port_get_dscp_prio(lan9645x, port, dscp);
 }
 
 static int lan9645x_port_add_dscp_prio(struct dsa_switch *ds, int port, u8 dscp,
@@ -1659,7 +1659,7 @@ static int lan9645x_port_add_dscp_prio(struct dsa_switch *ds, int port, u8 dscp,
 
 	dev_dbg(lan9645x->dev, "port=%d dscp=%u prio=%u", port, dscp, prio);
 
-	return lan9645x_qos_port_add_dscp_prio(lan9645x, port, dscp, prio);
+	return lan9645x_dcb_add_dscp_prio(lan9645x, dscp, prio);
 }
 
 static int lan9645x_port_del_dscp_prio(struct dsa_switch *ds, int port, u8 dscp,
@@ -1669,7 +1669,7 @@ static int lan9645x_port_del_dscp_prio(struct dsa_switch *ds, int port, u8 dscp,
 
 	dev_dbg(lan9645x->dev, "port=%d dscp=%u prio=%u", port, dscp, prio);
 
-	return lan9645x_qos_port_del_dscp_prio(lan9645x, port, dscp, prio);
+	return lan9645x_dcb_del_dscp_prio(lan9645x, dscp, prio);
 }
 
 static int lan9645x_cls_flower_add(struct dsa_switch *ds, int port,
@@ -1820,7 +1820,7 @@ static int lan9645x_port_set_apptrust(struct dsa_switch *ds, int port,
 {
 	struct lan9645x *lan9645x = ds->priv;
 
-	return lan9645x_qos_port_set_apptrust(lan9645x, port, sel, nsel);
+	return lan9645x_dcb_port_set_apptrust(lan9645x, port, sel, nsel);
 }
 
 static int lan9645x_port_get_apptrust(struct dsa_switch *ds, int port, u8 *sel,
@@ -1828,20 +1828,17 @@ static int lan9645x_port_get_apptrust(struct dsa_switch *ds, int port, u8 *sel,
 {
 	struct lan9645x *lan9645x = ds->priv;
 
-	return lan9645x_qos_port_get_apptrust(lan9645x, port, sel, nsel);
+	return lan9645x_dcb_port_get_apptrust(lan9645x, port, sel, nsel);
 }
 
 static int lan9645x_port_get_pcp_dei_prio(struct dsa_switch *ds, int port,
 					  u8 pcp, u8 dei)
 {
 	struct lan9645x *lan9645x = ds->priv;
-	u32 pcp_dei_cfg;
 
 	dev_dbg(lan9645x->dev, "port=%d pcp=%u dei=%u", port, pcp, dei);
 
-	pcp_dei_cfg = lan_rd(lan9645x, ANA_PCP_DEI_CFG(port, 8*dei + pcp));
-
-	return ANA_PCP_DEI_CFG_QOS_PCP_DEI_VAL_GET(pcp_dei_cfg);
+	return lan9645x_dcb_get_pcp_dei_prio(lan9645x, port, pcp, dei);
 }
 
 static int lan9645x_port_add_pcp_dei_prio(struct dsa_switch *ds, int port,
@@ -1852,35 +1849,18 @@ static int lan9645x_port_add_pcp_dei_prio(struct dsa_switch *ds, int port,
 	dev_dbg(lan9645x->dev, "port=%d pcp=%u dei=%u prio=%u", port, pcp, dei,
 		prio);
 
-	/* dcbnl can only map to prio, but HW has prio/dpl. We silently map
-	 * dei -> dpl in a 1:1 manner, even though the user did not and can not
-	 * request it.
-	 */
-	lan_wr(ANA_PCP_DEI_CFG_QOS_PCP_DEI_VAL_SET(prio) |
-	       ANA_PCP_DEI_CFG_DP_PCP_DEI_VAL_SET(dei),
-	       lan9645x,
-	       ANA_PCP_DEI_CFG(port, dei * 8 + pcp));
-
-	return 0;
+	return lan9645x_dcb_add_pcp_dei_prio(lan9645x, port, pcp, dei, prio);
 }
 
 static int lan9645x_port_del_pcp_dei_prio(struct dsa_switch *ds, int port,
 					  u8 pcp, u8 dei, u8 prio)
 {
 	struct lan9645x *lan9645x = ds->priv;
-	u32 pcp_cfg;
 
 	dev_dbg(lan9645x->dev, "port=%d pcp=%u dei=%u prio=%u", port, pcp, dei,
 		prio);
 
-	pcp_cfg = lan_rd(lan9645x, ANA_PCP_DEI_CFG(port, dei * 8 + pcp));
-
-	if (ANA_PCP_DEI_CFG_QOS_PCP_DEI_VAL_GET(pcp_cfg) != prio)
-		return 0;
-
-	lan_wr(0x0, lan9645x, ANA_PCP_DEI_CFG(port, dei * 8 + pcp));
-
-	return 0;
+	return lan9645x_dcb_del_pcp_dei_prio(lan9645x, port, pcp, dei, prio);
 }
 
 static int lan9645x_port_get_pfc(struct dsa_switch *ds, int port,
@@ -1890,7 +1870,7 @@ static int lan9645x_port_get_pfc(struct dsa_switch *ds, int port,
 
 	dev_dbg(lan9645x->dev, "port=%d", port);
 
-	return lan9645x_qos_getpfc(lan9645x, port, pfc);
+	return lan9645x_dcb_getpfc(lan9645x, port, pfc);
 }
 
 static int lan9645x_port_set_pfc(struct dsa_switch *ds, int port,
@@ -1900,7 +1880,7 @@ static int lan9645x_port_set_pfc(struct dsa_switch *ds, int port,
 
 	dev_dbg(lan9645x->dev, "port=%d pfc=%x", port, pfc->pfc_en);
 
-	return lan9645x_qos_setpfc(lan9645x, port, pfc->pfc_en);
+	return lan9645x_dcb_setpfc(lan9645x, port, pfc->pfc_en);
 }
 
 static const struct dsa_switch_ops lan9645x_switch_ops = {

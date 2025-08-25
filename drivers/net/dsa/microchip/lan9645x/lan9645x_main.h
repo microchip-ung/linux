@@ -934,6 +934,30 @@ int __lan9645x_qos_dscp_conf_get(struct lan9645x *lan9645x,
 				 u8 dscp,
 				 struct lan9645x_ig_dscp *cfg);
 
+/* DCB integration lan9645x_dcb.c */
+int lan9645x_dcb_port_get_default_prio(struct lan9645x *lan9645x, int port);
+int lan9645x_dcb_port_set_default_prio(struct lan9645x *lan9645x, int port,
+				       u8 prio);
+int lan9645x_dcb_port_set_apptrust(struct lan9645x *lan9645x, int port,
+				   const u8 *sel, int nsel);
+int lan9645x_dcb_port_get_apptrust(struct lan9645x *lan9645x, int port, u8 *sel,
+				   int *nsel);
+int lan9645x_dcb_port_get_dscp_prio(struct lan9645x *lan9645x, int port,
+				    u8 dscp);
+int lan9645x_dcb_add_dscp_prio(struct lan9645x *lan9645x,
+			       u8 dscp, u8 prio);
+int lan9645x_dcb_del_dscp_prio(struct lan9645x *lan9645x,
+			       u8 dscp, u8 prio);
+int lan9645x_dcb_get_pcp_dei_prio(struct lan9645x *lan9645x, int port,
+				  u8 pcp, u8 dei);
+int lan9645x_dcb_add_pcp_dei_prio(struct lan9645x *lan9645x, int port,
+				  u8 pcp, u8 dei, u8 prio);
+int lan9645x_dcb_del_pcp_dei_prio(struct lan9645x *lan9645x, int port,
+				  u8 pcp, u8 dei, u8 prio);
+int lan9645x_dcb_getpfc(struct lan9645x *lan9645x, int port,
+			struct ieee_pfc *pfc);
+int lan9645x_dcb_setpfc(struct lan9645x *lan9645x, int port, u8 pfc_enable);
+
 /* TC flower lan9645x_tc_flower.c */
 int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,
 			   bool ingress);
