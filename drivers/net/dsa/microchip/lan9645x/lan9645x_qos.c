@@ -84,160 +84,6 @@ static void lan9645x_qos_port_init(struct lan9645x_port *p)
 	p->qos.e_mode = E_MODE_CLASSIFIED;
 }
 
-int lan9645x_qos_port_get_default_prio(struct lan9645x *lan9645x, int port)
-{
-	u32 qos_cfg;
-
-	qos_cfg = lan_rd(lan9645x, ANA_QOS_CFG(port));
-
-	return ANA_QOS_CFG_QOS_DEFAULT_VAL_GET(qos_cfg);
-}
-
-int lan9645x_qos_port_set_default_prio(struct lan9645x *lan9645x, int port,
-				       u8 prio)
-{
-	if (prio >= LAN9645X_NUM_TC)
-		return -ERANGE;
-
-	lan_rmw(ANA_QOS_CFG_QOS_DEFAULT_VAL_SET(prio),
-		ANA_QOS_CFG_QOS_DEFAULT_VAL,
-		lan9645x, ANA_QOS_CFG(port));
-
-	return 0;
-}
-
-int lan9645x_qos_port_get_dscp_prio(struct lan9645x *lan9645x, int port,
-				    u8 dscp)
-{
-	u32 qos_cfg = lan_rd(lan9645x, ANA_QOS_CFG(port));
-	u32 dscp_cfg = lan_rd(lan9645x, ANA_DSCP_CFG(dscp));
-
-	if (!ANA_QOS_CFG_QOS_DSCP_ENA_GET(qos_cfg))
-		return -EOPNOTSUPP;
-
-	if (ANA_QOS_CFG_DSCP_TRANSLATE_ENA_GET(qos_cfg)) {
-		dscp = ANA_DSCP_CFG_DSCP_TRANSLATE_VAL_GET(dscp_cfg);
-		dscp_cfg = lan_rd(lan9645x, ANA_DSCP_CFG(dscp));
-	}
-
-	if (!ANA_DSCP_CFG_DSCP_TRUST_ENA_GET(dscp_cfg))
-		return -EOPNOTSUPP;
-
-	return ANA_DSCP_CFG_QOS_DSCP_VAL_GET(dscp_cfg);
-}
-
-int lan9645x_qos_port_add_dscp_prio(struct lan9645x *lan9645x, int port,
-				    u8 dscp, u8 prio)
-{
-	if (prio >= LAN9645X_NUM_TC)
-		return -ERANGE;
-
-	lan_rmw(ANA_DSCP_CFG_DSCP_TRUST_ENA_SET(1) |
-		ANA_DSCP_CFG_QOS_DSCP_VAL_SET(prio) |
-		ANA_DSCP_CFG_DP_DSCP_VAL_SET(0),
-		ANA_DSCP_CFG_DSCP_TRUST_ENA |
-		ANA_DSCP_CFG_QOS_DSCP_VAL |
-		ANA_DSCP_CFG_DP_DSCP_VAL,
-		lan9645x, ANA_DSCP_CFG(dscp));
-
-	return 0;
-}
-
-int lan9645x_qos_port_del_dscp_prio(struct lan9645x *lan9645x, int port,
-				    u8 dscp, u8 prio)
-{
-	u32 dscp_cfg = lan_rd(lan9645x, ANA_DSCP_CFG(dscp));
-
-	/* During a "dcb app replace" command, the new app table entry will be
-	 * added first, then the old one will be deleted. But the hardware only
-	 * supports one QoS class per DSCP value (duh), so if we blindly delete
-	 * the app table entry for this DSCP value, we end up deleting the
-	 * entry with the new priority. Avoid that by checking whether user
-	 * space wants to delete the priority which is currently configured, or
-	 * something else which is no longer current.
-	 */
-	if (ANA_DSCP_CFG_QOS_DSCP_VAL_GET(dscp_cfg) != prio)
-		return 0;
-
-	lan_wr(0x0, lan9645x, ANA_DSCP_CFG(dscp));
-
-	return 0;
-}
-
-int lan9645x_qos_port_set_apptrust(struct lan9645x *lan9645x, int port,
-				   const u8 *sel, int nsel)
-{
-	bool trust_dscp = false, trust_pcp = false;
-
-	dev_dbg(lan9645x->dev, "port=%d nsel=%d", port, nsel);
-	for (int i = 0; i < nsel; i++)
-		dev_dbg(lan9645x->dev, "sel=%u", sel[i]);
-
-	/* We can either do PCP, DSCP or DSCP,PCP (this order) */
-
-	switch (nsel) {
-	case 0:
-		break;
-	case 1:
-		if (!(sel[0] == DCB_APP_SEL_PCP ||
-		      sel[0] == IEEE_8021QAZ_APP_SEL_DSCP))
-			return -EOPNOTSUPP;
-
-		break;
-	case 2:
-		/* DSCP always takes priority over PCP in hw */
-		if (sel[0] != IEEE_8021QAZ_APP_SEL_DSCP ||
-		    sel[1] != DCB_APP_SEL_PCP)
-			return -EOPNOTSUPP;
-		break;
-	default:
-		return -EOPNOTSUPP;
-	}
-
-	for (int i = 0; i < nsel; i++) {
-		switch (sel[i]) {
-		case DCB_APP_SEL_PCP:
-			trust_pcp = true;
-			break;
-		case IEEE_8021QAZ_APP_SEL_DSCP:
-			trust_dscp = true;
-			break;
-		default:
-			continue;
-		}
-	}
-
-	lan_rmw(ANA_QOS_CFG_QOS_PCP_ENA_SET(trust_pcp) |
-		ANA_QOS_CFG_QOS_DSCP_ENA_SET(trust_dscp),
-		ANA_QOS_CFG_QOS_PCP_ENA |
-		ANA_QOS_CFG_QOS_DSCP_ENA,
-		lan9645x, ANA_QOS_CFG(port));
-
-	return 0;
-}
-
-int lan9645x_qos_port_get_apptrust(struct lan9645x *lan9645x, int port, u8 *sel,
-				   int *nsel)
-{
-	u32 qos_cfg;
-
-	*nsel = 0;
-
-	qos_cfg = lan_rd(lan9645x, ANA_QOS_CFG(port));
-
-	if (ANA_QOS_CFG_QOS_DSCP_ENA_GET(qos_cfg))
-		sel[(*nsel)++] = IEEE_8021QAZ_APP_SEL_DSCP;
-
-	if (ANA_QOS_CFG_QOS_PCP_ENA_GET(qos_cfg))
-		sel[(*nsel)++] = DCB_APP_SEL_PCP;
-
-	dev_dbg(lan9645x->dev, "port=%d nsel=%u", port, *nsel);
-	for (int i = 0; i < *nsel; i++)
-		dev_dbg(lan9645x->dev, "sel=%u", sel[i]);
-
-	return 0;
-}
-
 static int __lan9645x_qos_setpfc(struct lan9645x *lan9645x, int port,
 				 u8 pfc_enable)
 {
@@ -288,21 +134,6 @@ static int __lan9645x_qos_setpfc(struct lan9645x *lan9645x, int port,
 	return 0;
 }
 
-static int __lan9645x_qos_getpfc(struct lan9645x *lan9645x, int port,
-				 struct ieee_pfc *pfc)
-{
-	struct lan9645x_port *p;
-
-	p = lan9645x_to_port(lan9645x, port);
-
-	lockdep_assert_held(&p->qos_lock);
-
-	pfc->pfc_en = p->qos.pfc_enable;
-	pfc->pfc_cap = LAN9645X_NUM_TC;
-
-	return 0;
-}
-
 int lan9645x_qos_setpfc(struct lan9645x *lan9645x, int port, u8 pfc_enable)
 {
 	struct lan9645x_port *p;
@@ -312,21 +143,6 @@ int lan9645x_qos_setpfc(struct lan9645x *lan9645x, int port, u8 pfc_enable)
 
 	mutex_lock(&p->qos_lock);
 	err =  __lan9645x_qos_setpfc(lan9645x, port, pfc_enable);
-	mutex_unlock(&p->qos_lock);
-
-	return err;
-}
-
-int lan9645x_qos_getpfc(struct lan9645x *lan9645x, int port,
-			struct ieee_pfc *pfc)
-{
-	struct lan9645x_port *p;
-	int err;
-
-	p = lan9645x_to_port(lan9645x, port);
-
-	mutex_lock(&p->qos_lock);
-	err = __lan9645x_qos_getpfc(lan9645x, port, pfc);
 	mutex_unlock(&p->qos_lock);
 
 	return err;

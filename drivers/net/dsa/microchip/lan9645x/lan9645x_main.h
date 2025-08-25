@@ -904,21 +904,6 @@ int lan9645x_tc_matchall_goto_del(struct lan9645x_port *p,
 int lan9645x_qos_polix_alloc(struct lan9645x *lan9645x);
 void lan9645x_qos_polix_free(struct lan9645x *lan9645x, u16 polix);
 int lan9645x_qos_init(struct lan9645x *lan9645x);
-int lan9645x_qos_port_del_dscp_prio(struct lan9645x *lan9645x, int port,
-				    u8 dscp, u8 prio);
-int lan9645x_qos_port_add_dscp_prio(struct lan9645x *lan9645x, int port,
-				    u8 dscp, u8 prio);
-int lan9645x_qos_port_get_dscp_prio(struct lan9645x *lan9645x, int port,
-				    u8 dscp);
-int lan9645x_qos_port_set_default_prio(struct lan9645x *lan9645x, int port,
-				       u8 prio);
-int lan9645x_qos_port_get_default_prio(struct lan9645x *lan9645x, int port);
-int lan9645x_qos_port_get_apptrust(struct lan9645x *lan9645x, int port, u8 *sel,
-				   int *nsel);
-int lan9645x_qos_port_set_apptrust(struct lan9645x *lan9645x, int port,
-				   const u8 *sel, int nsel);
-int lan9645x_qos_getpfc(struct lan9645x *lan9645x, int port,
-			struct ieee_pfc *pfc);
 int lan9645x_qos_setpfc(struct lan9645x *lan9645x, int port, u8 pfc_enable);
 int __lan9645x_qos_portconf_set(struct lan9645x_port *p,
 				struct lan9645x_port_qos *cfg);
