@@ -190,6 +190,13 @@
 #define LAN9645X_LED_PROP_IDX		0
 #define LAN9645X_LED_PROP_DRIVE		1
 
+/* QOS port configuration */
+#define LAN9645X_DSCP_COUNT		64
+#define LAN9645X_DEI_COUNT		2
+#define LAN9645X_DPL_COUNT		2
+#define LAN9645X_PCP_COUNT		8
+#define LAN9645X_PRIO_COUNT		8
+
 /* Rewriter VLAN port tagging encoding for REW:PORT[0-10]:TAG_CFG.TAG_CFG
  *
  * 0: Port tagging disabled.
@@ -348,6 +355,12 @@ struct lan9645x_phc {
 	u8 index;
 };
 
+struct lan9645x_ig_dscp {
+	u8 prio;
+	u8 dpl;
+	bool trust;
+};
+
 struct lan9645x {
 	struct device *dev;
 	struct dsa_switch *ds;
@@ -413,7 +426,7 @@ struct lan9645x {
 
 	/* TC / QOS Policer resource management */
 	DECLARE_BITMAP(pol_idx_mask, LAN9645X_NUM_POL_POOL);
-	struct mutex qos_lock;
+	struct mutex qos_lock; /* Global QOS: dscp, qos policers */
 
 	/* TC chain_id to isdx management */
 	struct list_head link_isdx;
@@ -428,9 +441,39 @@ struct lan9645x {
 	u16 ptp_skbs;
 	int ptp_ext_irq;
 	int ptp_irq;
+
+	/* QOS DSCP map */
+	struct lan9645x_ig_dscp i_dscp_map[LAN9645X_DSCP_COUNT];
 };
 
-struct lan9645x_qos {
+struct lan9645x_port_qos {
+	u8 i_default_prio;
+	u8 i_default_dpl;
+	u8 i_default_pcp;
+	u8 i_default_dei;
+
+	struct {
+		u8 prio;
+		u8 dpl;
+	} i_map[LAN9645X_PCP_COUNT][LAN9645X_DEI_COUNT];
+	struct {
+		bool tag_map_enable;
+		bool dscp_map_enable;
+	} i_mode;
+
+	u8 e_default_pcp;
+	u8 e_default_dei;
+	struct {
+		u8 pcp;
+		u8 dei;
+	} e_map[LAN9645X_PRIO_COUNT][LAN9645X_DPL_COUNT];
+	enum {
+		E_MODE_CLASSIFIED = 0,
+		E_MODE_PORT_PCP_DEI = 1,
+		E_MODE_MAPPED = 2,
+		E_MODE_QOS_DP = 3,
+	} e_mode;
+
 	u8 pfc_enable;
 };
 
@@ -460,8 +503,8 @@ struct lan9645x_port {
 
 	struct net_device *hsr; /* HSR/PRP upper device */
 
-	struct mutex qos_lock;
-	struct lan9645x_qos qos;
+	struct mutex qos_lock; /* Port QOS config */
+	struct lan9645x_port_qos qos;
 
 	/* PTP */
 	struct sk_buff_head tx_skbs;
@@ -857,12 +900,10 @@ int lan9645x_tc_matchall_goto_add(struct lan9645x_port *p,
 int lan9645x_tc_matchall_goto_del(struct lan9645x_port *p,
 				  struct tc_cls_matchall_offload *f);
 
-/* QOS quality of service */
-void lan9645x_qos_port_init(struct lan9645x_port *p);
+/* QOS quality of service lan9645x_qos.c */
 int lan9645x_qos_polix_alloc(struct lan9645x *lan9645x);
 void lan9645x_qos_polix_free(struct lan9645x *lan9645x, u16 polix);
 int lan9645x_qos_init(struct lan9645x *lan9645x);
-void lan9645x_qos_port_init(struct lan9645x_port *p);
 int lan9645x_qos_port_del_dscp_prio(struct lan9645x *lan9645x, int port,
 				    u8 dscp, u8 prio);
 int lan9645x_qos_port_add_dscp_prio(struct lan9645x *lan9645x, int port,
@@ -879,6 +920,19 @@ int lan9645x_qos_port_set_apptrust(struct lan9645x *lan9645x, int port,
 int lan9645x_qos_getpfc(struct lan9645x *lan9645x, int port,
 			struct ieee_pfc *pfc);
 int lan9645x_qos_setpfc(struct lan9645x *lan9645x, int port, u8 pfc_enable);
+int __lan9645x_qos_portconf_set(struct lan9645x_port *p,
+				struct lan9645x_port_qos *cfg);
+int lan9645x_qos_portconf_set(struct lan9645x_port *p,
+			      struct lan9645x_port_qos *cfg);
+void __lan9645x_qos_portconf_get(struct lan9645x_port *p,
+				 struct lan9645x_port_qos *cfg);
+void lan9645x_qos_portconf_get(struct lan9645x_port *p,
+			       struct lan9645x_port_qos *cfg);
+int __lan9645x_qos_dscp_conf_set(struct lan9645x *lan9645x, u8 dscp,
+				 struct lan9645x_ig_dscp *cfg);
+int __lan9645x_qos_dscp_conf_get(struct lan9645x *lan9645x,
+				 u8 dscp,
+				 struct lan9645x_ig_dscp *cfg);
 
 /* TC flower lan9645x_tc_flower.c */
 int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,

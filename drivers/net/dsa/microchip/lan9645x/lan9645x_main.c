@@ -547,6 +547,9 @@ static int lan9645x_setup(struct dsa_switch *ds)
 	mutex_init(&lan9645x->link_isdx_lock);
 	lan9645x_mac_init(lan9645x);
 	lan9645x_vlan_init(lan9645x);
+	err = lan9645x_qos_init(lan9645x);
+	if (err)
+		return dev_err_probe(dev, err, "QOS init error");
 	lan9645x_mdb_init(lan9645x);
 	err = lan9645x_ptp_init(lan9645x);
 	if (err)
@@ -689,7 +692,6 @@ static int lan9645x_setup(struct dsa_switch *ds)
 
 	dsa_switch_for_each_available_port(dp, ds) {
 		lan9645x_port_init(lan9645x, dp->index);
-		lan9645x_qos_port_init(lan9645x->ports[dp->index]);
 		lan9645x_police_port_init(lan9645x->ports[dp->index]);
 	}
 

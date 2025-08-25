@@ -6,15 +6,6 @@
 
 #include "lan9645x_main.h"
 
-#define LAN9645X_PORT_QOS_DSCP_COUNT	64
-
-enum rew_pcp_dei_mode {
-	CLASSIFIED = 0,
-	PORT_BASED = 1,
-	MAPPED = 2,
-	QOS_DP_LEVEL = 3,
-};
-
 static int __lan9645x_qos_polix_alloc(struct lan9645x *lan9645x)
 {
 	int polix;
@@ -59,29 +50,23 @@ void lan9645x_qos_polix_free(struct lan9645x *lan9645x, u16 polix)
 	mutex_unlock(&lan9645x->qos_lock);
 }
 
-int lan9645x_qos_init(struct lan9645x *lan9645x)
+static void lan9645x_qos_port_init(struct lan9645x_port *p)
 {
-	mutex_init(&lan9645x->qos_lock);
-	return 0;
-}
-
-void lan9645x_qos_port_init(struct lan9645x_port *p)
-{
-	struct lan9645x *lan9645x = p->lan9645x;
 	int pcp, dei, qos, dpl;
-	u8 tag_cfg;
 
 	mutex_init(&p->qos_lock);
+
+	p->qos.pfc_enable = 0;
+	p->qos.i_mode.tag_map_enable = false;
+	p->qos.i_mode.dscp_map_enable = false;
 	/* Setup ingress 1:1 mapping between tag [PCP,DEI] and [PRIO,DPL].
 	 * PCP determines the priority (0..7) of the frame and
 	 * DEI determines the color (green og yellow) of the frame.
 	 */
 	for (pcp = 0; pcp < 8; pcp++) {
 		for (dei = 0; dei < 2; dei++) {
-			lan_wr(ANA_PCP_DEI_CFG_DP_PCP_DEI_VAL_SET(dei) |
-			       ANA_PCP_DEI_CFG_QOS_PCP_DEI_VAL_SET(pcp),
-			       lan9645x,
-			       ANA_PCP_DEI_CFG(p->chip_port, 8 * dei + pcp));
+			p->qos.i_map[pcp][dei].prio = pcp;
+			p->qos.i_map[pcp][dei].dpl = dei;
 		}
 	}
 
@@ -91,26 +76,12 @@ void lan9645x_qos_port_init(struct lan9645x_port *p)
 	 */
 	for (qos = 0; qos < 8; qos++) {
 		for (dpl = 0; dpl < 2; dpl++) {
-			lan_wr(REW_PCP_DEI_CFG_DEI_QOS_VAL_SET(dpl) |
-			       REW_PCP_DEI_CFG_PCP_QOS_VAL_SET(qos),
-			       lan9645x,
-			       REW_PCP_DEI_CFG(p->chip_port, 8 * dpl + qos));
+			p->qos.e_map[qos][dpl].pcp = qos;
+			p->qos.e_map[qos][dpl].dei = dpl;
 		}
 	}
 
-	/* We setup 1:1 maps pcp/dei -> qos/dpl -> pcp/dei, so tag_cfg=2 is
-	 * equivalent to tag_cfg=0 (use classified PCP/DEI) for tagged frames.
-	 */
-	tag_cfg = CLASSIFIED;
-	lan_rmw(REW_TAG_CFG_TAG_PCP_CFG_SET(tag_cfg) |
-		REW_TAG_CFG_TAG_DEI_CFG_SET(tag_cfg),
-		REW_TAG_CFG_TAG_PCP_CFG |
-		REW_TAG_CFG_TAG_DEI_CFG,
-		lan9645x, REW_TAG_CFG(p->chip_port));
-
-	lan_rmw(ANA_QOS_CFG_QOS_PCP_ENA_SET(0),
-		ANA_QOS_CFG_QOS_PCP_ENA,
-		lan9645x, ANA_QOS_CFG(p->chip_port));
+	p->qos.e_mode = E_MODE_CLASSIFIED;
 }
 
 int lan9645x_qos_port_get_default_prio(struct lan9645x *lan9645x, int port)
@@ -357,6 +328,179 @@ int lan9645x_qos_getpfc(struct lan9645x *lan9645x, int port,
 	mutex_lock(&p->qos_lock);
 	err = __lan9645x_qos_getpfc(lan9645x, port, pfc);
 	mutex_unlock(&p->qos_lock);
+
+	return err;
+}
+
+int __lan9645x_qos_portconf_set(struct lan9645x_port *p,
+				struct lan9645x_port_qos *cfg)
+{
+	struct lan9645x *lan9645x = p->lan9645x;
+	u32 pcp, dei;
+	u8 prio, dpl;
+	int err = 0;
+
+	lockdep_assert_held(&p->qos_lock);
+
+	/* Setup port ingress default DEI and PCP */
+	lan_rmw(ANA_VLAN_CFG_VLAN_DEI_SET(!!cfg->i_default_dei) |
+		ANA_VLAN_CFG_VLAN_PCP_SET(cfg->i_default_pcp),
+		ANA_VLAN_CFG_VLAN_DEI |
+		ANA_VLAN_CFG_VLAN_PCP,
+		lan9645x, ANA_VLAN_CFG(p->chip_port));
+
+	/* Setup port ingress default DPL and Priority */
+	lan_rmw(ANA_QOS_CFG_DP_DEFAULT_VAL_SET(!!cfg->i_default_dpl) |
+		ANA_QOS_CFG_QOS_DEFAULT_VAL_SET(cfg->i_default_prio) |
+		ANA_QOS_CFG_QOS_PCP_ENA_SET(!!cfg->i_mode.tag_map_enable) |
+		ANA_QOS_CFG_QOS_DSCP_ENA_SET(!!cfg->i_mode.dscp_map_enable),
+		ANA_QOS_CFG_DP_DEFAULT_VAL |
+		ANA_QOS_CFG_QOS_DEFAULT_VAL |
+		ANA_QOS_CFG_QOS_DSCP_ENA |
+		ANA_QOS_CFG_QOS_PCP_ENA,
+		lan9645x, ANA_QOS_CFG(p->chip_port));
+
+	/* Setup port ingress mapping between [PCP,DEI] and [Priority]. */
+	/* Setup port ingress mapping between [PCP,DEI] and [DPL]. */
+	for (pcp = 0; pcp < LAN9645X_PCP_COUNT; pcp++) {
+		for (dei = 0; dei < LAN9645X_DEI_COUNT; dei++) {
+			prio = cfg->i_map[pcp][dei].prio;
+			dpl = cfg->i_map[pcp][dei].dpl;
+			lan_wr(ANA_PCP_DEI_CFG_QOS_PCP_DEI_VAL_SET(prio) |
+			       ANA_PCP_DEI_CFG_DP_PCP_DEI_VAL_SET(!!dpl),
+			       lan9645x,
+			       ANA_PCP_DEI_CFG(p->chip_port, LAN9645X_PCP_COUNT * dei + pcp));
+		}
+	}
+
+	dei = (cfg->e_mode == E_MODE_QOS_DP ? cfg->e_default_dei : 0);
+
+	/* Setup port egress default DEI and PCP */
+	lan_rmw(REW_PORT_VLAN_CFG_PORT_DEI_SET(!!dei) |
+		REW_PORT_VLAN_CFG_PORT_PCP_SET(cfg->e_default_pcp),
+		REW_PORT_VLAN_CFG_PORT_DEI |
+		REW_PORT_VLAN_CFG_PORT_PCP,
+		lan9645x, REW_PORT_VLAN_CFG(p->chip_port));
+
+	/* Setup port egress mapping between [Priority] and [PCP,DEI]. */
+	/* Setup port egress mapping between [DPL] and [PCP,DEI]. */
+	for (prio = 0; prio < LAN9645X_PRIO_COUNT; prio++) {
+		for (dpl = 0; dpl < LAN9645X_DPL_COUNT; dpl++) {
+			pcp = cfg->e_map[prio][dpl].pcp;
+			dei = cfg->e_map[prio][dpl].dei;
+			lan_wr(REW_PCP_DEI_CFG_DEI_QOS_VAL_SET(!!dei) |
+			       REW_PCP_DEI_CFG_PCP_QOS_VAL_SET(pcp),
+			       lan9645x,
+			       REW_PCP_DEI_CFG(p->chip_port,
+					       LAN9645X_PRIO_COUNT * dpl + prio));
+		}
+	}
+
+	/* Setup the egress TAG PCP,DEI generation mode */
+	lan_rmw(REW_TAG_CFG_TAG_PCP_CFG_SET(cfg->e_mode) |
+		REW_TAG_CFG_TAG_DEI_CFG_SET(cfg->e_mode),
+		REW_TAG_CFG_TAG_PCP_CFG |
+		REW_TAG_CFG_TAG_DEI_CFG,
+		lan9645x, REW_TAG_CFG(p->chip_port));
+
+	err = __lan9645x_qos_setpfc(lan9645x, p->chip_port, cfg->pfc_enable);
+	if (err)
+		cfg->pfc_enable = p->qos.pfc_enable;
+
+	p->qos = *cfg;
+
+	return err;
+}
+
+int lan9645x_qos_portconf_set(struct lan9645x_port *p,
+			      struct lan9645x_port_qos *cfg)
+{
+	int err;
+
+	mutex_lock(&p->qos_lock);
+	err = __lan9645x_qos_portconf_set(p, cfg);
+	mutex_unlock(&p->qos_lock);
+	return err;
+}
+
+void __lan9645x_qos_portconf_get(struct lan9645x_port *p,
+				 struct lan9645x_port_qos *cfg)
+{
+	lockdep_assert_held(&p->qos_lock);
+	*cfg = p->qos;
+}
+
+void lan9645x_qos_portconf_get(struct lan9645x_port *p,
+			       struct lan9645x_port_qos *cfg)
+{
+	mutex_lock(&p->qos_lock);
+	__lan9645x_qos_portconf_get(p, cfg);
+	mutex_unlock(&p->qos_lock);
+}
+
+static int lan9645x_qos_dscp_validate(struct lan9645x *lan9645x, u8 dscp)
+{
+	if (dscp >= LAN9645X_DSCP_COUNT)
+		return -ERANGE;
+
+	return 0;
+}
+
+int __lan9645x_qos_dscp_conf_set(struct lan9645x *lan9645x, u8 dscp,
+				 struct lan9645x_ig_dscp *cfg)
+{
+	int err;
+
+	lockdep_assert_held(&lan9645x->qos_lock);
+
+	err = lan9645x_qos_dscp_validate(lan9645x, dscp);
+	if (err)
+		return err;
+
+	/* Setup switch ingress mapping between [DSCP] and [Priority]. */
+	/* Setup switch ingress mapping between [DSCP] and [DPL]. */
+	lan_rmw(ANA_DSCP_CFG_DP_DSCP_VAL_SET(!!cfg->dpl) |
+		ANA_DSCP_CFG_QOS_DSCP_VAL_SET(cfg->prio) |
+		ANA_DSCP_CFG_DSCP_TRUST_ENA_SET(!!cfg->trust),
+		ANA_DSCP_CFG_DP_DSCP_VAL |
+		ANA_DSCP_CFG_QOS_DSCP_VAL |
+		ANA_DSCP_CFG_DSCP_TRUST_ENA,
+		lan9645x, ANA_DSCP_CFG(dscp));
+
+	lan9645x->i_dscp_map[dscp] = *cfg;
+	return 0;
+}
+
+int __lan9645x_qos_dscp_conf_get(struct lan9645x *lan9645x,
+				 u8 dscp,
+				 struct lan9645x_ig_dscp *cfg)
+{
+	int err;
+
+	lockdep_assert_held(&lan9645x->qos_lock);
+
+	err = lan9645x_qos_dscp_validate(lan9645x, dscp);
+	if (err)
+		return err;
+
+	*cfg = lan9645x->i_dscp_map[dscp];
+	return 0;
+}
+
+int lan9645x_qos_init(struct lan9645x *lan9645x)
+{
+	struct lan9645x_port *p;
+	int port, err = 0;
+
+	mutex_init(&lan9645x->qos_lock);
+
+	/* Init port qos state structs and apply it to HW. */
+	lan9645x_for_each_port(lan9645x, port, p) {
+		lan9645x_qos_port_init(p);
+		err = lan9645x_qos_portconf_set(p, &p->qos);
+		if (err)
+			return err;
+	}
 
 	return err;
 }
