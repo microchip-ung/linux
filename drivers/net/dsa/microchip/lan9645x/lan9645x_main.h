@@ -904,7 +904,6 @@ int lan9645x_tc_matchall_goto_del(struct lan9645x_port *p,
 int lan9645x_qos_polix_alloc(struct lan9645x *lan9645x);
 void lan9645x_qos_polix_free(struct lan9645x *lan9645x, u16 polix);
 int lan9645x_qos_init(struct lan9645x *lan9645x);
-int lan9645x_qos_setpfc(struct lan9645x *lan9645x, int port, u8 pfc_enable);
 int __lan9645x_qos_portconf_set(struct lan9645x_port *p,
 				struct lan9645x_port_qos *cfg);
 int lan9645x_qos_portconf_set(struct lan9645x_port *p,

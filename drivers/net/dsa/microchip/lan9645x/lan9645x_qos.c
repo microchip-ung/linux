@@ -134,20 +134,6 @@ static int __lan9645x_qos_setpfc(struct lan9645x *lan9645x, int port,
 	return 0;
 }
 
-int lan9645x_qos_setpfc(struct lan9645x *lan9645x, int port, u8 pfc_enable)
-{
-	struct lan9645x_port *p;
-	int err;
-
-	p = lan9645x_to_port(lan9645x, port);
-
-	mutex_lock(&p->qos_lock);
-	err =  __lan9645x_qos_setpfc(lan9645x, port, pfc_enable);
-	mutex_unlock(&p->qos_lock);
-
-	return err;
-}
-
 int __lan9645x_qos_portconf_set(struct lan9645x_port *p,
 				struct lan9645x_port_qos *cfg)
 {

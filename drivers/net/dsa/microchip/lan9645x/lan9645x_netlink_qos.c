@@ -29,6 +29,207 @@ static struct nla_policy lan9645x_qos_genl_policy[MCHP_QOS_ATTR_END] = {
 	},
 };
 
+static void qos_cfg_to_nl(struct mchp_qos_port_conf *dst,
+			  struct lan9645x_port_qos *src)
+{
+	dst->i_default_prio = src->i_default_prio;
+	dst->i_default_dpl = src->i_default_dpl;
+	dst->i_default_pcp = src->i_default_pcp;
+	dst->i_default_dei = src->i_default_dei;
+	dst->i_mode.dscp_map_enable = src->i_mode.dscp_map_enable;
+	dst->i_mode.tag_map_enable = src->i_mode.tag_map_enable;
+
+	dst->e_default_pcp = src->e_default_pcp;
+	dst->e_default_dei = src->e_default_dei;
+
+	switch (src->e_mode) {
+	case E_MODE_PORT_PCP_DEI:
+		dst->e_mode = MCHP_E_MODE_DEFAULT;
+		break;
+	case E_MODE_MAPPED:
+		dst->e_mode = MCHP_E_MODE_MAPPED;
+		break;
+	default:
+		dst->e_mode = MCHP_E_MODE_CLASSIFIED;
+		break;
+	}
+
+	dst->pfc_enable = src->pfc_enable;
+
+	for (int prio = 0; prio < 8; prio++) {
+		for (int dpl = 0; dpl < 2; dpl++) {
+			dst->e_prio_dpl_pcp_dei_map[prio][dpl].pcp =
+				src->e_map[prio][dpl].pcp;
+			dst->e_prio_dpl_pcp_dei_map[prio][dpl].dei =
+				src->e_map[prio][dpl].dei;
+		}
+	}
+
+	for (int pcp = 0; pcp < 8; pcp++) {
+		for (int dei = 0; dei < 2; dei++) {
+			dst->i_pcp_dei_prio_dpl_map[pcp][dei].prio =
+				src->i_map[pcp][dei].prio;
+			dst->i_pcp_dei_prio_dpl_map[pcp][dei].dpl =
+				src->i_map[pcp][dei].dpl;
+		}
+	}
+}
+
+static void nl_to_qos_cfg(struct lan9645x_port_qos *dst,
+			  struct mchp_qos_port_conf *src)
+{
+	dst->i_default_prio = src->i_default_prio;
+	dst->i_default_dpl = src->i_default_dpl;
+	dst->i_default_pcp = src->i_default_pcp;
+	dst->i_default_dei = src->i_default_dei;
+	dst->i_mode.dscp_map_enable = src->i_mode.dscp_map_enable;
+	dst->i_mode.tag_map_enable = src->i_mode.tag_map_enable;
+
+	dst->e_default_pcp = src->e_default_pcp;
+	dst->e_default_dei = src->e_default_dei;
+
+	switch (src->e_mode) {
+	case MCHP_E_MODE_DEFAULT:
+		dst->e_mode = E_MODE_PORT_PCP_DEI;
+		break;
+	case MCHP_E_MODE_MAPPED:
+		dst->e_mode = E_MODE_MAPPED;
+		break;
+	default:
+		dst->e_mode = E_MODE_CLASSIFIED;
+		break;
+	}
+
+	dst->pfc_enable = src->pfc_enable;
+
+	for (int prio = 0; prio < 8; prio++) {
+		for (int dpl = 0; dpl < 2; dpl++) {
+			dst->e_map[prio][dpl].pcp =
+				src->e_prio_dpl_pcp_dei_map[prio][dpl].pcp;
+			dst->e_map[prio][dpl].dei =
+				src->e_prio_dpl_pcp_dei_map[prio][dpl].dei;
+		}
+	}
+
+	for (int pcp = 0; pcp < 8; pcp++) {
+		for (int dei = 0; dei < 2; dei++) {
+			dst->i_map[pcp][dei].prio =
+				src->i_pcp_dei_prio_dpl_map[pcp][dei].prio;
+			dst->i_map[pcp][dei].dpl =
+				src->i_pcp_dei_prio_dpl_map[pcp][dei].dpl;
+		}
+	}
+}
+
+static void nl2dscp_cfg(struct lan9645x_ig_dscp *dst,
+			struct mchp_qos_dscp_prio_dpl *src)
+{
+	dst->prio = src->prio;
+	dst->dpl = src->dpl;
+	dst->trust = src->trust;
+}
+
+static void dscp_cfg2nl(struct mchp_qos_dscp_prio_dpl *dst,
+			struct lan9645x_ig_dscp *src)
+{
+	dst->prio = src->prio;
+	dst->dpl = src->dpl;
+	dst->trust = src->trust;
+}
+
+static int lan9645x_qos_port_conf_set(struct lan9645x_netlink_qos *q,
+				      struct net_device *dev,
+				      struct mchp_qos_port_conf *cfg)
+{
+	struct lan9645x_port_qos icfg = {};
+	struct lan9645x *lan9645x;
+	struct lan9645x_port *p;
+
+	ASSERT_RTNL();
+
+	lan9645x = q->lan9645x;
+
+	p = lan9645x_port_from_netdev(dev);
+	if (IS_ERR_OR_NULL(p))
+		return -ENOTSUPP;
+
+	dev_dbg(lan9645x->dev, "port=%d", p->chip_port);
+
+	nl_to_qos_cfg(&icfg, cfg);
+
+	return lan9645x_qos_portconf_set(p, &icfg);
+}
+
+static int lan9645x_qos_port_conf_get(struct lan9645x_netlink_qos *q,
+				      struct net_device *dev,
+				      struct mchp_qos_port_conf *cfg)
+{
+	struct lan9645x_port_qos icfg = {};
+	struct lan9645x_port *p;
+
+	ASSERT_RTNL();
+
+	p = lan9645x_port_from_netdev(dev);
+	if (IS_ERR_OR_NULL(p))
+		return -ENOTSUPP;
+
+	dev_dbg(q->lan9645x->dev, "port=%d", p->chip_port);
+
+	lan9645x_qos_portconf_get(p, &icfg);
+	qos_cfg_to_nl(cfg, &icfg);
+
+	return 0;
+}
+
+static int lan9645x_qos_dscp_prio_dpl_set(struct lan9645x_netlink_qos *q,
+					  u8 dscp,
+					  struct mchp_qos_dscp_prio_dpl *cfg)
+{
+	struct lan9645x *lan9645x = q->lan9645x;
+	struct lan9645x_ig_dscp dcfg;
+	int err;
+
+	/* TODO: add e_dscp_map subcmd to qos-utils */
+	ASSERT_RTNL();
+
+	if (dscp >= LAN9645X_DSCP_COUNT)
+		return -ERANGE;
+
+	dev_dbg(q->lan9645x->dev, "dscp=%u dpl=%u prio=%u trust=%u", dscp,
+		cfg->dpl, cfg->prio, cfg->trust);
+
+	nl2dscp_cfg(&dcfg, cfg);
+
+	mutex_lock(&lan9645x->qos_lock);
+	err = __lan9645x_qos_dscp_conf_set(lan9645x, dscp, &dcfg);
+	mutex_unlock(&lan9645x->qos_lock);
+
+	return err;
+}
+
+static int lan9645x_qos_dscp_prio_dpl_get(struct lan9645x_netlink_qos *q,
+					  u8 dscp,
+					  struct mchp_qos_dscp_prio_dpl *cfg)
+{
+	struct lan9645x *lan9645x = q->lan9645x;
+	struct lan9645x_ig_dscp dcfg;
+	int err;
+
+	ASSERT_RTNL();
+
+	if (dscp >= LAN9645X_DSCP_COUNT)
+		return -ERANGE;
+
+	nl2dscp_cfg(&dcfg, cfg);
+
+	mutex_lock(&lan9645x->qos_lock);
+	err = __lan9645x_qos_dscp_conf_get(lan9645x, dscp, &dcfg);
+	mutex_unlock(&lan9645x->qos_lock);
+	dscp_cfg2nl(cfg, &dcfg);
+
+	return err;
+}
+
 static int lan9645x_qos_genl_port_cfg_set(struct sk_buff *skb,
 					  struct genl_info *info)
 {
@@ -245,46 +446,13 @@ static struct genl_family lan9645x_qos_genl_family = {
 
 int lan9645x_netlink_qos_init(struct lan9645x *lan9645x)
 {
-	struct mchp_prio_dpl_pcp_dei *e_pcp_dei;
-	struct mchp_pcp_dei_prio_dpl *i_qos_dpl;
-	struct mchp_qos_port_conf *pqos_map;
-	u8 qos, dpl, pcp, dei;
-	int err, p;
-	u32 cfg;
+	int err;
 
 	nl_qos = devm_kzalloc(lan9645x->dev, sizeof(*nl_qos), GFP_KERNEL);
 	if (!nl_qos)
 		return -ENOMEM;
 
 	nl_qos->lan9645x = lan9645x;
-
-	lan9645x_for_each_chipport(lan9645x, p)
-	{
-		pqos_map = &nl_qos->qos_map[p];
-
-		pqos_map->i_mode.tag_map_enable = true;
-		pqos_map->i_mode.dscp_map_enable = false;
-
-		for (pcp = 0; pcp < 8; pcp++) {
-			for (dei = 0; dei < 2; dei++) {
-				cfg = lan_rd(lan9645x, ANA_PCP_DEI_CFG(p, 8 * dei + pcp));
-				i_qos_dpl = &pqos_map->i_pcp_dei_prio_dpl_map[pcp][dei];
-				i_qos_dpl->prio = ANA_PCP_DEI_CFG_QOS_PCP_DEI_VAL_GET(cfg);
-				i_qos_dpl->dpl = ANA_PCP_DEI_CFG_DP_PCP_DEI_VAL_GET(cfg);
-			}
-		}
-
-		for (qos = 0; qos < 8; qos++) {
-			for (dpl = 0; dpl < 2; dpl++) {
-				cfg = lan_rd(lan9645x, REW_PCP_DEI_CFG(p, 8 * dpl + qos));
-				e_pcp_dei = &pqos_map->e_prio_dpl_pcp_dei_map[qos][dpl];
-				e_pcp_dei->pcp = REW_PCP_DEI_CFG_PCP_QOS_VAL_GET(cfg);
-				e_pcp_dei->dei = REW_PCP_DEI_CFG_DEI_QOS_VAL_GET(cfg);
-			}
-		}
-
-		nl_qos->qos_map[p].e_mode = MCHP_E_MODE_MAPPED;
-	}
 
 	err = genl_register_family(&lan9645x_qos_genl_family);
 	if (err) {
