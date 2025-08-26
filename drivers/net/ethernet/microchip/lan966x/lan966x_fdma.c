@@ -717,11 +717,6 @@ int lan966x_fdma_xmit(struct sk_buff *skb, __be32 *ifh, struct net_device *dev)
 		return NETDEV_TX_BUSY;
 	}
 
-	if (skb_put_padto(skb, ETH_ZLEN)) {
-		dev->stats.tx_dropped++;
-		return NETDEV_TX_OK;
-	}
-
 	/* skb processing */
 	needed_headroom = max_t(int, IFH_LEN_BYTES - skb_headroom(skb), 0);
 	needed_tailroom = max_t(int, ETH_FCS_LEN - skb_tailroom(skb), 0);

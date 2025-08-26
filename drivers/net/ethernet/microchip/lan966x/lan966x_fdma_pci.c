@@ -283,11 +283,6 @@ static int lan966x_fdma_pci_xmit(struct sk_buff *skb, __be32 *ifh,
 		return NETDEV_TX_BUSY;
 	}
 
-	if (skb_put_padto(skb, ETH_ZLEN)) {
-		dev->stats.tx_dropped++;
-		return NETDEV_TX_OK;
-	}
-
 	skb_tx_timestamp(skb);
 
 	virt_addr = fdma_dataptr_virt_get_contiguous(fdma, next_to_use, 0);

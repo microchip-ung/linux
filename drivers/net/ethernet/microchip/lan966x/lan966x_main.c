@@ -387,6 +387,11 @@ netdev_tx_t lan966x_xmit(struct lan966x_port *port,
 
 	ops = &lan966x->data->ops;
 
+	if (skb_put_padto(skb, ETH_ZLEN)) {
+		dev->stats.tx_dropped++;
+		return NETDEV_TX_OK;
+	}
+
 	spin_lock(&lan966x->tx_lock);
 	if (port->lan966x->fdma)
 		err = ops->fdma_xmit(skb, ifh, port->dev);

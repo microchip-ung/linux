@@ -297,6 +297,9 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 	sparx5_set_port_ifh(sparx5, ifh, port->portno,
 			    SPX5_PACKET_PIPELINE_PT_ANA_DONE);
 
+	if (skb_put_padto(skb, ETH_ZLEN))
+		return NETDEV_TX_OK;
+
 	if (sparx5->ptp && skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP) {
 		if (sparx5_ptp_txtstamp_request(port, skb) < 0)
 			return NETDEV_TX_BUSY;
@@ -354,6 +357,9 @@ netdev_tx_t sparx5_port_xmit(struct sparx5_port *port, struct sk_buff *skb,
 	netdev_tx_t ret;
 
 	ops = &sparx5->data->ops;
+
+	if (skb_put_padto(skb, ETH_ZLEN))
+		return NETDEV_TX_OK;
 
 	spin_lock(&sparx5->tx_lock);
 	if (sparx5->fdma_irq > 0)

@@ -280,9 +280,6 @@ int sparx5_fdma_xmit(struct sparx5 *sparx5, u32 *ifh, struct sk_buff *skb)
 
 	fdma_dcb_advance(fdma);
 
-	if (skb_put_padto(skb, ETH_ZLEN))
-		return NETDEV_TX_OK;
-
 	if (!fdma_db_is_done(fdma_db_get(fdma, fdma->dcb_index, 0)))
 		return NETDEV_TX_BUSY;
 
