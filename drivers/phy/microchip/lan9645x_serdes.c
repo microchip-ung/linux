@@ -531,25 +531,25 @@ static int lan9645x_rgmii_setup(struct serdes_macro *macro, u32 idx, int mode)
 	/* Enable DLL in RGMII clock paths, deassert DLL reset, and start the delay tune FSM. */
 	regmap_update_bits(ctrl->hsio,
 			   ADDR(d->dll_cfg_base, rx_idx),
+			   HSIO_DLL_CFG_DLL_CLK_ENA |
+			   HSIO_DLL_CFG_DLL_RST |
+			   HSIO_DLL_CFG_DLL_ENA |
+			   HSIO_DLL_CFG_DELAY_ENA,
 			   HSIO_DLL_CFG_DLL_CLK_ENA_SET(1) |
 			   HSIO_DLL_CFG_DLL_RST_SET(0) |
 			   HSIO_DLL_CFG_DLL_ENA_SET(rx_delay) |
-			   HSIO_DLL_CFG_DELAY_ENA_SET(rx_delay),
-			   HSIO_DLL_CFG_DLL_CLK_ENA |
-			   HSIO_DLL_CFG_DLL_RST |
-			   HSIO_DLL_CFG_DLL_ENA |
-			   HSIO_DLL_CFG_DELAY_ENA);
+			   HSIO_DLL_CFG_DELAY_ENA_SET(rx_delay));
 
 	regmap_update_bits(ctrl->hsio,
 			   ADDR(d->dll_cfg_base, tx_idx),
-			   HSIO_DLL_CFG_DLL_CLK_ENA_SET(1) |
-			   HSIO_DLL_CFG_DLL_RST_SET(0) |
-			   HSIO_DLL_CFG_DLL_ENA_SET(tx_delay) |
-			   HSIO_DLL_CFG_DELAY_ENA_SET(tx_delay),
 			   HSIO_DLL_CFG_DLL_CLK_ENA |
 			   HSIO_DLL_CFG_DLL_RST |
 			   HSIO_DLL_CFG_DLL_ENA |
-			   HSIO_DLL_CFG_DELAY_ENA);
+			   HSIO_DLL_CFG_DELAY_ENA,
+			   HSIO_DLL_CFG_DLL_CLK_ENA_SET(1) |
+			   HSIO_DLL_CFG_DLL_RST_SET(0) |
+			   HSIO_DLL_CFG_DLL_ENA_SET(tx_delay) |
+			   HSIO_DLL_CFG_DELAY_ENA_SET(tx_delay));
 
 	return 0;
 }
@@ -593,7 +593,7 @@ static int serdes_set_mode(struct phy *phy, enum phy_mode mode, int submode)
 		if (!serdes_mux_equal(mux, &needle))
 			continue;
 
-		regmap_update_bits(ctrl->hsio, d->hw_cfg, mux->mux, mux->mask);
+		regmap_update_bits(ctrl->hsio, d->hw_cfg, mux->mask, mux->mux);
 
 		macro->mode = mux->submode;
 
