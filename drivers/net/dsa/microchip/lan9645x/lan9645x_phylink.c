@@ -13,7 +13,7 @@ void lan9645x_phylink_get_caps(struct lan9645x *lan9645x, int port,
 	dev_dbg(lan9645x->dev, "port=%d\n", port);
 
 	c->mac_capabilities = MAC_ASYM_PAUSE | MAC_SYM_PAUSE | MAC_10 |
-			      MAC_100 | MAC_1000FD | MAC_25000FD;
+			      MAC_100 | MAC_1000FD | MAC_2500FD;
 
 	switch (port) {
 	case 0 ... 3:
