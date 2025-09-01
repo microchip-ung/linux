@@ -3243,6 +3243,29 @@ enum sparx5_target {
 #define ANA_L2_AUTO_LRN_CFG2_AUTO_LRN_ENA2_GET(x)\
 	FIELD_GET(ANA_L2_AUTO_LRN_CFG2_AUTO_LRN_ENA2, x)
 
+/* ANA_L2:COMMON:LRN_SECUR_CFG */
+#define ANA_L2_LRN_SECUR_CFG                                                   \
+	__REG(TARGET_ANA_L2, 0, 1, GADDR(GA_ANA_L2_COMMON), 0, 1,              \
+	      GSIZE(GW_ANA_L2_COMMON), 36, 0, 1, 4)
+
+/* SPARX5 ONLY */
+/* ANA_L2:COMMON:LRN_SECUR_CFG1 */
+#define ANA_L2_LRN_SECUR_CFG1                                                  \
+	__REG(TARGET_ANA_L2, 0, 1, GADDR(GA_ANA_L2_COMMON), 0, 1,              \
+	      GSIZE(GW_ANA_L2_COMMON), 40, 0, 1, 4)
+
+/* SPARX5 ONLY */
+/* ANA_L2:COMMON:LRN_SECUR_CFG2 */
+#define ANA_L2_LRN_SECUR_CFG2                                                  \
+	__REG(TARGET_ANA_L2, 0, 1, GADDR(GA_ANA_L2_COMMON), 0, 1,              \
+	      GSIZE(GW_ANA_L2_COMMON), 44, 0, 1, 4)
+
+#define ANA_L2_LRN_SECUR_CFG2_DROP_UNKNOWN_SRC_ENA2 BIT(0)
+#define ANA_L2_LRN_SECUR_CFG2_DROP_UNKNOWN_SRC_ENA2_SET(x)\
+	FIELD_PREP(ANA_L2_LRN_SECUR_CFG2_DROP_UNKNOWN_SRC_ENA2, x)
+#define ANA_L2_LRN_SECUR_CFG2_DROP_UNKNOWN_SRC_ENA2_GET(x)\
+	FIELD_GET(ANA_L2_LRN_SECUR_CFG2_DROP_UNKNOWN_SRC_ENA2, x)
+
 /* ANA_L2:COMMON:OWN_UPSID */
 #define ANA_L2_OWN_UPSID(r)                                                    \
 	__REG(TARGET_ANA_L2, 0, 1, GADDR(GA_ANA_L2_COMMON), 0, 1,              \
