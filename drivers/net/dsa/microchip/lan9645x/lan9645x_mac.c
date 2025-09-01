@@ -269,12 +269,11 @@ static bool lan9645x_mac_ports_use_cpu(const unsigned char *mac,
 	return !!(mc_ports & BIT(CPU_PORT));
 }
 
-static int __lan9645x_mact_learn(struct lan9645x *lan9645x, int port,
-				 const unsigned char *addr, u16 vid,
-				 enum macaccess_entry_type type)
+static int __lan9645x_mact_learn_cpu_copy(struct lan9645x *lan9645x, int port,
+					  const unsigned char *addr, u16 vid,
+					  enum macaccess_entry_type type,
+					  bool cpu_copy)
 {
-	bool cpu_copy = lan9645x_mac_ports_use_cpu(addr, type);
-
 	lockdep_assert_held(&lan9645x->mact_lock);
 
 	lan9645x_mac_select(lan9645x, addr, vid);
@@ -289,6 +288,16 @@ static int __lan9645x_mact_learn(struct lan9645x *lan9645x, int port,
 	return lan9645x_mac_wait_for_completion(lan9645x, NULL);
 }
 
+static int __lan9645x_mact_learn(struct lan9645x *lan9645x, int port,
+				 const unsigned char *addr, u16 vid,
+				 enum macaccess_entry_type type)
+{
+	bool cpu_copy = lan9645x_mac_ports_use_cpu(addr, type);
+
+	return __lan9645x_mact_learn_cpu_copy(lan9645x, port, addr, vid, type,
+					      cpu_copy);
+}
+
 int lan9645x_mact_learn(struct lan9645x *lan9645x, int port,
 			const unsigned char *addr, u16 vid,
 			enum macaccess_entry_type type)
@@ -300,6 +309,30 @@ int lan9645x_mact_learn(struct lan9645x *lan9645x, int port,
 	mutex_unlock(&lan9645x->mact_lock);
 
 	return ret;
+}
+
+int lan9645x_mac_bc_flood_add(struct lan9645x *lan9645x, u16 vid)
+{
+	unsigned char bc[ETH_ALEN];
+	int ret;
+
+	eth_broadcast_addr(bc);
+
+	mutex_lock(&lan9645x->mact_lock);
+	ret = __lan9645x_mact_learn_cpu_copy(lan9645x, PGID_BC, bc, vid,
+					     ENTRYTYPE_LOCKED, true);
+	mutex_unlock(&lan9645x->mact_lock);
+
+	return ret;
+}
+
+int lan9645x_mac_bc_flood_del(struct lan9645x *lan9645x, u16 vid)
+{
+	unsigned char bc[ETH_ALEN];
+
+	eth_broadcast_addr(bc);
+
+	return lan9645x_mact_forget(lan9645x, bc, vid, ENTRYTYPE_LOCKED);
 }
 
 int lan9645x_mact_flush(struct lan9645x *lan9645x, int port)
@@ -406,6 +439,10 @@ void lan9645x_mac_init(struct lan9645x *lan9645x)
 	mutex_init(&lan9645x->mact_lock);
 	mutex_init(&lan9645x->fwd_domain_lock);
 	INIT_LIST_HEAD(&lan9645x->mac_entries);
+
+	lan9645x_mac_bc_flood_add(lan9645x, UNAWARE_PVID);
+	lan9645x_mac_bc_flood_add(lan9645x, HOST_PVID);
+	lan9645x_mac_bc_flood_add(lan9645x, VLAN_HSR_PRP);
 }
 
 void lan9645x_mac_deinit(struct lan9645x *lan9645x)

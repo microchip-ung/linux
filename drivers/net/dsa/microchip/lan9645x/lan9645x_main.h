@@ -797,6 +797,8 @@ int lan9645x_mact_entry_add(struct lan9645x *lan9645x, int pgid,
 void lan9645x_migrate_lag_fdb(struct lan9645x *lan9645x,
 			      struct net_device *bond, int old_lag_id,
 			      int new_lag_id);
+int lan9645x_mac_bc_flood_add(struct lan9645x *lan9645x, u16 vid);
+int lan9645x_mac_bc_flood_del(struct lan9645x *lan9645x, u16 vid);
 
 /* VLAN lan9645x_vlan.c */
 void lan9645x_vlan_init(struct lan9645x *lan9645x);

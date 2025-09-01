@@ -682,8 +682,8 @@ static int lan9645x_setup(struct dsa_switch *ds)
 	/* Unicast to all front ports */
 	lan_wr(all_phys_ports, lan9645x, ANA_PGID(PGID_UC));
 
-	/* Broadcast to the CPU port and to front ports */
-	lan_wr(all_ports, lan9645x, ANA_PGID(PGID_BC));
+	/* Broadcast to all front ports, CPU port BC controlled with mactable */
+	lan_wr(all_phys_ports, lan9645x, ANA_PGID(PGID_BC));
 
 	/* Transmit cpu frames as received without any tagging, timing or other
 	 * updates
@@ -1100,9 +1100,6 @@ static void lan9645x_port_set_host_flood(struct dsa_switch *ds, int port,
 
 	mc_ena = !!lan9645x->host_flood_mc_mask;
 	lan9645x_port_pgid_set(lan9645x, PGID_MC, CPU_PORT, mc_ena);
-
-	/* Always broadcast to CPU */
-	lan9645x_port_pgid_set(lan9645x, PGID_BC, CPU_PORT, true);
 }
 
 static void lan9645x_port_bridge_leave(struct dsa_switch *ds, int port,
@@ -1160,8 +1157,10 @@ static int lan9645x_port_vlan_add(struct dsa_switch *ds, int port,
 	if (err)
 		return err;
 
-	if (port == lan9645x->npi)
+	if (port == lan9645x->npi) {
 		lan9645x_vlan_cpu_set_vlan(lan9645x, vlan->vid);
+		lan9645x_mac_bc_flood_add(lan9645x, vlan->vid);
+	}
 
 	lan9645x_vlan_port_add_vlan(p, vlan->vid, pvid, untagged);
 
@@ -1177,8 +1176,10 @@ static int lan9645x_port_vlan_del(struct dsa_switch *ds, int port,
 	dev_dbg(lan9645x->dev, "port=%d vid=%u changed=%u flags=0x%x\n", port,
 		vlan->vid, vlan->changed, vlan->flags);
 
-	if (port == lan9645x->npi)
+	if (port == lan9645x->npi) {
 		lan9645x_vlan_cpu_clear_vlan(lan9645x, vlan->vid);
+		lan9645x_mac_bc_flood_del(lan9645x, vlan->vid);
+	}
 
 	lan9645x_vlan_port_del_vlan(p, vlan->vid);
 
