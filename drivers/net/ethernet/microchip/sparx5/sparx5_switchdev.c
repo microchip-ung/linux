@@ -29,7 +29,8 @@ struct sparx5_switchdev_event_work {
 static int sparx5_port_attr_pre_bridge_flags(struct sparx5_port *port,
 					     struct switchdev_brport_flags flags)
 {
-	if (flags.mask & ~(BR_FLOOD | BR_MCAST_FLOOD | BR_BCAST_FLOOD))
+	if (flags.mask & ~(BR_FLOOD | BR_MCAST_FLOOD | BR_BCAST_FLOOD |
+			   BR_PORT_LOCKED))
 		return -EINVAL;
 
 	return 0;
@@ -67,6 +68,9 @@ static void sparx5_port_attr_bridge_flags(struct sparx5_port *port,
 	if (flags.mask & BR_BCAST_FLOOD)
 		sparx5_pgid_update_mask(port, sparx5_get_pgid_index(sparx5, PGID_BCAST),
 					!!(flags.val & BR_BCAST_FLOOD));
+
+	if (flags.mask & BR_PORT_LOCKED)
+		sparx5_psec_set(port, (flags.val & BR_PORT_LOCKED));
 }
 
 void sparx5_attr_stp_state_set(struct sparx5_port *port, u8 state)

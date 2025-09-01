@@ -1161,6 +1161,9 @@ bool sparx5_lag_is_first(struct net_device *lag_master, struct net_device *dev);
 void sparx5_lag_mask_get(struct sparx5 *sparx5, struct net_device *lag_master,
 			 unsigned long *lag_mask);
 
+/* sparx5_psec.c */
+void sparx5_psec_set(struct sparx5_port *port, bool enable);
+
 /* Clock period in picoseconds */
 static inline u32 sparx5_clk_period(enum sparx5_core_clockfreq cclock)
 {
