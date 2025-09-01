@@ -562,6 +562,15 @@ void lan9645x_pcs_get_state(struct phylink_pcs *pcs,
 	u16 bmsr = 0;
 	u16 lp_adv;
 
+	if (state->interface == PHY_INTERFACE_MODE_1000BASEX) {
+		state->speed = SPEED_1000;
+		state->duplex = DUPLEX_FULL;
+	}
+	else if (state->interface == PHY_INTERFACE_MODE_2500BASEX) {
+		state->speed = SPEED_2500;
+		state->duplex = DUPLEX_FULL;
+	}
+
 	stky = lan_rd(lan9645x, DEV_PCS1G_STICKY(p->chip_port));
 	link_down = DEV_PCS1G_STICKY_LINK_DOWN_STICKY_GET(stky);
 	if (link_down)
@@ -594,11 +603,6 @@ void lan9645x_pcs_get_state(struct phylink_pcs *pcs,
 		if (!state->link)
 			return;
 
-		if (state->interface == PHY_INTERFACE_MODE_1000BASEX)
-			state->speed = SPEED_1000;
-		else if (state->interface == PHY_INTERFACE_MODE_2500BASEX)
-			state->speed = SPEED_2500;
-
 		state->duplex = DUPLEX_FULL;
 	}
 
@@ -607,8 +611,6 @@ void lan9645x_pcs_get_state(struct phylink_pcs *pcs,
 	 * 3.90625 = 0xCD
 	 * So for 2.5G we need to add 320ps per barrel shifter delay: 320 /
 	 * 3.90625 = 0x52
-	 *
-	 * TODO: update for lan9645x?
 	 */
 	if (state->link && state->speed == SPEED_1000) {
 		p->rx_delay =
