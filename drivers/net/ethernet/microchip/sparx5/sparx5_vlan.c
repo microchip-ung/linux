@@ -278,6 +278,21 @@ static void sparx5_update_auto_learn(struct sparx5 *sparx5,
 	}
 }
 
+static void sparx5_update_psec_learn(struct sparx5 *sparx5,
+				    unsigned long *secmask)
+{
+	u32 mask[BITS_TO_U32(SPX5_PORTS)] = {0};
+
+	bitmap_to_arr32(mask, secmask, SPX5_PORTS);
+
+	/* Apply learning mask. */
+	spx5_wr(mask[0], sparx5, ANA_L2_LRN_SECUR_CFG);
+	if (is_sparx5(sparx5)) {
+		spx5_wr(mask[1], sparx5, ANA_L2_LRN_SECUR_CFG1);
+		spx5_wr(mask[2], sparx5, ANA_L2_LRN_SECUR_CFG2);
+	}
+}
+
 void sparx5_update_fwd(struct sparx5 *sparx5)
 {
 #ifdef CONFIG_LAN969X_SWITCH
@@ -287,6 +302,8 @@ void sparx5_update_fwd(struct sparx5 *sparx5)
 	DECLARE_BITMAP(floodmask, SPX5_PORTS) = {0};
 	DECLARE_BITMAP(learnmask, SPX5_PORTS) = {0};
 	DECLARE_BITMAP(fwdmask, SPX5_PORTS) = {0};
+	DECLARE_BITMAP(psecmask, SPX5_PORTS) = {0};
+	DECLARE_BITMAP(clearmask, SPX5_PORTS) = {0};
 
 #ifdef CONFIG_LAN969X_SWITCH
 	/* We have to take redbox ports: LREA and LREC into account, when
@@ -321,18 +338,27 @@ void sparx5_update_fwd(struct sparx5 *sparx5)
 	bitmap_copy(floodmask, sparx5->bridge_fwd_mask, SPX5_PORTS);
 #endif
 	bitmap_copy(fwdmask, sparx5->bridge_fwd_mask, SPX5_PORTS);
+	bitmap_copy(psecmask, sparx5->bridge_psec_mask, SPX5_PORTS);
+	/* Clear any forwarding for ports that are not part of the bridge, or
+	 * not part of a redbox. Note that the clearmask but be set before the
+	 * floodmask is altered by the psecmask.
+	 */
+	bitmap_copy(clearmask, floodmask, SPX5_PORTS);
 
 	bitmap_and(learnmask,
 		   sparx5->bridge_fwd_mask,
 		   sparx5->bridge_lrn_mask,
 		   SPX5_PORTS);
 
+	/* Disable learning and flooding on locked ports. */
+	bitmap_andnot(learnmask, learnmask, psecmask, SPX5_PORTS);
+	bitmap_andnot(floodmask, floodmask, psecmask, SPX5_PORTS);
+
 	sparx5_update_flood_fwd(sparx5, floodmask);
 	sparx5_update_src_fwd(sparx5, fwdmask);
 	sparx5_update_auto_learn(sparx5, learnmask);
-
-	/* Clear src port forwarding for ports that are not in the floodmask. */
-	sparx5_update_clear_fwd(sparx5, floodmask);
+	sparx5_update_psec_learn(sparx5, psecmask);
+	sparx5_update_clear_fwd(sparx5, clearmask);
 }
 
 void sparx5_vlan_port_apply(struct sparx5 *sparx5,

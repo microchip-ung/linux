@@ -429,6 +429,7 @@ struct sparx5 {
 	DECLARE_BITMAP(bridge_mask, SPX5_PORTS);
 	DECLARE_BITMAP(bridge_fwd_mask, SPX5_PORTS);
 	DECLARE_BITMAP(bridge_lrn_mask, SPX5_PORTS);
+	DECLARE_BITMAP(bridge_psec_mask, SPX5_PORTS);
 	DECLARE_BITMAP(vlan_mask[VLAN_N_VID], SPX5_PORTS);
 	/* SW MAC table */
 	struct list_head mact_entries;
