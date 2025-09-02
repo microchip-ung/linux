@@ -9,6 +9,7 @@
 #include <linux/refcount.h>
 #include <linux/refcount_types.h>
 #include <linux/types.h>
+#include <net/tc_act/tc_gate.h>
 #include <net/flow_offload.h>
 #include <net/flow_dissector.h>
 #include <linux/err.h>
@@ -1296,6 +1297,24 @@ static int lan9645x_tc_free_rule_resources(struct lan9645x_port *p,
 		lan9645x_qos_polix_free(lan9645x, afield->data.u32.value);
 	}
 
+	/* Check for an enabled stream filter in this rule */
+	afield = vcap_find_actionfield(vrule, VCAP_AF_SFID_VAL);
+	if (afield && afield->ctrl.type == VCAP_FIELD_U32 &&
+	    afield->data.u32.value) {
+		dev_dbg(lan9645x->dev, "rule %u: remove stream filter=%u",
+			vrule->id, afield->data.u32.value);
+		lan9645x_sfi_put(lan9645x, afield->data.u32.value);
+	}
+
+	/* Check for an enabled stream gate in this rule */
+	afield = vcap_find_actionfield(vrule, VCAP_AF_SGID_VAL);
+	if (afield && afield->ctrl.type == VCAP_FIELD_U32 &&
+	    afield->data.u32.value) {
+		dev_dbg(lan9645x->dev, "rule %u: remove stream gate=%u",
+			vrule->id, afield->data.u32.value);
+		lan9645x_sgi_put(lan9645x, afield->data.u32.value);
+	}
+
 	vcap_free_rule(vrule);
 	return ret;
 }
@@ -1777,6 +1796,120 @@ static int lan9645x_tc_handle_mirred(struct lan9645x_act_state *s,
 	return vcap_rule_add_action_bit(vrule, VCAP_AF_MIRROR_ENA, VCAP_BIT_1);
 }
 
+static int lan9645x_tc_handle_gate(struct lan9645x_act_state *s,
+				   struct vcap_admin *admin,
+				   struct vcap_rule *vrule,
+				   struct lan9645x_port *p,
+				   struct flow_action_entry *act,
+				   struct netlink_ext_ack *extack)
+{
+	struct lan9645x_psfp_sg_cfg sg = {0};
+	struct lan9645x_psfp_sf_cfg sf = {0};
+	u32 sfi_ix, sgi_ix;
+	int err;
+
+	if (admin->vtype != VCAP_TYPE_IS1) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Cannot use gate on non is1");
+		return -EOPNOTSUPP;
+	}
+
+	if (act->gate.prio < -1 || act->gate.prio > LAN9645X_PSFP_SG_MAX_IPV) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Invalid initial priority");
+		return -EINVAL;
+	}
+
+	if (act->gate.cycletime < LAN9645X_PSFP_SG_MIN_CYCLE_TIME_NS ||
+	    act->gate.cycletime > LAN9645X_PSFP_SG_MAX_CYCLE_TIME_NS) {
+		NL_SET_ERR_MSG_MOD(extack, "Invalid cycle time");
+		return -EINVAL;
+	}
+
+	if (act->gate.cycletimeext > LAN9645X_PSFP_SG_MAX_CYCLE_TIME_NS) {
+		NL_SET_ERR_MSG_MOD(extack, "Invalid cycle time ext");
+		return -EINVAL;
+	}
+
+	if (act->gate.num_entries == 0 ||
+	    act->gate.num_entries >= LAN9645X_PSFP_NUM_GCE) {
+		NL_SET_ERR_MSG_MOD(extack, "Invalid number of entries");
+		return -EINVAL;
+	}
+
+	sg.gate_state = true;
+	sg.ipv = act->gate.prio;
+	sg.basetime = act->gate.basetime;
+	sg.cycletime = act->gate.cycletime;
+	sg.cycletimeext = act->gate.cycletimeext;
+	sg.num_entries = act->gate.num_entries;
+
+	for (int i = 0; i < act->gate.num_entries; i++) {
+		if (act->gate.entries[i].interval <
+			    LAN9645X_PSFP_SG_MIN_CYCLE_TIME_NS ||
+		    act->gate.entries[i].interval >
+			    LAN9645X_PSFP_SG_MAX_CYCLE_TIME_NS) {
+			NL_SET_ERR_MSG_MOD(extack, "Invalid interval");
+			return -EINVAL;
+		}
+		if (act->gate.entries[i].ipv < -1 ||
+		    act->gate.entries[i].ipv > LAN9645X_PSFP_SG_MAX_IPV) {
+			NL_SET_ERR_MSG_MOD(extack, "Invalid internal priority");
+			return -EINVAL;
+		}
+		if (act->gate.entries[i].maxoctets < -1) {
+			NL_SET_ERR_MSG_MOD(extack,
+					   "Invalid max octets");
+			return -EINVAL;
+		}
+
+		sg.gce[i].gate_state = (act->gate.entries[i].gate_state != 0);
+		sg.gce[i].interval = act->gate.entries[i].interval;
+		sg.gce[i].ipv = act->gate.entries[i].ipv;
+		sg.gce[i].maxoctets = act->gate.entries[i].maxoctets;
+	}
+
+	err = lan9645x_sfi_get(p->lan9645x, &sfi_ix);
+	if (err < 0) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Cannot reserve stream filter");
+		return err;
+	}
+
+	err = lan9645x_sgi_get(p->lan9645x, &sgi_ix);
+	if (err < 0) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Cannot reserve stream gate");
+		return err;
+	}
+
+	err = lan9645x_psfp_sg_set(p->lan9645x, sgi_ix, &sg);
+	if (err) {
+		NL_SET_ERR_MSG_MOD(extack, "Cannot set stream gate");
+		return err;
+	}
+
+	err = lan9645x_psfp_sf_set(p->lan9645x, sfi_ix, &sf);
+	if (err < 0) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Cannot set stream filter");
+		return err;
+	}
+
+	err = vcap_rule_add_action_bit(vrule, VCAP_AF_SGID_ENA, VCAP_BIT_1);
+	err |= vcap_rule_add_action_u32(vrule, VCAP_AF_SGID_VAL, sgi_ix);
+	err |= vcap_rule_add_action_bit(vrule, VCAP_AF_SFID_ENA, VCAP_BIT_1);
+	err |= vcap_rule_add_action_u32(vrule, VCAP_AF_SFID_VAL, sfi_ix);
+	if (err) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Cannot set sgid and sfid");
+
+		return err;
+	}
+
+	return 0;
+}
+
 static int lan9645x_tc_parse_actions(struct lan9645x_act_state *s,
 				     struct lan9645x_port *p,
 				     struct vcap_admin *admin,
@@ -1885,7 +2018,11 @@ static int lan9645x_tc_parse_actions(struct lan9645x_act_state *s,
 				return err;
 			break;
 		case FLOW_ACTION_GATE:
-			/* TODO: implement us */
+			err = lan9645x_tc_handle_gate(s, admin, vrule, p, act,
+						      extack);
+			if (err)
+				return err;
+			break;
 		default:
 			NL_SET_ERR_MSG_MOD(extack, "Unsupported TC action");
 			return -EOPNOTSUPP;

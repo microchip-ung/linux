@@ -99,10 +99,8 @@ enum sparx5_taprio_state {
 	NUM_TAS_STATE,
 };
 
-static void lan9645x_new_base_time(struct lan9645x *lan9645x,
-				   const u32 cycle_time,
-				   const ktime_t org_base_time,
-				   ktime_t *new_base_time)
+void lan9645x_new_base_time(struct lan9645x *lan9645x, const u32 cycle_time,
+			    const ktime_t org_base_time, ktime_t *new_base_time)
 {
 	ktime_t current_time, threshold_time, new_time;
 	struct timespec64 ts;

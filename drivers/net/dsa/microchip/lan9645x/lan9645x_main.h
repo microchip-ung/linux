@@ -190,6 +190,20 @@
 #define LAN9645X_LED_PROP_IDX		0
 #define LAN9645X_LED_PROP_DRIVE		1
 
+#define LAN9645X_PSFP_NUM_SFI 128 /* Number of Stream Filter Instances */
+#define LAN9645X_PSFP_NUM_SGI 128 /* Number of Stream Gate Instances */
+#define LAN9645X_PSFP_NUM_GCE 4 /* Number of Gate Control Entries/gate */
+
+/* Minimum supported cycle time in nanoseconds */
+#define LAN9645X_PSFP_SG_MIN_CYCLE_TIME_NS (1 * NSEC_PER_USEC) /* 1 usec */
+
+/* Maximum supported cycle time in nanoseconds */
+#define LAN9645X_PSFP_SG_MAX_CYCLE_TIME_NS \
+	((1 * NSEC_PER_SEC) - 1) /* 999.999.999 nsec */
+
+/* Maximum IPV value */
+#define LAN9645X_PSFP_SG_MAX_IPV 7
+
 /* QOS port configuration */
 #define LAN9645X_DSCP_COUNT		64
 #define LAN9645X_DEI_COUNT		2
@@ -426,6 +440,8 @@ struct lan9645x {
 
 	/* TC / QOS Policer resource management */
 	DECLARE_BITMAP(pol_idx_mask, LAN9645X_NUM_POL_POOL);
+	DECLARE_BITMAP(sfi_idx_mask, LAN9645X_PSFP_NUM_SFI);
+	DECLARE_BITMAP(sgi_idx_mask, LAN9645X_PSFP_NUM_SGI);
 	struct mutex qos_lock; /* Global QOS: dscp, qos policers */
 
 	/* TC chain_id to isdx management */
@@ -1005,5 +1021,45 @@ int lan9645x_taprio_del(struct lan9645x *lan9645x, int port);
 void lan9645x_taprio_init(struct lan9645x *lan9645x);
 void lan9645x_taprio_deinit(struct lan9645x *lan9645x);
 int lan9645x_taprio_speed_set(struct lan9645x_port *port, int speed);
+void lan9645x_new_base_time(struct lan9645x *lan9645x, const u32 cycle_time,
+			    const ktime_t org_base_time,
+			    ktime_t *new_base_time);
+
+/* PSFP Stream Filter configuration */
+struct lan9645x_psfp_sf_cfg {
+	bool block_oversize_ena; /* StreamBlockedDueToOversizeFrameEnable */
+	bool block_oversize; /* StreamBlockedDueToOversizeFrame */
+	bool force_block; /* Block all frames matching filter */
+	u32 max_sdu; /* Maximum SDU size (zero disables SDU check) */
+};
+
+/* PSFP Gate Control Entry configuration */
+struct lan9645x_psfp_gce_cfg {
+	bool gate_state;   /* StreamGateState (true = enabled) */
+	u32 interval; /* TimeInterval (nsec) */
+	s32 ipv;           /* IPV (-1 disables IPV) */
+	s32 maxoctets;     /* IntervalOctetMax (-1 disables check) */
+};
+
+/* PSFP Stream Gate configuration */
+struct lan9645x_psfp_sg_cfg {
+	bool gate_state;  /* PSFPAdminGateStates: Initial gate state (true = enabled) */
+	s32 ipv;          /* PSFPAdminIPV  (-1 disables IPV) */
+	u64 basetime;     /* PSFPAdminBaseTime */
+	u32 cycletime;    /* PSFPAdminCycleTime */
+	u32 cycletimeext; /* PSFPAdminCycleTimeExtension */
+	u32 num_entries;  /* PSFPAdminControlListLength */
+	struct lan9645x_psfp_gce_cfg gce[LAN9645X_PSFP_NUM_GCE];
+};
+
+int lan9645x_sfi_get(struct lan9645x *lan9645x, u32 *sfi_ix);
+int lan9645x_sfi_put(struct lan9645x *lan9645x, u32 sfi_ix);
+int lan9645x_sgi_get(struct lan9645x *lan9645x, u32 *sgi_ix);
+int lan9645x_sgi_put(struct lan9645x *lan9645x, u32 sgi_ix);
+int lan9645x_psfp_sf_set(struct lan9645x *lan9645x, const u32 sfi_ix,
+			 const struct lan9645x_psfp_sf_cfg *const c);
+
+int lan9645x_psfp_sg_set(struct lan9645x *lan9645x, const u32 sgi_ix,
+			 const struct lan9645x_psfp_sg_cfg *const sg);
 
 #endif /* __LAN9645X_MAIN_H__ */
