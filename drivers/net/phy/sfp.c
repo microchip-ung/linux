@@ -481,6 +481,14 @@ static void sfp_quirk_ubnt_uf_instant(const struct sfp_eeprom_id *id,
 			 caps->link_modes);
 }
 
+static void sfp_quirk_sgmii(const struct sfp_eeprom_id *id,
+			    struct sfp_module_caps *caps)
+{
+	linkmode_set_bit(ETHTOOL_LINK_MODE_1000baseT1_Full_BIT,
+			 caps->link_modes);
+	__set_bit(PHY_INTERFACE_MODE_SGMII, caps->interfaces);
+}
+
 #define SFP_QUIRK(_v, _p, _s, _f) \
 	{ .vendor = _v, .part = _p, .support = _s, .fixup = _f, }
 #define SFP_QUIRK_S(_v, _p, _s) SFP_QUIRK(_v, _p, _s, NULL)
@@ -551,6 +559,8 @@ static const struct sfp_quirk sfp_quirks[] = {
 	SFP_QUIRK_F("Turris", "RTSFP-2.5G", sfp_fixup_rollball),
 	SFP_QUIRK_F("Turris", "RTSFP-10", sfp_fixup_rollball),
 	SFP_QUIRK_F("Turris", "RTSFP-10G", sfp_fixup_rollball),
+
+	SFP_QUIRK_S("Technica Eng.", "SFP Next Gen.", sfp_quirk_sgmii)
 };
 
 static size_t sfp_strlen(const char *str, size_t maxlen)
