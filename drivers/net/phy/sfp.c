@@ -421,12 +421,28 @@ static void sfp_fixup_rollball_cc(struct sfp *sfp)
 	sfp->id.base.extended_cc = SFF8024_ECC_10GBASE_T_SFI;
 }
 
+static void sfp_quirk_1000basex(const struct sfp_eeprom_id *id,
+				unsigned long *modes,
+				unsigned long *interfaces)
+{
+	linkmode_set_bit(ETHTOOL_LINK_MODE_1000baseX_Full_BIT, modes);
+	__set_bit(PHY_INTERFACE_MODE_1000BASEX, interfaces);
+}
+
 static void sfp_quirk_2500basex(const struct sfp_eeprom_id *id,
 				unsigned long *modes,
 				unsigned long *interfaces)
 {
 	linkmode_set_bit(ETHTOOL_LINK_MODE_2500baseX_Full_BIT, modes);
 	__set_bit(PHY_INTERFACE_MODE_2500BASEX, interfaces);
+}
+
+static void sfp_quirk_1000_2500_basex(const struct sfp_eeprom_id *id,
+				unsigned long *modes,
+				unsigned long *interfaces)
+{
+	sfp_quirk_1000basex(id, modes, interfaces);
+	sfp_quirk_2500basex(id, modes, interfaces);
 }
 
 static void sfp_quirk_disable_autoneg(const struct sfp_eeprom_id *id,
@@ -532,7 +548,11 @@ static const struct sfp_quirk sfp_quirks[] = {
 	SFP_QUIRK_F("Turris", "RTSFP-10", sfp_fixup_rollball),
 	SFP_QUIRK_F("Turris", "RTSFP-10G", sfp_fixup_rollball),
 
-	SFP_QUIRK_M("Technica Eng.", "SFP Next Gen.", sfp_quirk_sgmii)
+	SFP_QUIRK_M("Technica Eng.", "SFP Next Gen.", sfp_quirk_sgmii),
+
+	// Finisar FTLX8571D3BCL can operate at 1000/2500base-X, but only
+	// report 10GbaseSR in their EEPROM
+	SFP_QUIRK_M("FINISAR CORP.", "FTLX8571D3BCL", sfp_quirk_1000_2500_basex),
 };
 
 static size_t sfp_strlen(const char *str, size_t maxlen)
