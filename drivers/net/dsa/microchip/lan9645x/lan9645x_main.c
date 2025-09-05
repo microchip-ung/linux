@@ -1904,9 +1904,38 @@ static int lan9645x_port_set_pfc(struct dsa_switch *ds, int port,
 	return lan9645x_dcb_setpfc(lan9645x, port, pfc->pfc_en);
 }
 
+static int lan9645x_port_enable(struct dsa_switch *ds, int port, struct phy_device *phy)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	struct lan9645x_port *p;
+
+	p = lan9645x_to_port(lan9645x, port);
+
+	dev_dbg(lan9645x->dev, "port=%d", port);
+
+	phy_power_on(p->serdes);
+
+	return 0;
+}
+
+static void lan9645x_port_disable(struct dsa_switch *ds, int port)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	struct lan9645x_port *p;
+
+	p = lan9645x_to_port(lan9645x, port);
+
+	dev_dbg(lan9645x->dev, "port=%d", port);
+
+	phy_power_off(p->serdes);
+}
+
 static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.get_tag_protocol		= lan9645x_get_tag_protocol,
 	.connect_tag_protocol		= lan9645x_connect_tag_protocol,
+
+	.port_enable = lan9645x_port_enable,
+	.port_disable = lan9645x_port_disable,
 
 	.setup				= lan9645x_setup,
 	.teardown			= lan9645x_teardown,
