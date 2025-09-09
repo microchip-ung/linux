@@ -711,11 +711,50 @@ static int serdes_power_off(struct phy *phy)
 	return serdes_reset(phy);
 }
 
+static int serdes_calibrate(struct phy *phy)
+{
+	struct serdes_macro *macro = phy_get_drvdata(phy);
+	struct serdes_ctrl *ctrl = macro->ctrl;
+	const struct serdes_match_data *d = ctrl->mdata;
+
+	switch (GET_TYPE(macro->idx)) {
+	case CUPHY_TYPE:
+		return 0;
+	case RGMII_TYPE:
+		return 0;
+	case SERDES_TYPE:
+		if (macro->mode == PHY_INTERFACE_MODE_QSGMII)
+			/* TODO: We would have to make sure all in-use qsgmii
+			 * ports are ok with rx reset.
+			 */
+			return 0;
+
+		regmap_update_bits(ctrl->hsio,
+				   SD_ADDR(d->sd_cfg_base, FROM_TYPED(macro->idx)),
+				   HSIO_SD_CFG_RX_RESET,
+				   HSIO_SD_CFG_RX_RESET_SET(1));
+
+		usleep_range(1 * USEC_PER_MSEC, 2 * USEC_PER_MSEC);
+
+		regmap_update_bits(ctrl->hsio,
+				   SD_ADDR(d->sd_cfg_base, FROM_TYPED(macro->idx)),
+				   HSIO_SD_CFG_RX_RESET,
+				   HSIO_SD_CFG_RX_RESET_SET(0));
+
+		usleep_range(1 * USEC_PER_MSEC, 2 * USEC_PER_MSEC);
+
+		return 0;
+	default:
+		return -EINVAL;
+	}
+}
+
 static const struct phy_ops serdes_ops = {
 	.set_mode	= serdes_set_mode,
 	.set_speed	= serdes_set_speed,
 	.reset		= serdes_reset,
 	.power_off	= serdes_power_off,
+	.calibrate	= serdes_calibrate,
 	.owner		= THIS_MODULE,
 };
 
