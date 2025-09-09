@@ -530,6 +530,8 @@ struct lan9645x_port {
 	bool ptp_rx_cmd;
 
 	bool cut_thru_ena;
+
+	bool pcs_lost_sync;
 };
 
 struct lan9645x_path_delay {

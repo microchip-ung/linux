@@ -80,7 +80,7 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 		port, link_an_mode, interface, speed, duplex, tx_pause,
 		rx_pause);
 
-	if (phy_interface_mode_is_rgmii(interface) && p->serdes)
+	if (phy_interface_mode_is_rgmii(interface))
 		phy_set_speed(p->serdes, speed);
 
 	if (duplex == DUPLEX_FULL) {
@@ -357,6 +357,17 @@ void lan9645x_phylink_port_down(struct lan9645x *lan9645x, int port)
 		DEV_CLOCK_CFG_PCS_RX_RST,
 		lan9645x, DEV_CLOCK_CFG(p->chip_port));
 
+	if (p->pcs_lost_sync) {
+		/* The PCS can lose sync lock on clock to serdes, and reach a
+		 * state where it can not automatically re-lock, unless we
+		 * toggle rx-reset in the SERDES.
+		 *
+		 * The serdes_reset flag is set in get_pcs_state.
+		 */
+		p->pcs_lost_sync = false;
+		phy_calibrate(p->serdes);
+	}
+
 	mutex_lock(&lan9645x->fwd_domain_lock);
 	p->speed = LAN9645X_SPEED_DISABLED;
 	lan9645x_cut_through_fwd(lan9645x);
@@ -562,15 +573,6 @@ void lan9645x_pcs_get_state(struct phylink_pcs *pcs,
 	u16 bmsr = 0;
 	u16 lp_adv;
 
-	if (state->interface == PHY_INTERFACE_MODE_1000BASEX) {
-		state->speed = SPEED_1000;
-		state->duplex = DUPLEX_FULL;
-	}
-	else if (state->interface == PHY_INTERFACE_MODE_2500BASEX) {
-		state->speed = SPEED_2500;
-		state->duplex = DUPLEX_FULL;
-	}
-
 	stky = lan_rd(lan9645x, DEV_PCS1G_STICKY(p->chip_port));
 	link_down = DEV_PCS1G_STICKY_LINK_DOWN_STICKY_GET(stky);
 	if (link_down)
@@ -581,6 +583,19 @@ void lan9645x_pcs_get_state(struct phylink_pcs *pcs,
 	state->link = DEV_PCS1G_LINK_STATUS_LINK_STATUS_GET(ls) &&
 		DEV_PCS1G_LINK_STATUS_SYNC_STATUS_GET(ls);
 	state->link &= !link_down;
+
+	/* If we have link but no sync, the PCS fails to sync to the serdes
+	 * and to recover we need to toggle the rx_reset in the serdes.
+	 *
+	 * This could also be achieved with a mac_major_config, but we can not
+	 * trigger this from from pcs_get_state unless we change the interface
+	 * mode.
+	 *
+	 * Instead, we set this flag for the subsequent mac_link_down call, where
+	 * we then make sure to recalibrate the serdes.
+	 */
+	p->pcs_lost_sync = (!DEV_PCS1G_LINK_STATUS_SYNC_STATUS_GET(ls) &&
+			       DEV_PCS1G_LINK_STATUS_LINK_STATUS_GET(ls));
 
 	/* Get PCS ANEG status register */
 	as = lan_rd(lan9645x, DEV_PCS1G_ANEG_STATUS(p->chip_port));
@@ -603,7 +618,13 @@ void lan9645x_pcs_get_state(struct phylink_pcs *pcs,
 		if (!state->link)
 			return;
 
-		state->duplex = DUPLEX_FULL;
+		if (state->interface == PHY_INTERFACE_MODE_1000BASEX) {
+			state->speed = SPEED_1000;
+			state->duplex = DUPLEX_FULL;
+		} else if (state->interface == PHY_INTERFACE_MODE_2500BASEX) {
+			state->speed = SPEED_2500;
+			state->duplex = DUPLEX_FULL;
+		}
 	}
 
 	/* RX latency register is 2^8, so LSB = 1/(2^8)ns ~ 3.90625ps
