@@ -244,6 +244,15 @@ static int lan9645x_sd6g40_reg_cfg(struct serdes_macro *macro,
 	struct regmap *map = ctrl->hsio;
 	u32 value;
 
+	/* Make sure we toggle resets on major configs, to allow pcs */
+	regmap_update_bits(map, SD_ADDR(d->sd_cfg_base, idx),
+			   HSIO_SD_CFG_RX_RESET |
+			   HSIO_SD_CFG_TX_RESET,
+			   HSIO_SD_CFG_RX_RESET_SET(1) |
+			   HSIO_SD_CFG_TX_RESET_SET(1));
+
+	usleep_range(1000, 2000);
+
 	regmap_update_bits(map, SD_ADDR(d->sd_cfg_base, idx),
 			   HSIO_SD_CFG_LANE_10BIT_SEL |
 			   HSIO_SD_CFG_RX_RATE |
