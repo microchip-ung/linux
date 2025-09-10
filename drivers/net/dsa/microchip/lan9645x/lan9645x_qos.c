@@ -175,7 +175,7 @@ int __lan9645x_qos_portconf_set(struct lan9645x_port *p,
 		}
 	}
 
-	dei = (cfg->e_mode == E_MODE_QOS_DP ? cfg->e_default_dei : 0);
+	dei = (cfg->e_mode == E_MODE_PORT_PCP_DEI ? cfg->e_default_dei : 0);
 
 	/* Setup port egress default DEI and PCP */
 	lan_rmw(REW_PORT_VLAN_CFG_PORT_DEI_SET(!!dei) |
