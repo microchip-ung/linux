@@ -643,6 +643,12 @@ static int dsa_user_port_attr_set(struct net_device *dev, const void *ctx,
 
 		ret = dsa_port_vlan_msti(dp, &attr->u.vlan_msti);
 		break;
+	case SWITCHDEV_ATTR_ID_PORT_MROUTER:
+		if (!dsa_port_offloads_bridge_port(dp, attr->orig_dev))
+			return -EOPNOTSUPP;
+
+		ret = dsa_port_mrouter(dp, attr->u.mrouter);
+		break;
 	default:
 		ret = -EOPNOTSUPP;
 		break;
