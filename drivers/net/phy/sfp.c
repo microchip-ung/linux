@@ -542,6 +542,10 @@ static const struct sfp_quirk sfp_quirks[] = {
 	// report 10GbaseSR in their EEPROM
 	SFP_QUIRK_S("FS", "SFP-10GSR-85", sfp_quirk_1000_2500_basex),
 
+	// Fiberstore SFP2.5G-SX-85 can operate at 1000/2500base-X, but only
+	// report 1000basex in their EEPROM
+	SFP_QUIRK_S("FS", "SFP2.5G-SX-85", sfp_quirk_2500basex),
+
 	SFP_QUIRK_F("HALNy", "HL-GSFP", sfp_fixup_halny_gsfp),
 
 	// HG MXPD-483II-F 2.5G supports 2500Base-X, but incorrectly reports
