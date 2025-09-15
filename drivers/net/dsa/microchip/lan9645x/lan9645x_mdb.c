@@ -10,14 +10,20 @@ struct lan9645x_pgid_entry {
 	struct list_head list;
 	int index;
 	refcount_t refcount;
+	/* Port mask for this L2 multicast PGID entry */
 	u16 ports;
+	/* Port mask written to hardware. This is ports | lan9645x->mrouter_mask */
+	u16 hw_ports;
 };
 
 struct lan9645x_mdb_entry {
 	struct list_head list;
 	unsigned char mac[ETH_ALEN];
 	u16 vid;
+	/* Mask for ports which have joined this multicast group */
 	u16 ports;
+	/* Port mask written to hardware. This is ports | lan9645x->mrouter_mask */
+	u16 hw_ports;
 	struct lan9645x_pgid_entry *pgid;
 };
 
@@ -91,9 +97,12 @@ lan9645x_mdb_entry_alloc(struct lan9645x *lan9645x,
 
 static void lan9645x_mdb_encode_mac(unsigned char *mac,
 				    struct lan9645x_mdb_entry *mdb_entry,
-				    enum macaccess_entry_type type)
+				    enum macaccess_entry_type type,
+				    u16 mrouter_mask)
 {
 	ether_addr_copy(mac, mdb_entry->mac);
+	/* Merge the mdb port group and the mrouter port mask */
+	mdb_entry->hw_ports = mdb_entry->ports | mrouter_mask;
 
 	/* The HW encodes the portmask in the high bits of the macmac for ip
 	 * multicast entries, to avoid using limited PGID resources.
@@ -105,11 +114,11 @@ static void lan9645x_mdb_encode_mac(unsigned char *mac,
 	 */
 	if (type == ENTRYTYPE_MACV4) {
 		mac[0] = 0;
-		mac[1] = mdb_entry->ports >> 8;
-		mac[2] = mdb_entry->ports & 0xff;
+		mac[1] = mdb_entry->hw_ports >> 8;
+		mac[2] = mdb_entry->hw_ports & 0xff;
 	} else if (type == ENTRYTYPE_MACV6) {
-		mac[0] = mdb_entry->ports >> 8;
-		mac[1] = mdb_entry->ports & 0xff;
+		mac[0] = mdb_entry->hw_ports >> 8;
+		mac[1] = mdb_entry->hw_ports & 0xff;
 	}
 }
 
@@ -159,7 +168,8 @@ lan9645x_mdb_pgid_entry_lookup(struct lan9645x *lan9645x,
 }
 
 static struct lan9645x_pgid_entry *
-lan9645x_pgid_entry_alloc(struct lan9645x *lan9645x, int index, u16 ports)
+lan9645x_pgid_entry_alloc(struct lan9645x *lan9645x, int index, u16 ports,
+			  u16 hw_ports)
 {
 	struct lan9645x_pgid_entry *pgid_entry;
 
@@ -169,6 +179,7 @@ lan9645x_pgid_entry_alloc(struct lan9645x *lan9645x, int index, u16 ports)
 
 	pgid_entry->ports = ports;
 	pgid_entry->index = index;
+	pgid_entry->hw_ports = hw_ports;
 	refcount_set(&pgid_entry->refcount, 1);
 
 	list_add_tail(&pgid_entry->list, &lan9645x->pgid_entries);
@@ -176,7 +187,7 @@ lan9645x_pgid_entry_alloc(struct lan9645x *lan9645x, int index, u16 ports)
 	dev_dbg(lan9645x->dev, "index=%d ports=0x%x", pgid_entry->index,
 		pgid_entry->ports);
 
-	lan_rmw(ANA_PGID_PGID_SET(pgid_entry->ports),
+	lan_rmw(ANA_PGID_PGID_SET(pgid_entry->hw_ports),
 		ANA_PGID_PGID, lan9645x,
 		ANA_PGID(pgid_entry->index));
 
@@ -205,7 +216,8 @@ lan9645x_mdb_pgid_entry_create(struct lan9645x *lan9645x,
 
 		if (!used)
 			return lan9645x_pgid_entry_alloc(lan9645x, index,
-							 mdb_entry->ports);
+							 mdb_entry->ports,
+							 mdb_entry->hw_ports);
 	}
 
 	return ERR_PTR(-ENOSPC);
@@ -254,6 +266,9 @@ static int __lan9645x_mdb_add(struct lan9645x *lan9645x, int chip_port,
 
 	mdb_entry->ports |= BIT(chip_port);
 
+	/* Encode mac for IP mc and update hw_ports */
+	lan9645x_mdb_encode_mac(mac, mdb_entry, type, lan9645x->mrouter_mask);
+
 	/* Update PGID ptr for non-IP entries (L2 multicast) */
 	old_pgid = mdb_entry->pgid;
 	new_pgid = lan9645x_mdb_pgid_entry_get(lan9645x, mdb_entry, type);
@@ -269,7 +284,6 @@ static int __lan9645x_mdb_add(struct lan9645x *lan9645x, int chip_port,
 	}
 	mdb_entry->pgid = new_pgid;
 
-	lan9645x_mdb_encode_mac(mac, mdb_entry, type);
 	err = lan9645x_mact_learn(lan9645x,
 				  lan9645x_mdb_pgid_index(mdb_entry, type),
 				  mac, mdb_entry->vid, type);
@@ -295,6 +309,9 @@ static int __lan9645x_mdb_del(struct lan9645x *lan9645x, int chip_port,
 
 	mdb_entry->ports &= ~BIT(chip_port);
 
+	/* Encode mac for IP mc and update hw_ports */
+	lan9645x_mdb_encode_mac(mac, mdb_entry, type, lan9645x->mrouter_mask);
+
 	/* Update PGID ptr for non-IP entries (L2 multicast) */
 	old_pgid = mdb_entry->pgid;
 	new_pgid = lan9645x_mdb_pgid_entry_get(lan9645x, mdb_entry, type);
@@ -305,7 +322,6 @@ static int __lan9645x_mdb_del(struct lan9645x *lan9645x, int chip_port,
 	}
 
 	mdb_entry->pgid = new_pgid;
-	lan9645x_mdb_encode_mac(mac, mdb_entry, type);
 
 	if (!mdb_entry->ports) {
 		lan9645x_mact_forget(lan9645x, mac, mdb_entry->vid, type);
@@ -373,4 +389,71 @@ int lan9645x_mdb_port_del(struct lan9645x *lan9645x, int port,
 		vid = lan9645x_vlan_unaware_pvid(lan9645x, bridge);
 
 	return lan9645x_mdb_del(lan9645x, port, mdb->addr, vid, type);
+}
+
+int lan9645x_mdb_port_mrouter_set(struct lan9645x *lan9645x, int port,
+				  bool enable)
+{
+	struct lan9645x_pgid_entry *pgid_entry;
+	struct lan9645x_mdb_entry *mdb;
+	enum macaccess_entry_type type;
+	unsigned char mac[ETH_ALEN];
+
+	dev_dbg(lan9645x->dev, "port=%d enable=%d", port, enable);
+
+	mutex_lock(&lan9645x->mdb_lock);
+	if (enable)
+		lan9645x->mrouter_mask |= BIT(port);
+	else
+		lan9645x->mrouter_mask &= ~BIT(port);
+
+	/* In the control path we need to forward reports to router ports, and
+	 * this is handled by the kernel.
+	 *
+	 * Unknown IP mc in data-path is forwarded to router ports.
+	 */
+	lan9645x_port_pgid_set(lan9645x, PGID_MCIPV4, port, enable);
+	lan9645x_port_pgid_set(lan9645x, PGID_MCIPV6, port, enable);
+
+	/* Known IP mc in data-path is forwarded to router ports by merging the
+	 * mdb port group mask with the mrouter mask.
+	 */
+	list_for_each_entry(mdb, &lan9645x->mdb_entries, list) {
+		/* Merged forwarding mask is unchanged. */
+		if ((mdb->ports | lan9645x->mrouter_mask) == mdb->hw_ports)
+			continue;
+
+		/* Encode port mask in MAC for IP mc and update mdb hw_ports */
+		type = lan9645x_mdb_classify(mdb->mac);
+		lan9645x_mdb_encode_mac(mac, mdb, type, lan9645x->mrouter_mask);
+
+		/* We handle PGID using entries below (L2 multicast) */
+		if (mdb->pgid)
+			continue;
+
+		/* Modifying mrouter mask will never cause an existing mdb to be
+		 * removed so it suffices to overwrite the existing entry.
+		 */
+		lan9645x_mact_learn(lan9645x,
+				    lan9645x_mdb_pgid_index(mdb, type), mac,
+				    mdb->vid, type);
+	}
+
+	/* Update shared pgid entries used by L2 multicast with mrouter mask */
+	list_for_each_entry(pgid_entry, &lan9645x->pgid_entries, list) {
+		/* Merged forwarding mask is unchanged. */
+		if ((pgid_entry->ports | lan9645x->mrouter_mask) ==
+		    pgid_entry->hw_ports)
+			continue;
+
+		pgid_entry->hw_ports = pgid_entry->ports |
+				       lan9645x->mrouter_mask;
+
+		lan_wr(ANA_PGID_PGID_SET(pgid_entry->hw_ports),
+		       lan9645x,
+		       ANA_PGID(pgid_entry->index));
+	}
+	mutex_unlock(&lan9645x->mdb_lock);
+
+	return 0;
 }
