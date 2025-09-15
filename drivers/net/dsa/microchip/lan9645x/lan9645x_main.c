@@ -933,8 +933,8 @@ static int lan9645x_port_pre_bridge_flags(struct dsa_switch *ds, int port,
 	return 0;
 }
 
-static void lan9645x_port_pgid_set(struct lan9645x *lan9645x, u16 pgid,
-				   int chip_port, bool enabled)
+void lan9645x_port_pgid_set(struct lan9645x *lan9645x, u16 pgid,
+			    int chip_port, bool enabled)
 {
 	u32 reg_msk, port_msk;
 
@@ -1930,6 +1930,13 @@ static void lan9645x_port_disable(struct dsa_switch *ds, int port)
 	phy_power_off(p->serdes);
 }
 
+static int lan9645x_port_mrouter_set(struct dsa_switch *ds, int port, bool enable)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	return lan9645x_mdb_port_mrouter_set(lan9645x, port, enable);
+}
+
 static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.get_tag_protocol		= lan9645x_get_tag_protocol,
 	.connect_tag_protocol		= lan9645x_connect_tag_protocol,
@@ -1984,6 +1991,7 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	/* Multicast database */
 	.port_mdb_add			= lan9645x_mdb_add,
 	.port_mdb_del			= lan9645x_mdb_del,
+	.port_mrouter_set		= lan9645x_port_mrouter_set,
 
 	/* Port statistics counters. */
 	.get_strings			= lan9645x_get_strings,

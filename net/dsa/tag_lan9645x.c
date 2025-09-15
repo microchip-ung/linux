@@ -110,9 +110,10 @@ static void lan9645x_rcv_dbg(struct sk_buff *skb, struct net_device *ndev,
 static int lan9645x_ipv6_mc_check_hdr(struct sk_buff *skb)
 {
 	const struct ipv6hdr *ip6h;
+	unsigned int offset;
 	unsigned int len;
-	unsigned int offset = skb_network_offset(skb) + sizeof(*ip6h);
 
+	offset = skb_network_offset(skb) + sizeof(*ip6h);
 	if (!pskb_may_pull(skb, offset))
 		return -EINVAL;
 
@@ -136,9 +137,9 @@ static int lan9645x_ipv6_mc_check_hdr(struct sk_buff *skb)
 static int lan9645x_ipv6_mc_check_exthdr(struct sk_buff *skb)
 {
 	const struct ipv6hdr *ip6h;
+	__be16 frag_off;
 	int offset;
 	u8 nexthdr;
-	__be16 frag_off;
 
 	ip6h = ipv6_hdr(skb);
 
