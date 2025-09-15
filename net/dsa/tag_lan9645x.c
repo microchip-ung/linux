@@ -104,11 +104,80 @@ static void lan9645x_rcv_dbg(struct sk_buff *skb, struct net_device *ndev,
 		etype_ofs, ifh_gap_len, skb->offload_fwd_mark, acl_id, acl_hit);
 }
 
+/* This is the private ipv6_mc_check_ip6hdr(struct sk_buff *skb) from
+ * mcast_snoop.c
+ */
+static int lan9645x_ipv6_mc_check_hdr(struct sk_buff *skb)
+{
+	const struct ipv6hdr *ip6h;
+	unsigned int len;
+	unsigned int offset = skb_network_offset(skb) + sizeof(*ip6h);
+
+	if (!pskb_may_pull(skb, offset))
+		return -EINVAL;
+
+	ip6h = ipv6_hdr(skb);
+
+	if (ip6h->version != 6)
+		return -EINVAL;
+
+	len = offset + ntohs(ip6h->payload_len);
+	if (skb->len < len || len <= offset)
+		return -EINVAL;
+
+	skb_set_transport_header(skb, offset);
+
+	return 0;
+}
+
+/* This is the private ipv6_mc_check_exthdrs(struct sk_buff *skb) from
+ * mcast_snoop.c
+ */
+static int lan9645x_ipv6_mc_check_exthdr(struct sk_buff *skb)
+{
+	const struct ipv6hdr *ip6h;
+	int offset;
+	u8 nexthdr;
+	__be16 frag_off;
+
+	ip6h = ipv6_hdr(skb);
+
+	if (ip6h->nexthdr != IPPROTO_HOPOPTS)
+		return -ENOMSG;
+
+	nexthdr = ip6h->nexthdr;
+	offset = skb_network_offset(skb) + sizeof(*ip6h);
+	offset = ipv6_skip_exthdr(skb, offset, &nexthdr, &frag_off);
+
+	if (offset < 0)
+		return -EINVAL;
+
+	if (nexthdr != IPPROTO_ICMPV6)
+		return -ENOMSG;
+
+	skb_set_transport_header(skb, offset);
+
+	return 0;
+}
+
+/* This is ipv6_mc_check_mld(struct sk_buff *skb) without the checksum check and
+ * potential allocation.
+ */
 static bool lan9645x_is_mld(struct sk_buff *skb)
 {
-	return IS_ENABLED(CONFIG_IPV6) && skb->protocol == htons(ETH_P_IPV6) &&
-	       ipv6_addr_is_multicast(&ipv6_hdr(skb)->daddr) &&
-	       ipv6_mc_check_mld(skb);
+	return IS_ENABLED(CONFIG_IPV6) &&
+	       eth_hdr(skb)->h_proto == htons(ETH_P_IPV6) &&
+	       !lan9645x_ipv6_mc_check_hdr(skb) &&
+	       !lan9645x_ipv6_mc_check_exthdr(skb);
+}
+
+/* skb network_header must be set */
+static bool lan9645x_is_igmp(struct sk_buff *skb)
+{
+	return eth_hdr(skb)->h_proto == htons(ETH_P_IP) &&
+	       pskb_may_pull(skb, sizeof(struct iphdr)) &&
+	       ip_hdr(skb)->version == 4 &&
+	       ip_hdr(skb)->protocol == IPPROTO_IGMP;
 }
 
 static void lan9645x_offload_fwd_mark(struct sk_buff *skb, u32 rtagd,
@@ -122,7 +191,7 @@ static void lan9645x_offload_fwd_mark(struct sk_buff *skb, u32 rtagd,
 
 	/* IGMP/MLD are trapped to CPU, and must be forwarded by network stack.
 	 */
-	if (!ip_mc_check_igmp(skb) || lan9645x_is_mld(skb)) {
+	if (lan9645x_is_igmp(skb) || lan9645x_is_mld(skb)) {
 		skb->offload_fwd_mark = 0;
 		return;
 	}
@@ -283,6 +352,8 @@ static struct sk_buff *lan9645x_rcv(struct sk_buff *skb, struct net_device *ndev
 
 	skb_pull(skb, LAN9645X_IFH_LEN + ifh_gap_len);
 	skb_reset_mac_header(skb);
+	/* Reset network header, so our IGMP/MLD checks function properly. */
+	skb_set_network_header(skb, ETH_HLEN);
 	skb_reset_mac_len(skb);
 
 	/* Reset skb->data past the actual ethernet header. */
