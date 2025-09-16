@@ -676,8 +676,8 @@ static int lan9645x_setup(struct dsa_switch *ds)
 	lan_wr(all_phys_ports, lan9645x, ANA_PGID(PGID_MC));
 
 	/* Snooping on by default. This will be controlled by mrouter ports */
-	lan_wr(all_phys_ports, lan9645x, ANA_PGID(PGID_MCIPV4));
-	lan_wr(all_phys_ports, lan9645x, ANA_PGID(PGID_MCIPV6));
+	lan_wr(0x0, lan9645x, ANA_PGID(PGID_MCIPV4));
+	lan_wr(0x0, lan9645x, ANA_PGID(PGID_MCIPV6));
 
 	/* Unicast to all front ports */
 	lan_wr(all_phys_ports, lan9645x, ANA_PGID(PGID_UC));
