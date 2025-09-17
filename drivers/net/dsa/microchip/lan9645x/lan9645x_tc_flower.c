@@ -942,6 +942,12 @@ lan9645x_tc_flower_handler_ip_usage(struct vcap_tc_flower_parse_usage *st)
 
 	flow_rule_match_ip(st->frule, &match);
 
+	if (match.mask->ttl) {
+		NL_SET_ERR_MSG_MOD(st->fco->common.extack,
+				   "hardware does not support ip_ttl");
+		return -EOPNOTSUPP;
+	}
+
 	if (st->admin->vtype == VCAP_TYPE_IS1)
 		key = VCAP_KF_L3_DSCP;
 	else
