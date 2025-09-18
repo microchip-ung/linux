@@ -295,6 +295,8 @@
 
 #define LAN8814_LED_CTRL_1			0x0
 #define LAN8814_LED_CTRL_1_KSZ9031_LED_MODE_	BIT(6)
+#define LAN8814_LED_CTRL_2			0x1
+#define LAN8814_LED_CTRL_2_LED1_COM_DIS		BIT(8)
 
 /* PHY Control 1 */
 #define MII_KSZPHY_CTRL_1			0x1e
@@ -6439,6 +6441,18 @@ static int lan8842_config_init(struct phy_device *phydev)
 	 * function. Therefore set this value.
 	 */
 	lanphy_write_page_reg(phydev, 4, LAN8814_GPIO_EN2, 0);
+
+	/* Even if the GPIOs are set to control the LEDs the behaviour of the
+	 * LEDs is wrong, they are not blinking when there is traffic.
+	 * To fix this it is required to set extended LED mode
+	 */
+	val = lanphy_read_page_reg(phydev, 5, LAN8814_LED_CTRL_1);
+	val &= ~LAN8814_LED_CTRL_1_KSZ9031_LED_MODE_;
+	lanphy_write_page_reg(phydev, 5, LAN8814_LED_CTRL_1, val);
+
+	val = lanphy_read_page_reg(phydev, 5, LAN8814_LED_CTRL_2);
+	val |= LAN8814_LED_CTRL_2_LED1_COM_DIS;
+	lanphy_write_page_reg(phydev, 5, LAN8814_LED_CTRL_2, val);
 
 	/* Enable the Fast link failure, at the top level, at the bottom level
 	 * it would be set/cleared inside lan8842_config_intr
