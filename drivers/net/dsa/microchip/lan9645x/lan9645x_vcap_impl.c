@@ -46,7 +46,7 @@ static struct lan9645x_vcap_inst {
 		.lookups = LAN9645X_IS1_LOOKUPS,
 		.first_cid = LAN9645X_VCAP_CID_IS1_L0,
 		.last_cid = LAN9645X_VCAP_CID_IS1_MAX,
-		.count = 64,
+		.count = 256,
 		.ingress = true,
 	},
 	{
@@ -55,7 +55,7 @@ static struct lan9645x_vcap_inst {
 		.lookups = LAN9645X_IS2_LOOKUPS,
 		.first_cid = LAN9645X_VCAP_CID_IS2_L0,
 		.last_cid = LAN9645X_VCAP_CID_IS2_MAX,
-		.count = 64,
+		.count = 256,
 		.ingress = true,
 	},
 };
