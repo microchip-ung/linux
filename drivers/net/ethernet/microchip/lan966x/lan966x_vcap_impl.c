@@ -76,7 +76,7 @@ static struct lan966x_vcap_inst {
 		.lookups = LAN966X_ES0_LOOKUPS,
 		.first_cid = LAN966X_VCAP_CID_ES0_L0,
 		.last_cid = LAN966X_VCAP_CID_ES0_MAX,
-		.count = 64,
+		.count = 256,
 	},
 	{
 		.vtype = VCAP_TYPE_IS1, /* IS1-0 */
