@@ -16,6 +16,7 @@ sparx5-switch-y  := sparx5_main.o \
 		    sparx5_calendar.o \
 		    sparx5_ethtool.o \
 		    sparx5_fdma.o \
+		    lan969x/lan969x_fdma.o \
 		    sparx5_ptp.o \
 		    sparx5_pgid.o \
 		    sparx5_tc.o \
@@ -39,7 +40,9 @@ sparx5-switch-y  := sparx5_main.o \
 		    sparx5_xdp.o \
 		    sparx5_lag.o \
 		    sparx5_isdx.o \
-		    sparx5_mdb.o
+		    sparx5_mdb.o \
+		    lan969x/lan969x_redbox.o \
+		    sparx5_psec.o
 
 sparx5-switch-$(CONFIG_SPARX5_DCB) += sparx5_dcb.o
 

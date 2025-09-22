@@ -1166,12 +1166,14 @@ static void vsc85xx_txtstamp(struct mii_timestamper *mii_ts,
 		container_of(mii_ts, struct vsc8531_private, mii_ts);
 
 	if (!vsc8531->ptp->configured)
-		return;
+		goto out;
 
-	if (vsc8531->ptp->tx_type == HWTSTAMP_TX_OFF) {
-		kfree_skb(skb);
-		return;
-	}
+	if (vsc8531->ptp->tx_type == HWTSTAMP_TX_OFF)
+		goto out;
+
+	if (vsc8531->ptp->tx_type == HWTSTAMP_TX_ONESTEP_SYNC)
+		if (ptp_msg_is_sync(skb, type))
+			goto out;
 
 	if (vsc8531->ptp->tx_type == HWTSTAMP_TX_ONESTEP_SYNC) {
 		if (ptp_msg_is_sync(skb, type)) {
@@ -1183,6 +1185,10 @@ static void vsc85xx_txtstamp(struct mii_timestamper *mii_ts,
 	skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
 
 	skb_queue_tail(&vsc8531->ptp->tx_queue, skb);
+	return;
+
+out:
+	kfree_skb(skb);
 }
 
 static bool vsc85xx_rxtstamp(struct mii_timestamper *mii_ts,
@@ -1233,6 +1239,9 @@ static long vsc85xx_do_aux_work(struct ptp_clock_info *info)
 	struct vsc8531_skb *rx_skb, *tmp;
 	struct timespec64 ts;
 	unsigned long flags;
+	struct list_head skbs;
+
+	INIT_LIST_HEAD(&skbs);
 
 	vsc85xx_gettime(info, &ts);
 	spin_lock_irqsave(&priv->rx_skbs_lock, flags);
@@ -1244,12 +1253,17 @@ static long vsc85xx_do_aux_work(struct ptp_clock_info *info)
 			ts.tv_sec--;
 
 		shhwtstamps->hwtstamp = ktime_set(ts.tv_sec, rx_skb->ns);
-		netif_rx(rx_skb->skb);
 
+		list_del(&rx_skb->list);
+		list_add(&rx_skb->list, &skbs);
+	}
+	spin_unlock_irqrestore(&priv->rx_skbs_lock, flags);
+
+	list_for_each_entry_safe(rx_skb, tmp, &skbs, list) {
+		netif_rx(rx_skb->skb);
 		list_del(&rx_skb->list);
 		kfree(rx_skb);
 	}
-	spin_unlock_irqrestore(&priv->rx_skbs_lock, flags);
 
 	return -1;
 }

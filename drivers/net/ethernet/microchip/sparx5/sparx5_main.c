@@ -420,6 +420,8 @@ static int sparx5_create_port(struct sparx5 *sparx5,
 		  spx5_port->phylink_config.supported_interfaces);
 	__set_bit(PHY_INTERFACE_MODE_2500BASEX,
 		  spx5_port->phylink_config.supported_interfaces);
+	__set_bit(PHY_INTERFACE_MODE_10G_QXGMII,
+		  spx5_port->phylink_config.supported_interfaces);
 
 	if (spx5_port->conf.bandwidth == SPEED_5000 ||
 	    spx5_port->conf.bandwidth == SPEED_10000 ||
@@ -994,6 +996,13 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		conf->serdes_reset = true;
 		conf->portmode = conf->phy_mode;
 		conf->power_down = true;
+
+		/* In case the link between MAC and PHY is 10G_QXGMII, the
+		 * serdes on the MAC side doesn't need to be reseted it is OK to
+		 * just apply the needed configuration,
+		 */
+		if (conf->portmode == PHY_INTERFACE_MODE_10G_QXGMII)
+			conf->serdes_reset = false;
 		idx++;
 	}
 
@@ -1240,6 +1249,7 @@ static const struct sparx5_match_data sparx5_desc = {
 		.ptp_irq_handler = sparx5_ptp_irq_handler,
 		.get_internal_port_cal_speed = &sparx5_get_internal_port_cal_speed,
 		.dsm_calendar_calc = &sparx5_dsm_calendar_calc,
+		.port_get_10g_qxgmii_idx = &sparx5_port_get_10g_qxgmii_idx,
 	},
 	.consts = {
 		.chip_ports = 65,

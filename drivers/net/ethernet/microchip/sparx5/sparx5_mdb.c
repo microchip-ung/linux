@@ -109,7 +109,7 @@ out:
 	return found;
 }
 
-int sparx5_handle_mdb_add(struct net_device *dev, struct notifier_block *nb,
+int sparx5_handle_mdb_add(struct net_device *dev,
 			  const struct switchdev_obj_port_mdb *v)
 {
 	struct sparx5_port *port = netdev_priv(dev);
@@ -169,7 +169,6 @@ int sparx5_handle_mdb_add(struct net_device *dev, struct notifier_block *nb,
 }
 
 int sparx5_handle_mdb_del(struct net_device *dev,
-			  struct notifier_block *nb,
 			  const struct switchdev_obj_port_mdb *v)
 {
 	struct sparx5_port *port = netdev_priv(dev);

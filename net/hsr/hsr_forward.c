@@ -317,8 +317,10 @@ struct sk_buff *hsr_create_tagged_frame(struct hsr_frame_info *frame,
 		struct hsr_ethhdr *hsr_ethhdr =
 			(struct hsr_ethhdr *)skb_mac_header(frame->skb_hsr);
 
-		/* set the lane id properly */
-		hsr_set_path_id(hsr_ethhdr, port);
+		/* set the lane id properly, except when forwarding frames. */
+		if (!prp_drop_frame(frame, port))
+			hsr_set_path_id(hsr_ethhdr, port);
+
 		return skb_clone(frame->skb_hsr, GFP_ATOMIC);
 	} else if (port->dev->features & NETIF_F_HW_HSR_TAG_INS) {
 		return skb_clone(frame->skb_std, GFP_ATOMIC);
@@ -524,8 +526,8 @@ static void hsr_forward_do(struct hsr_frame_info *frame)
 		 * Also for SAN, this shouldn't be done.
 		 */
 		if (!frame->is_from_san &&
-		    hsr_register_frame_out(port, frame->node_src,
-					   frame->sequence_nr))
+		    hsr->proto_ops->register_frame_out &&
+		    hsr->proto_ops->register_frame_out(port, frame))
 			continue;
 
 		if (frame->is_supervision && port->type == HSR_PT_MASTER &&

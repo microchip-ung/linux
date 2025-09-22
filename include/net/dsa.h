@@ -21,6 +21,7 @@
 #include <linux/phylink.h>
 #include <net/devlink.h>
 #include <net/switchdev.h>
+#include <net/pkt_cls.h>
 
 struct dsa_8021q_context;
 struct tc_action;
@@ -54,6 +55,7 @@ struct tc_action;
 #define DSA_TAG_PROTO_RZN1_A5PSW_VALUE		26
 #define DSA_TAG_PROTO_LAN937X_VALUE		27
 #define DSA_TAG_PROTO_VSC73XX_8021Q_VALUE	28
+#define DSA_TAG_PROTO_LAN9645X_VALUE		29
 
 enum dsa_tag_protocol {
 	DSA_TAG_PROTO_NONE		= DSA_TAG_PROTO_NONE_VALUE,
@@ -85,6 +87,7 @@ enum dsa_tag_protocol {
 	DSA_TAG_PROTO_RZN1_A5PSW	= DSA_TAG_PROTO_RZN1_A5PSW_VALUE,
 	DSA_TAG_PROTO_LAN937X		= DSA_TAG_PROTO_LAN937X_VALUE,
 	DSA_TAG_PROTO_VSC73XX_8021Q	= DSA_TAG_PROTO_VSC73XX_8021Q_VALUE,
+	DSA_TAG_PROTO_LAN9645X		= DSA_TAG_PROTO_LAN9645X_VALUE,
 };
 
 struct dsa_switch;
@@ -968,6 +971,16 @@ struct dsa_switch_ops {
 				     const u8 *sel, int nsel);
 	int	(*port_get_apptrust)(struct dsa_switch *ds, int port, u8 *sel,
 				     int *nsel);
+	int	(*port_get_pcp_dei_prio)(struct dsa_switch *ds, int port,
+					 u8 pcp, u8 dei);
+	int	(*port_add_pcp_dei_prio)(struct dsa_switch *ds, int port,
+					 u8 pcp, u8 dei, u8 prio);
+	int	(*port_del_pcp_dei_prio)(struct dsa_switch *ds, int port,
+					 u8 pcp, u8 dei, u8 prio);
+	int	(*port_getpfc)(struct dsa_switch *ds, int port,
+			       struct ieee_pfc *pfc);
+	int	(*port_setpfc)(struct dsa_switch *ds, int port,
+			       struct ieee_pfc *pfc);
 
 	/*
 	 * Suspend and resume
@@ -1094,6 +1107,8 @@ struct dsa_switch_ops {
 	int	(*port_mdb_del)(struct dsa_switch *ds, int port,
 				const struct switchdev_obj_port_mdb *mdb,
 				struct dsa_db db);
+	int	(*port_mrouter_set)(struct dsa_switch *ds, int port,
+				    bool enable);
 	/*
 	 * RXNFC
 	 */
@@ -1121,6 +1136,11 @@ struct dsa_switch_ops {
 	void	(*port_policer_del)(struct dsa_switch *ds, int port);
 	int	(*port_setup_tc)(struct dsa_switch *ds, int port,
 				 enum tc_setup_type type, void *type_data);
+	int (*cls_matchall_goto_add)(struct dsa_switch *ds, int port,
+				     struct tc_cls_matchall_offload *cls,
+				     bool ingress);
+	void (*cls_matchall_goto_del)(struct dsa_switch *ds, int port,
+				      struct tc_cls_matchall_offload *cls);
 
 	/*
 	 * Cross-chip operations

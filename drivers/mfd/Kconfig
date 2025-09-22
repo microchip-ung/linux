@@ -2488,5 +2488,15 @@ config MFD_MICROCHIP_DPLL_I2C
 	  Additional drivers must be enabled in order to use the functionality
 	  of the device.
 
+config MFD_MICROCHIP_LAN9645X_SPI
+	tristate "Microchip LAN9645X with SPI"
+	depends on SPI && OF
+	select MFD_CORE
+	select REGMAP_SPI
+	help
+	  This driver provides common support for accessing the device.
+	  Additional drivers must be enabled in order to use the functionality
+	  of the device.
+
 endmenu
 endif

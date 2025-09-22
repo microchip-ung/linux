@@ -178,4 +178,14 @@ config NET_DSA_TAG_XRS700X
 	  Say Y or M if you want to enable support for tagging frames for
 	  Arrow SpeedChips XRS700x switches that use a single byte tag trailer.
 
+config NET_DSA_TAG_LAN9645X
+	tristate "Tag driver for Lan9645x switches"
+	select PACKING
+	help
+	  Say Y or M if you want to enable NPI tagging for the Lan9645x switches.
+	  In this mode, the frames over the Ethernet CPU port are prepended with a
+	  hardware-defined injection/extraction frame header.  Flow control
+	  (PAUSE frames) over the CPU port is not supported when operating in
+	  this mode.
+
 endif

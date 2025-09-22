@@ -48,6 +48,7 @@ enum sparx5_sd25g28_mode_preset_type {
 	SPX5_SD25G28_MODE_PRESET_5000,
 	SPX5_SD25G28_MODE_PRESET_SD_2G5,
 	SPX5_SD25G28_MODE_PRESET_1000BASEX,
+	SPX5_SD25G28_MODE_PRESET_10G_QSGMII,
 };
 
 enum sparx5_sd10g28_mode_preset_type {
@@ -57,6 +58,7 @@ enum sparx5_sd10g28_mode_preset_type {
 	SPX5_SD10G28_MODE_PRESET_QSGMII,
 	SPX5_SD10G28_MODE_PRESET_SD_2G5,
 	SPX5_SD10G28_MODE_PRESET_1000BASEX,
+	SPX5_SD10G28_MODE_PRESET_10G_QSGMII,
 };
 
 struct sparx5_sd25g28_mode_preset {
@@ -508,6 +510,32 @@ static struct sparx5_sd25g28_mode_preset mode_presets_25g[] = {
 		.tx_tap_dly         = 0,
 		.tx_tap_adv         = 0,
 	},
+	{ /* SPX5_SD25G28_MODE_PRESET_10G_QSGMII */
+		.bitwidth           = 32,
+		.tx_pre_div         = 0,
+		.fifo_ck_div        = 1,
+		.pre_divsel         = 0,
+		.vco_div_mode       = 1,
+		.sel_div            = 9,
+		.ck_bitwidth        = 0,
+		.subrate            = 0,
+		.com_txcal_en       = 1,
+		.com_tx_reserve_msb = (0x20 << 1),
+		.com_tx_reserve_lsb = 0x40,
+		.cfg_itx_ipcml_base = 0,
+		.tx_reserve_msb     = 0x4c,
+		.tx_reserve_lsb     = 0x44,
+		.bw                 = 1,
+		.rxterm             = 0,
+		.cfg_pi_bw_3_0      = 0,
+		.dfe_enable         = 1,
+		.dfe_tap            = 0x1f,
+		.txmargin           = 1,
+		.cfg_ctle_rstn      = 1,
+		.r_dfe_rstn         = 1,
+		.tx_tap_dly         = 0,
+		.tx_tap_adv         = 0,
+	},
 };
 
 static struct sparx5_sd10g28_media_preset media_presets_10g[] = {
@@ -552,7 +580,7 @@ static struct sparx5_sd10g28_media_preset media_presets_10g[] = {
 		.cfg_eq_r_byp             = 1,
 		.cfg_eq_c_force_3_0       = 0xf,
 		.cfg_alos_thr_3_0         = 0x0,
-	}
+	},
 };
 
 static struct sparx5_sd10g28_mode_preset mode_presets_10g[] = {
@@ -610,6 +638,15 @@ static struct sparx5_sd10g28_mode_preset mode_presets_10g[] = {
 		.pi_bw_gen1       = 0x7,
 		.duty_cycle       = 0x0,
 	},
+	{ /* SPX5_SD10G28_MODE_PRESET_10G_QSGMII */
+		.bwidth           = 32,
+		.cmu_sel          = SPX5_SD10G28_CMU_MAIN,
+		.rate             = 0x0,
+		.dfe_enable       = 1,
+		.dfe_tap          = 0x1f,
+		.pi_bw_gen1       = 0x0,
+		.duty_cycle       = 0x2,
+	},
 };
 
 /* map from SD25G28 interface width to configuration value */
@@ -663,6 +700,9 @@ static int sparx5_sd10g25_get_mode_preset(struct sparx5_serdes_macro *macro,
 	case SPX5_SD_MODE_1000BASEX:
 		*mode = mode_presets_25g[SPX5_SD25G28_MODE_PRESET_1000BASEX];
 		break;
+	case SPX5_SD_MODE_10G_QSXGMII:
+		*mode = mode_presets_25g[SPX5_SD25G28_MODE_PRESET_10G_QSGMII];
+		break;
 	case SPX5_SD_MODE_100FX:
 		 /* Not supported */
 		return -EINVAL;
@@ -702,6 +742,9 @@ static int sparx5_sd10g28_get_mode_preset(struct sparx5_serdes_macro *macro,
 	case SPX5_SD_MODE_100FX:
 	case SPX5_SD_MODE_1000BASEX:
 		*mode = mode_presets_10g[SPX5_SD10G28_MODE_PRESET_1000BASEX];
+		break;
+	case SPX5_SD_MODE_10G_QSXGMII:
+		*mode = mode_presets_10g[SPX5_SD10G28_MODE_PRESET_10G_QSGMII];
 		break;
 	default:
 		*mode = mode_presets_10g[SPX5_SD10G28_MODE_PRESET_10000];
@@ -2258,6 +2301,8 @@ static int sparx5_serdes_get_serdesmode(phy_interface_t portmode, int speed)
 		return SPX5_SD_MODE_QSGMII;
 	case PHY_INTERFACE_MODE_10GBASER:
 		return SPX5_SD_MODE_SFI;
+	case PHY_INTERFACE_MODE_10G_QXGMII:
+		return SPX5_SD_MODE_10G_QSXGMII;
 	default:
 		return -EINVAL;
 	}
@@ -2318,6 +2363,7 @@ static int sparx5_serdes_set_mode(struct phy *phy, enum phy_mode mode, int submo
 	case PHY_INTERFACE_MODE_SGMII:
 	case PHY_INTERFACE_MODE_QSGMII:
 	case PHY_INTERFACE_MODE_10GBASER:
+	case PHY_INTERFACE_MODE_10G_QXGMII:
 		macro = phy_get_drvdata(phy);
 		macro->portmode = submode;
 		sparx5_serdes_config(macro);

@@ -344,32 +344,32 @@ void lan966x_port_status_get(struct lan966x_port *port,
 			     struct phylink_link_state *state)
 {
 	struct lan966x *lan966x = port->lan966x;
+	u32 stky, ls, as;
 	bool link_down;
 	u16 bmsr = 0;
 	u16 lp_adv;
-	u32 val;
 
-	val = lan_rd(lan966x, DEV_PCS1G_STICKY(port->chip_port));
-	link_down = DEV_PCS1G_STICKY_LINK_DOWN_STICKY_GET(val);
+	stky = lan_rd(lan966x, DEV_PCS1G_STICKY(port->chip_port));
+	link_down = DEV_PCS1G_STICKY_LINK_DOWN_STICKY_GET(stky);
 	if (link_down)
-		lan_wr(val, lan966x, DEV_PCS1G_STICKY(port->chip_port));
+		lan_wr(stky, lan966x, DEV_PCS1G_STICKY(port->chip_port));
 
 	/* Get both current Link and Sync status */
-	val = lan_rd(lan966x, DEV_PCS1G_LINK_STATUS(port->chip_port));
-	state->link = DEV_PCS1G_LINK_STATUS_LINK_STATUS_GET(val) &&
-		      DEV_PCS1G_LINK_STATUS_SYNC_STATUS_GET(val);
+	ls = lan_rd(lan966x, DEV_PCS1G_LINK_STATUS(port->chip_port));
+	state->link = DEV_PCS1G_LINK_STATUS_LINK_STATUS_GET(ls) &&
+		      DEV_PCS1G_LINK_STATUS_SYNC_STATUS_GET(ls);
 	state->link &= !link_down;
 
 	/* Get PCS ANEG status register */
-	val = lan_rd(lan966x, DEV_PCS1G_ANEG_STATUS(port->chip_port));
+	as = lan_rd(lan966x, DEV_PCS1G_ANEG_STATUS(port->chip_port));
 	/* Aneg complete provides more information  */
-	if (DEV_PCS1G_ANEG_STATUS_ANEG_COMPLETE_GET(val)) {
+	if (DEV_PCS1G_ANEG_STATUS_ANEG_COMPLETE_GET(as)) {
 		state->an_complete = true;
 
 		bmsr |= state->link ? BMSR_LSTATUS : 0;
 		bmsr |= BMSR_ANEGCOMPLETE;
 
-		lp_adv = DEV_PCS1G_ANEG_STATUS_LP_ADV_GET(val);
+		lp_adv = DEV_PCS1G_ANEG_STATUS_LP_ADV_GET(as);
 		phylink_mii_c22_pcs_decode_state(state, bmsr, lp_adv);
 	} else {
 		if (!state->link)
@@ -390,9 +390,9 @@ void lan966x_port_status_get(struct lan966x_port *port,
 	 * 3.90625 = 0x52
 	 */
 	if (state->link && state->speed == SPEED_1000) {
-		port->rx_delay = DEV_PCS1G_LINK_STATUS_DELAY_VAR_GET(val) * 0xcd;
+		port->rx_delay = DEV_PCS1G_LINK_STATUS_DELAY_VAR_GET(ls) * 0xcd;
 	} else if (state->link && state->speed == SPEED_2500) {
-		port->rx_delay = DEV_PCS1G_LINK_STATUS_DELAY_VAR_GET(val) * 0x52;
+		port->rx_delay = DEV_PCS1G_LINK_STATUS_DELAY_VAR_GET(ls) * 0x52;
 	} else {
 		port->rx_delay = 0;
 	}

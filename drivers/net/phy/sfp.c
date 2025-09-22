@@ -385,7 +385,7 @@ static void sfp_fixup_rollball(struct sfp *sfp)
 	sfp->phy_t_retry = msecs_to_jiffies(1000);
 }
 
-static void sfp_fixup_fs_2_5gt(struct sfp *sfp)
+static void sfp_fixup_rollball_wait4s(struct sfp *sfp)
 {
 	sfp_fixup_rollball(sfp);
 
@@ -399,7 +399,7 @@ static void sfp_fixup_fs_2_5gt(struct sfp *sfp)
 static void sfp_fixup_fs_10gt(struct sfp *sfp)
 {
 	sfp_fixup_10gbaset_30m(sfp);
-	sfp_fixup_fs_2_5gt(sfp);
+	sfp_fixup_rollball_wait4s(sfp);
 }
 
 static void sfp_fixup_halny_gsfp(struct sfp *sfp)
@@ -421,12 +421,28 @@ static void sfp_fixup_rollball_cc(struct sfp *sfp)
 	sfp->id.base.extended_cc = SFF8024_ECC_10GBASE_T_SFI;
 }
 
+static void sfp_quirk_1000basex(const struct sfp_eeprom_id *id,
+				unsigned long *modes,
+				unsigned long *interfaces)
+{
+	linkmode_set_bit(ETHTOOL_LINK_MODE_1000baseX_Full_BIT, modes);
+	__set_bit(PHY_INTERFACE_MODE_1000BASEX, interfaces);
+}
+
 static void sfp_quirk_2500basex(const struct sfp_eeprom_id *id,
 				unsigned long *modes,
 				unsigned long *interfaces)
 {
 	linkmode_set_bit(ETHTOOL_LINK_MODE_2500baseX_Full_BIT, modes);
 	__set_bit(PHY_INTERFACE_MODE_2500BASEX, interfaces);
+}
+
+static void sfp_quirk_1000_2500_basex(const struct sfp_eeprom_id *id,
+				unsigned long *modes,
+				unsigned long *interfaces)
+{
+	sfp_quirk_1000basex(id, modes, interfaces);
+	sfp_quirk_2500basex(id, modes, interfaces);
 }
 
 static void sfp_quirk_disable_autoneg(const struct sfp_eeprom_id *id,
@@ -458,6 +474,14 @@ static void sfp_quirk_ubnt_uf_instant(const struct sfp_eeprom_id *id,
 	linkmode_set_bit(ETHTOOL_LINK_MODE_1000baseX_Full_BIT, modes);
 }
 
+static void sfp_quirk_sgmii(const struct sfp_eeprom_id *id,
+                           unsigned long *modes,
+                           unsigned long *interfaces)
+{
+	linkmode_set_bit(ETHTOOL_LINK_MODE_1000baseT1_Full_BIT, modes);
+	__set_bit(PHY_INTERFACE_MODE_SGMII, interfaces);
+}
+
 #define SFP_QUIRK(_v, _p, _m, _f) \
 	{ .vendor = _v, .part = _p, .modes = _m, .fixup = _f, }
 #define SFP_QUIRK_M(_v, _p, _m) SFP_QUIRK(_v, _p, _m, NULL)
@@ -479,14 +503,23 @@ static const struct sfp_quirk sfp_quirks[] = {
 	// PHY.
 	SFP_QUIRK_F("FS", "SFP-10G-T", sfp_fixup_fs_10gt),
 
-	// Fiberstore SFP-2.5G-T uses Rollball protocol to talk to the PHY and
-	// needs 4 sec wait before probing the PHY.
-	SFP_QUIRK_F("FS", "SFP-2.5G-T", sfp_fixup_fs_2_5gt),
+	// Fiberstore SFP-2.5G-T and SFP-10GM-T uses Rollball protocol to talk
+	// to the PHY and needs 4 sec wait before probing the PHY.
+	SFP_QUIRK_F("FS", "SFP-2.5G-T", sfp_fixup_rollball_wait4s),
+	SFP_QUIRK_F("FS", "SFP-10GM-T", sfp_fixup_rollball_wait4s),
 
 	// Fiberstore GPON-ONU-34-20BI can operate at 2500base-X, but report 1.2GBd
 	// NRZ in their EEPROM
 	SFP_QUIRK("FS", "GPON-ONU-34-20BI", sfp_quirk_2500basex,
 		  sfp_fixup_ignore_tx_fault),
+
+	// Fiberstore SFP-10GSR-85 can operate at 1000/2500base-X, but only
+	// report 10GbaseSR in their EEPROM
+	SFP_QUIRK_M("FS", "SFP-10GSR-85", sfp_quirk_1000_2500_basex),
+
+	// Fiberstore SFP2.5G-SX-85 can operate at 1000/2500base-X, but only
+	// report 1000basex in their EEPROM
+	SFP_QUIRK_M("FS", "SFP2.5G-SX-85", sfp_quirk_2500basex),
 
 	SFP_QUIRK_F("HALNy", "HL-GSFP", sfp_fixup_halny_gsfp),
 
@@ -515,11 +548,19 @@ static const struct sfp_quirk sfp_quirks[] = {
 
 	SFP_QUIRK_F("OEM", "SFP-10G-T", sfp_fixup_rollball_cc),
 	SFP_QUIRK_M("OEM", "SFP-2.5G-T", sfp_quirk_oem_2_5g),
+	SFP_QUIRK_M("OEM", "SFP-2.5G-BX10-D", sfp_quirk_2500basex),
+	SFP_QUIRK_M("OEM", "SFP-2.5G-BX10-U", sfp_quirk_2500basex),
 	SFP_QUIRK_F("OEM", "RTSFP-10", sfp_fixup_rollball_cc),
 	SFP_QUIRK_F("OEM", "RTSFP-10G", sfp_fixup_rollball_cc),
 	SFP_QUIRK_F("Turris", "RTSFP-2.5G", sfp_fixup_rollball),
 	SFP_QUIRK_F("Turris", "RTSFP-10", sfp_fixup_rollball),
 	SFP_QUIRK_F("Turris", "RTSFP-10G", sfp_fixup_rollball),
+
+	SFP_QUIRK_M("Technica Eng.", "SFP Next Gen.", sfp_quirk_sgmii),
+
+	// Finisar FTLX8571D3BCL can operate at 1000/2500base-X, but only
+	// report 10GbaseSR in their EEPROM
+	SFP_QUIRK_M("FINISAR CORP.", "FTLX8571D3BCL", sfp_quirk_1000_2500_basex),
 };
 
 static size_t sfp_strlen(const char *str, size_t maxlen)

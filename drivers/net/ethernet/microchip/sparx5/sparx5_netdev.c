@@ -394,6 +394,7 @@ struct net_device *sparx5_create_netdev(struct sparx5 *sparx5, u32 portno)
 	ndev->netdev_ops = &sparx5_port_netdev_ops;
 	ndev->ethtool_ops = &sparx5_ethtool_ops;
 	ndev->needed_headroom = IFH_LEN * 4;
+	ndev->see_all_hwtstamp_requests = true;
 
 	eth_hw_addr_gen(ndev, sparx5->base_mac, portno + 1);
 

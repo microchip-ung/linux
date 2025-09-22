@@ -144,7 +144,7 @@ enum vcap_bit {
 };
 
 struct vcap_counter {
-	u32 value;
+	u64 value;
 	bool sticky;
 };
 
@@ -232,6 +232,7 @@ int vcap_get_rule_count_by_cookie(struct vcap_control *vctrl,
 				  struct vcap_counter *ctr, u64 cookie);
 int vcap_rule_set_counter(struct vcap_rule *rule, struct vcap_counter *ctr);
 int vcap_rule_get_counter(struct vcap_rule *rule, struct vcap_counter *ctr);
+int vcap_update_counters(struct vcap_control *vctrl);
 
 /* Find vcap type instance count */
 int vcap_admin_type_count(struct vcap_control *vctrl, enum vcap_type vt);
@@ -254,6 +255,9 @@ const struct vcap_field *vcap_lookup_keyfield(struct vcap_rule *rule,
 struct vcap_rule_internal *vcap_lookup_rule(struct vcap_control *vctrl, u32 id);
 /* Find a rule id with a provided cookie */
 int vcap_lookup_rule_by_cookie(struct vcap_control *vctrl, u64 cookie);
+/* Find a rule id with a provided cookie and net_device */
+int vcap_lookup_rule_by_cookie_ndev(struct vcap_control *vctrl, u64 cookie,
+				    struct net_device *ndev);
 /* Calculate the value used for chaining VCAP rules */
 int vcap_rule_iter(struct vcap_control *vctrl,
 		   int (*callback)(void *, struct vcap_rule *), void *arg);

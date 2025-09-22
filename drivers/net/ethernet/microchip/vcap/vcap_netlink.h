@@ -10,6 +10,9 @@
 #include "vcap_api_client.h"
 
 int vcap_netlink_init(struct vcap_control *ctrl, struct net_device *ndev);
-void vcap_netlink_uninit(void);
+void vcap_netlink_uninit(struct vcap_control *ctrl);
+int vcap_netlink_init_from_priv(void *priv,
+				struct net_device *(*to_ndev)(void * priv),
+				struct vcap_control *ctrl);
 
 #endif /* __VCAP_NETLINK_H__ */

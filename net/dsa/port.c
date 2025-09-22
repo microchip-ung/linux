@@ -967,6 +967,16 @@ int dsa_port_vlan_msti(struct dsa_port *dp,
 	return ds->ops->vlan_msti_set(ds, *dp->bridge, msti);
 }
 
+int dsa_port_mrouter(struct dsa_port *dp, bool enable)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_mrouter_set)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_mrouter_set(ds, dp->index, enable);
+}
+
 int dsa_port_mtu_change(struct dsa_port *dp, int new_mtu)
 {
 	struct dsa_notifier_mtu_info info = {

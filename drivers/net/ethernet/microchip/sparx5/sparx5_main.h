@@ -174,6 +174,9 @@ extern const u8 ifh_smac[];
 #define SPX5_BUM_KNOWN_UNICAST BIT(5)
 #define SPX5_BUM_LEARN_FRAMES BIT(6)
 
+#define SPX5_USXGMII_QUAD 2
+#define SPX5_USXGMII_SPEED 6
+
 struct sparx5;
 
 enum spx5_db_data_type {
@@ -251,6 +254,12 @@ struct sparx5_port_config {
 	u32 pause_adv;
 	phy_interface_t phy_mode;
 	u32 sd_sgpio;
+
+	/* When configuring the usxgmii then it is needed to configure only 1
+	 * time the serdes for all 4 ports which are attached to it. This is set
+	 * to true on the base port when the serdes is configured.
+	 */
+	bool usx_enabled;
 };
 
 struct sparx5_port_policer {
@@ -420,6 +429,7 @@ struct sparx5 {
 	DECLARE_BITMAP(bridge_mask, SPX5_PORTS);
 	DECLARE_BITMAP(bridge_fwd_mask, SPX5_PORTS);
 	DECLARE_BITMAP(bridge_lrn_mask, SPX5_PORTS);
+	DECLARE_BITMAP(bridge_psec_mask, SPX5_PORTS);
 	DECLARE_BITMAP(vlan_mask[VLAN_N_VID], SPX5_PORTS);
 	/* SW MAC table */
 	struct list_head mact_entries;
@@ -548,6 +558,9 @@ struct sparx5_ops {
 	bool (*port_is_10g)(int portno);
 	bool (*port_is_rgmii)(int portno);
 	u32 (*port_get_dev_index)(struct sparx5 *sparx5, int port);
+	int (*port_get_10g_qxgmii_idx)(struct sparx5 *sparx5,
+				       struct sparx5_port *port,
+				       size_t idx);
 	u32 (*get_ifh_field_pos)(enum sparx5_ifh_enum idx);
 	u32 (*get_ifh_field_width)(enum sparx5_ifh_enum idx);
 	u32 (*get_pipeline_pt)(enum sparx5_packet_pipeline_pt);
@@ -896,6 +909,10 @@ int sparx5_pgid_alloc_glag(struct sparx5 *spx5, u16 *idx);
 int sparx5_pgid_alloc_mcast(struct sparx5 *spx5, u16 *idx);
 int sparx5_pgid_free(struct sparx5 *spx5, u16 idx);
 
+int sparx5_port_get_10g_qxgmii_idx(struct sparx5 *sparx5,
+				   struct sparx5_port *port,
+				   size_t idx);
+
 /* sparx5_mtu.c */
 int sparx5_mtu_change(struct net_device *dev, int new_mtu);
 u32 sparx5_mtu_max(struct sparx5 *sparx5);
@@ -1109,10 +1126,10 @@ int sparx5_isdx_put(struct sparx5 *sparx5, u32 isdx);
 
 /* sparx5_mdb.c */
 struct switchdev_obj_port_mdb;
-int sparx5_handle_mdb_add(struct net_device *dev, struct notifier_block *nb,
+int sparx5_handle_mdb_add(struct net_device *dev,
 			  const struct switchdev_obj_port_mdb *v);
 
-int sparx5_handle_mdb_del(struct net_device *dev, struct notifier_block *nb,
+int sparx5_handle_mdb_del(struct net_device *dev,
 			  const struct switchdev_obj_port_mdb *v);
 int sparx5_mdb_entries_clear(struct sparx5 *sparx5);
 int sparx5_mdb_entries_restore(struct sparx5 *sparx5);
@@ -1143,6 +1160,9 @@ int sparx5_lag_aggr_masks_set(struct sparx5_port *port, bool leaving);
 bool sparx5_lag_is_first(struct net_device *lag_master, struct net_device *dev);
 void sparx5_lag_mask_get(struct sparx5 *sparx5, struct net_device *lag_master,
 			 unsigned long *lag_mask);
+
+/* sparx5_psec.c */
+void sparx5_psec_set(struct sparx5_port *port, bool enable);
 
 /* Clock period in picoseconds */
 static inline u32 sparx5_clk_period(enum sparx5_core_clockfreq cclock)

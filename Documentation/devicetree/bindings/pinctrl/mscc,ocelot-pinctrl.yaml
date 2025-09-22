@@ -13,6 +13,7 @@ maintainers:
 properties:
   compatible:
     enum:
+      - microchip,lan9645x-pinctrl
       - microchip,lan966x-pinctrl
       - microchip,sparx5-pinctrl
       - mscc,jaguar2-pinctrl

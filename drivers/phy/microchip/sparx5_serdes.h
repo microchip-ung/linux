@@ -29,6 +29,7 @@ enum sparx5_serdes_mode {
 	SPX5_SD_MODE_100FX,
 	SPX5_SD_MODE_1000BASEX,
 	SPX5_SD_MODE_SFI,
+	SPX5_SD_MODE_10G_QSXGMII,
 };
 
 enum sparx5_10g28cmu_mode {

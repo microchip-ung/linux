@@ -17,6 +17,7 @@
 #include <net/pkt_cls.h>
 #include <net/selftests.h>
 #include <net/tc_act/tc_mirred.h>
+#include <net/flow_offload.h>
 #include <linux/if_bridge.h>
 #include <linux/if_hsr.h>
 #include <net/dcbnl.h>
@@ -655,6 +656,12 @@ static int dsa_user_port_attr_set(struct net_device *dev, const void *ctx,
 			return -EOPNOTSUPP;
 
 		ret = dsa_port_vlan_msti(dp, &attr->u.vlan_msti);
+		break;
+	case SWITCHDEV_ATTR_ID_PORT_MROUTER:
+		if (!dsa_port_offloads_bridge_port(dp, attr->orig_dev))
+			return -EOPNOTSUPP;
+
+		ret = dsa_port_mrouter(dp, attr->u.mrouter);
 		break;
 	default:
 		ret = -EOPNOTSUPP;
@@ -1482,19 +1489,46 @@ dsa_user_add_cls_matchall_police(struct net_device *dev,
 	return err;
 }
 
+static int dsa_user_add_cls_matchall_goto(struct net_device *dev,
+					  struct tc_cls_matchall_offload *cls,
+					  bool ingress)
+{
+	struct netlink_ext_ack *extack = cls->common.extack;
+	struct dsa_port *dp = dsa_user_to_port(dev);
+	struct dsa_switch *ds = dp->ds;
+	int port = dp->index;
+
+	if (!ds->ops->cls_matchall_goto_add) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Matchall goto offload not implemented");
+		return -EOPNOTSUPP;
+	}
+
+	if (!flow_action_basic_hw_stats_check(&cls->rule->action,
+					      cls->common.extack))
+		return -EOPNOTSUPP;
+
+	return ds->ops->cls_matchall_goto_add(ds, port, cls, ingress);
+}
+
 static int dsa_user_add_cls_matchall(struct net_device *dev,
 				     struct tc_cls_matchall_offload *cls,
 				     bool ingress)
 {
 	int err = -EOPNOTSUPP;
 
-	if (cls->common.protocol == htons(ETH_P_ALL) &&
+	if (!cls->common.chain_index &&
+	    cls->common.protocol == htons(ETH_P_ALL) &&
 	    flow_offload_has_one_action(&cls->rule->action) &&
 	    cls->rule->action.entries[0].id == FLOW_ACTION_MIRRED)
 		err = dsa_user_add_cls_matchall_mirred(dev, cls, ingress);
-	else if (flow_offload_has_one_action(&cls->rule->action) &&
+	else if (!cls->common.chain_index &&
+		 flow_offload_has_one_action(&cls->rule->action) &&
 		 cls->rule->action.entries[0].id == FLOW_ACTION_POLICE)
 		err = dsa_user_add_cls_matchall_police(dev, cls, ingress);
+	else if (flow_offload_has_one_action(&cls->rule->action) &&
+		 cls->rule->action.entries[0].id == FLOW_ACTION_GOTO)
+		err = dsa_user_add_cls_matchall_goto(dev, cls, ingress);
 
 	return err;
 }
@@ -1505,6 +1539,16 @@ static void dsa_user_del_cls_matchall(struct net_device *dev,
 	struct dsa_port *dp = dsa_user_to_port(dev);
 	struct dsa_mall_tc_entry *mall_tc_entry;
 	struct dsa_switch *ds = dp->ds;
+
+	if (ds->ops->cls_matchall_goto_del &&
+	    flow_offload_has_one_action(&cls->rule->action) &&
+	    cls->rule->action.entries[0].id == FLOW_ACTION_GOTO) {
+		ds->ops->cls_matchall_goto_del(ds, dp->index, cls);
+		return;
+	}
+
+	if (cls->common.chain_index)
+		return;
 
 	mall_tc_entry = dsa_user_mall_tc_entry_find(dev, cls->cookie);
 	if (!mall_tc_entry)
@@ -1533,9 +1577,6 @@ static int dsa_user_setup_tc_cls_matchall(struct net_device *dev,
 					  struct tc_cls_matchall_offload *cls,
 					  bool ingress)
 {
-	if (cls->common.chain_index)
-		return -EOPNOTSUPP;
-
 	switch (cls->command) {
 	case TC_CLSMATCHALL_REPLACE:
 		return dsa_user_add_cls_matchall(dev, cls, ingress);
@@ -2249,6 +2290,37 @@ err_try_to_restore:
 	return err;
 }
 
+static int __maybe_unused dsa_user_dcbnl_add_pcp_prio(struct net_device *dev,
+						      struct dcb_app *app)
+{
+	struct dsa_port *dp = dsa_user_to_port(dev);
+	struct dsa_switch *ds = dp->ds;
+	unsigned long mask, new_prio;
+	int err, port = dp->index;
+	u8 pcp, dei;
+
+	if (!ds->ops->port_add_pcp_dei_prio)
+		return -EOPNOTSUPP;
+
+	pcp = app->protocol % 8;
+	dei = !!(app->protocol >= 8);
+
+	err = dcb_ieee_setapp(dev, app);
+	if (err)
+		return err;
+
+	mask = dcb_ieee_getapp_mask(dev, app);
+	new_prio = __fls(mask);
+
+	err = ds->ops->port_add_pcp_dei_prio(ds, port, pcp, dei, new_prio);
+	if (err) {
+		dcb_ieee_delapp(dev, app);
+		return err;
+	}
+
+	return 0;
+}
+
 static int __maybe_unused
 dsa_user_dcbnl_add_dscp_prio(struct net_device *dev, struct dcb_app *app)
 {
@@ -2308,6 +2380,8 @@ static int __maybe_unused dsa_user_dcbnl_ieee_setapp(struct net_device *dev,
 		break;
 	case IEEE_8021QAZ_APP_SEL_DSCP:
 		return dsa_user_dcbnl_add_dscp_prio(dev, app);
+	case DCB_APP_SEL_PCP:
+		return dsa_user_dcbnl_add_pcp_prio(dev, app);
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -2332,6 +2406,33 @@ dsa_user_dcbnl_del_default_prio(struct net_device *dev, struct dcb_app *app)
 	new_prio = mask ? __fls(mask) : 0;
 
 	err = ds->ops->port_set_default_prio(ds, port, new_prio);
+	if (err) {
+		dcb_ieee_setapp(dev, app);
+		return err;
+	}
+
+	return 0;
+}
+
+static int __maybe_unused
+dsa_user_dcbnl_del_pcp_prio(struct net_device *dev, struct dcb_app *app)
+{
+	struct dsa_port *dp = dsa_user_to_port(dev);
+	struct dsa_switch *ds = dp->ds;
+	int err, port = dp->index;
+	u8 pcp, dei;
+
+	if (!ds->ops->port_del_pcp_dei_prio)
+		return -EOPNOTSUPP;
+
+	pcp = app->protocol % 8;
+	dei = !!(app->protocol >= 8);
+
+	err = dcb_ieee_delapp(dev, app);
+	if (err)
+		return err;
+
+	err = ds->ops->port_del_pcp_dei_prio(ds, port, pcp, dei, app->priority);
 	if (err) {
 		dcb_ieee_setapp(dev, app);
 		return err;
@@ -2390,9 +2491,37 @@ static int __maybe_unused dsa_user_dcbnl_ieee_delapp(struct net_device *dev,
 		break;
 	case IEEE_8021QAZ_APP_SEL_DSCP:
 		return dsa_user_dcbnl_del_dscp_prio(dev, app);
+	case DCB_APP_SEL_PCP:
+		return dsa_user_dcbnl_del_pcp_prio(dev, app);
 	default:
 		return -EOPNOTSUPP;
 	}
+}
+
+static int dsa_user_dcbnl_ieee_getpfc(struct net_device *dev,
+				      struct ieee_pfc *pfc)
+{
+	struct dsa_port *dp = dsa_user_to_port(dev);
+	struct dsa_switch *ds = dp->ds;
+	int port = dp->index;
+
+	if (!ds->ops->port_getpfc)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_getpfc(ds, port, pfc);
+}
+
+static int dsa_user_dcbnl_ieee_setpfc(struct net_device *dev,
+				      struct ieee_pfc *pfc)
+{
+	struct dsa_port *dp = dsa_user_to_port(dev);
+	struct dsa_switch *ds = dp->ds;
+	int port = dp->index;
+
+	if (!ds->ops->port_setpfc)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_setpfc(ds, port, pfc);
 }
 
 /* Pre-populate the DCB application priority table with the priorities
@@ -2432,6 +2561,32 @@ static int dsa_user_dcbnl_init(struct net_device *dev)
 			int prio;
 
 			prio = ds->ops->port_get_dscp_prio(ds, port, protocol);
+			if (prio == -EOPNOTSUPP)
+				continue;
+			if (prio < 0)
+				return prio;
+
+			app.priority = prio;
+
+			err = dcb_ieee_setapp(dev, &app);
+			if (err)
+				return err;
+		}
+	}
+
+	if (ds->ops->port_get_pcp_dei_prio) {
+		int protocol;
+
+		for (protocol = 0; protocol < 16; protocol++) {
+			struct dcb_app app = {
+				.selector = DCB_APP_SEL_PCP,
+				.protocol = protocol,
+			};
+			int prio;
+
+			prio = ds->ops->port_get_pcp_dei_prio(ds, port,
+							      protocol % 8,
+							      !!(protocol >= 8));
 			if (prio == -EOPNOTSUPP)
 				continue;
 			if (prio < 0)
@@ -2487,6 +2642,8 @@ static const struct dcbnl_rtnl_ops __maybe_unused dsa_user_dcbnl_ops = {
 	.ieee_delapp		= dsa_user_dcbnl_ieee_delapp,
 	.dcbnl_setapptrust	= dsa_user_dcbnl_set_apptrust,
 	.dcbnl_getapptrust	= dsa_user_dcbnl_get_apptrust,
+	.ieee_getpfc		= dsa_user_dcbnl_ieee_getpfc,
+	.ieee_setpfc		= dsa_user_dcbnl_ieee_setpfc,
 };
 
 static void dsa_user_get_stats64(struct net_device *dev,

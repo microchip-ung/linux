@@ -137,7 +137,8 @@ static void lan969x_fdma_free_pages(struct sparx5_rx *rx)
 	}
 }
 
-static int sparx5_fdma_rx_process_frame(struct sparx5 *sparx5, int *src_port)
+static int sparx5_fdma_rx_process_frame(struct sparx5 *sparx5, int *src_port,
+					u64 *rx_timestamp)
 {
 	const struct sparx5_consts *consts = &sparx5->data->consts;
 	struct sparx5_rx *rx = &sparx5->rx;
@@ -155,6 +156,7 @@ static int sparx5_fdma_rx_process_frame(struct sparx5 *sparx5, int *src_port)
 			 &fi);
 
 	*src_port = fi.src_port;
+	*rx_timestamp = fi.timestamp;
 
 #ifdef CONFIG_SPARX5_SWITCH_APPL
 	*src_port = 0;
@@ -174,11 +176,11 @@ static int sparx5_fdma_rx_process_frame(struct sparx5 *sparx5, int *src_port)
 
 static struct sk_buff *lan969x_fdma_rx_get_frame(struct sparx5 *sparx5,
 						 struct sparx5_rx *rx,
-						 int src_port)
+						 int src_port,
+						 u64 rx_timestamp)
 {
 	struct fdma *fdma = rx->fdma;
 	struct sparx5_port *port;
-	struct frame_info fi;
 	struct sk_buff *skb;
 	struct fdma_db *db;
 	struct page *page;
@@ -214,14 +216,14 @@ static struct sk_buff *lan969x_fdma_rx_get_frame(struct sparx5 *sparx5,
 		skb_trim(skb, skb->len - ETH_FCS_LEN);
 #endif
 
-	sparx5_ptp_rxtstamp(sparx5, skb, fi.src_port, fi.timestamp);
+	sparx5_ptp_rxtstamp(sparx5, skb, src_port, rx_timestamp);
 	skb->protocol = eth_type_trans(skb, skb->dev);
 
 	if (test_bit(port->portno, sparx5->bridge_mask)) {
 		skb->offload_fwd_mark = 1;
 		skb_reset_network_header(skb);
 
-		if (!sparx5_skb_offloaded(sparx5, fi.src_port, skb))
+		if (!sparx5_skb_offloaded(sparx5, src_port, skb))
 			skb->offload_fwd_mark = 0;
 	}
 
@@ -245,6 +247,7 @@ int lan969x_fdma_napi_poll(struct napi_struct *napi, int weight)
 	struct fdma *fdma = rx->fdma;
 	bool redirect = false;
 	struct sk_buff *skb;
+	u64 rx_timestamp;
 	int src_port;
 
 	dcb_reload = fdma->dcb_index;
@@ -260,7 +263,8 @@ int lan969x_fdma_napi_poll(struct napi_struct *napi, int weight)
 
 		counter++;
 
-		switch (sparx5_fdma_rx_process_frame(sparx5, &src_port)) {
+		switch (sparx5_fdma_rx_process_frame(sparx5, &src_port,
+						     &rx_timestamp)) {
 		case FDMA_PASS:
 			break;
 		case FDMA_ERROR:
@@ -279,7 +283,8 @@ int lan969x_fdma_napi_poll(struct napi_struct *napi, int weight)
 			continue;
 		}
 
-		skb = lan969x_fdma_rx_get_frame(sparx5, rx, src_port);
+		skb = lan969x_fdma_rx_get_frame(sparx5, rx, src_port,
+						rx_timestamp);
 		if (!skb)
 			break;
 
