@@ -455,7 +455,7 @@ static void vsc85xx_dequeue_skb(struct vsc85xx_ptp *ptp)
 		*p++ = (reg >> 24) & 0xff;
 	}
 
-	len = skb_queue_len(&ptp->tx_queue);
+	len = skb_queue_len_lockless(&ptp->tx_queue);
 	if (len < 1)
 		return;
 
@@ -1065,6 +1065,7 @@ static int vsc85xx_hwtstamp(struct mii_timestamper *mii_ts,
 	case HWTSTAMP_TX_ON:
 		break;
 	case HWTSTAMP_TX_OFF:
+		skb_queue_purge(&vsc8531->ptp->tx_queue);
 		break;
 	default:
 		return -ERANGE;
@@ -1088,9 +1089,6 @@ static int vsc85xx_hwtstamp(struct mii_timestamper *mii_ts,
 	vsc8531->ptp->rx_filter = cfg->rx_filter;
 
 	mutex_lock(&vsc8531->ts_lock);
-
-	__skb_queue_purge(&vsc8531->ptp->tx_queue);
-	skb_queue_head_init(&vsc8531->ptp->tx_queue);
 
 	/* Disable predictor while configuring the 1588 block */
 	val = vsc85xx_ts_read_csr(phydev, PROCESSOR,
@@ -1196,10 +1194,7 @@ static bool vsc85xx_rxtstamp(struct mii_timestamper *mii_ts,
 {
 	struct vsc8531_private *vsc8531 =
 		container_of(mii_ts, struct vsc8531_private, mii_ts);
-
 	struct vsc85xx_ptphdr *ptphdr;
-	struct vsc8531_skb *rx_skb;
-	unsigned long flags;
 	unsigned long ns;
 
 	if (!vsc8531->ptp->configured)
@@ -1215,15 +1210,8 @@ static bool vsc85xx_rxtstamp(struct mii_timestamper *mii_ts,
 
 	ns = ntohl(ptphdr->rsrvd2);
 
-	rx_skb = kmalloc(sizeof(*rx_skb), GFP_ATOMIC);
-	if (!rx_skb)
-		return false;
-
-	rx_skb->skb = skb;
-	rx_skb->ns = ns;
-	spin_lock_irqsave(&vsc8531->rx_skbs_lock, flags);
-	list_add(&rx_skb->list, &vsc8531->rx_skbs_list);
-	spin_unlock_irqrestore(&vsc8531->rx_skbs_lock, flags);
+	VSC8531_SKB_CB(skb)->ns = ns;
+	skb_queue_tail(&vsc8531->rx_skbs_list, skb);
 
 	ptp_schedule_worker(vsc8531->ptp->ptp_clock, 0);
 
@@ -1236,33 +1224,27 @@ static long vsc85xx_do_aux_work(struct ptp_clock_info *info)
 	struct skb_shared_hwtstamps *shhwtstamps = NULL;
 	struct phy_device *phydev = ptp->phydev;
 	struct vsc8531_private *priv = phydev->priv;
-	struct vsc8531_skb *rx_skb, *tmp;
+	struct sk_buff_head received;
+	struct sk_buff *rx_skb;
 	struct timespec64 ts;
 	unsigned long flags;
-	struct list_head skbs;
 
-	INIT_LIST_HEAD(&skbs);
+	__skb_queue_head_init(&received);
+	spin_lock_irqsave(&priv->rx_skbs_list.lock, flags);
+	skb_queue_splice_tail_init(&priv->rx_skbs_list, &received);
+	spin_unlock_irqrestore(&priv->rx_skbs_list.lock, flags);
 
 	vsc85xx_gettime(info, &ts);
-	spin_lock_irqsave(&priv->rx_skbs_lock, flags);
-	list_for_each_entry_safe(rx_skb, tmp, &priv->rx_skbs_list, list) {
-		shhwtstamps = skb_hwtstamps(rx_skb->skb);
+	while ((rx_skb = __skb_dequeue(&received)) != NULL) {
+		shhwtstamps = skb_hwtstamps(rx_skb);
 		memset(shhwtstamps, 0, sizeof(struct skb_shared_hwtstamps));
 
-		if (ts.tv_nsec < rx_skb->ns)
+		if (ts.tv_nsec < VSC8531_SKB_CB(rx_skb)->ns)
 			ts.tv_sec--;
 
-		shhwtstamps->hwtstamp = ktime_set(ts.tv_sec, rx_skb->ns);
-
-		list_del(&rx_skb->list);
-		list_add(&rx_skb->list, &skbs);
-	}
-	spin_unlock_irqrestore(&priv->rx_skbs_lock, flags);
-
-	list_for_each_entry_safe(rx_skb, tmp, &skbs, list) {
-		netif_rx(rx_skb->skb);
-		list_del(&rx_skb->list);
-		kfree(rx_skb);
+		shhwtstamps->hwtstamp = ktime_set(ts.tv_sec,
+						  VSC8531_SKB_CB(rx_skb)->ns);
+		netif_rx(rx_skb);
 	}
 
 	return -1;
@@ -1316,7 +1298,6 @@ static void vsc8584_set_input_clk_configured(struct phy_device *phydev)
 
 static int __vsc8584_init_ptp(struct phy_device *phydev)
 {
-	struct vsc8531_private *vsc8531 = phydev->priv;
 	static const u32 ltc_seq_e[] = { 0, 400000, 0, 0, 0 };
 	static const u8  ltc_seq_a[] = { 8, 6, 5, 4, 2 };
 	u32 val;
@@ -1533,17 +1514,7 @@ static int __vsc8584_init_ptp(struct phy_device *phydev)
 
 	vsc85xx_ts_eth_cmp1_sig(phydev);
 
-	vsc8531->mii_ts.rxtstamp = vsc85xx_rxtstamp;
-	vsc8531->mii_ts.txtstamp = vsc85xx_txtstamp;
-	vsc8531->mii_ts.hwtstamp = vsc85xx_hwtstamp;
-	vsc8531->mii_ts.ts_info  = vsc85xx_ts_info;
-	phydev->mii_ts = &vsc8531->mii_ts;
-
-	memcpy(&vsc8531->ptp->caps, &vsc85xx_clk_caps, sizeof(vsc85xx_clk_caps));
-
-	vsc8531->ptp->ptp_clock = ptp_clock_register(&vsc8531->ptp->caps,
-						     &phydev->mdio.dev);
-	return PTR_ERR_OR_ZERO(vsc8531->ptp->ptp_clock);
+	return 0;
 }
 
 void vsc8584_config_ts_intr(struct phy_device *phydev)
@@ -1568,6 +1539,17 @@ int vsc8584_ptp_init(struct phy_device *phydev)
 	}
 
 	return 0;
+}
+
+void vsc8584_ptp_deinit(struct phy_device *phydev)
+{
+	struct vsc8531_private *vsc8531 = phydev->priv;
+
+	if (vsc8531->ptp->ptp_clock) {
+		ptp_clock_unregister(vsc8531->ptp->ptp_clock);
+		skb_queue_purge(&vsc8531->rx_skbs_list);
+		skb_queue_purge(&vsc8531->ptp->tx_queue);
+	}
 }
 
 irqreturn_t vsc8584_handle_ts_interrupt(struct phy_device *phydev)
@@ -1609,8 +1591,8 @@ int vsc8584_ptp_probe(struct phy_device *phydev)
 
 	mutex_init(&vsc8531->phc_lock);
 	mutex_init(&vsc8531->ts_lock);
-	spin_lock_init(&vsc8531->rx_skbs_lock);
-	INIT_LIST_HEAD(&vsc8531->rx_skbs_list);
+	skb_queue_head_init(&vsc8531->rx_skbs_list);
+	skb_queue_head_init(&vsc8531->ptp->tx_queue);
 
 	/* Retrieve the shared load/save GPIO. Request it as non exclusive as
 	 * the same GPIO can be requested by all the PHYs of the same package.
@@ -1631,7 +1613,16 @@ int vsc8584_ptp_probe(struct phy_device *phydev)
 
 	vsc8531->ptp->phydev = phydev;
 
-	return 0;
+	vsc8531->mii_ts.rxtstamp = vsc85xx_rxtstamp;
+	vsc8531->mii_ts.txtstamp = vsc85xx_txtstamp;
+	vsc8531->mii_ts.hwtstamp = vsc85xx_hwtstamp;
+	vsc8531->mii_ts.ts_info  = vsc85xx_ts_info;
+	phydev->mii_ts = &vsc8531->mii_ts;
+
+	memcpy(&vsc8531->ptp->caps, &vsc85xx_clk_caps, sizeof(vsc85xx_clk_caps));
+	vsc8531->ptp->ptp_clock = ptp_clock_register(&vsc8531->ptp->caps,
+						     &phydev->mdio.dev);
+	return PTR_ERR_OR_ZERO(vsc8531->ptp->ptp_clock);
 }
 
 int vsc8584_ptp_probe_once(struct phy_device *phydev)
