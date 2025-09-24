@@ -424,6 +424,7 @@ int dwc3_send_gadget_ep_cmd(struct dwc3_ep *dep, unsigned int cmd,
 
 			break;
 		}
+		udelay(300);
 	} while (--timeout);
 
 	if (timeout == 0) {
