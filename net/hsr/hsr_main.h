@@ -226,6 +226,7 @@ struct hsr_priv {
 #ifdef	CONFIG_DEBUG_FS
 	struct dentry *node_tbl_root;
 #endif
+	bool enable_spv_frame;
 };
 
 #define hsr_for_each_port(hsr, port) \

@@ -302,6 +302,9 @@ static void send_hsr_supervision_frame(struct hsr_port *port,
 	struct sk_buff *skb;
 	int extra = 0;
 
+	if (!hsr->enable_spv_frame)
+		return;
+
 	*interval = msecs_to_jiffies(HSR_LIFE_CHECK_INTERVAL);
 	if (hsr->announce_count < 3 && hsr->prot_version == 0) {
 		type = HSR_TLV_ANNOUNCE;
@@ -371,6 +374,9 @@ static void send_prp_supervision_frame(struct hsr_port *master,
 	struct hsr_sup_payload *hsr_sp;
 	struct hsr_sup_tag *hsr_stag;
 	struct sk_buff *skb;
+
+	if (!hsr->enable_spv_frame)
+		return;
 
 	skb = hsr_init_skb(master, 0);
 	if (!skb) {
@@ -690,6 +696,7 @@ int hsr_dev_finalize(struct net_device *hsr_dev, struct net_device *slave[2],
 	INIT_LIST_HEAD(&hsr->ports);
 	INIT_LIST_HEAD(&hsr->node_db);
 	INIT_LIST_HEAD(&hsr->proxy_node_db);
+	hsr->enable_spv_frame = true;
 	spin_lock_init(&hsr->list_lock);
 
 	eth_hw_addr_set(hsr_dev, slave[0]->dev_addr);
