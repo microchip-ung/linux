@@ -100,6 +100,10 @@ int dsa_port_mrp_add_ring_role(const struct dsa_port *dp,
 			       const struct switchdev_obj_ring_role_mrp *mrp);
 int dsa_port_mrp_del_ring_role(const struct dsa_port *dp,
 			       const struct switchdev_obj_ring_role_mrp *mrp);
+int dsa_port_hsr_dan_node_add(const struct dsa_port *dp,
+			      const struct switchdev_obj_node_hsr *hsr_node);
+int dsa_port_hsr_dan_node_del(const struct dsa_port *dp,
+			      const struct switchdev_obj_node_hsr *hsr_node);
 int dsa_port_phylink_create(struct dsa_port *dp);
 void dsa_port_phylink_destroy(struct dsa_port *dp);
 int dsa_shared_port_link_register_of(struct dsa_port *dp);

@@ -782,6 +782,9 @@ static int dsa_user_port_obj_add(struct net_device *dev, const void *ctx,
 		err = dsa_port_mrp_add_ring_role(dp,
 						 SWITCHDEV_OBJ_RING_ROLE_MRP(obj));
 		break;
+	case SWITCHDEV_OBJ_ID_NODE_HSR:
+		err = dsa_port_hsr_dan_node_add(dp, SWITCHDEV_OBJ_NODE_HSR(obj));
+		break;
 	default:
 		err = -EOPNOTSUPP;
 		break;
@@ -862,6 +865,9 @@ static int dsa_user_port_obj_del(struct net_device *dev, const void *ctx,
 
 		err = dsa_port_mrp_del_ring_role(dp,
 						 SWITCHDEV_OBJ_RING_ROLE_MRP(obj));
+		break;
+	case SWITCHDEV_OBJ_ID_NODE_HSR:
+		err = dsa_port_hsr_dan_node_del(dp, SWITCHDEV_OBJ_NODE_HSR(obj));
 		break;
 	default:
 		err = -EOPNOTSUPP;
