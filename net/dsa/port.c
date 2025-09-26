@@ -1408,6 +1408,28 @@ int dsa_port_mrp_del_ring_role(const struct dsa_port *dp,
 	return ds->ops->port_mrp_del_ring_role(ds, dp->index, mrp);
 }
 
+int dsa_port_hsr_dan_node_add(const struct dsa_port *dp,
+			      const struct switchdev_obj_node_hsr *hsr_node)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_hsr_dan_node_add)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_hsr_dan_node_add(ds, dp->index, hsr_node);
+}
+
+int dsa_port_hsr_dan_node_del(const struct dsa_port *dp,
+			      const struct switchdev_obj_node_hsr *hsr_node)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_hsr_dan_node_del)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_hsr_dan_node_del(ds, dp->index, hsr_node);
+}
+
 static int dsa_port_assign_conduit(struct dsa_port *dp,
 				   struct net_device *conduit,
 				   struct netlink_ext_ack *extack,

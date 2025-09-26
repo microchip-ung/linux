@@ -1246,6 +1246,10 @@ struct dsa_switch_ops {
 				 struct netlink_ext_ack *extack);
 	int	(*port_hsr_leave)(struct dsa_switch *ds, int port,
 				  struct net_device *hsr);
+	int	(*port_hsr_dan_node_add)(struct dsa_switch *ds, int port,
+					 const struct switchdev_obj_node_hsr *hsr_node);
+	int	(*port_hsr_dan_node_del)(struct dsa_switch *ds, int port,
+					 const struct switchdev_obj_node_hsr *hsr_node);
 
 	/*
 	 * MRP integration
