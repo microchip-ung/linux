@@ -90,6 +90,7 @@ static int __lan9645x_streamt_read(struct lan9645x *lan9645x, u16 isdx,
 	entry->split_mask = lan_rd(lan9645x, ANA_SPLIT_MASK);
 	entry->input_port_mask = lan_rd(lan9645x, ANA_INPUT_PORT_MASK);
 	entry->time_last_seen = lan_rd(lan9645x, ANA_STREAM_TIME);
+	entry->lanid_err = lan_rd(lan9645x, ANA_STREAM_RED);
 
 	entry->isdx = isdx;
 	entry->seq_gen_err_status = ANA_STREAMTIDX_SEQ_GEN_ERR_STATUS_GET(tidx);
@@ -159,12 +160,9 @@ int lan9645x_streamt_del(struct lan9645x *lan9645x, u16 isdx)
 {
 	struct lan9645x_streamt_entry entry = { 0 };
 
-	/* TODO: this is not really needed, since without ISDX classification,
-	 * entries are not used. New writes just have to make sure to set all
-	 * fields.
+	/* Default table values are 0. The important part is we disable
+	 * splitting, seq gen etc.
 	 */
-
-	/* Default table values are 0. */
 	return lan9645x_streamt_write(lan9645x, isdx, &entry);
 }
 

@@ -760,12 +760,14 @@ static void lan9645x_vcap_port_key_deselection(struct lan9645x *lan9645x,
 
 	switch (admin->vtype) {
 	case VCAP_TYPE_IS1:
-		/* S1_CFG_KEY_RT_CFG does not have an effect on lan9645x. All
-		 * frames are either ipv4, ipv6 or other.
+		/* We effectively disable the KEY_RT frame type classification by
+		 * configuring it to 0x7. This ensures KEY_RT frames will use the
+		 * same keyset as KEY_OTHER.
 		 */
 		val = ANA_VCAP_S1_CFG_KEY_IP6_CFG_SET(VCAP_IS1_PS_IPV6_5TUPLE_IP6) |
 			ANA_VCAP_S1_CFG_KEY_IP4_CFG_SET(VCAP_IS1_PS_IPV4_5TUPLE_IP4) |
-			ANA_VCAP_S1_CFG_KEY_OTHER_CFG_SET(VCAP_IS1_PS_OTHER_NORMAL);
+			ANA_VCAP_S1_CFG_KEY_OTHER_CFG_SET(VCAP_IS1_PS_OTHER_NORMAL) |
+			ANA_VCAP_S1_CFG_KEY_RT_CFG_SET(0x7);
 
 		lan9645x_for_each_chipport(lan9645x, p) {
 			for (int l = 0; l < LAN9645X_IS1_LOOKUPS; ++l)

@@ -317,6 +317,7 @@ struct lan9645x_streamt_entry {
 	u16 isdx;
 	u16 split_mask;
 	u16 input_port_mask;
+	u8 lanid_err;
 	bool rtag_pop_ena;
 	bool seq_gen_ena;
 	bool stream_split;
@@ -346,6 +347,7 @@ struct lan9645x_hsr_prp {
 	int port_b;
 	bool enabled;
 	enum lan9645x_hsr_type type; /* HSR or PRP */
+	struct list_head nodes;
 };
 
 struct lan9645x_mirror {
@@ -900,6 +902,12 @@ int lan9645x_hsr_prp_prepare(struct lan9645x *lan9645x, int port,
 			     struct net_device *hsr, enum lan9645x_hsr_type type,
 			     struct netlink_ext_ack *extack);
 int lan9645x_hsr2type(struct net_device *hsr, enum lan9645x_hsr_type *type);
+int lan9645x_hsr_prp_dan_node_add(struct lan9645x *lan9645x, int port,
+				  struct net_device *hsr,
+				  const unsigned char *smac);
+void lan9645x_hsr_prp_dan_node_del(struct lan9645x *lan9645x, int port,
+				   struct net_device *hsr,
+				   const unsigned char *smac);
 
 /* Mirroring */
 int lan9645x_mirror_port_add(struct lan9645x *lan9645x, int from, int to,

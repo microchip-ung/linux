@@ -1937,6 +1937,34 @@ static int lan9645x_port_mrouter_set(struct dsa_switch *ds, int port, bool enabl
 	return lan9645x_mdb_port_mrouter_set(lan9645x, port, enable);
 }
 
+static int
+lan9645x_port_hsr_node_add(struct dsa_switch *ds, int port,
+			   const struct switchdev_obj_node_hsr *hsr_node)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	dev_dbg(lan9645x->dev, "port=%d addrA=%pM\n",
+		port, hsr_node->addr_A);
+
+	return lan9645x_hsr_prp_dan_node_add(lan9645x, port,
+					     hsr_node->hsr,
+					     hsr_node->addr_A);
+}
+
+static int
+lan9645x_port_hsr_node_del(struct dsa_switch *ds, int port,
+			   const struct switchdev_obj_node_hsr *hsr_node)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	dev_dbg(lan9645x->dev, "port=%d addrA=%pM\n",
+		 port, hsr_node->addr_A);
+
+	lan9645x_hsr_prp_dan_node_del(lan9645x, port, hsr_node->hsr,
+				      hsr_node->addr_A);
+	return 0;
+}
+
 static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.get_tag_protocol		= lan9645x_get_tag_protocol,
 	.connect_tag_protocol		= lan9645x_connect_tag_protocol,
@@ -2008,6 +2036,8 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	/* HSR/PRP integration */
 	.port_hsr_join			= lan9645x_port_hsr_join,
 	.port_hsr_leave			= lan9645x_port_hsr_leave,
+	.port_hsr_dan_node_add		= lan9645x_port_hsr_node_add,
+	.port_hsr_dan_node_del		= lan9645x_port_hsr_node_del,
 
 	/* TC integration */
 	.port_mirror_add		= lan9645x_port_mirror_add,
