@@ -95,6 +95,7 @@ enum switchdev_obj_id {
 	SWITCHDEV_OBJ_ID_CC_CCM_TX_CFM,
 	SWITCHDEV_OBJ_ID_MIP_CFM,
 	SWITCHDEV_OBJ_ID_MIP_CONFIG_CFM,
+	SWITCHDEV_OBJ_ID_NODE_HSR,
 };
 
 struct switchdev_obj {
@@ -326,6 +327,15 @@ struct switchdev_obj_in_state_mrp {
 
 #define SWITCHDEV_OBJ_IN_STATE_MRP(OBJ) \
 	container_of((OBJ), struct switchdev_obj_in_state_mrp, obj)
+
+struct switchdev_obj_node_hsr {
+	struct switchdev_obj obj;
+	struct net_device *hsr;
+	unsigned char addr_A[ETH_ALEN];
+};
+
+#define SWITCHDEV_OBJ_NODE_HSR(OBJ) \
+	container_of((OBJ), struct switchdev_obj_node_hsr, obj)
 
 struct switchdev_brport {
 	struct net_device *dev;
