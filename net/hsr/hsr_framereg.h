@@ -88,6 +88,7 @@ struct hsr_node {
 	/* if the node is a SAN */
 	bool			san_a;
 	bool			san_b;
+	bool			spv_node;
 	u16			seq_out[HSR_PT_PORTS];
 	bool			removed;
 	/* PRP specific duplicate handling */
