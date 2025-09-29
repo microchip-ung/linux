@@ -965,7 +965,7 @@ zl3073x_dpll_output_pin_esync_get(const struct dpll_pin *dpll_pin,
 	 * for N-division is also used for the esync divider so both cannot
 	 * be used.
 	 */
-	switch (zl3073x_out_signal_format_get(zldev, out)) {
+	switch (zl3073x_dev_out_signal_format_get(zldev, out)) {
 	case ZL_OUTPUT_MODE_SIGNAL_FORMAT_2_NDIV:
 	case ZL_OUTPUT_MODE_SIGNAL_FORMAT_2_NDIV_INV:
 		return -EOPNOTSUPP;
@@ -999,10 +999,10 @@ zl3073x_dpll_output_pin_esync_get(const struct dpll_pin *dpll_pin,
 	}
 
 	/* Get synth attached to output pin */
-	synth = zl3073x_out_synth_get(zldev, out);
+	synth = zl3073x_dev_out_synth_get(zldev, out);
 
 	/* Get synth frequency */
-	synth_freq = zl3073x_synth_freq_get(zldev, synth);
+	synth_freq = zl3073x_dev_synth_freq_get(zldev, synth);
 
 	clock_type = FIELD_GET(ZL_OUTPUT_MODE_CLOCK_TYPE, output_mode);
 	if (clock_type != ZL_OUTPUT_MODE_CLOCK_TYPE_ESYNC) {
@@ -1076,7 +1076,7 @@ zl3073x_dpll_output_pin_esync_set(const struct dpll_pin *dpll_pin,
 	 * for N-division is also used for the esync divider so both cannot
 	 * be used.
 	 */
-	switch (zl3073x_out_signal_format_get(zldev, out)) {
+	switch (zl3073x_dev_out_signal_format_get(zldev, out)) {
 	case ZL_OUTPUT_MODE_SIGNAL_FORMAT_2_NDIV:
 	case ZL_OUTPUT_MODE_SIGNAL_FORMAT_2_NDIV_INV:
 		return -EOPNOTSUPP;
@@ -1115,10 +1115,10 @@ zl3073x_dpll_output_pin_esync_set(const struct dpll_pin *dpll_pin,
 		goto write_mailbox;
 
 	/* Get synth attached to output pin */
-	synth = zl3073x_out_synth_get(zldev, out);
+	synth = zl3073x_dev_out_synth_get(zldev, out);
 
 	/* Get synth frequency */
-	synth_freq = zl3073x_synth_freq_get(zldev, synth);
+	synth_freq = zl3073x_dev_synth_freq_get(zldev, synth);
 
 	rc = zl3073x_read_u32(zldev, ZL_REG_OUTPUT_DIV, &output_div);
 	if (rc)
@@ -1170,8 +1170,8 @@ zl3073x_dpll_output_pin_frequency_get(const struct dpll_pin *dpll_pin,
 	int rc;
 
 	out = zl3073x_output_pin_out_get(pin->id);
-	synth = zl3073x_out_synth_get(zldev, out);
-	synth_freq = zl3073x_synth_freq_get(zldev, synth);
+	synth = zl3073x_dev_out_synth_get(zldev, out);
+	synth_freq = zl3073x_dev_synth_freq_get(zldev, synth);
 
 	guard(mutex)(&zldev->multiop_lock);
 
@@ -1193,7 +1193,7 @@ zl3073x_dpll_output_pin_frequency_get(const struct dpll_pin *dpll_pin,
 	}
 
 	/* Read used signal format for the given output */
-	signal_format = zl3073x_out_signal_format_get(zldev, out);
+	signal_format = zl3073x_dev_out_signal_format_get(zldev, out);
 
 	switch (signal_format) {
 	case ZL_OUTPUT_MODE_SIGNAL_FORMAT_2_NDIV:
@@ -1261,12 +1261,12 @@ zl3073x_dpll_output_pin_frequency_set(const struct dpll_pin *dpll_pin,
 	int rc;
 
 	out = zl3073x_output_pin_out_get(pin->id);
-	synth = zl3073x_out_synth_get(zldev, out);
-	synth_freq = zl3073x_synth_freq_get(zldev, synth);
+	synth = zl3073x_dev_out_synth_get(zldev, out);
+	synth_freq = zl3073x_dev_synth_freq_get(zldev, synth);
 	new_div = synth_freq / (u32)frequency;
 
 	/* Get used signal format for the given output */
-	signal_format = zl3073x_out_signal_format_get(zldev, out);
+	signal_format = zl3073x_dev_out_signal_format_get(zldev, out);
 
 	guard(mutex)(&zldev->multiop_lock);
 
@@ -1394,8 +1394,8 @@ zl3073x_dpll_output_pin_phase_adjust_get(const struct dpll_pin *dpll_pin,
 	int rc;
 
 	out = zl3073x_output_pin_out_get(pin->id);
-	synth = zl3073x_out_synth_get(zldev, out);
-	synth_freq = zl3073x_synth_freq_get(zldev, synth);
+	synth = zl3073x_dev_out_synth_get(zldev, out);
+	synth_freq = zl3073x_dev_synth_freq_get(zldev, synth);
 
 	/* Check synth freq for zero */
 	if (!synth_freq) {
@@ -1444,10 +1444,10 @@ zl3073x_dpll_output_pin_phase_adjust_set(const struct dpll_pin *dpll_pin,
 
 	/* Get attached synth */
 	out = zl3073x_output_pin_out_get(pin->id);
-	synth = zl3073x_out_synth_get(zldev, out);
+	synth = zl3073x_dev_out_synth_get(zldev, out);
 
 	/* Get synth's frequency */
-	synth_freq = zl3073x_synth_freq_get(zldev, synth);
+	synth_freq = zl3073x_dev_synth_freq_get(zldev, synth);
 
 	/* Value in register is expressed in half synth clock cycles so
 	 * the given phase adjustment a multiple of half synth clock.
@@ -1886,8 +1886,8 @@ zl3073x_dpll_pin_is_registrable(struct zl3073x_dpll *zldpll,
 		if (zldpll->refsel_mode == ZL_DPLL_MODE_REFSEL_MODE_NCO)
 			return false;
 
-		is_diff = zl3073x_ref_is_diff(zldev, ref);
-		is_enabled = zl3073x_ref_is_enabled(zldev, ref);
+		is_diff = zl3073x_dev_ref_is_diff(zldev, ref);
+		is_enabled = zl3073x_dev_ref_is_enabled(zldev, ref);
 	} else {
 		/* Output P&N pair shares single HW output */
 		u8 out = zl3073x_output_pin_out_get(index);
@@ -1895,7 +1895,7 @@ zl3073x_dpll_pin_is_registrable(struct zl3073x_dpll *zldpll,
 		name = "OUT";
 
 		/* Skip the pin if it is connected to different DPLL channel */
-		if (zl3073x_out_dpll_get(zldev, out) != zldpll->id) {
+		if (zl3073x_dev_out_dpll_get(zldev, out) != zldpll->id) {
 			dev_dbg(zldev->dev,
 				"%s%u is driven by different DPLL\n", name,
 				out);
@@ -1903,8 +1903,8 @@ zl3073x_dpll_pin_is_registrable(struct zl3073x_dpll *zldpll,
 			return false;
 		}
 
-		is_diff = zl3073x_out_is_diff(zldev, out);
-		is_enabled = zl3073x_out_is_enabled(zldev, out);
+		is_diff = zl3073x_dev_out_is_diff(zldev, out);
+		is_enabled = zl3073x_dev_out_is_enabled(zldev, out);
 	}
 
 	/* Skip N-pin if the corresponding input/output is differential */
@@ -2154,7 +2154,7 @@ zl3073x_dpll_pin_ffo_check(struct zl3073x_dpll_pin *pin)
 		return false;
 
 	/* Get the latest measured ref's ffo */
-	ffo = zl3073x_ref_ffo_get(zldev, ref);
+	ffo = zl3073x_dev_ref_ffo_get(zldev, ref);
 
 	/* Compare with previous value */
 	if (pin->freq_offset != ffo) {
