@@ -417,7 +417,9 @@ typedef struct {
     int (*rx_dcb_init)(struct ufdma_state_s *state, ufdma_dcb_t *dcb, u32 buf_size_bytes_aligned);
 
     // CIL function for initializing a Tx H/W DCB and link #dcb_prev to it H/W-wise
-    int (*tx_dcb_init)(struct ufdma_state_s *state, ufdma_dcb_t *dcb, ufdma_dcb_t *dcb_prev);
+    // The called function is supposed to tell AIL the number of bytes to flush
+    // in \p flush_len.
+    int (*tx_dcb_init)(struct ufdma_state_s *state, ufdma_dcb_t *dcb, ufdma_dcb_t *dcb_prev, u32 *flush_len);
 
     // CIL function for (re-)starting the FDMA Rx channel
     int (*rx_start)(struct ufdma_state_s *state, ufdma_dcb_t *head, BOOL *restarted);

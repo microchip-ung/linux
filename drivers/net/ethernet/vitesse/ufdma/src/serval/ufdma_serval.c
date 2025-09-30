@@ -378,7 +378,7 @@ static int CIL_rx_dcb_init(ufdma_state_t *state, ufdma_dcb_t *dcb, u32 buf_size_
 /**
  * CIL_tx_dcb_init()
  */
-static int CIL_tx_dcb_init(ufdma_state_t *state, ufdma_dcb_t *dcb, ufdma_dcb_t *dcb_prev)
+static int CIL_tx_dcb_init(ufdma_state_t *state, ufdma_dcb_t *dcb, ufdma_dcb_t *dcb_prev, u32 *flush_len)
 {
     ufdma_hw_dcb_v2_t *hw_dcb = &dcb->hw_dcb.v2;
     u32               datap, min_len, len;
@@ -415,6 +415,7 @@ static int CIL_tx_dcb_init(ufdma_state_t *state, ufdma_dcb_t *dcb, ufdma_dcb_t *
         DCACHE_FLUSH(&hw_dcb_prev->llp, sizeof(hw_dcb_prev->llp));
     }
 
+    *flush_len = len;
     return UFDMA_RC_OK;
 }
 
