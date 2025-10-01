@@ -244,50 +244,101 @@ void lan9645x_stats_add_cnt(u64 *cnt, u32 val)
 	*cnt = (*cnt & ~(u64)U32_MAX) + val;
 }
 
-static void __lan9645x_stats_update(struct lan9645x *lan9645x,
-				    struct lan9645x_view_stats *vstats)
+static void __lan9645x_stats_view_idx_update(struct lan9645x *lan9645x,
+					     enum lan9645x_view_stat_type vtype,
+					     int idx)
 {
 	struct lan9645x_stat_region region;
-	int idx, cntr, err;
+	struct lan9645x_view_stats *vstats;
 	u64 *idx_counters;
 	u32 *region_buf;
+	int cntr;
 
 	lockdep_assert_held(&lan9645x->stats->hw_lock);
 
-	for (idx = 0; idx < vstats->num_indexes; idx++) {
-		lan_wr(SYS_STAT_CFG_STAT_VIEW_SET(idx), lan9645x,
-		       SYS_STAT_CFG);
+	vstats = lan9645x_get_vstats(lan9645x, vtype);
+	if (!vstats || idx < 0 || idx >= vstats->num_indexes)
+		return;
 
-		idx_counters = STATS_INDEX(vstats, idx);
-		region_buf = &vstats->buf[vstats->num_cnts * idx];
+	lan_wr(SYS_STAT_CFG_STAT_VIEW_SET(idx), lan9645x, SYS_STAT_CFG);
 
-		/* Each region for this index contains counters are sequential
-		 * addrs, so we can use bulk reads to ease lock pressure a bit.
-		 */
-		for (int r = 0; r < vstats->num_regions; r++) {
-			region = vstats->regions[r];
-			err = lan_bulk_rd(&region_buf[region.cnts_base_idx],
-					  region.cnt, lan9645x,
-					  SYS_CNT(region.base_offset));
-			if (err)
-				dev_err(lan9645x->dev, "bulk read error %d",
-					err);
+	idx_counters = STATS_INDEX(vstats, idx);
+	region_buf = &vstats->buf[vstats->num_cnts * idx];
+
+	/* Each region for this index contains counters which are at sequential
+	 * addresses, so we can use bulk reads to ease lock pressure a bit.
+	 */
+	for (int r = 0; r < vstats->num_regions; r++) {
+		region = vstats->regions[r];
+		lan_bulk_rd(&region_buf[region.cnts_base_idx], region.cnt,
+			    lan9645x, SYS_CNT(region.base_offset));
+	}
+
+	for (cntr = 0; cntr < vstats->num_cnts; cntr++)
+		lan9645x_stats_add_cnt(&idx_counters[cntr], region_buf[cntr]);
+}
+
+void lan9645x_stats_view_update(struct lan9645x *lan9645x,
+				enum lan9645x_view_stat_type vtype)
+static void lan9645x_stats_view_update(struct lan9645x *lan9645x,
+				       enum lan9645x_view_stat_type vtype)
+{
+	struct lan9645x_stats *s = lan9645x->stats;
+	struct lan9645x_view_stats *vstats;
+	int idx = 0;
+
+	vstats = lan9645x_get_vstats(lan9645x, vtype);
+	if (!vstats)
+		return;
+
+	switch (vtype) {
+	case LAN9645X_STAT_PORTS:
+		mutex_lock(&s->hw_lock);
+		for (idx = 0; idx < vstats->num_indexes; idx++) {
+			if (lan9645x_port_is_used(lan9645x, idx))
+				__lan9645x_stats_view_idx_update(lan9645x,
+								 vtype, idx);
 		}
-
-		for (cntr = 0; cntr < vstats->num_cnts; cntr++)
-			lan9645x_stats_add_cnt(&idx_counters[cntr],
-					       region_buf[cntr]);
+		mutex_unlock(&s->hw_lock);
+		return;
+	case LAN9645X_STAT_ISDX:
+		mutex_lock(&lan9645x->stream->lock);
+		mutex_lock(&s->hw_lock);
+		idx = 1;
+		for_each_set_bit_from(idx, lan9645x->stream->isdx_mask,
+				      LAN9645X_ISDX_MAX) {
+			__lan9645x_stats_view_idx_update(lan9645x, vtype, idx);
+		}
+		mutex_unlock(&s->hw_lock);
+		mutex_unlock(&lan9645x->stream->lock);
+		return;
+	case LAN9645X_STAT_ESDX:
+		mutex_lock(&lan9645x->esdx_lock);
+		mutex_lock(&s->hw_lock);
+		for_each_set_bit_from(idx, lan9645x->esdx_mask,
+				      LAN9645X_ESDX_MAX) {
+			__lan9645x_stats_view_idx_update(lan9645x, vtype, idx);
+		}
+		mutex_unlock(&s->hw_lock);
+		mutex_unlock(&lan9645x->esdx_lock);
+		return;
+	case LAN9645X_STAT_SFID:
+		mutex_lock(&s->hw_lock);
+		/* TODO: Need sfid alloc lock to be able to limit updates to
+		 * used SFIDs */
+		for (idx = 0; idx < vstats->num_indexes; idx++)
+			__lan9645x_stats_view_idx_update(lan9645x, vtype, idx);
+		mutex_unlock(&s->hw_lock);
+		return;
+	default:
+		return;
 	}
 }
 
 static void lan9645x_stats_update(struct lan9645x *lan9645x)
 {
-	mutex_lock(&lan9645x->stats->hw_lock);
-
-	for (int i = 0; i < ARRAY_SIZE(lan9645x->stats->view); i++)
-		__lan9645x_stats_update(lan9645x, &lan9645x->stats->view[i]);
-
-	mutex_unlock(&lan9645x->stats->hw_lock);
+	for (int vtype = 0; vtype < LAN9645X_STAT_NUM; vtype++)
+		lan9645x_stats_view_update(lan9645x, vtype);
 }
 
 void lan9645x_stats_get_strings(struct lan9645x *lan9645x, int port,
@@ -691,20 +742,23 @@ void lan9645x_stats_clear_counters(struct lan9645x *lan9645x,
 
 	switch (type) {
 	case LAN9645X_STAT_PORTS:
+		/* Drop, TX and RX counters */
 		sel = BIT(2) | BIT(1) | BIT(0);
 		break;
 	case LAN9645X_STAT_ISDX:
+		/* ISDX and FRER seq gen */
 		sel = BIT(5) | BIT(3);
 		break;
 	case LAN9645X_STAT_ESDX:
+		/* ESDX */
 		sel = BIT(6);
 		break;
 	case LAN9645X_STAT_SFID:
+		/* Stream filter */
 		sel = BIT(4);
 		break;
 	default:
-		sel = 0;
-		break;
+		return;
 	}
 
 	mutex_lock(&lan9645x->stats->hw_lock);

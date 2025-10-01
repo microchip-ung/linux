@@ -663,6 +663,17 @@ static inline bool lan9645x_port_is_bridged(struct lan9645x_port *p)
 	return !!(p->lan9645x->bridge_mask & BIT(p->chip_port));
 }
 
+static inline bool lan9645x_port_is_used(struct lan9645x *lan9645x, int port)
+{
+	struct dsa_port *dsa_port;
+
+	dsa_port = dsa_to_port(lan9645x->ds, port);
+	if (!dsa_port)
+		return false;
+
+	return dsa_port->type != DSA_PORT_TYPE_UNUSED;
+}
+
 static inline bool lan9645x_port_is_hsr(struct lan9645x_port *p)
 {
 	struct lan9645x *lan9645x = p->lan9645x;
