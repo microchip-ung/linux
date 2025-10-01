@@ -221,14 +221,15 @@ static void lan9645x_vcap_cache_erase(struct vcap_admin *admin)
 static void lan9645x_es0_read_esdx_counter(struct lan9645x *lan9645x,
 					   struct vcap_admin *admin, u32 id)
 {
+	u64 *esdx_cnt;
 	u32 counter;
 
 	id = id & 0xff; /* counter limit */
-	mutex_lock(&lan9645x->stats->hw_lock);
-	lan_wr(SYS_STAT_CFG_STAT_VIEW_SET(id), lan9645x, SYS_STAT_CFG);
-	counter = lan_rd(lan9645x, SYS_CNT(LAN9645X_STAT_ESDX_GRN_PKTS)) +
-		lan_rd(lan9645x, SYS_CNT(LAN9645X_STAT_ESDX_YEL_PKTS));
-	mutex_unlock(&lan9645x->stats->hw_lock);
+
+	lan9645x_stats_view_idx_update(lan9645x, LAN9645X_STAT_ESDX, id);
+
+	esdx_cnt = STAT_COUNTERS(lan9645x, LAN9645X_STAT_ESDX, id);
+	counter = esdx_cnt[SCNT_ESDX_GREEN_PKT] + esdx_cnt[SCNT_ESDX_YELLOW_PKT];
 	if (counter)
 		admin->cache.counter = counter;
 }
