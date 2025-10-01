@@ -1061,6 +1061,9 @@ static int lan9645x_hsr_prp_nodestable_show(struct seq_file *m,
 
 	h = &lan9645x->hsr;
 
+	/* Update ISDX counters */
+	lan9645x_stats_view_update(lan9645x, LAN9645X_STAT_ISDX);
+
 	seq_printf(m, "Inst MAC Address       Node Type   RxA        RxB        LastSeenA  LastSeenB  ErrLanidA  ErrLanidB\n");
 	seq_printf(m, "---- ----------------- ----------- ---------- ---------- ---------- ---------- ---------- ----------\n");
 
