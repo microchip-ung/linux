@@ -60,12 +60,14 @@ struct lan9645x_link_isdx {
 };
 
 struct lan9645x_act_state {
-	struct lan9645x_mirror *m; /* FLOW_ACTINO_MIRRED */
+	struct lan9645x_mirror *m; /* FLOW_ACTION_MIRRED */
 	u32 redir_ports; /* FLOW_ACTOIN_REDIRECT */
 	int pol_idx; /* FLOW_ACTION_POLICE */
 	int goto_isdx; /* FLOW_ACTION_GOTO */
 	int vlan_push; /* FLOW_ACTION_VLAN_PUSH */
 	int target_isdx;
+	int sfi_ix; /* FLOW_ACTION_GATE. sfi_ix < 0 indicates not used */
+	int sgi_ix;/* FLOW_ACTION_GATE. sgi_ix < 0 indicates not used */
 };
 
 static int __lan9645x_tc_esdx_alloc(struct lan9645x *lan9645x)
@@ -1329,6 +1331,7 @@ static int lan9645x_tc_free_rule_resources(struct lan9645x_port *p,
 	struct vcap_control *vctrl;
 	struct vcap_rule *vrule;
 	int ret = 0;
+	u32 val;
 
 	vctrl = lan9645x->vcap_ctrl;
 
@@ -1363,22 +1366,34 @@ static int lan9645x_tc_free_rule_resources(struct lan9645x_port *p,
 		lan9645x_qos_polix_free(lan9645x, afield->data.u32.value);
 	}
 
-	/* Check for an enabled stream filter in this rule */
-	afield = vcap_find_actionfield(vrule, VCAP_AF_SFID_VAL);
-	if (afield && afield->ctrl.type == VCAP_FIELD_U32 &&
-	    afield->data.u32.value) {
+	/* Check for an enabled stream filter in this rule.
+	 * We can not use the VCAP_AF_SFID_VAL field, because if the field is
+	 * set with value 0 the field is not found.
+	 * We must look for SFID_ENA, and when set to 1, we get SFID_VAL.
+	 */
+	afield = vcap_find_actionfield(vrule, VCAP_AF_SFID_ENA);
+	if (afield && afield->ctrl.type == VCAP_FIELD_BIT &&
+	    afield->data.u1.value) {
+		afield = vcap_find_actionfield(vrule, VCAP_AF_SFID_VAL);
+		val = afield ? afield->data.u32.value : 0;
 		dev_dbg(lan9645x->dev, "rule %u: remove stream filter=%u",
-			vrule->id, afield->data.u32.value);
-		lan9645x_sfi_put(lan9645x, afield->data.u32.value);
+			vrule->id, val);
+		lan9645x_sfi_put(lan9645x, val);
 	}
 
-	/* Check for an enabled stream gate in this rule */
-	afield = vcap_find_actionfield(vrule, VCAP_AF_SGID_VAL);
-	if (afield && afield->ctrl.type == VCAP_FIELD_U32 &&
-	    afield->data.u32.value) {
+	/* Check for an enabled stream gate in this rule.
+	 * We can not use the VCAP_AF_SGID_VAL field, because if the field is
+	 * set with value 0 the field is not found.
+	 * We must look for SGID_ENA, and when set to 1, we get SGID_VAL.
+	 */
+	afield = vcap_find_actionfield(vrule, VCAP_AF_SGID_ENA);
+	if (afield && afield->ctrl.type == VCAP_FIELD_BIT &&
+	    afield->data.u1.value) {
+		afield = vcap_find_actionfield(vrule, VCAP_AF_SGID_VAL);
+		val = afield ? afield->data.u32.value : 0;
 		dev_dbg(lan9645x->dev, "rule %u: remove stream gate=%u",
-			vrule->id, afield->data.u32.value);
-		lan9645x_sgi_put(lan9645x, afield->data.u32.value);
+			vrule->id, val);
+		lan9645x_sgi_put(lan9645x, val);
 	}
 
 	vcap_free_rule(vrule);
@@ -1941,6 +1956,7 @@ static int lan9645x_tc_handle_gate(struct lan9645x_act_state *s,
 				   "Cannot reserve stream filter");
 		return err;
 	}
+	s->sfi_ix = sfi_ix;
 
 	err = lan9645x_sgi_get(p->lan9645x, &sgi_ix);
 	if (err < 0) {
@@ -1948,6 +1964,7 @@ static int lan9645x_tc_handle_gate(struct lan9645x_act_state *s,
 				   "Cannot reserve stream gate");
 		return err;
 	}
+	s->sgi_ix = sgi_ix;
 
 	err = lan9645x_psfp_sg_set(p->lan9645x, sgi_ix, &sg);
 	if (err) {
@@ -1987,6 +2004,12 @@ static int lan9645x_tc_parse_actions(struct lan9645x_act_state *s,
 	struct flow_action_entry *act;
 	struct flow_rule *frule;
 	int idx, err, fcid;
+
+	/* For SFI and SGI index 0 is valid, unlike ISDX. Use -1 to signal
+	 * unset state.
+	 */
+	s->sfi_ix = -1;
+	s->sgi_ix = -1;
 
 	extack = f->common.extack;
 	frule = flow_cls_offload_flow_rule(f);
@@ -2131,6 +2154,12 @@ static void lan9645x_tc_action_state_cleanup(struct lan9645x *lan9645x,
 		lan9645x_police_del(lan9645x, s->pol_idx);
 		lan9645x_qos_polix_free(lan9645x, s->pol_idx);
 	}
+
+	if (s->sfi_ix >= 0)
+		lan9645x_sfi_put(lan9645x, s->sfi_ix);
+
+	if (s->sgi_ix >= 0)
+		lan9645x_sgi_put(lan9645x, s->sgi_ix);
 }
 
 int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,
