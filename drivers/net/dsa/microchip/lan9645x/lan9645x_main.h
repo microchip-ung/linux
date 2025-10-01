@@ -325,7 +325,12 @@ struct lan9645x_streamt_entry {
 };
 
 struct lan9645x_stream {
-	struct mutex lock; /* Lock for stream table access and ISDX allocation. */
+	/* Lock for stream table access and ISDX allocation.
+	 *
+	 * If this lock must be held at the same time as stats->hw_lock, then
+	 * you must first lock stream->lock, then stats->hw_lock.
+	 */
+	struct mutex lock;
 	/* Track allocated ISDXs indices in hw */
 	DECLARE_BITMAP(isdx_mask, LAN9645X_ISDX_MAX);
 };
@@ -423,6 +428,15 @@ struct lan9645x {
 
 	/* vcap */
 	struct vcap_control *vcap_ctrl;
+
+	/* Lock for ESDX allocation.
+	 *
+	 * If this lock must be held at the same time as stats->hw_lock, then
+	 * you must first lock esdx_lock, then stats->hw_lock.
+	 */
+	struct mutex esdx_lock;
+	/* Track allocated ESDX indices in hw */
+	DECLARE_BITMAP(esdx_mask, LAN9645X_ESDX_MAX);
 
 	/* Stream table for FRER and HSR/PRP */
 	struct lan9645x_stream *stream;

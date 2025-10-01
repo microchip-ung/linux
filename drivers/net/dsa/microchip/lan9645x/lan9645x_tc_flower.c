@@ -68,6 +68,47 @@ struct lan9645x_act_state {
 	int target_isdx;
 };
 
+static int __lan9645x_tc_esdx_alloc(struct lan9645x *lan9645x)
+{
+	int esdx;
+
+	lockdep_assert_held(&lan9645x->esdx_lock);
+
+	esdx = find_first_zero_bit(lan9645x->esdx_mask, LAN9645X_ESDX_MAX);
+	if (esdx >= LAN9645X_ESDX_MAX)
+		return -ENOSPC;
+
+	set_bit(esdx, lan9645x->esdx_mask);
+
+	return esdx;
+}
+
+static int lan9645x_tc_esdx_alloc(struct lan9645x *lan9645x)
+{
+	int ret;
+
+	mutex_lock(&lan9645x->esdx_lock);
+	ret = __lan9645x_tc_esdx_alloc(lan9645x);
+	mutex_unlock(&lan9645x->esdx_lock);
+
+	return ret;
+}
+
+static void __lan9645x_tc_esdx_free(struct lan9645x *lan9645x, u16 esdx)
+{
+	lockdep_assert_held(&lan9645x->esdx_lock);
+
+	clear_bit(esdx, lan9645x->esdx_mask);
+	lan9645x_stats_clear_counters(lan9645x, LAN9645X_STAT_ESDX, esdx);
+}
+
+static void lan9645x_tc_esdx_free(struct lan9645x *lan9645x, u16 esdx)
+{
+	mutex_lock(&lan9645x->esdx_lock);
+	__lan9645x_tc_esdx_free(lan9645x, esdx);
+	mutex_unlock(&lan9645x->esdx_lock);
+}
+
 static enum vcap_bit __vcap2bit(u32 val)
 {
 	return !!val ? VCAP_BIT_1 : VCAP_BIT_0;
@@ -1034,28 +1075,44 @@ lan9645x_tc_flower_use_dissectors(struct vcap_tc_flower_parse_usage *st,
 	return err;
 }
 
-static int lan9645x_tc_add_rule_counter(struct vcap_admin *admin,
+static int lan9645x_tc_add_rule_counter(struct lan9645x *lan9645x,
+					struct vcap_admin *admin,
 					struct vcap_rule *vrule)
 {
+	int esdx;
 	int err;
 
 	switch (admin->vtype) {
 	case VCAP_TYPE_ES0:
-		err = vcap_rule_mod_action_u32(vrule, VCAP_AF_ESDX, vrule->id);
-		if (!err)
-			vcap_rule_set_counter_id(vrule, vrule->id);
+		/* There are 127 ESDX and capacity for 128 ES0 rules. ES0 rule
+		 * 128 just does not get a 32bit counter.
+		 */
+		esdx = lan9645x_tc_esdx_alloc(lan9645x);
+		if (esdx < 0)
+			return 0;
+		err = vcap_rule_mod_action_u32(vrule, VCAP_AF_ESDX, esdx);
+		vcap_rule_set_counter_id(vrule, esdx);
 		return err;
 	default:
 		return 0;
 	}
 }
 
-static void lan9645x_tc_clear_rule_counter(struct lan9645x *lan9645x,
-					   struct vcap_admin *admin, u32 rid)
+static void lan9645x_tc_free_rule_counter(struct lan9645x *lan9645x,
+					  struct vcap_admin *admin, u32 rid)
 {
+	struct vcap_rule *vrule;
+	u32 counter_id;
+
+	vrule = vcap_get_rule(lan9645x->vcap_ctrl, rid);
+	if (IS_ERR_OR_NULL(vrule))
+		return;
+
+	counter_id = vcap_rule_get_counter_id(vrule);
+
 	switch (admin->vtype) {
 	case VCAP_TYPE_ES0:
-		lan9645x_stats_clear_counters(lan9645x, LAN9645X_STAT_ESDX, rid);
+		lan9645x_tc_esdx_free(lan9645x, counter_id);
 		return;
 	default:
 		return;
@@ -1101,11 +1158,6 @@ static int lan9645x_tc_add_rule_copy(struct lan9645x_port *p,
 	/* Link the new rule to the existing rule with the cookie */
 	vrule->cookie = erule->cookie;
 
-	err = lan9645x_tc_add_rule_counter(admin, vrule);
-	if (err) {
-		dev_dbg(lan9645x->dev, "could not add counter: %u", vrule->id);
-		goto out;
-	}
 
 	vcap_filter_rule_keys(vrule, keylist, ARRAY_SIZE(keylist), true);
 	err = vcap_set_rule_set_keyset(vrule, keyset);
@@ -1130,16 +1182,24 @@ static int lan9645x_tc_add_rule_copy(struct lan9645x_port *p,
 		}
 	}
 
+	err = lan9645x_tc_add_rule_counter(lan9645x, admin, vrule);
+	if (err) {
+		dev_dbg(lan9645x->dev, "could not add counter: %u", vrule->id);
+		goto out;
+	}
+
 	err = vcap_val_rule(vrule, ETH_P_ALL);
 	if (err) {
 		dev_err(lan9645x->dev, "could not validate rule: %u\n",
 			vrule->id);
 		vcap_set_tc_exterr(fco, vrule);
+		lan9645x_tc_free_rule_counter(lan9645x, admin, vrule->id);
 		goto out;
 	}
 	err = vcap_add_rule(vrule);
 	if (err) {
 		dev_err(lan9645x->dev, "could not add rule: %u\n", vrule->id);
+		lan9645x_tc_free_rule_counter(lan9645x, admin, vrule->id);
 		goto out;
 	}
 out:
@@ -1377,7 +1437,7 @@ int lan9645x_tc_flower_del(struct lan9645x_port *p, struct flow_cls_offload *f,
 			}
 		}
 
-		lan9645x_tc_clear_rule_counter(p->lan9645x, admin, rule_id);
+		lan9645x_tc_free_rule_counter(p->lan9645x, admin, rule_id);
 
 		err = vcap_del_rule(vctrl, ndev, rule_id);
 		if (err) {
@@ -2141,12 +2201,6 @@ int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,
 		dev_dbg(lan9645x->dev, "err: %d", err);
 		NL_SET_ERR_MSG_MOD(extack,
 				   "No matching port keyset for filter protocol and keys");
-		goto out;
-	}
-
-	err = lan9645x_tc_add_rule_counter(admin, vrule);
-	if (err) {
-		vcap_set_tc_exterr(f, vrule);
 		goto out;
 	}
 

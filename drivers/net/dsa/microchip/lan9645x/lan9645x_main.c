@@ -556,6 +556,8 @@ static int lan9645x_setup(struct dsa_switch *ds)
 	if (err)
 		return dev_err_probe(dev, err, "PTP init error");
 	lan9645x_hsr_prp_init(lan9645x);
+	/* ESDX index 0 is not useful and counts as no-esdx, similar to ISDX */
+	set_bit(0, lan9645x->esdx_mask);
 
 	/* Link Aggregation Mode: NETDEV_LAG_HASH_L2 */
 	lan_wr(ANA_AGGR_CFG_AC_SMAC_ENA |

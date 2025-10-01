@@ -3643,6 +3643,15 @@ void vcap_rule_set_counter_id(struct vcap_rule *rule, u32 counter_id)
 }
 EXPORT_SYMBOL_GPL(vcap_rule_set_counter_id);
 
+/* Get a rule counter id */
+u32 vcap_rule_get_counter_id(struct vcap_rule *rule)
+{
+	struct vcap_rule_internal *ri = to_intrule(rule);
+
+	return ri->counter_id;
+}
+EXPORT_SYMBOL_GPL(vcap_rule_get_counter_id);
+
 int vcap_rule_set_counter(struct vcap_rule *rule, struct vcap_counter *ctr)
 {
 	struct vcap_rule_internal *ri = to_intrule(rule), *orig;
