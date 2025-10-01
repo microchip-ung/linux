@@ -269,5 +269,10 @@ void lan9645x_stats_get_eth_ctrl_stats(struct lan9645x *lan9645x, int port,
 				       struct ethtool_eth_ctrl_stats *ctrl_stats);
 void lan9645x_stats_get_eth_phy_stats(struct lan9645x *lan9645x, int port,
 				      struct ethtool_eth_phy_stats *phy_stats);
+void lan9645x_stats_view_update(struct lan9645x *lan9645x,
+				enum lan9645x_view_stat_type view_type);
+void lan9645x_stats_view_idx_update(struct lan9645x *lan9645x,
+				    enum lan9645x_view_stat_type vtype,
+				    int idx);
 
 #endif

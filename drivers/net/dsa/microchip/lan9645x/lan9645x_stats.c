@@ -278,10 +278,17 @@ static void __lan9645x_stats_view_idx_update(struct lan9645x *lan9645x,
 		lan9645x_stats_add_cnt(&idx_counters[cntr], region_buf[cntr]);
 }
 
+void lan9645x_stats_view_idx_update(struct lan9645x *lan9645x,
+				    enum lan9645x_view_stat_type vtype, int idx)
+{
+	struct lan9645x_stats *s = lan9645x->stats;
+	mutex_lock(&s->hw_lock);
+	__lan9645x_stats_view_idx_update(lan9645x, vtype, idx);
+	mutex_unlock(&s->hw_lock);
+}
+
 void lan9645x_stats_view_update(struct lan9645x *lan9645x,
 				enum lan9645x_view_stat_type vtype)
-static void lan9645x_stats_view_update(struct lan9645x *lan9645x,
-				       enum lan9645x_view_stat_type vtype)
 {
 	struct lan9645x_stats *s = lan9645x->stats;
 	struct lan9645x_view_stats *vstats;
