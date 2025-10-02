@@ -211,6 +211,48 @@
 #define LAN9645X_PCP_COUNT		8
 #define LAN9645X_PRIO_COUNT		8
 
+#define LAN9645X_NUM_BUM_POL 3
+
+enum lan9645x_bum_mode {
+	LAN9645X_BUM_MODE_DIS = 0,
+	LAN9645X_BUM_MODE_CPU,
+	LAN9645X_BUM_MODE_FPORTS,
+	LAN9645X_BUM_MODE_CPU_AND_FPORTS,
+};
+
+enum lan9645x_bum_type {
+	LAN9645X_BUM_UC = 0,
+	LAN9645X_BUM_BC = 1,
+	LAN9645X_BUM_MC = 2,
+
+	__LAN9645X_BUM_NUM,
+};
+
+struct lan9645x_bum_pol {
+	struct lan9645x *lan9645x;
+	enum lan9645x_bum_type type;
+	int unit;
+	/* Frame-rate is 2**rate * UNIT */
+	int rate;
+	enum lan9645x_bum_mode mode;
+	bool cpu_redir_ena;
+	bool known_ena;
+	bool unknown_ena;
+
+	/* Only for MC bum policer */
+	bool ipmc_known_ena;
+	bool ipmc_unknown_ena;
+};
+
+struct lan9645x_bum_ctrl {
+	struct lan9645x *lan9645x;
+	int burst;
+	struct lan9645x_bum_pol policers[LAN9645X_NUM_BUM_POL];
+	struct list_head debugfs_list;
+	/* Lock bum_ctrl and bum reg IO */
+	struct mutex bum_lock;
+};
+
 /* Rewriter VLAN port tagging encoding for REW:PORT[0-10]:TAG_CFG.TAG_CFG
  *
  * 0: Port tagging disabled.
@@ -487,6 +529,9 @@ struct lan9645x {
 
 	/* QOS DSCP map */
 	struct lan9645x_ig_dscp i_dscp_map[LAN9645X_DSCP_COUNT];
+
+	/* BUM policers */
+	struct lan9645x_bum_ctrl *bum;
 };
 
 struct lan9645x_port_qos {
@@ -1136,7 +1181,6 @@ int lan9645x_psfp_tc_action_set(struct lan9645x *lan9645x,
 				struct netlink_ext_ack *extack,
 				u32 *sfi_ix, u32 *sgi_ix);
 
-
 /* lan9645x_fp.c */
 int lan9645x_fp_status(struct lan9645x_port *p,
 		       struct lan9645x_fp_port_status *s);
@@ -1153,5 +1197,9 @@ int lan9645x_fp_ethtool_get_mm(struct lan9645x *lan9645x, int port,
 int lan9645x_fp_ethtool_set_mm(struct lan9645x *lan9645x, int port,
 			       struct ethtool_mm_cfg *cfg,
 			       struct netlink_ext_ack *extack);
+
+/* BUM policers lan9645x_bum_.c */
+int lan9645x_bum_init(struct lan9645x *lan9645x);
+void lan9645x_bum_deinit(struct lan9645x *lan9645x);
 
 #endif /* __LAN9645X_MAIN_H__ */

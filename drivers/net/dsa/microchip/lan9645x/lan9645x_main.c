@@ -113,6 +113,7 @@ static void lan9645x_teardown(struct dsa_switch *ds)
 {
 	struct lan9645x *lan9645x = ds->priv;
 
+	debugfs_remove_recursive(lan9645x->debugfs_root);
 	lan9645x_netlink_fp_uninit();
 	lan9645x_netlink_frer_uninit();
 	lan9645x_netlink_qos_uninit();
@@ -125,8 +126,8 @@ static void lan9645x_teardown(struct dsa_switch *ds)
 	lan9645x_hsr_prp_deinit(lan9645x);
 	lan9645x_streamt_deinit(lan9645x);
 	lan9645x_vcap_deinit(lan9645x);
+	lan9645x_bum_deinit(lan9645x);
 	mutex_destroy(&lan9645x->link_isdx_lock);
-	debugfs_remove_recursive(lan9645x->debugfs_root);
 	mutex_destroy(&lan9645x->psfp_lock);
 }
 
@@ -569,9 +570,14 @@ static int lan9645x_setup(struct dsa_switch *ds)
 	if (err)
 		return dev_err_probe(dev, err, "PTP init error");
 	lan9645x_hsr_prp_init(lan9645x);
+
 	/* ESDX index 0 is not useful and counts as no-esdx, similar to ISDX */
 	set_bit(0, lan9645x->esdx_mask);
 	lan9645x_fp_init(lan9645x);
+
+	err = lan9645x_bum_init(lan9645x);
+	if (err)
+		return dev_err_probe(dev, err, "BUM init error");
 
 	/* Link Aggregation Mode: NETDEV_LAG_HASH_L2 */
 	lan_wr(ANA_AGGR_CFG_AC_SMAC_ENA |

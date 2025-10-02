@@ -32,7 +32,8 @@ mchp-lan9645x-objs := lan9645x_main.o \
 	lan9645x_taprio.o \
 	lan9645x_psfp.o \
 	lan9645x_netlink_fp.o \
-	lan9645x_fp.o
+	lan9645x_fp.o \
+	lan9645x_bum.o
 
 
 mchp-lan9645x-$(CONFIG_DEBUG_FS) += lan9645x_vcap_debugfs.o
