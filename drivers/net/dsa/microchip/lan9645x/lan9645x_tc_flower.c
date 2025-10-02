@@ -1950,34 +1950,14 @@ static int lan9645x_tc_handle_gate(struct lan9645x_act_state *s,
 		sg.gce[i].maxoctets = act->gate.entries[i].maxoctets;
 	}
 
-	err = lan9645x_sfi_get(p->lan9645x, &sfi_ix);
-	if (err < 0) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "Cannot reserve stream filter");
+	/* SF config is all zero and unused at the moment */
+	err = lan9645x_psfp_tc_action_set(p->lan9645x, &sf, &sg, extack,
+					  &sfi_ix, &sgi_ix);
+	if (err)
 		return err;
-	}
+
 	s->sfi_ix = sfi_ix;
-
-	err = lan9645x_sgi_get(p->lan9645x, &sgi_ix);
-	if (err < 0) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "Cannot reserve stream gate");
-		return err;
-	}
 	s->sgi_ix = sgi_ix;
-
-	err = lan9645x_psfp_sg_set(p->lan9645x, sgi_ix, &sg);
-	if (err) {
-		NL_SET_ERR_MSG_MOD(extack, "Cannot set stream gate");
-		return err;
-	}
-
-	err = lan9645x_psfp_sf_set(p->lan9645x, sfi_ix, &sf);
-	if (err < 0) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "Cannot set stream filter");
-		return err;
-	}
 
 	err = vcap_rule_add_action_bit(vrule, VCAP_AF_SGID_ENA, VCAP_BIT_1);
 	err |= vcap_rule_add_action_u32(vrule, VCAP_AF_SGID_VAL, sgi_ix);

@@ -460,6 +460,12 @@ struct lan9645x {
 	DECLARE_BITMAP(sfi_idx_mask, LAN9645X_PSFP_NUM_SFI);
 	DECLARE_BITMAP(sgi_idx_mask, LAN9645X_PSFP_NUM_SGI);
 	struct mutex qos_lock; /* Global QOS: dscp, qos policers */
+	/* Lock SFI/SGI allocation, and tables SG_ACCESS/SFID_ACCESS
+	 *
+	 * If this lock must be held at the same time as stats->hw_lock, then
+	 * you must first lock psfp_lock, then stats->hw_lock.
+	 * */
+	struct mutex psfp_lock;
 
 	/* TC chain_id to isdx management */
 	struct list_head link_isdx;
@@ -1096,14 +1102,13 @@ struct lan9645x_psfp_sg_cfg {
 	struct lan9645x_psfp_gce_cfg gce[LAN9645X_PSFP_NUM_GCE];
 };
 
-int lan9645x_sfi_get(struct lan9645x *lan9645x, u32 *sfi_ix);
 int lan9645x_sfi_put(struct lan9645x *lan9645x, u32 sfi_ix);
-int lan9645x_sgi_get(struct lan9645x *lan9645x, u32 *sgi_ix);
 int lan9645x_sgi_put(struct lan9645x *lan9645x, u32 sgi_ix);
-int lan9645x_psfp_sf_set(struct lan9645x *lan9645x, const u32 sfi_ix,
-			 const struct lan9645x_psfp_sf_cfg *const c);
+int lan9645x_psfp_tc_action_set(struct lan9645x *lan9645x,
+				struct lan9645x_psfp_sf_cfg *sf_cfg,
+				struct lan9645x_psfp_sg_cfg *sg_cfg,
+				struct netlink_ext_ack *extack,
+				u32 *sfi_ix, u32 *sgi_ix);
 
-int lan9645x_psfp_sg_set(struct lan9645x *lan9645x, const u32 sgi_ix,
-			 const struct lan9645x_psfp_sg_cfg *const sg);
 
 #endif /* __LAN9645X_MAIN_H__ */

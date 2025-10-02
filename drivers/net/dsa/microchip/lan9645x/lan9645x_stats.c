@@ -330,12 +330,13 @@ void lan9645x_stats_view_update(struct lan9645x *lan9645x,
 		mutex_unlock(&lan9645x->esdx_lock);
 		return;
 	case LAN9645X_STAT_SFID:
+		mutex_lock(&lan9645x->psfp_lock);
 		mutex_lock(&s->hw_lock);
-		/* TODO: Need sfid alloc lock to be able to limit updates to
-		 * used SFIDs */
-		for (idx = 0; idx < vstats->num_indexes; idx++)
+		for_each_set_bit_from(idx, lan9645x->sfi_idx_mask,
+				      LAN9645X_SFID_MAX)
 			__lan9645x_stats_view_idx_update(lan9645x, vtype, idx);
 		mutex_unlock(&s->hw_lock);
+		mutex_unlock(&lan9645x->psfp_lock);
 		return;
 	default:
 		return;

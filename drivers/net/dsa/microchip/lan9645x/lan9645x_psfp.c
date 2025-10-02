@@ -3,7 +3,7 @@
  */
 
 #include "lan9645x_main.h"
-#include "lan9645x_regs.h"
+#include "lan9645x_stats.h"
 
 /*
  * Per-Stream Filtering and Policing (PSFP) Overview
@@ -102,9 +102,11 @@ static inline int lan9645x_sfid_wait_for_completion(struct lan9645x *lan9645x)
 				  SFID_UPDATE_TIMEOUT_US);
 }
 
-int lan9645x_psfp_sf_set(struct lan9645x *lan9645x, const u32 sfi_ix,
-			 const struct lan9645x_psfp_sf_cfg *const c)
+static int lan9645x_psfp_sf_set(struct lan9645x *lan9645x, const u32 sfi_ix,
+				const struct lan9645x_psfp_sf_cfg *const c)
 {
+	lockdep_assert_held(&lan9645x->psfp_lock);
+
 	dev_dbg(lan9645x->dev, "sfi_ix %u boe %d bo %d fb %d ms %u\n",
 		sfi_ix,
 		c->block_oversize_ena,
@@ -133,6 +135,8 @@ static int lan9645x_psfp_sf_reset(struct lan9645x *lan9645x, const u32 sfi_ix)
 {
 	dev_dbg(lan9645x->dev, "sfi_ix %u\n", sfi_ix);
 
+	lockdep_assert_held(&lan9645x->psfp_lock);
+
 	/* Select the stream filter to configure and write zeroes */
 	lan_wr(ANA_SFIDTIDX_SFID_INDEX_SET(sfi_ix),
 	       lan9645x, ANA_SFIDTIDX);
@@ -160,8 +164,8 @@ static inline int lan9645x_sgid_wait_for_completion(struct lan9645x *lan9645x)
 				  SGID_UPDATE_TIMEOUT_US);
 }
 
-int lan9645x_psfp_sg_set(struct lan9645x *lan9645x, const u32 sgi_ix,
-			 const struct lan9645x_psfp_sg_cfg *const sg)
+static int lan9645x_psfp_sg_set(struct lan9645x *lan9645x, const u32 sgi_ix,
+				const struct lan9645x_psfp_sg_cfg *const sg)
 {
 	u32 relative_time_interval[LAN9645X_PSFP_NUM_GCE] = {0};
 	u32 accumulated_time_interval = 0;
@@ -169,6 +173,8 @@ int lan9645x_psfp_sg_set(struct lan9645x *lan9645x, const u32 sgi_ix,
 	ktime_t basetime;
 	int i, ret = 0;
 	u32 ipv = 0;
+
+	lockdep_assert_held(&lan9645x->psfp_lock);
 
 	dev_dbg(lan9645x->dev, "sgi_ix %u ipv %d bt %llu ct %u cte %u gl %u\n",
 		sgi_ix, sg->ipv, sg->basetime, sg->cycletime, sg->cycletimeext,
@@ -240,6 +246,8 @@ static int lan9645x_psfp_sg_reset(struct lan9645x *lan9645x, const u32 sgi_ix)
 {
 	int i;
 
+	lockdep_assert_held(&lan9645x->psfp_lock);
+
 	dev_dbg(lan9645x->dev, "sgi_ix %u\n", sgi_ix);
 
 	/* Select stream gate */
@@ -260,8 +268,10 @@ static int lan9645x_psfp_sg_reset(struct lan9645x *lan9645x, const u32 sgi_ix)
 	return 0;
 }
 
-int lan9645x_sfi_get(struct lan9645x *lan9645x, u32 *sfi_ix)
+static int lan9645x_sfi_get(struct lan9645x *lan9645x, u32 *sfi_ix)
 {
+	lockdep_assert_held(&lan9645x->psfp_lock);
+
 	u32 ix = find_first_zero_bit(lan9645x->sfi_idx_mask,
 				     LAN9645X_PSFP_NUM_SFI);
 	if (ix == LAN9645X_PSFP_NUM_SFI)
@@ -275,8 +285,10 @@ int lan9645x_sfi_get(struct lan9645x *lan9645x, u32 *sfi_ix)
 	return 0;
 }
 
-int lan9645x_sfi_put(struct lan9645x *lan9645x, u32 sfi_ix)
+static int __lan9645x_sfi_put(struct lan9645x *lan9645x, u32 sfi_ix)
 {
+	lockdep_assert_held(&lan9645x->psfp_lock);
+
 	dev_dbg(lan9645x->dev, "release sfi_ix %u\n", sfi_ix);
 
 	if (sfi_ix >= LAN9645X_PSFP_NUM_SFI)
@@ -289,8 +301,22 @@ int lan9645x_sfi_put(struct lan9645x *lan9645x, u32 sfi_ix)
 	return lan9645x_psfp_sf_reset(lan9645x, sfi_ix);
 }
 
-int lan9645x_sgi_get(struct lan9645x *lan9645x, u32 *sgi_ix)
+int lan9645x_sfi_put(struct lan9645x *lan9645x, u32 sfi_ix)
 {
+	int err;
+
+	mutex_lock(&lan9645x->psfp_lock);
+	lan9645x_stats_clear_counters(lan9645x, LAN9645X_STAT_SFID, sfi_ix);
+	err = __lan9645x_sfi_put(lan9645x, sfi_ix);
+	mutex_unlock(&lan9645x->psfp_lock);
+
+	return err;
+}
+
+static int lan9645x_sgi_get(struct lan9645x *lan9645x, u32 *sgi_ix)
+{
+	lockdep_assert_held(&lan9645x->psfp_lock);
+
 	u32 ix = find_first_zero_bit(lan9645x->sgi_idx_mask,
 				      LAN9645X_PSFP_NUM_SGI);
 	if (ix == LAN9645X_PSFP_NUM_SGI)
@@ -304,8 +330,10 @@ int lan9645x_sgi_get(struct lan9645x *lan9645x, u32 *sgi_ix)
 	return 0;
 }
 
-int lan9645x_sgi_put(struct lan9645x *lan9645x, u32 sgi_ix)
+static int __lan9645x_sgi_put(struct lan9645x *lan9645x, u32 sgi_ix)
 {
+	lockdep_assert_held(&lan9645x->psfp_lock);
+
 	dev_dbg(lan9645x->dev, "release sgi_ix %u\n", sgi_ix);
 
 	if (sgi_ix >= LAN9645X_PSFP_NUM_SGI)
@@ -317,4 +345,60 @@ int lan9645x_sgi_put(struct lan9645x *lan9645x, u32 sgi_ix)
 	dev_dbg(lan9645x->dev, "Disable stream gate %d\n", sgi_ix);
 
 	return lan9645x_psfp_sg_reset(lan9645x, sgi_ix);
+}
+
+int lan9645x_sgi_put(struct lan9645x *lan9645x, u32 sgi_ix)
+{
+	int err;
+
+	mutex_lock(&lan9645x->psfp_lock);
+	err = __lan9645x_sgi_put(lan9645x, sgi_ix);
+	mutex_unlock(&lan9645x->psfp_lock);
+	return err;
+}
+
+int lan9645x_psfp_tc_action_set(struct lan9645x *lan9645x,
+				struct lan9645x_psfp_sf_cfg *sf_cfg,
+				struct lan9645x_psfp_sg_cfg *sg_cfg,
+				struct netlink_ext_ack *extack,
+				u32 *sfi_ix, u32 *sgi_ix)
+{
+	int err;
+
+	mutex_lock(&lan9645x->psfp_lock);
+
+	err = lan9645x_sfi_get(lan9645x, sfi_ix);
+	if (err < 0) {
+		NL_SET_ERR_MSG_MOD(extack, "Cannot reserve stream filter");
+		goto unlock;
+	}
+
+	err = lan9645x_sgi_get(lan9645x, sgi_ix);
+	if (err < 0) {
+		NL_SET_ERR_MSG_MOD(extack, "Cannot reserve stream gate");
+		goto sfi_free;
+	}
+
+	err = lan9645x_psfp_sg_set(lan9645x, *sgi_ix, sg_cfg);
+	if (err) {
+		NL_SET_ERR_MSG_MOD(extack, "Cannot set stream gate");
+		goto sgi_free;
+	}
+
+	err = lan9645x_psfp_sf_set(lan9645x, *sfi_ix, sf_cfg);
+	if (err < 0) {
+		NL_SET_ERR_MSG_MOD(extack, "Cannot set stream filter");
+		goto sgi_free;
+	}
+
+	mutex_unlock(&lan9645x->psfp_lock);
+	return 0;
+
+sgi_free:
+	__lan9645x_sgi_put(lan9645x, *sgi_ix);
+sfi_free:
+	__lan9645x_sfi_put(lan9645x, *sfi_ix);
+unlock:
+	mutex_unlock(&lan9645x->psfp_lock);
+	return err;
 }
