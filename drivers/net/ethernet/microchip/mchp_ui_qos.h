@@ -117,6 +117,8 @@ enum mchp_frer_genl {
 	MCHP_FRER_GENL_IFLOW_CFG_GET,
 	MCHP_FRER_GENL_VLAN_CFG_SET,
 	MCHP_FRER_GENL_VLAN_CFG_GET,
+	MCHP_FRER_GENL_ISDX_ALLOC,
+	MCHP_FRER_GENL_ISDX_FREE,
 };
 
 #define MCHP_FRER_MAX_PORTS     2 /* Max # of ports for split and mstreams */

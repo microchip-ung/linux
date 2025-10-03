@@ -237,6 +237,22 @@ int lan9645x_frer_ms_alloc(struct lan9645x_nl_frer *frer,
 	return 0;
 }
 
+int lan9645x_frer_isdx_alloc(struct lan9645x_nl_frer *frer)
+{
+	struct lan9645x *lan9645x = frer->lan9645x;
+
+	return lan9645x_stream_isdx_alloc(lan9645x);
+}
+
+int lan9645x_frer_isdx_free(struct lan9645x_nl_frer *frer, u32 isdx)
+{
+	struct lan9645x *lan9645x = frer->lan9645x;
+
+	lan9645x_stream_isdx_free(lan9645x, isdx);
+
+	return 0;
+}
+
 static int lan9645x_frer_ms_cfg_update(struct lan9645x_nl_frer *frer, const u16 ms_id)
 {
 	struct mchp_frer_stream_cfg *c = &frer->ms_cfg[ms_id];
