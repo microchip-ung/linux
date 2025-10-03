@@ -181,11 +181,14 @@ static int get_port_mask(struct net_device *dev1, struct net_device *dev2,
 {
 	struct lan9645x_port *p1, *p2 = NULL;
 
-	p1 = lan9645x_port_from_netdev(dev1);
-	if (IS_ERR_OR_NULL(p1))
-		return -ENOTSUPP;
+	*port_mask = 0;
 
-	*port_mask |= BIT(p1->chip_port);
+	if (dev1) {
+		p1 = lan9645x_port_from_netdev(dev1);
+		if (IS_ERR_OR_NULL(p1))
+			return -ENOTSUPP;
+		*port_mask |= BIT(p1->chip_port);
+	}
 
 	if (dev2) {
 		p2 = lan9645x_port_from_netdev(dev2);
