@@ -626,11 +626,13 @@ static inline struct lan9645x_port *lan9645x_to_port(struct lan9645x *lan9645x,
 static inline struct net_device *lan9645x_port_to_ndev(struct lan9645x_port *p)
 {
 	struct lan9645x *lan9645x = p->lan9645x;
+	struct dsa_port *dp;
 
-	if (!dsa_is_user_port(lan9645x->ds, p->chip_port))
-		return NULL;
+	dp = dsa_to_port(lan9645x->ds, p->chip_port);
+	if (dp && dp->type == DSA_PORT_TYPE_USER)
+		return dp->user;
 
-	return dsa_to_port(lan9645x->ds, p->chip_port)->user;
+	return NULL;
 }
 
 static inline struct net_device *
