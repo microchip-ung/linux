@@ -3157,14 +3157,13 @@ static int lan966x_frer_init(struct lan966x *lan966x)
 
 	/* Get default mstream register content */
 	val = lan_rd(lan966x, QSYS_FRER_CFG_MBM(0));
-	val = lan_rd(lan966x, QSYS_FRER_CFG_CMP(0));
-	ms_def_cfg.enable = QSYS_FRER_CFG_CMP_ENABLE_GET(val);
-	ms_def_cfg.alg = QSYS_FRER_CFG_CMP_VECTOR_ALGORITHM_GET(val) ?
+	ms_def_cfg.enable = QSYS_FRER_CFG_MBM_ENABLE_GET(val);
+	ms_def_cfg.alg = QSYS_FRER_CFG_MBM_VECTOR_ALGORITHM_GET(val) ?
 		MCHP_FRER_REC_ALG_VECTOR :
 		MCHP_FRER_REC_ALG_MATCH;
-	ms_def_cfg.hlen = QSYS_FRER_CFG_CMP_HISTORY_LENGTH_GET(val) + 1;
-	ms_def_cfg.reset_time = QSYS_FRER_CFG_CMP_RESET_TICKS_GET(val);
-	ms_def_cfg.take_no_seq = QSYS_FRER_CFG_CMP_TAKE_NO_SEQUENCE_GET(val);
+	ms_def_cfg.hlen = QSYS_FRER_CFG_MBM_HISTORY_LENGTH_GET(val) + 1;
+	ms_def_cfg.reset_time = QSYS_FRER_CFG_MBM_RESET_TICKS_GET(val);
+	ms_def_cfg.take_no_seq = QSYS_FRER_CFG_MBM_TAKE_NO_SEQUENCE_GET(val);
 	ms_def_cfg.cs_id = 0;
 
 	/* Sync configurstion with default values */
