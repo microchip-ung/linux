@@ -142,7 +142,6 @@ int zl3073x_write_hwreg_seq(struct zl3073x_dev *zldev,
  * Misc operations
  *****************/
 
-int zl3073x_ref_freq_factorize(u32 freq, u16 *base, u16 *mult);
 int zl3073x_ref_phase_offsets_update(struct zl3073x_dev *zldev, int channel);
 
 static inline bool

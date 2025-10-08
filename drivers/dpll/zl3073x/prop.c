@@ -89,11 +89,12 @@ zl3073x_prop_pin_package_label_set(struct zl3073x_dev *zldev,
 	bool is_diff;
 
 	if (dir == DPLL_PIN_DIRECTION_INPUT) {
-		u8 ref;
+		u8 ref_id = zl3073x_input_pin_ref_get(id);
+		const struct zl3073x_ref *ref;
 
 		prefix = "REF";
-		ref = zl3073x_input_pin_ref_get(id);
-		is_diff = zl3073x_dev_ref_is_diff(zldev, ref);
+		ref = zl3073x_ref_state_get(zldev, ref_id);
+		is_diff = zl3073x_ref_is_diff(ref);
 	} else {
 		u8 out;
 

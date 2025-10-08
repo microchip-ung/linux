@@ -4,6 +4,7 @@
 #define _ZL3073X_REF_H
 
 #include <linux/bitfield.h>
+#include <linux/math64.h>
 #include <linux/types.h>
 
 #include "regs.h"
@@ -17,13 +18,34 @@ struct zl3073x_dev;
  */
 struct zl3073x_ref {
 	s64	ffo;
+	u64	phase_comp;
+	u32	esync_n_div;
+	u16	freq_base;
+	u16	freq_mult;
+	u16	freq_ratio_m;
+	u16	freq_ratio_n;
 	u8	config;
+	u8	sync_ctrl;
+	u8	mon_status;
 };
 
 int zl3073x_ref_state_fetch(struct zl3073x_dev *zldev, u8 index);
 
 const struct zl3073x_ref *zl3073x_ref_state_get(struct zl3073x_dev *zldev,
 						u8 index);
+
+int zl3073x_ref_state_set(struct zl3073x_dev *zldev, u8 index,
+			  const struct zl3073x_ref *ref);
+
+int zl3073x_ref_freq_factorize(u32 freq, u16 *base, u16 *mult);
+
+static inline bool
+zl3073x_ref_is_status_ok(struct zl3073x_dev *zldev, u8 index)
+{
+	const struct zl3073x_ref *ref = zl3073x_ref_state_get(zldev, index);
+
+	return ref->mon_status == ZL_REF_MON_STATUS_OK;
+}
 
 /**
  * zl3073x_ref_is_diff - check if the given input reference is differential
@@ -47,6 +69,29 @@ static inline bool
 zl3073x_ref_is_enabled(const struct zl3073x_ref *ref)
 {
 	return !!FIELD_GET(ZL_REF_CONFIG_ENABLE, ref->config);
+}
+
+static inline u32
+zl3073x_ref_freq_get(const struct zl3073x_ref *ref)
+{
+	return mul_u64_u32_div(ref->freq_base * ref->freq_mult,
+			       ref->freq_ratio_m, ref->freq_ratio_n);
+}
+
+static inline int
+zl3073x_ref_freq_set(struct zl3073x_ref *ref, u32 freq)
+{
+	u16 base, mult;
+	int rc;
+
+	rc = zl3073x_ref_freq_factorize(freq, &base, &mult);
+	if (rc)
+		return rc;
+
+	ref->freq_base = base;
+	ref->freq_mult = mult;
+
+	return 0;
 }
 
 #endif /* _ZL3073X_REF_H */

@@ -47,6 +47,34 @@ int zl3073x_ref_state_fetch(struct zl3073x_dev *zldev, u8 index)
 	if (rc)
 		return rc;
 
+	/* Read frequency related registers */
+	rc = zl3073x_read_u16(zldev, ZL_REG_REF_FREQ_BASE, &ref->freq_base);
+	if (rc)
+		return rc;
+	rc = zl3073x_read_u16(zldev, ZL_REG_REF_FREQ_MULT, &ref->freq_mult);
+	if (rc)
+		return rc;
+	rc = zl3073x_read_u16(zldev, ZL_REG_REF_RATIO_M, &ref->freq_ratio_m);
+	if (rc)
+		return rc;
+	rc = zl3073x_read_u16(zldev, ZL_REG_REF_RATIO_N, &ref->freq_ratio_n);
+	if (rc)
+		return rc;
+
+	/* Read eSync and N-div rated registers */
+	rc = zl3073x_read_u32(zldev, ZL_REG_REF_ESYNC_DIV, &ref->esync_n_div);
+	if (rc)
+		return rc;
+	rc = zl3073x_read_u8(zldev, ZL_REG_REF_SYNC_CTRL, &ref->sync_ctrl);
+	if (rc)
+		return rc;
+
+	/* Read phase compensation register */
+	rc = zl3073x_read_u48(zldev, ZL_REG_REF_PHASE_OFFSET_COMP,
+			      &ref->phase_comp);
+	if (rc)
+		return rc;
+
 	dev_dbg(zldev->dev, "REF%u is %s and configured as %s\n", index,
 		str_enabled_disabled(zl3073x_ref_is_enabled(ref)),
 		zl3073x_ref_is_diff(ref) ? "differential" : "single-ended");
@@ -58,4 +86,108 @@ const struct zl3073x_ref *
 zl3073x_ref_state_get(struct zl3073x_dev *zldev, u8 index)
 {
 	return index < ZL3073X_NUM_REFS ? &zldev->ref[index] : NULL;
+}
+
+/**
+ * zl3073x_ref_freq_factorize - factorize given frequency
+ * @freq: input frequency
+ * @base: base frequency
+ * @mult: multiplier
+ *
+ * Checks if the given frequency can be factorized using one of the
+ * supported base frequencies. If so the base frequency and multiplier
+ * are stored into appropriate parameters if they are not NULL.
+ *
+ * Return: 0 on success, -EINVAL if the frequency cannot be factorized
+ */
+int
+zl3073x_ref_freq_factorize(u32 freq, u16 *base, u16 *mult)
+{
+	static const u16 base_freqs[] = {
+		1, 2, 4, 5, 8, 10, 16, 20, 25, 32, 40, 50, 64, 80, 100, 125,
+		128, 160, 200, 250, 256, 320, 400, 500, 625, 640, 800, 1000,
+		1250, 1280, 1600, 2000, 2500, 3125, 3200, 4000, 5000, 6250,
+		6400, 8000, 10000, 12500, 15625, 16000, 20000, 25000, 31250,
+		32000, 40000, 50000, 62500,
+	};
+	u32 div;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(base_freqs); i++) {
+		div = freq / base_freqs[i];
+
+		if (div <= U16_MAX && (freq % base_freqs[i]) == 0) {
+			if (base)
+				*base = base_freqs[i];
+			if (mult)
+				*mult = div;
+
+			return 0;
+		}
+	}
+
+	return -EINVAL;
+}
+
+#define ZL3073X_REF_SYNC_ONE(_zldev, _dref, _sref, _type, _field, _reg)	\
+	((_dref)->_field != (_sref)->_field ?				\
+	 zl3073x_write_##_type(_zldev, _reg, (_sref)->_field) : 0)
+
+int zl3073x_ref_state_set(struct zl3073x_dev *zldev, u8 index,
+			  const struct zl3073x_ref *ref)
+{
+	struct zl3073x_ref *dref = &zldev->ref[index];
+	int rc;
+
+	if (index > ARRAY_SIZE(zldev->ref))
+		return -EINVAL;
+
+	/* Quick check for changes */
+	if (!memcmp(dref, ref, sizeof(*dref)))
+		return 0;
+
+	WARN_ON(dref->config != ref->config);
+
+	guard(mutex)(&zldev->multiop_lock);
+
+	/* Read reference configuration into mailbox */
+	rc = zl3073x_mb_op(zldev, ZL_REG_REF_MB_SEM, ZL_REF_MB_SEM_RD,
+			   ZL_REG_REF_MB_MASK, BIT(index));
+	if (rc)
+		return rc;
+
+	/* Update mailbox with changed values */
+	rc = ZL3073X_REF_SYNC_ONE(zldev, dref, ref, u16, freq_base,
+				  ZL_REG_REF_FREQ_BASE);
+	if (!rc)
+		rc = ZL3073X_REF_SYNC_ONE(zldev, dref, ref, u16, freq_mult,
+					  ZL_REG_REF_FREQ_MULT);
+	if (!rc)
+		rc = ZL3073X_REF_SYNC_ONE(zldev, dref, ref, u16, freq_ratio_m,
+					  ZL_REG_REF_RATIO_M);
+	if (!rc)
+		rc = ZL3073X_REF_SYNC_ONE(zldev, dref, ref, u16, freq_ratio_n,
+					  ZL_REG_REF_RATIO_N);
+	if (!rc)
+		rc = ZL3073X_REF_SYNC_ONE(zldev, dref, ref, u32, esync_n_div,
+					  ZL_REG_REF_ESYNC_DIV);
+	if (!rc)
+		rc = ZL3073X_REF_SYNC_ONE(zldev, dref, ref, u8, sync_ctrl,
+					  ZL_REG_REF_SYNC_CTRL);
+	if (!rc)
+		rc = ZL3073X_REF_SYNC_ONE(zldev, dref, ref, u48, phase_comp,
+					  ZL_REG_REF_PHASE_OFFSET_COMP);
+	if (rc)
+		return rc;
+
+	/* Commit reference configuration */
+	rc = zl3073x_mb_op(zldev, ZL_REG_REF_MB_SEM, ZL_REF_MB_SEM_WR,
+			   ZL_REG_REF_MB_MASK, BIT(index));
+	if (rc)
+		return rc;
+
+	/* After successful commit store new state */
+	memcpy(dref, ref, sizeof(*dref));
+
+	return 0;
 }
