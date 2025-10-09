@@ -22,6 +22,7 @@
 #include <net/devlink.h>
 #include <net/switchdev.h>
 #include <net/pkt_cls.h>
+#include <linux/dcbnl.h>
 
 struct dsa_8021q_context;
 struct tc_action;
