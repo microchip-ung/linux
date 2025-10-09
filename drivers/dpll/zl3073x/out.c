@@ -50,6 +50,46 @@ int zl3073x_out_state_fetch(struct zl3073x_dev *zldev, u8 index)
 	dev_dbg(zldev->dev, "OUT%u has signal format 0x%02x\n", index,
 		zl3073x_out_signal_format_get(out));
 
+	/* Read output divisor */
+	rc = zl3073x_read_u32(zldev, ZL_REG_OUTPUT_DIV, &out->div);
+	if (rc)
+		return rc;
+
+	if (!out->div) {
+		dev_err(zldev->dev, "Zero divisor for OUT%u got from device\n",
+                        index);
+                return -EINVAL;
+	}
+
+	dev_dbg(zldev->dev, "OUT%u divisor: %u\n", index, out->div);
+
+	/* Read output width */
+	rc = zl3073x_read_u32(zldev, ZL_REG_OUTPUT_WIDTH, &out->width);
+	if (rc)
+		return rc;
+
+	rc = zl3073x_read_u32(zldev, ZL_REG_OUTPUT_ESYNC_PERIOD,
+			      &out->esync_n_period);
+	if (rc)
+		return rc;
+
+	if (!out->esync_n_period) {
+		dev_err(zldev->dev,
+			"Zero esync divisor for OUT%u got from device\n",
+			index);
+		return -EINVAL;
+	}
+
+	rc = zl3073x_read_u32(zldev, ZL_REG_OUTPUT_ESYNC_WIDTH,
+			      &out->esync_n_width);
+	if (rc)
+		return rc;
+
+	rc = zl3073x_read_u32(zldev, ZL_REG_OUTPUT_PHASE_COMP,
+			      &out->phase_comp);
+	if (rc)
+		return rc;
+
 	return rc;
 }
 
@@ -57,4 +97,62 @@ const struct zl3073x_out *zl3073x_out_state_get(struct zl3073x_dev *zldev,
 						u8 index)
 {
 	return index < ZL3073X_NUM_OUTS ? &zldev->out[index] : NULL;
+}
+
+#define ZL3073X_OUT_SYNC_ONE(_dev, _dst, _src, _type, _field, _reg)	\
+	((_dst)->_field != (_src)->_field ?				\
+	 zl3073x_write_##_type(_dev, _reg, (_src)->_field) : 0)
+
+int zl3073x_out_state_set(struct zl3073x_dev *zldev, u8 index,
+			  const struct zl3073x_out *out)
+{
+	struct zl3073x_out *dout = &zldev->out[index];
+	int rc;
+
+	if (index >= ARRAY_SIZE(zldev->out))
+		return -EINVAL;
+
+	/* Quick check for changes */
+	if (!memcmp(dout, out, sizeof(*dout)))
+		return 0;
+
+	guard(mutex)(&zldev->multiop_lock);
+
+	/* Read output configuration into mailbox */
+	rc = zl3073x_mb_op(zldev, ZL_REG_OUTPUT_MB_SEM, ZL_OUTPUT_MB_SEM_RD,
+			   ZL_REG_OUTPUT_MB_MASK, BIT(index));
+	if (rc)
+		return rc;
+
+	/* Update mailbox with changed values */
+	rc = ZL3073X_OUT_SYNC_ONE(zldev, dout, out, u32, div,
+				  ZL_REG_OUTPUT_DIV);
+	if (!rc)
+		rc = ZL3073X_OUT_SYNC_ONE(zldev, dout, out, u32, width,
+					  ZL_REG_OUTPUT_WIDTH);
+	if (!rc)
+		rc = ZL3073X_OUT_SYNC_ONE(zldev, dout, out, u32, esync_n_period,
+					  ZL_REG_OUTPUT_ESYNC_PERIOD);
+	if (!rc)
+		rc = ZL3073X_OUT_SYNC_ONE(zldev, dout, out, u32, esync_n_width,
+					  ZL_REG_OUTPUT_ESYNC_WIDTH);
+	if (!rc)
+		rc = ZL3073X_OUT_SYNC_ONE(zldev, dout, out, u8, mode,
+					  ZL_REG_OUTPUT_MODE);
+	if (!rc)
+		rc = ZL3073X_OUT_SYNC_ONE(zldev, dout, out, u32, phase_comp,
+					  ZL_REG_OUTPUT_PHASE_COMP);
+	if (rc)
+		return rc;
+
+	/* Commit output configuration */
+	rc = zl3073x_mb_op(zldev, ZL_REG_OUTPUT_MB_SEM, ZL_OUTPUT_MB_SEM_WR,
+			   ZL_REG_OUTPUT_MB_MASK, BIT(index));
+	if (rc)
+		return rc;
+
+	/* After successful commit store new state */
+	memcpy(dout, out, sizeof(*dout));
+
+	return 0;
 }
