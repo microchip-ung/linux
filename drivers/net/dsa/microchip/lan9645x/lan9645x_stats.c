@@ -385,7 +385,7 @@ void lan9645x_stats_get_ethtool_stats(struct lan9645x *lan9645x, int port,
 	int cntr;
 	u64 *s;
 
-	lan9645x_stats_update(lan9645x);
+	lan9645x_stats_view_idx_update(lan9645x, LAN9645X_STAT_PORTS, port);
 
 	port_stats = lan9645x_get_vstats(lan9645x, LAN9645X_STAT_PORTS);
 
@@ -406,7 +406,7 @@ void lan9645x_stats_get_eth_mac_stats(struct lan9645x *lan9645x, int port,
 
 	dev_dbg(lan9645x->dev, "port=%d", port);
 
-	lan9645x_stats_update(lan9645x);
+	lan9645x_stats_view_idx_update(lan9645x, LAN9645X_STAT_PORTS, port);
 
 	mutex_lock(&lan9645x->stats->hw_lock);
 
@@ -480,7 +480,7 @@ void lan9645x_stats_get_rmon_stats(struct lan9645x *lan9645x, int port,
 
 	dev_dbg(lan9645x->dev, "port=%d", port);
 
-	lan9645x_stats_update(lan9645x);
+	lan9645x_stats_view_idx_update(lan9645x, LAN9645X_STAT_PORTS, port);
 
 	mutex_lock(&lan9645x->stats->hw_lock);
 
@@ -645,7 +645,7 @@ void lan9645x_stats_get_eth_phy_stats(struct lan9645x *lan9645x, int port,
 
 	dev_dbg(lan9645x->dev, "port=%d src=%d", port, phy_stats->src);
 
-	lan9645x_stats_update(lan9645x);
+	lan9645x_stats_view_idx_update(lan9645x, LAN9645X_STAT_PORTS, port);
 
 	mutex_lock(&lan9645x->stats->hw_lock);
 
@@ -672,7 +672,7 @@ void lan9645x_stats_get_eth_ctrl_stats(struct lan9645x *lan9645x, int port,
 
 	dev_dbg(lan9645x->dev, "port=%d src=%d", port, ctrl_stats->src);
 
-	lan9645x_stats_update(lan9645x);
+	lan9645x_stats_view_idx_update(lan9645x, LAN9645X_STAT_PORTS, port);
 
 	mutex_lock(&lan9645x->stats->hw_lock);
 
@@ -699,7 +699,7 @@ void lan9645x_stats_get_pause_stats(struct lan9645x *lan9645x, int port,
 
 	dev_dbg(lan9645x->dev, "port=%d src=%d", port, ps->src);
 
-	lan9645x_stats_update(lan9645x);
+	lan9645x_stats_view_idx_update(lan9645x, LAN9645X_STAT_PORTS, port);
 
 	mutex_lock(&lan9645x->stats->hw_lock);
 
@@ -724,7 +724,7 @@ void lan9645x_stats_get_mm_stats(struct lan9645x *lan9645x, int port,
 {
 	u64 *port_cnt = STAT_COUNTERS(lan9645x, LAN9645X_STAT_PORTS, port);
 
-	lan9645x_stats_update(lan9645x);
+	lan9645x_stats_view_idx_update(lan9645x, LAN9645X_STAT_PORTS, port);
 
 	dev_dbg(lan9645x->dev, "port=%d", port);
 
