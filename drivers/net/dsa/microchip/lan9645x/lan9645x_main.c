@@ -129,6 +129,7 @@ static void lan9645x_teardown(struct dsa_switch *ds)
 	lan9645x_bum_deinit(lan9645x);
 	mutex_destroy(&lan9645x->link_isdx_lock);
 	mutex_destroy(&lan9645x->psfp_lock);
+	mutex_destroy(&lan9645x->esdx_lock);
 }
 
 static void lan9645x_port_phylink_get_caps(struct dsa_switch *ds, int port,
@@ -560,6 +561,7 @@ static int lan9645x_setup(struct dsa_switch *ds)
 	INIT_LIST_HEAD(&lan9645x->link_isdx);
 	mutex_init(&lan9645x->link_isdx_lock);
 	mutex_init(&lan9645x->psfp_lock);
+	mutex_init(&lan9645x->esdx_lock);
 	lan9645x_mac_init(lan9645x);
 	lan9645x_vlan_init(lan9645x);
 	err = lan9645x_qos_init(lan9645x);

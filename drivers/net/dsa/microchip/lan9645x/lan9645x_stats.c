@@ -322,6 +322,7 @@ void lan9645x_stats_view_update(struct lan9645x *lan9645x,
 	case LAN9645X_STAT_ESDX:
 		mutex_lock(&lan9645x->esdx_lock);
 		mutex_lock(&s->hw_lock);
+		idx = 1;
 		for_each_set_bit_from(idx, lan9645x->esdx_mask,
 				      LAN9645X_ESDX_MAX) {
 			__lan9645x_stats_view_idx_update(lan9645x, vtype, idx);
