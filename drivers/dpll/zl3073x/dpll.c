@@ -50,6 +50,7 @@ struct zl3073x_dpll_pin {
 	bool			selectable;
 	bool			esync_control;
 	enum dpll_pin_state	pin_state;
+	s32			phase_gran;
 	s64			phase_offset;
 	s64			freq_offset;
 };
@@ -1043,23 +1044,14 @@ zl3073x_dpll_output_pin_phase_adjust_get(const struct dpll_pin *dpll_pin,
 	struct zl3073x_dev *zldev = zldpll->dev;
 	struct zl3073x_dpll_pin *pin = pin_priv;
 	const struct zl3073x_out *out;
-	u8 out_id, synth;
-	u32 synth_freq;
-	s32 phase_comp;
+	u8 out_id;
 
 	out_id = zl3073x_output_pin_out_get(pin->id);
 	out = zl3073x_out_state_get(zldev, out_id);
 
-	synth = zl3073x_out_synth_get(out);
-	synth_freq = zl3073x_dev_synth_freq_get(zldev, synth);
-
-	/* Reverse two's complement negation applied during 'set' */
-	phase_comp = -out->phase_comp;
-
-	/* Register is two's complement negated value expressed in half synth
-	 * clock cycles.
-	 */
-	*phase_adjust = phase_comp * (s32)div_u64(PSEC_PER_SEC, 2 * synth_freq);
+	/* Convert value to ps and reverse two's complement negation applied
+	 * during 'set' */
+	*phase_adjust = -out->phase_comp * pin->phase_gran;
 
 	return 0;
 }
@@ -1076,32 +1068,15 @@ zl3073x_dpll_output_pin_phase_adjust_set(const struct dpll_pin *dpll_pin,
 	struct zl3073x_dev *zldev = zldpll->dev;
 	struct zl3073x_dpll_pin *pin = pin_priv;
 	struct zl3073x_out out;
-	int half_synth_cycle;
-	u8 out_id, synth;
-	u32 synth_freq;
+	u8 out_id;
 
 	out_id = zl3073x_output_pin_out_get(pin->id);
 	out = *zl3073x_out_state_get(zldev, out_id);
 
-	synth = zl3073x_out_synth_get(&out);
-	synth_freq = zl3073x_dev_synth_freq_get(zldev, synth);
-
-	/* Value in register is expressed in half synth clock cycles so
-	 * the given phase adjustment a multiple of half synth clock.
-	 */
-	half_synth_cycle = (int)div_u64(PSEC_PER_SEC, 2 * synth_freq);
-
-	if ((phase_adjust % half_synth_cycle) != 0) {
-		NL_SET_ERR_MSG_FMT(extack,
-				   "Phase adjustment value has to be multiple of %d",
-				   half_synth_cycle);
-		return -EINVAL;
-	}
-
 	/* The value in the register is stored as two's complement negation
-	 * of requested value.
+	 * of requested value and expressed in half synth clock cycles.
 	 */
-	out.phase_comp = -phase_adjust / half_synth_cycle;
+	out.phase_comp = -phase_adjust / pin->phase_gran;
 
 	/* Update output configuration from mailbox */
 	return zl3073x_out_state_set(zldev, out_id, &out);
@@ -1380,9 +1355,10 @@ zl3073x_dpll_pin_register(struct zl3073x_dpll_pin *pin, u32 index)
 	if (IS_ERR(props))
 		return PTR_ERR(props);
 
-	/* Save package label & esync capability */
+	/* Save package label, esync capability and phase adjust granularity */
 	strscpy(pin->label, props->package_label);
 	pin->esync_control = props->esync_control;
+	pin->phase_gran = props->dpll_props.phase_gran;
 
 	if (zl3073x_dpll_is_input_pin(pin)) {
 		rc = zl3073x_dpll_ref_prio_get(pin, &pin->prio);
