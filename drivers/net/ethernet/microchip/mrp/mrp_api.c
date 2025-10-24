@@ -541,6 +541,15 @@ int mrp_deinit(struct mrp_control *mrp)
 	return 0;
 }
 
+static void *mrp_port_priv_from_netdev(struct mrp_control *mrp_ctrl,
+				       struct net_device *dev)
+{
+	if (!mrp_ctrl->ops->mrp_port_priv_from_netdev)
+		return netdev_priv(dev);
+
+	return mrp_ctrl->ops->mrp_port_priv_from_netdev(dev);
+}
+
 struct mrp_port *mrp_add_port(struct mrp_control *mrp_ctrl,
 			      const struct switchdev_obj_mrp *mrp,
 			      struct net_device *dev)
@@ -562,7 +571,7 @@ struct mrp_port *mrp_add_port(struct mrp_control *mrp_ctrl,
 	if (!mrp_port)
 		goto out;
 
-	mrp_port->priv = netdev_priv(dev);
+	mrp_port->priv = mrp_port_priv_from_netdev(mrp_ctrl, dev);
 	mrp_port->dev = dev;
 	mrp_port->mrp_inst = mrp_inst;
 	mrp_port->ring_intr_status = MRP_INTERRUPT_STATUS_NONE;
@@ -630,7 +639,7 @@ struct mrp_port *mrp_add_in_port(struct mrp_control *mrp_ctrl,
 
 	mrp_inst->in_id = mrp->in_id;
 
-	mrp_port->priv = netdev_priv(dev);
+	mrp_port->priv = mrp_port_priv_from_netdev(mrp_ctrl, dev);
 	mrp_port->dev = dev;
 	mrp_port->mrp_inst = mrp_inst;
 	mrp_port->in_intr_status = MRP_INTERRUPT_STATUS_NONE;

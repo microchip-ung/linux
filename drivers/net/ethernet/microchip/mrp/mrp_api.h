@@ -88,6 +88,7 @@ struct mrp_port {
 };
 
 struct mrp_operations {
+	void* (*mrp_port_priv_from_netdev)(struct net_device *dev);
 	int (*mrp_port_init)(struct mrp_port *mrp_port, u16 prio);
 	int (*mrp_port_uninit)(struct mrp_port *mrp_port);
 	int (*mrp_port_update_mac)(struct mrp_port *mrp_port);
