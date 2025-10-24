@@ -450,7 +450,7 @@ void lan9645x_phylink_port_down(struct lan9645x *lan9645x, int port)
 		lan9645x, DEV_CLOCK_CFG(p->chip_port));
 
 	/* 13: Clear flushing */
-	lan_rmw(QSYS_SW_PORT_MODE_AGING_MODE_SET(2),
+	lan_rmw(QSYS_SW_PORT_MODE_AGING_MODE_SET(1),
 		QSYS_SW_PORT_MODE_AGING_MODE,
 		lan9645x, QSYS_SW_PORT_MODE(p->chip_port));
 }
