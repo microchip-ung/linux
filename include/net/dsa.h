@@ -1234,6 +1234,8 @@ struct dsa_switch_ops {
 	/*
 	 * MRP integration
 	 */
+	void	(*port_mrp_update_br_mac)(struct dsa_switch *ds, int port,
+					  const unsigned char *addr);
 	int	(*port_mrp_add)(struct dsa_switch *ds, int port,
 				const struct switchdev_obj_mrp *mrp);
 	int	(*port_mrp_del)(struct dsa_switch *ds, int port,
@@ -1242,6 +1244,23 @@ struct dsa_switch_ops {
 					  const struct switchdev_obj_ring_role_mrp *mrp);
 	int	(*port_mrp_del_ring_role)(struct dsa_switch *ds, int port,
 					  const struct switchdev_obj_ring_role_mrp *mrp);
+	int	(*port_mrp_role)(struct dsa_switch *ds, int port, u8 mrp_port_role);
+	int	(*port_mrp_add_ring_test)(struct dsa_switch *ds, int port,
+					  const struct switchdev_obj_ring_test_mrp *mrp);
+	int	(*port_mrp_del_ring_test)(struct dsa_switch *ds, int port,
+					  const struct switchdev_obj_ring_test_mrp *mrp);
+	int	(*port_mrp_add_ring_state)(struct dsa_switch *ds, int port,
+					   const struct switchdev_obj_ring_state_mrp *mrp);
+	int	(*port_mrp_add_in_ring_test)(struct dsa_switch *ds, int port,
+					     const struct switchdev_obj_in_test_mrp *mrp);
+	int	(*port_mrp_del_in_ring_test)(struct dsa_switch *ds, int port,
+					     const struct switchdev_obj_in_test_mrp *mrp);
+	int	(*port_mrp_add_in_ring_role)(struct dsa_switch *ds, int port,
+					     const struct switchdev_obj_in_role_mrp *mrp);
+	int	(*port_mrp_del_in_ring_role)(struct dsa_switch *ds, int port,
+					     const struct switchdev_obj_in_role_mrp *mrp);
+	int	(*port_mrp_add_in_ring_state)(struct dsa_switch *ds, int port,
+					      const struct switchdev_obj_in_state_mrp *mrp);
 
 	/*
 	 * tag_8021q operations
