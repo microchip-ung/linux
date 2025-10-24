@@ -663,6 +663,12 @@ static int dsa_user_port_attr_set(struct net_device *dev, const void *ctx,
 
 		ret = dsa_port_mrouter(dp, attr->u.mrouter);
 		break;
+	case SWITCHDEV_ATTR_ID_MRP_PORT_ROLE:
+		if (!dsa_port_offloads_bridge_port(dp, attr->orig_dev))
+			return -EOPNOTSUPP;
+
+		ret = dsa_port_mrp_role(dp, attr->u.mrp_port_role);
+		break;
 	default:
 		ret = -EOPNOTSUPP;
 		break;
@@ -796,6 +802,41 @@ static int dsa_user_port_obj_add(struct net_device *dev, const void *ctx,
 		err = dsa_port_mrp_add_ring_role(dp,
 						 SWITCHDEV_OBJ_RING_ROLE_MRP(obj));
 		break;
+	case SWITCHDEV_OBJ_ID_RING_TEST_MRP:
+		if (!dsa_port_offloads_bridge_dev(dp, obj->orig_dev))
+			return -EOPNOTSUPP;
+
+		err = dsa_port_mrp_add_ring_test(dp,
+						 SWITCHDEV_OBJ_RING_TEST_MRP(obj));
+		break;
+	case SWITCHDEV_OBJ_ID_RING_STATE_MRP:
+		if (!dsa_port_offloads_bridge_dev(dp, obj->orig_dev))
+			return -EOPNOTSUPP;
+
+		err = dsa_port_mrp_add_ring_state(dp,
+						  SWITCHDEV_OBJ_RING_STATE_MRP(obj));
+		break;
+	case SWITCHDEV_OBJ_ID_IN_TEST_MRP:
+		if (!dsa_port_offloads_bridge_dev(dp, obj->orig_dev))
+			return -EOPNOTSUPP;
+
+		err = dsa_port_mrp_add_in_ring_test(dp,
+						    SWITCHDEV_OBJ_IN_TEST_MRP(obj));
+		break;
+	case SWITCHDEV_OBJ_ID_IN_ROLE_MRP:
+		if (!dsa_port_offloads_bridge_dev(dp, obj->orig_dev))
+			return -EOPNOTSUPP;
+
+		err = dsa_port_mrp_add_in_ring_role(dp,
+						    SWITCHDEV_OBJ_IN_ROLE_MRP(obj));
+		break;
+	case SWITCHDEV_OBJ_ID_IN_STATE_MRP:
+		if (!dsa_port_offloads_bridge_dev(dp, obj->orig_dev))
+			return -EOPNOTSUPP;
+
+		err = dsa_port_mrp_add_in_ring_state(dp,
+						     SWITCHDEV_OBJ_IN_STATE_MRP(obj));
+		break;
 	case SWITCHDEV_OBJ_ID_NODE_HSR:
 		err = dsa_port_hsr_dan_node_add(dp, SWITCHDEV_OBJ_NODE_HSR(obj));
 		break;
@@ -879,6 +920,24 @@ static int dsa_user_port_obj_del(struct net_device *dev, const void *ctx,
 
 		err = dsa_port_mrp_del_ring_role(dp,
 						 SWITCHDEV_OBJ_RING_ROLE_MRP(obj));
+		break;
+	case SWITCHDEV_OBJ_ID_RING_TEST_MRP:
+		if (!dsa_port_offloads_bridge_dev(dp, obj->orig_dev))
+			return -EOPNOTSUPP;
+
+		err = dsa_port_mrp_del_ring_test(dp, SWITCHDEV_OBJ_RING_TEST_MRP(obj));
+		break;
+	case SWITCHDEV_OBJ_ID_IN_TEST_MRP:
+		if (!dsa_port_offloads_bridge_dev(dp, obj->orig_dev))
+			return -EOPNOTSUPP;
+
+		err = dsa_port_mrp_del_in_ring_test(dp, SWITCHDEV_OBJ_IN_TEST_MRP(obj));
+		break;
+	case SWITCHDEV_OBJ_ID_IN_ROLE_MRP:
+		if (!dsa_port_offloads_bridge_dev(dp, obj->orig_dev))
+			return -EOPNOTSUPP;
+
+		err = dsa_port_mrp_del_in_ring_role(dp, SWITCHDEV_OBJ_IN_ROLE_MRP(obj));
 		break;
 	case SWITCHDEV_OBJ_ID_NODE_HSR:
 		err = dsa_port_hsr_dan_node_del(dp, SWITCHDEV_OBJ_NODE_HSR(obj));
@@ -3706,6 +3765,25 @@ static int dsa_user_netdevice_event(struct notifier_block *nb,
 		}
 
 		dev_close_many(&close_list, true);
+
+		return NOTIFY_OK;
+	}
+	case NETDEV_CHANGEADDR: {
+		struct net_device *lower;
+		struct list_head *iter;
+		struct dsa_port *dp;
+
+		if (!netif_is_bridge_master(dev))
+			return NOTIFY_DONE;
+
+		netdev_for_each_lower_dev(dev, lower, iter) {
+			if (!dsa_user_dev_check(dev))
+				continue;
+
+			dp = dsa_user_to_port(dev);
+
+			dsa_port_mrp_update_mrp_br_mac(dp, dev->dev_addr);
+		}
 
 		return NOTIFY_OK;
 	}

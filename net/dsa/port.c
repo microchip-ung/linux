@@ -977,6 +977,27 @@ int dsa_port_mrouter(struct dsa_port *dp, bool enable)
 	return ds->ops->port_mrouter_set(ds, dp->index, enable);
 }
 
+int dsa_port_mrp_role(struct dsa_port *dp, u8 mrp_port_role)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_mrp_role)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_mrp_role(ds, dp->index, mrp_port_role);
+}
+
+void dsa_port_mrp_update_mrp_br_mac(struct dsa_port *dp,
+				    const unsigned char *br_addr)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_mrp_update_br_mac)
+		return;
+
+	return ds->ops->port_mrp_update_br_mac(ds, dp->index, br_addr);
+}
+
 int dsa_port_mtu_change(struct dsa_port *dp, int new_mtu)
 {
 	struct dsa_notifier_mtu_info info = {
@@ -1406,6 +1427,94 @@ int dsa_port_mrp_del_ring_role(const struct dsa_port *dp,
 		return -EOPNOTSUPP;
 
 	return ds->ops->port_mrp_del_ring_role(ds, dp->index, mrp);
+}
+
+int dsa_port_mrp_add_ring_test(const struct dsa_port *dp,
+			       const struct switchdev_obj_ring_test_mrp *mrp)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_mrp_add_ring_test)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_mrp_add_ring_test(ds, dp->index, mrp);
+}
+
+int dsa_port_mrp_del_ring_test(const struct dsa_port *dp,
+			       const struct switchdev_obj_ring_test_mrp *mrp)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_mrp_del_ring_test)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_mrp_del_ring_test(ds, dp->index, mrp);
+}
+
+int dsa_port_mrp_add_ring_state(const struct dsa_port *dp,
+				const struct switchdev_obj_ring_state_mrp *mrp)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_mrp_add_ring_state)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_mrp_add_ring_state(ds, dp->index, mrp);
+}
+
+int dsa_port_mrp_add_in_ring_test(const struct dsa_port *dp,
+				  const struct switchdev_obj_in_test_mrp *mrp)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_mrp_add_in_ring_test)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_mrp_add_in_ring_test(ds, dp->index, mrp);
+}
+
+int dsa_port_mrp_del_in_ring_test(const struct dsa_port *dp,
+				  const struct switchdev_obj_in_test_mrp *mrp)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_mrp_del_in_ring_test)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_mrp_del_in_ring_test(ds, dp->index, mrp);
+}
+
+int dsa_port_mrp_add_in_ring_role(const struct dsa_port *dp,
+				  const struct switchdev_obj_in_role_mrp *mrp)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_mrp_add_in_ring_role)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_mrp_add_in_ring_role(ds, dp->index, mrp);
+}
+
+int dsa_port_mrp_del_in_ring_role(const struct dsa_port *dp,
+				  const struct switchdev_obj_in_role_mrp *mrp)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_mrp_del_in_ring_role)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_mrp_del_in_ring_role(ds, dp->index, mrp);
+}
+
+int dsa_port_mrp_add_in_ring_state(const struct dsa_port *dp,
+				   const struct switchdev_obj_in_state_mrp *mrp)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_mrp_add_in_ring_state)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_mrp_add_in_ring_state(ds, dp->index, mrp);
 }
 
 int dsa_port_hsr_dan_node_add(const struct dsa_port *dp,
