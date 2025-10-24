@@ -539,6 +539,8 @@ struct lan9645x {
 	int num_port_dis;
 	bool dd_dis;
 	bool tsn_dis;
+
+	struct afi_control *afi_ctrl;
 };
 
 struct lan9645x_port_qos {
@@ -1213,5 +1215,9 @@ void lan9645x_bum_deinit(struct lan9645x *lan9645x);
 netdev_tx_t lan9645x_inj_xmit(struct lan9645x_port *port,
 			      struct sk_buff *skb,
 			      __be32 ifh[LAN9645X_IFH_LEN_U32]);
+
+/* Automatic Frame Injection, lan9645x_afi.c */
+int lan9645x_afi_init(struct lan9645x *lan9645x);
+void lan9645x_afi_deinit(struct lan9645x *lan9645x);
 
 #endif /* __LAN9645X_MAIN_H__ */
