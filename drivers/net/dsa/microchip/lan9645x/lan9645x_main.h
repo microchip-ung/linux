@@ -430,6 +430,9 @@ struct lan9645x {
 	enum dsa_tag_protocol tag_proto;
 	struct regmap *rmap[NUM_TARGETS];
 
+	/* Lock manual frame injection */
+	struct mutex tx_lock;
+
 	u32 host_flood_uc_mask;
 	u32 host_flood_mc_mask;
 
@@ -1205,5 +1208,10 @@ int lan9645x_fp_ethtool_set_mm(struct lan9645x *lan9645x, int port,
 /* BUM policers lan9645x_bum_.c */
 int lan9645x_bum_init(struct lan9645x *lan9645x);
 void lan9645x_bum_deinit(struct lan9645x *lan9645x);
+
+/* Manual frame injection lan9645x_manual_inj.c */
+netdev_tx_t lan9645x_inj_xmit(struct lan9645x_port *port,
+			      struct sk_buff *skb,
+			      __be32 ifh[LAN9645X_IFH_LEN_U32]);
 
 #endif /* __LAN9645X_MAIN_H__ */

@@ -574,6 +574,7 @@ static int lan9645x_setup(struct dsa_switch *ds)
 	mutex_init(&lan9645x->link_isdx_lock);
 	mutex_init(&lan9645x->psfp_lock);
 	mutex_init(&lan9645x->esdx_lock);
+	mutex_init(&lan9645x->tx_lock);
 	lan9645x_mac_init(lan9645x);
 	lan9645x_vlan_init(lan9645x);
 	err = lan9645x_qos_init(lan9645x);
@@ -635,14 +636,31 @@ static int lan9645x_setup(struct dsa_switch *ds)
 	/* Map the 8 CPU extraction queues to CPU port 9 (datasheet is wrong) */
 	lan_wr(0, lan9645x, QSYS_CPU_GROUP_MAP);
 
+	/* Configure second cpu port (chip_port 10) for manual frame injection.
+	 * The AFI can not inject frames via the NPI port, unless frame aging is
+	 * disabled on frontports, so we use manual injection for AFI frames.
+	 */
+
 	/* Set min-spacing of EOF to SOF on injected frames to 0, on cpu device
-	 * 0. This is required when injecting with IFH.
+	 * 1. This is required when injecting with IFH.
 	 * Default values emulates delay of std preamble/IFG setting on a front
 	 * port.
 	 */
 	lan_rmw(QS_INJ_CTRL_GAP_SIZE_SET(0),
 		QS_INJ_CTRL_GAP_SIZE,
-		lan9645x, QS_INJ_CTRL(0));
+		lan9645x, QS_INJ_CTRL(1));
+
+	/* Injection: Mode: manual injection | Byte_swap */
+	lan_wr(QS_INJ_GRP_CFG_MODE_SET(1) |
+	       QS_INJ_GRP_CFG_BYTE_SWAP_SET(1),
+	       lan9645x, QS_INJ_GRP_CFG(1));
+
+	lan_rmw(QS_INJ_CTRL_GAP_SIZE_SET(0),
+		QS_INJ_CTRL_GAP_SIZE,
+		lan9645x, QS_INJ_CTRL(1));
+
+	lan_wr(SYS_PORT_MODE_INCL_INJ_HDR_SET(1),
+	       lan9645x, SYS_PORT_MODE(CPU_PORT+1));
 
 	/* Setup flooding PGIDs for IPv4/IPv6 multicast. Control and dataplane
 	 * use the same masks. Control frames are redirected to CPU, and
