@@ -36,6 +36,7 @@ mchp-lan9645x-objs := lan9645x_main.o \
 	lan9645x_bum.o \
 	lan9645x_manual_inj.o \
 	lan9645x_afi.o \
+	lan9645x_mrp.o
 
 
 mchp-lan9645x-$(CONFIG_DEBUG_FS) += lan9645x_vcap_debugfs.o
@@ -43,3 +44,4 @@ mchp-lan9645x-$(CONFIG_DEBUG_FS) += lan9645x_vcap_debugfs.o
 # Provide include files
 ccflags-y += -I$(srctree)/drivers/net/ethernet/microchip/vcap
 ccflags-y += -I$(srctree)/drivers/net/ethernet/microchip/afi
+ccflags-y += -I$(srctree)/drivers/net/ethernet/microchip/mrp

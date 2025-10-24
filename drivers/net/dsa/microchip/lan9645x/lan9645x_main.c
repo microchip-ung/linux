@@ -11,6 +11,7 @@
 #include "lan9645x_netlink_qos.h"
 #include "lan9645x_netlink_frer.h"
 #include "lan9645x_netlink_fp.h"
+#include "lan9645x_mrp.h"
 
 static const char *lan9645x_resource_names[NUM_TARGETS] = {
 	[TARGET_ORG]          = "org",
@@ -115,6 +116,7 @@ static void lan9645x_teardown(struct dsa_switch *ds)
 
 	debugfs_remove_recursive(lan9645x->debugfs_root);
 	lan9645x_afi_deinit(lan9645x);
+	lan9645x_mrp_uninit(lan9645x);
 	lan9645x_netlink_fp_uninit();
 	lan9645x_netlink_frer_uninit();
 	lan9645x_netlink_qos_uninit();
@@ -236,6 +238,16 @@ static int lan9645x_get_max_mtu(struct dsa_switch *ds, int port)
 	}
 
 	return max_mtu;
+}
+
+static irqreturn_t lan9645x_ana_irq_handler(int virq, void *args)
+{
+	struct lan9645x *lan9645x = args;
+
+	lan9645x_mrp_ring_open(lan9645x);
+	lan9645x_mrp_in_open(lan9645x);
+
+	return IRQ_HANDLED;
 }
 
 static int lan9645x_port_init(struct lan9645x *lan9645x, int port)
@@ -596,6 +608,8 @@ static int lan9645x_setup(struct dsa_switch *ds)
 		return dev_err_probe(dev, err, "BUM init error");
 
 	lan9645x_afi_init(lan9645x);
+	lan9645x_mrp_init(lan9645x);
+
 	/* Link Aggregation Mode: NETDEV_LAG_HASH_L2 */
 	lan_wr(ANA_AGGR_CFG_AC_SMAC_ENA |
 	       ANA_AGGR_CFG_AC_DMAC_ENA,
@@ -788,6 +802,18 @@ static int lan9645x_setup(struct dsa_switch *ds)
 				return dev_err_probe(dev, err,
 						     "Unable to use ptp-ext irq");
 		}
+	}
+
+	lan9645x->ana_irq = platform_get_irq_byname(to_platform_device(lan9645x->dev),
+						    "lan9645x-ana");
+	if (lan9645x->ana_irq > 0) {
+		err = devm_request_threaded_irq(lan9645x->dev, lan9645x->ana_irq,
+						NULL, lan9645x_ana_irq_handler,
+						IRQF_ONESHOT, "lan9645x ana irq",
+						lan9645x);
+		if (err)
+			return dev_err_probe(lan9645x->dev, err,
+					     "Unable to use ana irq");
 	}
 
 	lan9645x_taprio_init(lan9645x);
@@ -1093,10 +1119,9 @@ static int lan9645x_port_bridge_join(struct dsa_switch *ds, int port,
 	return 0;
 }
 
-static void lan9645x_port_bridge_stp_state_set(struct dsa_switch *ds, int port,
-					       u8 state)
+void lan9645x_port_stp_state_set(struct lan9645x *lan9645x, int port,
+				 u8 state)
 {
-	struct lan9645x *lan9645x = ds->priv;
 	struct lan9645x_port *p = lan9645x->ports[port];
 	bool learn_ena;
 
@@ -1121,6 +1146,14 @@ static void lan9645x_port_bridge_stp_state_set(struct dsa_switch *ds, int port,
 		lan9645x->bridge_fwd_mask);
 	lan9645x_update_fwd_mask(lan9645x, state == BR_STATE_FORWARDING);
 	mutex_unlock(&lan9645x->fwd_domain_lock);
+}
+
+static void lan9645x_port_bridge_stp_state_set(struct dsa_switch *ds, int port,
+					       u8 state)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	lan9645x_port_stp_state_set(lan9645x, port, state);
 }
 
 static void lan9645x_port_set_host_flood(struct dsa_switch *ds, int port,
@@ -2063,6 +2096,96 @@ static int lan9645x_set_mm(struct dsa_switch *ds, int port,
 	return lan9645x_fp_ethtool_set_mm(lan9645x, port, cfg, extack);
 }
 
+static void lan9645x_port_mrp_update_mac(struct dsa_switch *ds, int port,
+					 const unsigned char *br_addr)
+{
+	return lan9645x_mrp_port_update_mrp_mac(ds->priv, port, br_addr);
+}
+
+static int lan9645x_port_mrp_add(struct dsa_switch *ds, int port,
+				 const struct switchdev_obj_mrp *mrp)
+{
+	return lan9645x_handle_mrp_add_port(ds->priv, port, mrp);
+}
+
+static int lan9645x_port_mrp_del(struct dsa_switch *ds, int port,
+				 const struct switchdev_obj_mrp *mrp)
+{
+	return lan9645x_handle_mrp_del_port(ds->priv, port, mrp);
+}
+
+static int lan9645x_port_mrp_role(struct dsa_switch *ds, int port, u8 port_role)
+{
+	return lan9645x_handle_mrp_port_role(ds->priv, port, port_role);
+}
+
+static int
+lan9645x_port_mrp_add_ring_role(struct dsa_switch *ds, int port,
+				const struct switchdev_obj_ring_role_mrp *mrp)
+{
+	return lan9645x_handle_mrp_ring_role_add(ds->priv, port, mrp);
+}
+
+static int
+lan9645x_port_mrp_del_ring_role(struct dsa_switch *ds, int port,
+				const struct switchdev_obj_ring_role_mrp *mrp)
+{
+	return lan9645x_handle_mrp_ring_role_del(ds->priv, port, mrp);
+}
+
+static int lan9645x_port_mrp_add_ring_test(struct dsa_switch *ds, int port,
+					   const struct switchdev_obj_ring_test_mrp *mrp)
+{
+	return lan9645x_handle_mrp_ring_test_add(ds->priv, port, mrp);
+}
+
+static int lan9645x_port_mrp_del_ring_test(struct dsa_switch *ds, int port,
+					   const struct switchdev_obj_ring_test_mrp *mrp)
+{
+	return lan9645x_handle_mrp_ring_test_del(ds->priv, port, mrp);
+}
+
+static int
+lan9645x_port_mrp_add_ring_state(struct dsa_switch *ds, int port,
+				 const struct switchdev_obj_ring_state_mrp *mrp)
+{
+	return lan9645x_handle_mrp_ring_state_add(ds->priv, port, mrp);
+}
+
+static int lan9645x_port_mrp_add_in_ring_state(struct dsa_switch *ds, int port,
+					       const struct switchdev_obj_in_state_mrp *mrp)
+{
+	return lan9645x_handle_mrp_in_state_add(ds->priv, port, mrp);
+}
+
+static int
+lan9645x_port_mrp_add_in_ring_test(struct dsa_switch *ds, int port,
+				   const struct switchdev_obj_in_test_mrp *mrp)
+{
+	return lan9645x_handle_mrp_in_test_add(ds->priv, port, mrp);
+}
+
+static int
+lan9645x_port_mrp_del_in_ring_test(struct dsa_switch *ds, int port,
+				   const struct switchdev_obj_in_test_mrp *mrp)
+{
+	return lan9645x_handle_mrp_in_test_del(ds->priv, port, mrp);
+}
+
+static int
+lan9645x_port_mrp_add_in_ring_role(struct dsa_switch *ds, int port,
+				   const struct switchdev_obj_in_role_mrp *mrp)
+{
+	return lan9645x_handle_mrp_in_role_add(ds->priv, port, mrp);
+}
+
+static int
+lan9645x_port_mrp_del_in_ring_role(struct dsa_switch *ds, int port,
+				   const struct switchdev_obj_in_role_mrp *mrp)
+{
+	return lan9645x_handle_mrp_in_role_del(ds->priv, port, mrp);
+}
+
 static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.get_tag_protocol		= lan9645x_get_tag_protocol,
 	.connect_tag_protocol		= lan9645x_connect_tag_protocol,
@@ -2180,6 +2303,25 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	 /* MAC merge */
 	.get_mm				= lan9645x_get_mm,
 	.set_mm				= lan9645x_set_mm,
+
+	/*
+	 * MRP integration
+	 */
+	.port_mrp_update_br_mac		= lan9645x_port_mrp_update_mac,
+	.port_mrp_add			= lan9645x_port_mrp_add,
+	.port_mrp_del			= lan9645x_port_mrp_del,
+	.port_mrp_role			= lan9645x_port_mrp_role,
+	.port_mrp_add_ring_role		= lan9645x_port_mrp_add_ring_role,
+	.port_mrp_del_ring_role		= lan9645x_port_mrp_del_ring_role,
+	.port_mrp_add_ring_test		= lan9645x_port_mrp_add_ring_test,
+	.port_mrp_del_ring_test		= lan9645x_port_mrp_del_ring_test,
+	.port_mrp_add_ring_state	= lan9645x_port_mrp_add_ring_state,
+	.port_mrp_add_in_ring_state	= lan9645x_port_mrp_add_in_ring_state,
+	.port_mrp_add_in_ring_test	= lan9645x_port_mrp_add_in_ring_test,
+	.port_mrp_del_in_ring_test	= lan9645x_port_mrp_del_in_ring_test,
+	.port_mrp_add_in_ring_role	= lan9645x_port_mrp_add_in_ring_role,
+	.port_mrp_del_in_ring_role	= lan9645x_port_mrp_del_in_ring_role,
+
 };
 
 static int lan9645x_request_target_regmaps(struct lan9645x *lan9645x)

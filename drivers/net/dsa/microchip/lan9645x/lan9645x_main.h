@@ -10,6 +10,7 @@
 #include <linux/regmap.h>
 #include <linux/ptp_clock_kernel.h>
 #include <net/dsa.h>
+#include <uapi/linux/mrp_bridge.h>
 
 #include <vcap_api.h>
 #include <vcap_api_client.h>
@@ -122,6 +123,7 @@
 #define PGID_GP_START			CPU_PORT
 #define PGID_GP_END			PGID_MRP
 
+/* PGID_MRP is a blackhole PGID */
 #define PGID_MRP			(PGID_AGGR - 7)
 #define PGID_CPU			(PGID_AGGR - 6)
 #define PGID_UC				(PGID_AGGR - 5)
@@ -541,6 +543,9 @@ struct lan9645x {
 	bool tsn_dis;
 
 	struct afi_control *afi_ctrl;
+
+	struct mrp_control *mrp_ctrl;
+	int ana_irq;
 };
 
 struct lan9645x_port_qos {
@@ -635,6 +640,9 @@ struct lan9645x_port {
 	bool cut_thru_ena;
 
 	bool pcs_lost_sync;
+
+	struct mrp_port *mrp_port;
+	int mrp_is1_p_port_rule_id;
 };
 
 struct lan9645x_path_delay {
@@ -894,6 +902,7 @@ void lan9645x_port_set_learning(struct lan9645x *lan9645x, int port,
 void lan9645x_update_fwd_mask(struct lan9645x *lan9645x, bool joining);
 void lan9645x_port_pgid_set(struct lan9645x *lan9645x, u16 pgid,
 			    int chip_port, bool enabled);
+void lan9645x_port_stp_state_set(struct lan9645x *lan9645x, int port, u8 state);
 
 /* MAC table: lan9645x_mac.c */
 int lan9645x_mact_flush(struct lan9645x *lan9645x, int port);
@@ -907,7 +916,6 @@ int lan9645x_mact_read(struct lan9645x *lan9645x, int port, int row, int bucket,
 		       struct lan9645x_mact_entry *entry);
 void lan9645x_mac_init(struct lan9645x *lan9645x);
 void lan9645x_mac_deinit(struct lan9645x *lan9645x);
-irqreturn_t lan9645x_mac_irq_handler(int virq, void *args);
 int lan9645x_mact_dsa_dump(struct lan9645x *lan9645x, int port,
 			   dsa_fdb_dump_cb_t *cb, void *data);
 int lan9645x_mact_entry_del(struct lan9645x *lan9645x, int pgid,

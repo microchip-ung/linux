@@ -43,5 +43,7 @@ int lan9645x_vcap_rule_val_add(struct vcap_rule *rule, u16 l3_proto);
 int lan9645x_vcap_add_key_mac(struct vcap_rule *rule,
 			      enum vcap_key_field mac_field,
 			      unsigned char *mac);
+int lan9645x_add_prio_is1_rule(struct lan9645x_port *port, enum vcap_user user,
+			       u32 *rule_id);
 
 #endif
