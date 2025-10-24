@@ -396,6 +396,10 @@ int lan9645x_frer_init(struct lan9645x_nl_frer *frer)
 		lan_rmw(DEV_PORT_MISC_RTAG48_ENA_SET(1),
 			DEV_PORT_MISC_RTAG48_ENA,
 			lan9645x, DEV_PORT_MISC(port));
+
+		lan_rmw(QSYS_SW_PORT_MODE_FWD_TWOCYCLE_MODE_SET(1),
+			QSYS_SW_PORT_MODE_FWD_TWOCYCLE_MODE,
+			lan9645x, QSYS_SW_PORT_MODE(port));
 	}
 
 	/* Get default cstream register content */
