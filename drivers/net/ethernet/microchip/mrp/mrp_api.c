@@ -161,8 +161,10 @@ static int mrp_port_alloc_ring_test(struct mrp_port *mrp_port)
 		return -ENOMEM;
 
 	ret = mrp_ctrl->ops->mrp_port_hijack_test(mrp_port, skb);
-	if (ret)
+	if (ret) {
+		dev_kfree_skb_any(skb);
 		return ret;
+	}
 
 	return afi_slow_inj_frm_hijack(mrp_ctrl->afi_ctrl,
 				       mrp_port->afi_ring_test_id);
@@ -293,8 +295,10 @@ static int mrp_port_alloc_in_test(struct mrp_port *mrp_port)
 		return -ENOMEM;
 
 	ret = mrp_ctrl->ops->mrp_port_hijack_test(mrp_port, skb);
-	if (ret)
+	if (ret) {
+		dev_kfree_skb_any(skb);
 		return ret;
+	}
 
 	return afi_slow_inj_frm_hijack(mrp_ctrl->afi_ctrl,
 				       mrp_port->afi_in_test_id);
