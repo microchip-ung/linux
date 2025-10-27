@@ -376,9 +376,7 @@ static int lan966x_mrp_port_hijack_test(struct mrp_port *mrp_port,
 	lan966x_ifh_set_seq_num(ifh, NUM_PHYS_PORTS * 4 + port->chip_port);
 	lan966x_ifh_set_port(ifh, BIT_ULL(port->chip_port));
 
-	lan966x_xmit(port, skb, ifh);
-
-	return 0;
+	return lan966x_xmit(port, skb, ifh);
 }
 
 static int lan966x_mrp_port_afi_cfg(struct mrp_port *mrp_port,
