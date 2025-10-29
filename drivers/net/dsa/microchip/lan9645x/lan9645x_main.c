@@ -344,7 +344,10 @@ static int lan9645x_parse_ports_node(struct lan9645x *lan9645x)
 {
 	struct fwnode_handle *ports, *portnp;
 	struct device *dev = lan9645x->dev;
+	int max_ports, num_ports = 0;
 	int err = 0;
+
+	max_ports = NUM_PHYS_PORTS - lan9645x->num_port_dis;
 
 	ports = device_get_named_child_node(dev, "ethernet-ports");
 	if (!ports)
@@ -358,6 +361,16 @@ static int lan9645x_parse_ports_node(struct lan9645x *lan9645x)
 		phy_interface_t phy_mode;
 		struct phy *serdes;
 		u32 p;
+
+		num_ports++;
+
+		if (num_ports > max_ports) {
+			dev_err(dev,
+				"Too many ports in device tree. Max ports supported by SKU: %d \n",
+				max_ports);
+			err = -ENODEV;
+			goto err_free_ports;
+		}
 
 		if (fwnode_property_read_u32(portnp, "reg", &p)) {
 			dev_err(dev, "Port number not defined in device tree (property \"reg\")\n");
@@ -491,8 +504,6 @@ static int lan9645x_setup(struct dsa_switch *ds)
 	u32 all_phys_ports, all_ports;
 	struct dsa_port *dp;
 	int err = 0;
-
-	dev_dbg(lan9645x->dev, "starting setup");
 
 	lan9645x->num_phys_ports = ds->num_ports;
 	all_phys_ports = GENMASK(lan9645x->num_phys_ports - 1, 0);
@@ -778,6 +789,11 @@ static int lan9645x_setup(struct dsa_switch *ds)
 		dev_err(dev, "Failed to init Frame Preemption netlink api. err=%d", err);
 		return err;
 	}
+
+	dev_info(lan9645x->dev,
+		 "Setup complete. SKU features: tsn_dis=%d hsr_dis=%d max_ports=%d",
+		 lan9645x->tsn_dis, lan9645x->dd_dis,
+		 lan9645x->num_phys_ports - lan9645x->num_port_dis);
 
 	return 0;
 }
@@ -1514,6 +1530,9 @@ static int lan9645x_port_hsr_join(struct dsa_switch *ds, int port,
 	enum lan9645x_hsr_type type;
 	int err;
 
+	if (lan9645x->dd_dis)
+		return -EOPNOTSUPP;
+
 	dev_dbg(lan9645x->dev, "port=%d", port);
 
 	err = lan9645x_hsr2type(hsr, &type);
@@ -1569,6 +1588,9 @@ static int lan9645x_port_hsr_leave(struct dsa_switch *ds, int port,
 				   struct net_device *hsr)
 {
 	struct lan9645x *lan9645x = ds->priv;
+
+	if (lan9645x->dd_dis)
+		return -EOPNOTSUPP;
 
 	dev_dbg(lan9645x->dev, "port=%d", port);
 
@@ -1838,6 +1860,8 @@ static int lan9645x_port_setup_tc(struct dsa_switch *ds, int port,
 	case TC_SETUP_QDISC_ETS:
 		return lan9645x_port_setup_ets(ds, port, type_data);
 	case TC_SETUP_QDISC_TAPRIO:
+		if (lan9645x->tsn_dis)
+			return -ENOTSUPP;
 		return lan9645x_tc_setup_qdisc_taprio(ds, port, type_data);
 	/* BLOCK and FT handled by dsa */
 	default:
@@ -1968,6 +1992,9 @@ lan9645x_port_hsr_node_add(struct dsa_switch *ds, int port,
 {
 	struct lan9645x *lan9645x = ds->priv;
 
+	if (lan9645x->dd_dis)
+		return -EOPNOTSUPP;
+
 	dev_dbg(lan9645x->dev, "port=%d addrA=%pM\n",
 		port, hsr_node->addr_A);
 
@@ -1982,6 +2009,9 @@ lan9645x_port_hsr_node_del(struct dsa_switch *ds, int port,
 {
 	struct lan9645x *lan9645x = ds->priv;
 
+	if (lan9645x->dd_dis)
+		return -EOPNOTSUPP;
+
 	dev_dbg(lan9645x->dev, "port=%d addrA=%pM\n",
 		 port, hsr_node->addr_A);
 
@@ -1995,6 +2025,9 @@ static int lan9645x_get_mm(struct dsa_switch *ds, int port,
 {
 	struct lan9645x *lan9645x = ds->priv;
 
+	if (lan9645x->tsn_dis)
+		return -ENOTSUPP;
+
 	return lan9645x_fp_ethtool_get_mm(lan9645x, port, state);
 }
 
@@ -2003,6 +2036,9 @@ static int lan9645x_set_mm(struct dsa_switch *ds, int port,
 			   struct netlink_ext_ack *extack)
 {
 	struct lan9645x *lan9645x = ds->priv;
+
+	if (lan9645x->tsn_dis)
+		return -ENOTSUPP;
 
 	return lan9645x_fp_ethtool_set_mm(lan9645x, port, cfg, extack);
 }
@@ -2144,6 +2180,17 @@ static int lan9645x_request_target_regmaps(struct lan9645x *lan9645x)
 	return 0;
 }
 
+static void lan9645x_set_feat_dis(struct lan9645x *lan9645x)
+{
+	u32 feat_dis;
+
+	feat_dis = lan_rd(lan9645x, GCB_FEAT_DISABLE);
+
+	lan9645x->num_port_dis = GCB_FEAT_DISABLE_FEAT_NUM_PORTS_DIS_GET(feat_dis);
+	lan9645x->dd_dis = GCB_FEAT_DISABLE_FEAT_DD_DIS_GET(feat_dis);
+	lan9645x->tsn_dis = GCB_FEAT_DISABLE_FEAT_TSN_DIS_GET(feat_dis);
+}
+
 static int lan9645x_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -2179,6 +2226,8 @@ static int lan9645x_probe(struct platform_device *pdev)
 	lan9645x->ds = ds;
 	lan9645x->tag_proto = DSA_TAG_PROTO_LAN9645X;
 	lan9645x->shared_queue_sz = LAN9645X_BUFFER_MEMORY;
+
+	lan9645x_set_feat_dis(lan9645x);
 
 	err = dsa_register_switch(ds);
 	if (err)

@@ -532,6 +532,10 @@ struct lan9645x {
 
 	/* BUM policers */
 	struct lan9645x_bum_ctrl *bum;
+
+	int num_port_dis;
+	bool dd_dis;
+	bool tsn_dis;
 };
 
 struct lan9645x_port_qos {

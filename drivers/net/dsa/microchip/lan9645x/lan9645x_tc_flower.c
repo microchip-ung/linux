@@ -1465,22 +1465,25 @@ int lan9645x_tc_flower_del(struct lan9645x_port *p, struct flow_cls_offload *f,
 	return err;
 }
 
-static bool lan9645x_vcap_is1_supported_flow_action(enum flow_action_id fact)
+static bool lan9645x_vcap_is1_supported_flow_action(struct lan9645x *lan9645x,
+						    enum flow_action_id fact)
 {
 	switch (fact) {
 	case FLOW_ACTION_POLICE:
 	case FLOW_ACTION_VLAN_MANGLE:
-	case FLOW_ACTION_GATE:
 	case FLOW_ACTION_PRIORITY:
 	case FLOW_ACTION_ACCEPT:
 	case FLOW_ACTION_GOTO:
 		return true;
+	case FLOW_ACTION_GATE:
+		return !lan9645x->tsn_dis;
 	default:
 		return false;
 	}
 }
 
-static bool lan9645x_vcap_is2_supported_flow_action(enum flow_action_id fact)
+static bool lan9645x_vcap_is2_supported_flow_action(struct lan9645x *lan9645x,
+						    enum flow_action_id fact)
 {
 	switch (fact) {
 	case FLOW_ACTION_TRAP:
@@ -1496,7 +1499,8 @@ static bool lan9645x_vcap_is2_supported_flow_action(enum flow_action_id fact)
 	}
 }
 
-static bool lan9645x_vcap_es0_supported_flow_action(enum flow_action_id fact)
+static bool lan9645x_vcap_es0_supported_flow_action(struct lan9645x *lan9645x,
+						    enum flow_action_id fact)
 {
 	switch (fact) {
 	case FLOW_ACTION_VLAN_MANGLE:
@@ -1510,16 +1514,17 @@ static bool lan9645x_vcap_es0_supported_flow_action(enum flow_action_id fact)
 	}
 }
 
-static bool lan9645x_vcap_supported_flow_action(enum vcap_type vcap,
+static bool lan9645x_vcap_supported_flow_action(struct lan9645x *lan9645x,
+						enum vcap_type vcap,
 						enum flow_action_id fact)
 {
 	switch (vcap) {
 	case VCAP_TYPE_IS1:
-		return lan9645x_vcap_is1_supported_flow_action(fact);
+		return lan9645x_vcap_is1_supported_flow_action(lan9645x, fact);
 	case VCAP_TYPE_IS2:
-		return lan9645x_vcap_is2_supported_flow_action(fact);
+		return lan9645x_vcap_is2_supported_flow_action(lan9645x, fact);
 	case VCAP_TYPE_ES0:
-		return lan9645x_vcap_es0_supported_flow_action(fact);
+		return lan9645x_vcap_es0_supported_flow_action(lan9645x, fact);
 	default:
 		return false;
 	}
@@ -1996,7 +2001,7 @@ static int lan9645x_tc_parse_actions(struct lan9645x_act_state *s,
 	fcid = f->common.chain_index;
 
 	flow_action_for_each(idx, act, &frule->action) {
-		if (!lan9645x_vcap_supported_flow_action(admin->vtype,
+		if (!lan9645x_vcap_supported_flow_action(lan9645x, admin->vtype,
 							 act->id)) {
 			NL_SET_ERR_MSG_MOD(extack,
 					   "Unsupported TC action for this VCAP");
