@@ -18,6 +18,7 @@
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/kernel.h>
+#include <linux/mfd/ocelot.h>
 #include <linux/mfd/syscon.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
@@ -122,15 +123,9 @@ static int mscc_ocelot_request_regs(struct dw_i2c_dev *dev)
 		return PTR_ERR_OR_ZERO(dev->base);
 	}
 
-	if (device->parent) {
-		res = platform_get_resource(pdev, IORESOURCE_REG, 0);
-		if (!res)
-			return -ENODEV;
-
-		dev->map = dev_get_regmap(device->parent, res->name);
-		if (dev->map)
-			return 0;
-	}
+	dev->map = ocelot_regmap_from_parent_optional(pdev, 0);
+	if (dev->map)
+		return 0;
 
 	return -ENODEV;
 }
