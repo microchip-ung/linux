@@ -2153,21 +2153,20 @@ static int lan9645x_probe(struct platform_device *pdev)
 
 	lan9645x = devm_kzalloc(dev, sizeof(*lan9645x), GFP_KERNEL);
 	if (!lan9645x)
-		return -ENOMEM;
+		return dev_err_probe(dev, -ENOMEM,
+				     "Failed to allocate LAN9645X");
 
 	dev_set_drvdata(dev, lan9645x);
 	lan9645x->dev = dev;
 
 	err = lan9645x_request_target_regmaps(lan9645x);
 	if (err)
-		goto err_free_lan9645x;
+		return dev_err_probe(dev, err, "Failed to request regmaps");
 
 	ds = devm_kzalloc(dev, sizeof(*ds), GFP_KERNEL);
-	if (!ds) {
-		err = -ENOMEM;
-		dev_err_probe(dev, err, "Failed to allocate DSA switch\n");
-		goto err_free_lan9645x;
-	}
+	if (!ds)
+		return dev_err_probe(dev, -ENOMEM,
+				     "Failed to allocate DSA switch");
 
 	ds->dev = dev;
 	ds->num_ports = NUM_PHYS_PORTS;
@@ -2182,18 +2181,10 @@ static int lan9645x_probe(struct platform_device *pdev)
 	lan9645x->shared_queue_sz = LAN9645X_BUFFER_MEMORY;
 
 	err = dsa_register_switch(ds);
-	if (err) {
-		dev_err_probe(dev, err, "Failed to register DSA switch\n");
-		goto err_free_ds;
-	}
+	if (err)
+		return dev_err_probe(dev, err, "Failed to register DSA switch");
 
 	return 0;
-
-err_free_ds:
-	kfree(ds);
-err_free_lan9645x:
-	kfree(lan9645x);
-	return err;
 }
 
 static void lan9645x_remove(struct platform_device *pdev)
