@@ -10,8 +10,35 @@
 #include <linux/platform_device.h>
 #include <linux/regmap.h>
 #include <linux/types.h>
+#include <linux/of.h>
 
 struct resource;
+
+static inline struct regmap *
+ocelot_regmap_from_parent_optional(struct platform_device *pdev,
+				   unsigned int index)
+{
+	struct device *dev = &pdev->dev;
+	const char *name = NULL;
+	struct resource *res;
+
+	if (!dev->parent)
+		return NULL;
+
+	/* Use REG and getting the resource from the parent device, which is
+	 * possible in an MFD configuration
+	 */
+	res = platform_get_resource(pdev, IORESOURCE_REG, index);
+	if (res)
+		return dev_get_regmap(dev->parent, res->name);
+
+	/* Request regmap from parent based on reg-names property */
+	if (!of_property_read_string_index(pdev->dev.of_node, "reg-names",
+					   index, &name))
+		return dev_get_regmap(dev->parent, name);
+
+	return NULL;
+}
 
 static inline struct regmap *
 ocelot_regmap_from_resource_optional(struct platform_device *pdev,
@@ -34,19 +61,7 @@ ocelot_regmap_from_resource_optional(struct platform_device *pdev,
 		return devm_regmap_init_mmio(dev, regs, config);
 	}
 
-	/*
-	 * Fall back to using REG and getting the resource from the parent
-	 * device, which is possible in an MFD configuration
-	 */
-	if (dev->parent) {
-		res = platform_get_resource(pdev, IORESOURCE_REG, index);
-		if (!res)
-			return NULL;
-
-		return dev_get_regmap(dev->parent, res->name);
-	}
-
-	return NULL;
+	return ocelot_regmap_from_parent_optional(pdev, index);
 }
 
 static inline struct regmap *
