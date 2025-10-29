@@ -254,8 +254,7 @@ int lan9645x_fp_init(struct lan9645x *lan9645x)
 	int port;
 	u32 val;
 
-	lan9645x->queue = alloc_ordered_workqueue("%s-fpreempt", 0,
-						  dev_name(lan9645x->dev));
+	lan9645x->queue = alloc_ordered_workqueue("lan9645x-fpreempt", 0);
 	if (!lan9645x->queue)
 		return -ENOMEM;
 

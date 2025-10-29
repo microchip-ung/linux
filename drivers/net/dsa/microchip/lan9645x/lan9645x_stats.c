@@ -878,8 +878,7 @@ int lan9645x_stats_init(struct lan9645x *lan9645x)
 	stats->lan9645x = lan9645x;
 
 	mutex_init(&stats->hw_lock);
-	stats->queue =
-		alloc_ordered_workqueue("%s-stats", 0, dev_name(lan9645x->dev));
+	stats->queue = alloc_ordered_workqueue("lan9645x-stats", 0);
 	if (!stats->queue)
 		return -ENOMEM;
 
