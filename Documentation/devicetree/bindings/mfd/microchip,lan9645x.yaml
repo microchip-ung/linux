@@ -1,0 +1,509 @@
+# SPDX-License-Identifier: GPL-2.0 OR BSD-2-Clause */
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/mfd/microchip,lan9645x.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: LAN9645X Externally-Controlled Ethernet Switch
+
+maintainers:
+  - Jens Emil Schulz Østergaard <jensemil.schulzostergaard@microchip.com>
+
+description: |
+  The LAN9645X ethernet switch family does not have an internal CPU. The switch
+  can be controlled externally via interfaces like SPI and I2C.
+
+  The switch family is a multi-port networking switch that supports many
+  interfaces. Additionally, the device has blocks which can perform pin control,
+  MDIO buses, serial GPIO, interrupt controllers, I2C controller and two 6G
+  serdes.
+
+properties:
+  compatible:
+    enum:
+      - microchip,lan9645x-spi
+
+  reg:
+    maxItems: 1
+
+  "#address-cells":
+    const: 1
+
+  "#size-cells":
+    const: 0
+
+  spi-max-frequency:
+    maxItems: 1
+
+patternProperties:
+  "^pinctrl@[0-9a-f]+$":
+    type: object
+    $ref: /schemas/pinctrl/mscc,ocelot-pinctrl.yaml
+    properties:
+      compatible:
+        enum:
+          - microchip,lan9645x-pinctrl
+
+  "^gpio@[0-9a-f]+$":
+    type: object
+    $ref: /schemas/pinctrl/microchip,sparx5-sgpio.yaml
+    properties:
+      compatible:
+        enum:
+          - microchip,lan9645x-sgpio
+
+  "^i2c@[0-9a-f]+$":
+    type: object
+    $ref: /schemas/i2c/snps,designware-i2c.yaml
+    properties:
+      compatible:
+        enum:
+          - mchp,lan9645x-i2c
+
+  "^i2cmux([0-9a-f]+)?$":
+    type: object
+    $ref: /schemas/i2c/i2c-mux-pinctrl.yaml
+    properties:
+      compatible:
+        enum:
+          - i2c-mux-pinctrl
+
+  "^sfp([0-9a-f]+)?$":
+    type: object
+    $ref: /schemas/net/sff,sfp.yaml
+    properties:
+      compatible:
+        enum:
+          - sff,sfp
+
+  "^mdio@[0-9a-f]+$":
+    type: object
+    $ref: /schemas/net/mscc,miim.yaml
+    properties:
+      compatible:
+        enum:
+          - microchip,lan966x-miim
+
+  "^serdes@[0-9a-f]+$":
+    type: object
+    $ref: /schemas/phy/microchip,lan9645x-serdes.yaml
+    unevaluatedProperties: false
+    properties:
+      compatible:
+        enum:
+          - microchip,lan9645x-serdes
+
+  "^interrupt-controller@[0-9a-f]+$":
+    type: object
+    $ref: /schemas/interrupt-controller/microchip,lan9645x-oic.yaml
+    unevaluatedProperties: false
+    properties:
+      compatible:
+        enum:
+          - microchip,lan9645x-oic
+
+  "^ethernet-switch@[0-9a-f]+$":
+    type: object
+    $ref: /schemas/net/dsa/microchip,lan9645x-switch.yaml
+    unevaluatedProperties: false
+    properties:
+      compatible:
+        enum:
+          - microchip,lan9645x-switch
+
+required:
+  - compatible
+  - reg
+  - '#address-cells'
+  - '#size-cells'
+
+additionalProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/interrupt-controller/irq.h>
+    #include <dt-bindings/gpio/gpio.h>
+    #include "dt-bindings/phy/phy-lan9645x-serdes.h"
+    lan9645x_clock: lan9645x-clock {
+          compatible = "fixed-clock";
+          #clock-cells = <0>;
+          clock-frequency = <165625000>;
+      };
+
+    spi {
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+      soc@0 {
+        compatible = "microchip,lan9645x-spi";
+        spi-max-frequency = <35000000>;
+        reg = <0>;
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        gpio_lan9645x: pinctrl@4028 {
+          compatible = "microchip,lan9645x-pinctrl";
+          reg = <0>;
+          reg-names = "gcb_gpio";
+          gpio-controller;
+          #gpio-cells = <2>;
+          gpio-ranges = <&gpio_lan9645x 0 0 51>;
+
+          irq_pins: irq-pins {
+            pins = "GPIO_33";
+            function = "irq0";
+          };
+
+          rgmii0_pins: rgmii0-pins {
+            pins = "GPIO_16","GPIO_17","GPIO_18","GPIO_19","GPIO_20",
+                  "GPIO_21","GPIO_22","GPIO_23","GPIO_24","GPIO_25",
+                  "GPIO_26","GPIO_27";
+            function = "rgmii";
+          };
+
+          lan9645x_i2c0_sda_pins: lan9645x-i2c0-sda-pins {
+            pins = "GPIO_30";
+            function = "i2c";
+          };
+
+          lan9645x_i2c0_scl0_pins: lan9645x-i2c0-scl0-pins {
+            pins = "GPIO_31";
+            function = "twi_scl_m";
+            output-high;
+          };
+
+          lan9645x_i2c0_scl1_pins: lan9645x-i2c0-scl1-pins {
+            pins = "GPIO_32";
+            function = "twi_scl_m";
+            output-high;
+          };
+
+          lan9645x_i2cmux_pins: lan9645x-i2cmux-pins {
+            pins = "GPIO_31","GPIO_32";
+            function = "gpio";
+            output-low;
+          };
+
+          lan9645x_leds: lan9645x-leds-pins {
+            pins = "GPIO_49", "GPIO_43", "GPIO_47", "GPIO_48", "GPIO_46", "GPIO_38", "GPIO_37", "GPIO_36";
+            function = "phy_led";
+          };
+
+          lan9645x_ptp1_pins: lan9645x-ptp1-pins {
+            pins = "GPIO_13";
+            function = "ptp1";
+          };
+
+          lan9645x_ptp2_pins: lan9645x-ptp2-pins {
+            pins = "GPIO_14";
+            function = "ptp2";
+          };
+        };
+
+        lan9645x_irq: interrupt-controller@52001c {
+          compatible = "microchip,lan9645x-oic";
+          reg = <0>;
+          reg-names = "cpu_intr";
+          pinctrl-names = "default";
+          pinctrl-0 = <&irq_pins>;
+          microchip,dst_target = <2>;
+          microchip,drv_mode   = <1>;
+          interrupt-controller;
+          #interrupt-cells = <1>;
+          interrupt-parent = <&gpio>;
+          interrupts-extended = <&gpio 24 IRQ_TYPE_LEVEL_LOW>;
+          interrupt-names = "external-irq";
+        };
+
+        lan9645x_i2c0: i2c@4c0000 {
+          reg = <0>;
+          reg-names = "i2c";
+          compatible = "mchp,lan9645x-i2c";
+          pinctrl-0 = <&lan9645x_i2c0_pins_sda>;
+          pinctrl-names = "default";
+          #address-cells = <1>;
+          #size-cells = <0>;
+          interrupt-parent = <&lan9645x_irq>;
+          interrupts-extended = <&lan9645x_irq 9>;
+          i2c-sda-hold-time-ns = <300>;
+          clock-frequency = <100000>;
+          clocks = <&lan9645x_clock>;
+        };
+
+        i2cmux {
+          compatible = "i2c-mux-pinctrl";
+          #address-cells = <1>;
+          #size-cells = <0>;
+          i2c-parent = <&lan9645x_i2c0>;
+          pinctrl-names = "i2c_sfp0", "i2c_sfp1", "idle";
+          pinctrl-0 = <&lan9645x_i2c0_pins_scl0>;
+          pinctrl-1 = <&lan9645x_i2c0_pins_scl1>;
+          pinctrl-2 = <&lan9645x_i2cmux_pins>;
+
+          i2c_sfp0: i2c@0 {
+            reg = <0>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+          };
+
+          i2c_sfp1: i2c@1 {
+            reg = <1>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+          };
+        };
+
+        lan_sfp0: sfp0 {
+          compatible = "sff,sfp";
+          i2c-bus = <&i2c_sfp0>;
+          tx-disable-gpios   = <&gpio_lan9645x 11 GPIO_ACTIVE_HIGH>;
+          mod-def0-gpios     = <&gpio_lan9645x 29 GPIO_ACTIVE_LOW>;
+          los-gpios          = <&gpio_lan9645x 42 GPIO_ACTIVE_HIGH>;
+          rate-select0-gpios = <&gpio_lan9645x 39 GPIO_ACTIVE_HIGH>;
+        };
+
+        lan_sfp1: sfp1 {
+          compatible = "sff,sfp";
+          i2c-bus = <&i2c_sfp1>;
+          tx-disable-gpios   = <&gpio_lan9645x 44 GPIO_ACTIVE_HIGH>;
+          mod-def0-gpios     = <&gpio_lan9645x 28 GPIO_ACTIVE_LOW>;
+          los-gpios          = <&gpio_lan9645x 8 GPIO_ACTIVE_HIGH>;
+          rate-select0-gpios = <&gpio_lan9645x 12 GPIO_ACTIVE_HIGH>;
+        };
+
+        mdio@4098 { // miim0
+          reg = <0>;
+          reg-names = "gcb_miim0";
+          compatible = "microchip,lan966x-miim";
+          #address-cells = <1>;
+          #size-cells = <0>;
+          pinctrl-names = "default";
+          pinctrl-0 = <&rgmii0_pins>;
+
+          rgmii0: ethernet-phy@0 {
+            reg = <0>;
+            status = "disabled";
+          };
+
+          rgmii1: ethernet-phy@1 {
+            reg = <1>;
+            status = "disabled";
+          };
+
+        };
+
+        mdio@40bc { // miim1
+          reg = <0>, <0>;
+          reg-names = "gcb_miim1", "phy";
+          compatible = "microchip,lan966x-miim";
+          #address-cells = <1>;
+          #size-cells = <0>;
+
+          cuphy0: ethernet-phy@1 {
+            reg = <0x1>;
+            interrupts-extended = <&lan9645x_irq 12>;
+          };
+
+          cuphy1: ethernet-phy@2 {
+            reg = <0x2>;
+            interrupts-extended = <&lan9645x_irq 13>;
+          };
+
+          cuphy2: ethernet-phy@3 {
+            reg = <0x3>;
+            interrupts-extended = <&lan9645x_irq 14>;
+          };
+
+          cuphy3: ethernet-phy@4 {
+            reg = <0x4>;
+            interrupts-extended = <&lan9645x_irq 15>;
+          };
+
+          cuphy4: ethernet-phy@5 {
+            reg = <0x5>;
+            status = "disabled";
+            interrupts-extended = <&lan9645x_irq 16>;
+          };
+
+        };
+
+        lan9645x: ethernet-switch@1 {
+          compatible = "microchip,lan9645x-switch";
+          reg = <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>,
+                <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>,
+                <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>,
+                <0>, <0>;
+          reg-names = "org",
+                      "gcb",
+                      "qs",
+                      "ptp",
+                      "chip_top",
+                      "tas",
+                      "rew",
+                      "vcap",
+                      "vcap1",
+                      "vcap2",
+                      "mep",
+                      "sys",
+                      "hsio",
+                      "dev",
+                      "dev1",
+                      "dev2",
+                      "dev3",
+                      "dev4",
+                      "dev5",
+                      "dev6",
+                      "dev7",
+                      "dev8",
+                      "uvov",
+                      "qsys",
+                      "afi",
+                      "ana",
+                      "irom",
+                      "iram",
+                      "erom_i2c",
+                      "erom_spi",
+                      "cuphy",
+                      "uart",
+                      "i2c",
+                      "i2c1",
+                      "timers",
+                      "cpu",
+                      "otp",
+                      "wdt";
+          interrupts-extended = <&lan9645x_irq 27>, <&lan9645x_irq 26>;
+          interrupt-names = "lan9645x-ptp", "lan9645x-ptp-ext";
+          pinctrl-0 = <&lan9645x_leds>, <&lan9645x_ptp1_pins>, <&lan9645x_ptp2_pins>;
+          pinctrl-names = "default";
+          ethernet-ports {
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            port@0 {
+              reg = <0>;
+              label = "lan0";
+              phy-mode = "gmii";
+              phy-handle = <&cuphy0>;
+              phys = <&lan9645x_serdes 0 LAN9645X_CU(0)>;
+            };
+
+            port@1 {
+              reg = <1>;
+              label = "lan1";
+              phy-mode = "gmii";
+              phy-handle = <&cuphy1>;
+              phys = <&lan9645x_serdes 1 LAN9645X_CU(1)>;
+              microchip,led-drive_mode = <1 3>;
+            };
+
+            port@2 {
+              reg = <2>;
+              label = "lan2";
+              phy-mode = "gmii";
+              phy-handle = <&cuphy2>;
+              phys = <&lan9645x_serdes 2 LAN9645X_CU(2)>;
+            };
+
+            port@3 {
+              reg = <3>;
+              label = "lan3";
+              phy-mode = "gmii";
+              phy-handle = <&cuphy3>;
+              phys = <&lan9645x_serdes 3 LAN9645X_CU(3)>;
+            };
+
+            port@4 {
+              reg = <4>;
+              label = "lan4";
+              status = "disabled";
+              phy-mode = "gmii";
+              phy-handle = <&cuphy4>;
+              phys = <&lan9645x_serdes 4 LAN9645X_CU(4)>;
+            };
+
+            port@5 {
+              reg = <5>;
+              label = "lan5";
+              phys = <&lan9645x_serdes 5 LAN9645X_SERDES6G(0)>;
+              phy-mode = "sgmii";
+              managed = "in-band-status";
+              sfp = <&lan_sfp0>;
+            };
+
+            port@6 {
+              reg = <6>;
+              label = "lan6";
+              phy-mode = "sgmii";
+              managed = "in-band-status";
+              phys = <&lan9645x_serdes 6 LAN9645X_SERDES6G(1)>;
+              sfp = <&lan_sfp1>;
+            };
+
+            port@7 {
+              reg = <7>;
+              label = "lan7";
+              phy-mode = "rgmii-id";
+              phys = <&lan9645x_serdes 7 LAN9645X_RGMII(0)>;
+              status = "okay";
+              ethernet = <&port2>;
+              fixed-link {
+                speed = <1000>;
+                full-duplex;
+                pause;
+              };
+            };
+
+            port@8 {
+              reg = <8>;
+              label = "lan8";
+              phy-handle = <&rgmii1>;
+              phy-mode = "rgmii-id";
+              phys = <&lan9645x_serdes 8 LAN9645X_RGMII(1)>;
+              status = "disabled";
+            };
+          };
+        };
+
+
+        lan9645x_sgpio: gpio@40e0 {
+          compatible = "microchip,lan9645x-sgpio";
+          reg = <0>;
+          reg-names = "gcb_sio";
+          #address-cells = <1>;
+          #size-cells = <0>;
+          clocks = <&lan9645x_clock>;
+          status = "disabled";
+          //pinctrl-names = "default";
+          //pinctrl-0 = <&sgpio_pins>;
+          microchip,sgpio-port-ranges = <5 6>;
+          bus-frequency = <1000000>;
+
+          sgpio_lan9645x_in: gpio@0 {
+            compatible = "microchip,sparx5-sgpio-bank";
+            reg = <0>;
+            gpio-controller;
+            #gpio-cells = <3>;
+            ngpios = <128>;
+          };
+
+          sgpio_lan9645x_out: gpio@1 {
+            compatible = "microchip,sparx5-sgpio-bank";
+            reg = <1>;
+            gpio-controller;
+            #gpio-cells = <3>;
+            ngpios = <128>;
+          };
+        };
+
+        lan9645x_serdes: serdes@b0000 {
+          compatible = "microchip,lan9645x-serdes";
+          reg = <0>, <0>;
+          reg-names = "hsio", "chip_top";
+          #phy-cells = <2>;
+          status = "okay";
+        };
+
+      };
+    };
+
+...
