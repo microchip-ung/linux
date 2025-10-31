@@ -37,6 +37,9 @@ properties:
         items:
           - const: thead,th1520-i2c
           - const: snps,designware-i2c
+      - description: Microchip LAN9645X SoCs I2C controller
+        items:
+          - const: mchp,lan9645x-i2c
 
   reg:
     minItems: 1
@@ -45,6 +48,10 @@ properties:
       - description: |
           ICPU_CFG:TWI_DELAY registers to setup the SDA hold time.
           This registers are specific to the Ocelot I2C-controller.
+
+  reg-names:
+    items:
+      - description: DW APB I2C controller memory mapped registers
 
   interrupts:
     maxItems: 1
@@ -145,5 +152,20 @@ examples:
       pinctrl-names = "default";
       interrupts = <8>;
       clocks = <&ahb_clk>;
+    };
+  - |
+    i2c@4c0000 {
+      compatible = "mchp,lan9645x-i2c";
+      reg = <0 0>;
+      reg-names = "i2c";
+      pinctrl-0 = <&i2c0_sda_pins>;
+      pinctrl-names = "default";
+      #address-cells = <1>;
+      #size-cells = <0>;
+      interrupt-parent = <&irqc>;
+      interrupts-extended = <&irqc 9>;
+      i2c-sda-hold-time-ns = <300>;
+      clock-frequency = <100000>;
+      clocks = <&ahb_clock>;
     };
 ...
