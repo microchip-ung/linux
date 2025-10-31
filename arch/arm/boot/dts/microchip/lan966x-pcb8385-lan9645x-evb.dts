@@ -137,7 +137,7 @@
 		function = "sgpio_a";
 	};
 
-	usb_host_a_pins: usb_host_a_pins {
+	usb_host_a_pins: usb-host-a-pins {
 		pins = "GPIO_65", "GPIO_66";
 		function = "usb_host_a";
 	};
@@ -231,57 +231,52 @@
 				reg = <0>;
 				reg-names = "i2c";
 				compatible = "mchp,lan9645x-i2c";
-				pinctrl-0 = <&lan9645x_i2c0_pins_sda>;
+				pinctrl-0 = <&lan9645x_i2c0_sda_pins>;
 				pinctrl-names = "default";
 				#address-cells = <1>;
 				#size-cells = <0>;
 				interrupt-parent = <&lan9645x_irq>;
-				interrupts = <&lan9645x_irq 9>;
+				interrupts-extended = <&lan9645x_irq 9>;
 				i2c-sda-hold-time-ns = <300>;
 				clock-frequency = <100000>;
 				clocks = <&lan9645x_clock>;
 			};
 
-			i2c-mux {
+			i2cmux {
 				compatible = "i2c-mux-pinctrl";
 				#address-cells = <1>;
 				#size-cells = <0>;
 				i2c-parent = <&lan9645x_i2c0>;
 				pinctrl-names = "i2c_sfp0", "i2c_sfp1", "idle";
-				pinctrl-0 = <&lan9645x_i2c0_pins_scl0>;
-				pinctrl-1 = <&lan9645x_i2c0_pins_scl1>;
+				pinctrl-0 = <&lan9645x_i2c0_scl0_pins>;
+				pinctrl-1 = <&lan9645x_i2c0_scl1_pins>;
 				pinctrl-2 = <&lan9645x_i2cmux_pins>;
 
-				i2c_sfp0: i2c-sfp@0 {
+				i2c_sfp0: i2c@0 {
 					reg = <0>;
 					#address-cells = <1>;
 					#size-cells = <0>;
 				};
 
-				i2c_sfp1: i2c-sfp@1 {
+				i2c_sfp1: i2c@1 {
 					reg = <1>;
 					#address-cells = <1>;
 					#size-cells = <0>;
 				};
 			};
 
-			lan_sfp0: lan9645x-sfp0 {
+			lan_sfp0: sfp0 {
 				compatible = "sff,sfp";
 				i2c-bus = <&i2c_sfp0>;
-				pinctrl-names = "default";
-
 				tx-disable-gpios   = <&gpio_lan9645x 11 GPIO_ACTIVE_HIGH>;
 				mod-def0-gpios     = <&gpio_lan9645x 29 GPIO_ACTIVE_LOW>;
 				los-gpios          = <&gpio_lan9645x 42 GPIO_ACTIVE_HIGH>;
 				rate-select0-gpios = <&gpio_lan9645x 39 GPIO_ACTIVE_HIGH>;
-
 			};
 
-			lan_sfp1: lan9645x-sfp1 {
+			lan_sfp1: sfp1 {
 				compatible = "sff,sfp";
 				i2c-bus = <&i2c_sfp1>;
-				pinctrl-names = "default";
-
 				tx-disable-gpios   = <&gpio_lan9645x 44 GPIO_ACTIVE_HIGH>;
 				mod-def0-gpios     = <&gpio_lan9645x 28 GPIO_ACTIVE_LOW>;
 				los-gpios          = <&gpio_lan9645x 8 GPIO_ACTIVE_HIGH>;
@@ -344,13 +339,12 @@
 
 			};
 
-			lan9645x_irq: lan9645x_irq@52001c {
+			lan9645x_irq: interrupt-controller@52001c {
 				compatible = "microchip,lan9645x-oic";
 				reg = <0>;
 				reg-names = "cpu_intr";
 				pinctrl-names = "default";
 				pinctrl-0 = <&irq_pins>;
-				// dst=2 is external IRQ0
 				microchip,dst_target = <2>;
 				microchip,drv_mode   = <1>;
 				interrupt-controller;
@@ -360,8 +354,6 @@
 				interrupt-names = "external-irq";
 			};
 
-			// See *bindings/net/dsa.yaml
-			// See *bindings/net/dsa-port.yaml
 			lan9645x: ethernet-switch@1 {
 				compatible = "microchip,lan9645x-switch";
 				reg = <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>,
@@ -479,7 +471,7 @@
 						label = "lan7";
 						phy-mode = "rgmii-id";
 						phys = <&lan9645x_serdes 7 LAN9645X_RGMII(0)>;
-						status = "ok";
+						status = "okay";
 						ethernet = <&port2>;
 						fixed-link {
 							speed = <1000>;
@@ -513,22 +505,24 @@
 				};
 
 				rgmii0_pins: rgmii0-pins {
-					pins = "GPIO_16","GPIO_17","GPIO_18","GPIO_19","GPIO_20","GPIO_21","GPIO_22","GPIO_23","GPIO_24","GPIO_25","GPIO_26","GPIO_27";
+					pins = "GPIO_16","GPIO_17","GPIO_18","GPIO_19","GPIO_20",
+					       "GPIO_21","GPIO_22","GPIO_23","GPIO_24","GPIO_25",
+					       "GPIO_26","GPIO_27";
 					function = "rgmii";
 				};
 
-				lan9645x_i2c0_pins_sda: lan9645x-i2c0-pins-sda {
+				lan9645x_i2c0_sda_pins: lan9645x-i2c0-sda-pins {
 					pins = "GPIO_30";
 					function = "i2c";
 				};
 
-				lan9645x_i2c0_pins_scl0: lan9645x-i2c0-pins-scl0 {
+				lan9645x_i2c0_scl0_pins: lan9645x-i2c0-scl0-pins {
 					pins = "GPIO_31";
 					function = "twi_scl_m";
 					output-high;
 				};
 
-				lan9645x_i2c0_pins_scl1: lan9645x-i2c0-pins-scl1 {
+				lan9645x_i2c0_scl1_pins: lan9645x-i2c0-scl1-pins {
 					pins = "GPIO_32";
 					function = "twi_scl_m";
 					output-high;
@@ -540,7 +534,7 @@
 					output-low;
 				};
 
-				lan9645x_leds: lan9645x-leds {
+				lan9645x_leds: lan9645x-leds-pins {
 					pins = "GPIO_49", "GPIO_43", "GPIO_47", "GPIO_48", "GPIO_46", "GPIO_38", "GPIO_37", "GPIO_36";
 					function = "phy_led";
 				};

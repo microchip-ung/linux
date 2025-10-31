@@ -132,7 +132,7 @@
 		function = "sgpio_a";
 	};
 
-	usb_host_a_pins: usb_host_a_pins {
+	usb_host_a_pins: usb-host-a-pins {
 		pins = "GPIO_65", "GPIO_66";
 		function = "usb_host_a";
 	};
@@ -227,42 +227,42 @@
 				reg-names = "i2c";
 				compatible = "mchp,lan9645x-i2c";
 				status = "ok";
-				pinctrl-0 = <&lan9645x_i2c0_pins_sda>;
+				pinctrl-0 = <&lan9645x_i2c0_sda_pins>;
 				pinctrl-names = "default";
 				//scl-gpios = <&gpio 31 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
 				#address-cells = <1>;
 				#size-cells = <0>;
 				interrupt-parent = <&lan9645x_irq>;
-				interrupts = <&lan9645x_irq 9>;
+				interrupts-extended = <&lan9645x_irq 9>;
 				i2c-sda-hold-time-ns = <300>;
 				clock-frequency = <100000>;
 				clocks = <&lan9645x_clock>;
 			};
 
-			i2c-mux {
+			i2cmux {
 				compatible = "i2c-mux-pinctrl";
 				#address-cells = <1>;
 				#size-cells = <0>;
 				i2c-parent = <&lan9645x_i2c0>;
 				pinctrl-names = "i2c_sfp0", "i2c_sfp1", "idle";
-				pinctrl-0 = <&lan9645x_i2c0_pins_scl0>;
-				pinctrl-1 = <&lan9645x_i2c0_pins_scl1>;
+				pinctrl-0 = <&lan9645x_i2c0_scl0_pins>;
+				pinctrl-1 = <&lan9645x_i2c0_scl1_pins>;
 				pinctrl-2 = <&lan9645x_i2cmux_pins>;
 
-				i2c_sfp0: i2c-sfp@0 {
+				i2c_sfp0: i2c@0 {
 					reg = <0>;
 					#address-cells = <1>;
 					#size-cells = <0>;
 				};
 
-				i2c_sfp1: i2c-sfp@1 {
+				i2c_sfp1: i2c@1 {
 					reg = <1>;
 					#address-cells = <1>;
 					#size-cells = <0>;
 				};
 			};
 
-			lan_sfp0: lan9645x-sfp0 {
+			lan_sfp0: sfp0 {
 				compatible = "sff,sfp";
 				i2c-bus = <&i2c_sfp0>;
 				//pinctrl-names = "default";
@@ -287,7 +287,7 @@
 				tx-fault-gpios = <&sgpio_lan9645x_in 5 2 GPIO_ACTIVE_HIGH>;
 			};
 
-			lan_sfp1: lan9645x-sfp1 {
+			lan_sfp1: sfp1 {
 				compatible = "sff,sfp";
 				i2c-bus = <&i2c_sfp1>;
 				//pinctrl-names = "default";
@@ -360,7 +360,7 @@
 				};
 			};
 
-			lan9645x_irq: lan9645x_irq@52001c {
+			lan9645x_irq: interrupt-controller@52001c {
 				compatible = "microchip,lan9645x-oic";
 				reg = <0>;
 				reg-names = "cpu_intr";
@@ -547,18 +547,18 @@
 					function = "rgmii";
 				};
 
-				lan9645x_i2c0_pins_sda: lan9645x-i2c0-pins-sda {
+				lan9645x_i2c0_sda_pins: lan9645x-i2c0-sda-pins {
 					pins = "GPIO_30";
 					function = "i2c";
 				};
 
-				lan9645x_i2c0_pins_scl0: lan9645x-i2c0-pins-scl0 {
+				lan9645x_i2c0_scl0_pins: lan9645x-i2c0-scl0-pins {
 					pins = "GPIO_31";
 					function = "twi_scl_m";
 					output-high;
 				};
 
-				lan9645x_i2c0_pins_scl1: lan9645x-i2c0-pins-scl1 {
+				lan9645x_i2c0_scl1_pins: lan9645x-i2c0-scl1-pins {
 					pins = "GPIO_32";
 					function = "twi_scl_m";
 					output-high;
@@ -719,7 +719,7 @@
 	pinctrl-names = "default";
 	status = "okay";
 
-	phy2: ethernet-phy {
+	phy2: ethernet-phy@0 {
 		reg = <1>;
 		interrupts = <24 IRQ_TYPE_LEVEL_LOW>;
 		interrupt-parent = <&gpio>;
