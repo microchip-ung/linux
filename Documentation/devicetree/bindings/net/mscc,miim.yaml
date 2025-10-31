@@ -30,6 +30,12 @@ properties:
       - description: associated reset register for internal PHYs
     minItems: 1
 
+  reg-names:
+    minItems: 1
+    items:
+      - description: base address
+      - description: associated reset register for internal PHYs
+
   interrupts:
     maxItems: 1
 
