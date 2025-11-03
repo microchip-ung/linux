@@ -225,8 +225,6 @@ static int lan966x_port_xmit(struct sk_buff *skb, struct net_device *dev)
 	u32 val;
 	u8 grp = 0;
 	u32 i, count, last;
-	struct ethhdr *eth;
-	bool is_vlan;
 
 	val = lan_rd(lan966x, QS_INJ_STATUS);
 	if (!(val & QS_INJ_STATUS_FIFO_RDY_SET(BIT(grp))) ||
@@ -234,20 +232,6 @@ static int lan966x_port_xmit(struct sk_buff *skb, struct net_device *dev)
 		return NETDEV_TX_BUSY;
 
 	skb_pull(skb, IFH_ENCAP_LEN);
-
-	/* Detect if there is a vlan tag or not and make sure that the frame has
-	 * the minimum length without the IFH header and if doesn't pad with
-	 * zeroes
-	 */
-	skb_pull_inline(skb, IFH_LEN_BYTES);
-	eth = eth_skb_pull_mac(skb);
-	is_vlan = htons(ETH_P_8021Q) == eth->h_proto;
-	skb_push(skb, ETH_HLEN);
-
-	if (skb_put_padto(skb, ETH_ZLEN + (is_vlan ? 4 : 0)))
-		return NETDEV_TX_OK;
-
-	skb_push(skb, IFH_LEN_BYTES);
 
 	/* Write start of frame */
 	lan_wr(QS_INJ_CTRL_GAP_SIZE_SET(1) |
