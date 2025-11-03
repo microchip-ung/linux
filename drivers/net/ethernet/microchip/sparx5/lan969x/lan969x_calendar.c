@@ -162,7 +162,7 @@ int lan969x_dsm_calendar_calc(struct sparx5 *sparx5, u32 taxi,
 	if (cal_len < delay)
 		cal_len = delay + 1;
 
-	/* Search for a calendar length that fits all active devices. */
+	cal_len = LAN969X_DSM_CAL_LEN - 1;
 	while (cal_len < LAN969X_DSM_CAL_LEN) {
 		/* Use truncating division here. */
 		bw_per_slot = taxi_bw / cal_len;
