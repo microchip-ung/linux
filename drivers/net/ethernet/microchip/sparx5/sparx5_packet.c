@@ -290,10 +290,6 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 	u32 ifh[IFH_LEN];
 	netdev_tx_t ret;
 	unsigned int skb_len = skb->len;
-#ifdef CONFIG_SPARX5_SWITCH_APPL
-	struct ethhdr *eth;
-	bool is_vlan;
-#endif
 
 	ops = &sparx5->data->ops;
 
@@ -320,16 +316,6 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 	skb_pull_inline(skb, IFH_ENCAP_LEN);
 	memcpy(ifh, skb->data, IFH_LEN * 4);
 	skb_pull_inline(skb, IFH_LEN * 4);
-
-	/* Make sure to zero out the up to the minimum length frame otherwise in
-	 * that area could be some old data which should not be expose.
-	 */
-	eth = eth_skb_pull_mac(skb);
-	is_vlan = htons(ETH_P_8021Q) == eth->h_proto;
-	skb_push(skb, ETH_HLEN);
-	if (skb_put_padto(skb, ETH_ZLEN + (is_vlan ? 4 : 0)))
-		goto drop;
-
 #endif
 	skb_tx_timestamp(skb);
 	spin_lock(&sparx5->tx_lock);
