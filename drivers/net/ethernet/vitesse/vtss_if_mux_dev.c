@@ -106,18 +106,16 @@ static int internal_dev_xmit(struct sk_buff *skb, struct net_device *netdev) {
         goto DO_CNT;
     }
 
-    if (!vtss_if_mux_chip->internal_cpu) {
-            // Make sure the original frame is at least 60 bytes long (w/o FCS), because
-            // the NIC driver cannot see if we are transmitting an undersize frame,
-            // once we have added the NPI encapsulation header, so it's not able to pad
-            // it itself. When the frame arrives on the switch's NPI-port, the switch
-            // strips the NPI header and IFH, and - bam - possible continues working
-            // with an undersized frame.
-            if (skb->len < ETH_ZLEN) {
-                    u32 missing = ETH_ZLEN - skb->len;
-                    // Add IFH ethernet encapsulation header
-                    memset(skb_put(skb, missing), 0, missing);
-            }
+    // Make sure the original frame is at least 60 bytes long (w/o FCS), because
+    // the NIC driver cannot see if we are transmitting an undersize frame,
+    // once we have added the NPI encapsulation header, so it's not able to pad
+    // it itself. When the frame arrives on the switch's NPI-port, the switch
+    // strips the NPI header and IFH, and - bam - possible continues working
+    // with an undersized frame.
+    if (skb->len < ETH_ZLEN) {
+            u32 missing = ETH_ZLEN - skb->len;
+            // Add IFH ethernet encapsulation header
+            memset(skb_put(skb, missing), 0, missing);
     }
 
 #if 0
