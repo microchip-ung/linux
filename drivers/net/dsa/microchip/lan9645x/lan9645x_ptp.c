@@ -49,7 +49,7 @@ static u64 lan9645x_ptp_get_nominal_value(void)
 	/* This is the default value that for each system clock, the time of day
 	 * is increased. It has the format 5.59 nanosecond.
 	 */
-	return 0x304d4873ecade305;
+	return 0x304d4873ecade304;
 }
 
 static int lan9645x_ptp_add_trap(struct lan9645x_port *port,
