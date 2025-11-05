@@ -1151,6 +1151,9 @@ irqreturn_t lan9645x_ptp_irq_handler(int irq, void *args);
 irqreturn_t lan9645x_ptp_ext_irq_handler(int irq, void *args);
 int lan9645x_ptp_gettime64(struct ptp_clock_info *ptp, struct timespec64 *ts);
 u32 lan9645x_ptp_get_period_ps(void);
+void lan9645x_ptp_improvements(struct lan9645x *lan9645x,
+			       struct lan9645x_port *p,
+			       phy_interface_t interface, int speed, int duplex);
 
 /* lan9645x_tas.c */
 int lan9645x_taprio_add(struct lan9645x *lan9645x, int port,

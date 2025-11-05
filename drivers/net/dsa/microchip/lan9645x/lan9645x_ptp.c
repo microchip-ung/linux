@@ -1265,3 +1265,105 @@ u32 lan9645x_ptp_get_period_ps(void)
 	 /* System clock period in picoseconds. */
 	return 6038;
 }
+
+void lan9645x_ptp_improvements(struct lan9645x *lan9645x,
+			       struct lan9645x_port *p,
+			       phy_interface_t interface, int speed, int duplex)
+{
+	int div_cfg, rx_stamp_sel, tx_stamp_sel;
+
+	/* The following table was received from validation people describing
+	 * which values need to be set to get working the timestamping at lower
+	 * speeds 10/100. While at this also improve the timestamping at higher
+	 * speeds.
+	 *
+	 * Mode            div_cfg rx_stamp_sel tx_stamp_sel
+	 * 1000-BaseT         4        0            3
+	 * 10/100-BaseT       2        1            2
+	 * 1000-BaseX         3        0            3
+	 * 10/100-BaseX FDX   3        0            1
+	 * 10/100-BaseX HDX   3        0            3
+	 * 2500-BaseX         7        0            3
+	*/
+
+	switch (speed) {
+	case LAN9645X_SPEED_DISABLED:
+		break;
+	case LAN9645X_SPEED_10:
+	case LAN9645X_SPEED_100:
+		if (phy_interface_mode_is_rgmii(interface) ||
+		    interface == PHY_INTERFACE_MODE_GMII) {
+			div_cfg = 2;
+			rx_stamp_sel = 1;
+			tx_stamp_sel = 3;
+		} else {
+			if (duplex == DUPLEX_FULL) {
+				div_cfg = 3;
+				rx_stamp_sel = 0;
+				tx_stamp_sel = 1;
+			} else {
+				div_cfg = 3;
+				rx_stamp_sel = 0;
+				tx_stamp_sel = 3;
+			}
+		}
+		break;
+	case LAN9645X_SPEED_1000:
+		if (phy_interface_mode_is_rgmii(interface) ||
+		    interface == PHY_INTERFACE_MODE_GMII) {
+			div_cfg = 4;
+			rx_stamp_sel = 0;
+			tx_stamp_sel = 3;
+		} else {
+			div_cfg = 3;
+			rx_stamp_sel = 0;
+			tx_stamp_sel = 3;
+		}
+		break;
+	case LAN9645X_SPEED_2500:
+		div_cfg = 7;
+		rx_stamp_sel = 0;
+		tx_stamp_sel = 3;
+		break;
+	}
+
+	lan_rmw(DEV_PTP_MISC_CFG_RX_STAMP_SEL_SET(rx_stamp_sel),
+		DEV_PTP_MISC_CFG_RX_STAMP_SEL,
+		lan9645x, DEV_PTP_MISC_CFG(p->chip_port));
+
+	lan_rmw(DEV_PTP_MISC_CFG_TX_STAMP_SEL_SET(tx_stamp_sel),
+		DEV_PTP_MISC_CFG_TX_STAMP_SEL,
+		lan9645x, DEV_PTP_MISC_CFG(p->chip_port));
+
+	/* First it is needed to disable and then enable it and after that it
+	 * needed to clear the failed bit which is set by default. Also there
+	 * are 2 phase detector ctrl one for TX and one for RX
+	 */
+	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(0),
+		DEV_PHAD_CTRL_PHAD_ENA,
+		lan9645x, DEV_PHAD_CTRL(p->chip_port, 0));
+
+	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(0),
+		DEV_PHAD_CTRL_PHAD_ENA,
+		lan9645x, DEV_PHAD_CTRL(p->chip_port, 1));
+
+	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(1) |
+		DEV_PHAD_CTRL_DIV_CFG_SET(div_cfg) |
+		DEV_PHAD_CTRL_PHAD_FAILED_SET(1) |
+		DEV_PHAD_CTRL_LOCK_ACC_SET(0),
+		DEV_PHAD_CTRL_PHAD_ENA |
+		DEV_PHAD_CTRL_DIV_CFG |
+		DEV_PHAD_CTRL_PHAD_FAILED |
+		DEV_PHAD_CTRL_LOCK_ACC,
+		lan9645x, DEV_PHAD_CTRL(p->chip_port, 0));
+
+	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(1) |
+		DEV_PHAD_CTRL_DIV_CFG_SET(div_cfg) |
+		DEV_PHAD_CTRL_PHAD_FAILED_SET(1) |
+		DEV_PHAD_CTRL_LOCK_ACC_SET(0),
+		DEV_PHAD_CTRL_PHAD_ENA |
+		DEV_PHAD_CTRL_DIV_CFG |
+		DEV_PHAD_CTRL_PHAD_FAILED |
+		DEV_PHAD_CTRL_LOCK_ACC,
+		lan9645x, DEV_PHAD_CTRL(p->chip_port, 1));
+}
