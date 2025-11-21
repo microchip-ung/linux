@@ -1205,6 +1205,34 @@ bool lan9645x_rxtstamp_defer(struct dsa_switch *ds, int port,
 	return true;
 }
 
+/* Called by dsa_skb_defer_rx_timestamp. Return true if we defer skb rx until
+ * a timestamp is ready.
+ * This is necessary since this function is called from atomic context, so we
+ * are not allowed to call lan9645x_ptp_gettime64, and must schedule the work
+ * instead.
+ */
+bool lan9645x_rxtstamp_all_defer(struct dsa_switch *ds, int port,
+				 struct sk_buff *skb, unsigned int type)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	struct lan9645x_phc *phc;
+	struct lan9645x_port *p;
+
+	p = lan9645x_to_port(lan9645x, port);
+
+	if (!lan9645x->ptp || !p->ptp_rx_cmd)
+		return false;
+
+	if (ntohs(skb->protocol) != ETH_P_1588)
+		return false;
+
+	phc = &lan9645x->phc[LAN9645X_PHC_PORT];
+
+	skb_queue_tail(&p->rx_skbs, skb);
+	ptp_schedule_worker(phc->clock, 0);
+	return true;
+}
+
 void lan9645x_txtstamp(struct dsa_switch *ds, int port, struct sk_buff *skb)
 {
 	struct lan9645x *lan9645x = ds->priv;

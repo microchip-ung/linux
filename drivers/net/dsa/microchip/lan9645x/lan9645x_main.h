@@ -1143,6 +1143,8 @@ int lan9645x_port_hwtstamp_set(struct dsa_switch *ds, int port,
 void lan9645x_txtstamp(struct dsa_switch *ds, int port, struct sk_buff *skb);
 bool lan9645x_rxtstamp_defer(struct dsa_switch *ds, int port,
 			     struct sk_buff *skb, unsigned int type);
+bool lan9645x_rxtstamp_all_defer(struct dsa_switch *ds, int port,
+				 struct sk_buff *skb, unsigned int type);
 int lan9645x_get_ts_info(struct dsa_switch *ds, int port,
 			 struct kernel_ethtool_ts_info *info);
 int lan9645x_ptp_init(struct lan9645x *lan9645x);

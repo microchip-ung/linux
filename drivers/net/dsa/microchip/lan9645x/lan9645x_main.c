@@ -2299,6 +2299,7 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	 .port_hwtstamp_set		= lan9645x_port_hwtstamp_set,
 	 .port_txtstamp			= lan9645x_txtstamp,
 	 .port_rxtstamp			= lan9645x_rxtstamp_defer,
+	 .port_rxtstamp_all		= lan9645x_rxtstamp_all_defer,
 
 	 /* MAC merge */
 	.get_mm				= lan9645x_get_mm,
