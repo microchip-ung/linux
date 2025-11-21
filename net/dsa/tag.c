@@ -45,8 +45,12 @@ static bool dsa_skb_defer_rx_timestamp(struct dsa_user_priv *p,
 
 	__skb_pull(skb, ETH_HLEN);
 
-	if (type == PTP_CLASS_NONE)
-		return false;
+	if (type == PTP_CLASS_NONE) {
+		if (!ds->ops->port_rxtstamp_all)
+			return false;
+
+		return ds->ops->port_rxtstamp_all(ds, p->dp->index, skb, type);
+	}
 
 	return ds->ops->port_rxtstamp(ds, p->dp->index, skb, type);
 }

@@ -1174,6 +1174,8 @@ struct dsa_switch_ops {
 				 struct sk_buff *skb);
 	bool	(*port_rxtstamp)(struct dsa_switch *ds, int port,
 				 struct sk_buff *skb, unsigned int type);
+	bool	(*port_rxtstamp_all)(struct dsa_switch *ds, int port,
+				     struct sk_buff *skb, unsigned int type);
 
 	/* Devlink parameters, etc */
 	int	(*devlink_param_get)(struct dsa_switch *ds, u32 id,
