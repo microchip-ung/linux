@@ -3,6 +3,7 @@
  */
 
 #include <linux/ptp_classify.h>
+#include <linux/debugfs.h>
 #include <linux/dsa/lan9645x.h>
 
 #include "lan9645x_main.h"
@@ -526,6 +527,7 @@ irqreturn_t lan9645x_ptp_irq_handler(int irq, void *args)
 		struct timespec64 ts;
 		unsigned long flags;
 		u32 val, id, txport;
+		u32 sub_ns;
 		u32 delay;
 
 		val = lan_rd(lan9645x, PTP_TWOSTEP_CTRL);
@@ -548,6 +550,9 @@ irqreturn_t lan9645x_ptp_irq_handler(int irq, void *args)
 		/* Retrieve the delay */
 		delay = lan_rd(lan9645x, PTP_TWOSTEP_STAMP_NSEC);
 		delay = PTP_TWOSTEP_STAMP_NSEC_STAMP_NSEC_GET(delay);
+
+		sub_ns = lan_rd(lan9645x, PTP_TWOSTEP_STAMP_SUBNS);
+		sub_ns = PTP_TWOSTEP_STAMP_SUBNS_STAMP_SUB_NSEC_GET(sub_ns);
 
 		/* Get next timestamp from fifo, which needs to be the
 		 * rx timestamp which represents the id of the frame
@@ -590,6 +595,8 @@ irqreturn_t lan9645x_ptp_irq_handler(int irq, void *args)
 
 		/* Get the h/w timestamp */
 		lan9645x_get_hwtimestamp(lan9645x, &ts, delay);
+
+		lan9645x_ptp_log_tx(lan9645x, skb, ts, sub_ns);
 
 		/* Set the timestamp into the skb */
 		shhwtstamps.hwtstamp = ktime_set(ts.tv_sec, ts.tv_nsec);
@@ -1049,6 +1056,8 @@ static void lan9645x_rxtstamp_port_work(struct lan9645x *lan9645x, int port)
 		ts.tv_nsec = rx_ts;
 		shhwtstamps = skb_hwtstamps(skb);
 		shhwtstamps->hwtstamp = ktime_set(ts.tv_sec, ts.tv_nsec);
+		lan9645x_ptp_log_rx(lan9645x, skb, ts,
+				    LAN9645X_SKB_CB(skb)->rx_ts_subns);
 		netif_rx(skb);
 	}
 }

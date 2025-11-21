@@ -16,6 +16,7 @@ struct lan9645x_skb_cb {
 	u16 ts_id;
 	u8 rew_op;
 	u8 pdu_type;
+	u8 rx_ts_subns;
 };
 
 #define LAN9645X_SKB_CB(skb) \

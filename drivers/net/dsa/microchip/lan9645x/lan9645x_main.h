@@ -531,6 +531,10 @@ struct lan9645x {
 	u16 ptp_skbs;
 	int ptp_ext_irq;
 	int ptp_irq;
+	struct mutex ptp_logs_lock;
+	bool ptp_enable_logs;
+	struct list_head ptp_logs;
+	u16 ptp_logs_count;
 
 	/* QOS DSCP map */
 	struct lan9645x_ig_dscp i_dscp_map[LAN9645X_DSCP_COUNT];
@@ -1156,6 +1160,14 @@ u32 lan9645x_ptp_get_period_ps(void);
 void lan9645x_ptp_improvements(struct lan9645x *lan9645x,
 			       struct lan9645x_port *p,
 			       phy_interface_t interface, int speed, int duplex);
+
+/* lan9645x_ptp_logs.c */
+void lan9645x_ptp_log_tx(struct lan9645x *lan9645x, struct sk_buff *skb,
+			 struct timespec64 ts, u32 sub_ns);
+void lan9645x_ptp_log_rx(struct lan9645x *lan9645x, struct sk_buff *skb,
+			 struct timespec64 ts, u8 sub_ns);
+int lan9645x_ptp_log_init(struct lan9645x *lan9645x);
+void lan9645x_ptp_log_deinit(struct lan9645x *lan9645x);
 
 /* lan9645x_tas.c */
 int lan9645x_taprio_add(struct lan9645x *lan9645x, int port,

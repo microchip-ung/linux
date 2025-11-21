@@ -28,6 +28,7 @@ mchp-lan9645x-objs := lan9645x_main.o \
 	lan9645x_netlink_frer.o \
 	lan9645x_netlink_frer_impl.o \
 	lan9645x_ptp.o \
+	lan9645x_ptp_logs.o \
 	lan9645x_dcb.o \
 	lan9645x_taprio.o \
 	lan9645x_psfp.o \
