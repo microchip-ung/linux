@@ -709,3 +709,5 @@
 &switch {
 	status = "okay";
 };
+
+#include "lan9645x-port-delay-evb.dtsi"

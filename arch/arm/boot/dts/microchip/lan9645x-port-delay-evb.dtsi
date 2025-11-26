@@ -1,0 +1,75 @@
+&lan0 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	delay0 {
+		reg = <0>;
+		speed = <1000>;
+		rx_delay = <0x25d00>;
+		tx_delay = <0x00300>;
+	};
+
+	delay1 {
+		reg = <0>;
+		speed = <100>;
+		rx_delay = <0x63100>;
+		tx_delay = <0x00500>;
+	};
+};
+
+&lan1 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	delay0 {
+		reg = <0>;
+		speed = <1000>;
+		rx_delay = <0x25d00>;
+		tx_delay = <0x00300>;
+	};
+
+	delay1 {
+		reg = <0>;
+		speed = <100>;
+		rx_delay = <0x63100>;
+		tx_delay = <0x00500>;
+	};
+};
+
+&lan2 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	delay0 {
+		reg = <0>;
+		speed = <1000>;
+		rx_delay = <0x25d00>;
+		tx_delay = <0x00300>;
+	};
+
+	delay1 {
+		reg = <0>;
+		speed = <100>;
+		rx_delay = <0x63100>;
+		tx_delay = <0x00500>;
+	};
+};
+
+&lan3 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	delay0 {
+		reg = <0>;
+		speed = <1000>;
+		rx_delay = <0x25d00>;
+		tx_delay = <0x00300>;
+	};
+
+	delay1 {
+		reg = <0>;
+		speed = <100>;
+		rx_delay = <0x63100>;
+		tx_delay = <0x00500>;
+	};
+};
