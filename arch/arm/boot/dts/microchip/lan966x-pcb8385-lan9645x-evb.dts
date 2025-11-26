@@ -406,7 +406,7 @@
 					#address-cells = <1>;
 					#size-cells = <0>;
 
-					port@0 {
+					lan0: port@0 {
 						reg = <0>;
 						label = "lan0";
 						phy-mode = "gmii";
@@ -414,7 +414,7 @@
 						phys = <&lan9645x_serdes 0 LAN9645X_CU(0)>;
 					};
 
-					port@1 {
+					lan1: port@1 {
 						reg = <1>;
 						label = "lan1";
 						phy-mode = "gmii";
@@ -423,7 +423,7 @@
 						microchip,led-drive_mode = <1 3>;
 					};
 
-					port@2 {
+					lan2: port@2 {
 						reg = <2>;
 						label = "lan2";
 						phy-mode = "gmii";
@@ -431,7 +431,7 @@
 						phys = <&lan9645x_serdes 2 LAN9645X_CU(2)>;
 					};
 
-					port@3 {
+					lan3: port@3 {
 						reg = <3>;
 						label = "lan3";
 						phy-mode = "gmii";
@@ -439,7 +439,7 @@
 						phys = <&lan9645x_serdes 3 LAN9645X_CU(3)>;
 					};
 
-					port@4 {
+					lan4: port@4 {
 						reg = <4>;
 						label = "lan4";
 						status = "disabled";
@@ -448,7 +448,7 @@
 						phys = <&lan9645x_serdes 4 LAN9645X_CU(4)>;
 					};
 
-					port@5 {
+					lan5: port@5 {
 						reg = <5>;
 						label = "lan5";
 						phys = <&lan9645x_serdes 5 LAN9645X_SERDES6G(0)>;
@@ -457,7 +457,7 @@
 						sfp = <&lan_sfp0>;
 					};
 
-					port@6 {
+					lan6: port@6 {
 						reg = <6>;
 						label = "lan6";
 						phy-mode = "sgmii";
@@ -466,7 +466,7 @@
 						sfp = <&lan_sfp1>;
 					};
 
-					port@7 {
+					lan7: port@7 {
 						reg = <7>;
 						label = "lan7";
 						phy-mode = "rgmii-id";
@@ -480,7 +480,7 @@
 						};
 					};
 
-					port@8 {
+					lan8: port@8 {
 						reg = <8>;
 						label = "lan8";
 						phy-handle = <&rgmii1>;
