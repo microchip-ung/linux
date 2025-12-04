@@ -54,6 +54,8 @@ static void sparx5_mtu_set(struct sparx5_port *port, u32 new_mtu)
 		spx5_rmw(DEVRGMII_MAC_MAXLEN_CFG_MAX_LEN_SET(hw_mtu),
 			DEVRGMII_MAC_MAXLEN_CFG_MAX_LEN, sparx5,
 			DEVRGMII_MAC_MAXLEN_CFG(idx));
+	else if (ops->port_is_2g5(port->portno))
+		return; /* Already configured. */
 	else if (ops->port_is_5g(port->portno))
 		spx5_rmw(DEV5G_MAC_MAXLEN_CFG_MAX_LEN_SET(hw_mtu),
 			 DEV5G_MAC_MAXLEN_CFG_MAX_LEN, sparx5,
