@@ -328,6 +328,10 @@ int lan9645x_fp_ethtool_set_mm(struct lan9645x *lan9645x, int port,
 	p = lan9645x_to_port(lan9645x, port);
 	dev = lan9645x_port_to_ndev(p);
 
+	err = lan9645x_fp_get(p, &c);
+	if (err)
+		return err;
+
 	err = ethtool_mm_frag_size_min_to_add(cfg->tx_min_frag_size,
 					      &add_frag_size, extack);
 	if (err)
