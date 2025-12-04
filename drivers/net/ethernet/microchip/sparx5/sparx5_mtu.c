@@ -39,8 +39,8 @@ static void sparx5_mtu_set(struct sparx5_port *port, u32 new_mtu)
 	idx = ops->port_get_dev_index(sparx5, port->portno);
 	hw_mtu = SPX5_HW_MTU(new_mtu);
 
-	pr_info("Setting MTU to: %u for portno (idx: %u): %u\n", new_mtu,
-		port->portno, idx);
+	pr_debug("Setting MTU to: %u for portno (idx: %u): %u\n", new_mtu,
+		 port->portno, idx);
 
 	/* All port modules have a 2g5 shadow device (and DEV2G5 is indexed
 	 * by port number). Except the RGMII ports
