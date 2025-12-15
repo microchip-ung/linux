@@ -158,7 +158,8 @@ static void lan9645x_ptp_add_t3(struct lan9645x *lan9645x,
 	if (lan9645x->ptp_logs_count > LAN9645X_PTP_LOGS_COUNT_MAX)
 		return;
 
-	e = kzalloc(sizeof(*e), GFP_KERNEL);
+	/* This is called in atomic context: tx PTP irq handler */
+	e = kzalloc(sizeof(*e), GFP_ATOMIC);
 	if (!e)
 		return;
 
