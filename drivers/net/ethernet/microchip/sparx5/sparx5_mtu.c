@@ -39,8 +39,8 @@ static void sparx5_mtu_set(struct sparx5_port *port, u32 new_mtu)
 	idx = ops->port_get_dev_index(sparx5, port->portno);
 	hw_mtu = SPX5_HW_MTU(new_mtu);
 
-	pr_info("Setting MTU to: %u for portno (idx: %u): %u\n", new_mtu,
-		port->portno, idx);
+	pr_debug("Setting MTU to: %u for portno (idx: %u): %u\n", new_mtu,
+		 port->portno, idx);
 
 	/* All port modules have a 2g5 shadow device (and DEV2G5 is indexed
 	 * by port number). Except the RGMII ports
@@ -54,6 +54,8 @@ static void sparx5_mtu_set(struct sparx5_port *port, u32 new_mtu)
 		spx5_rmw(DEVRGMII_MAC_MAXLEN_CFG_MAX_LEN_SET(hw_mtu),
 			DEVRGMII_MAC_MAXLEN_CFG_MAX_LEN, sparx5,
 			DEVRGMII_MAC_MAXLEN_CFG(idx));
+	else if (ops->port_is_2g5(port->portno))
+		return; /* Already configured. */
 	else if (ops->port_is_5g(port->portno))
 		spx5_rmw(DEV5G_MAC_MAXLEN_CFG_MAX_LEN_SET(hw_mtu),
 			 DEV5G_MAC_MAXLEN_CFG_MAX_LEN, sparx5,

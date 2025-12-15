@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: GPL-2.0-only OR BSD-2-Clause
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/phy/microchip,lan9645x-serdes.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Microchip Lan9645x Serdes controller
+
+maintainers:
+  - Jens Emil Schulz Østergaard <jensemil.schulzostergaard@microchip.com>
+
+description: |
+  Lan9645x has up to 9 interfaces, consisting of 5 copper transceivers(CU),
+  2 SERDES6G and 2 RGMII interfaces. One of the SERDES6G support QSGMII.
+  Also it has 9 logical Ethernet ports which can be connected to these
+  interfaces. The Serdes controller will allow to configure these interfaces
+  and allows to "mux" the interfaces to different ports.
+
+  For simple selection of the interface that is used with a port, the
+  following macros are defined LAN9645X_CU(X), SLAN9645X_SERDES6G(X),
+  LAN9645X_RGMII(X). Where X is a number that represents the index of that
+  interface type. For example LAN9645X_CU(1) means use interface copper
+  transceivers 1. LAN9645X_SERDES6G(2) means use interface SerDes 2.
+
+properties:
+  $nodename:
+    pattern: "^serdes@[0-9a-f]+$"
+
+  compatible:
+    const: microchip,lan9645x-serdes
+
+  reg:
+    items:
+      - description: HSIO registers
+      - description: |
+          HW_STAT register for reading PLL clock setting 125mhz or 25mhz.
+
+  reg-names:
+    items:
+      - description: HSIO registers
+        const: hsio
+      - description: CHIP_TOP registers
+        const: chip_top
+
+  '#phy-cells':
+    const: 2
+    description: |
+      - Input port to use for a given macro.
+      - The macro to be used. The macros are defined in
+        dt-bindings/phy/phy-lan9645x-serdes.yaml
+
+required:
+  - compatible
+  - '#phy-cells'
+  - reg
+  - reg-names
+
+additionalProperties: false
+
+examples:
+  - |
+    serdes@b0000 {
+      compatible = "microchip,lan9645x-serdes";
+      reg = <0 0>, <0 0>;
+      reg-names = "hsio", "chip_top";
+      #phy-cells = <2>;
+    };
+
+...

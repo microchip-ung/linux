@@ -176,13 +176,6 @@ static void lan_wr(struct lan9645x_oic_data *oic, u32 base, int idx, u32 val)
 	WARN_ON_ONCE(regmap_write(oic->map, lan_addr(oic, base, idx), val));
 }
 
-static void lan_rmw(struct lan9645x_oic_data *oic, u32 base, int idx, u32 mask,
-		    u32 val)
-{
-	WARN_ON_ONCE(regmap_update_bits(oic->map, lan_addr(oic, base, idx),
-					mask, val));
-}
-
 /* Can be called in atomic context. */
 static void lan9645x_oic_enable(struct irq_data *data)
 {

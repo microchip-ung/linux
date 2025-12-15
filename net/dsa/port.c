@@ -977,6 +977,27 @@ int dsa_port_mrouter(struct dsa_port *dp, bool enable)
 	return ds->ops->port_mrouter_set(ds, dp->index, enable);
 }
 
+int dsa_port_mrp_role(struct dsa_port *dp, u8 mrp_port_role)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_mrp_role)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_mrp_role(ds, dp->index, mrp_port_role);
+}
+
+void dsa_port_mrp_update_mrp_br_mac(struct dsa_port *dp,
+				    const unsigned char *br_addr)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_mrp_update_br_mac)
+		return;
+
+	return ds->ops->port_mrp_update_br_mac(ds, dp->index, br_addr);
+}
+
 int dsa_port_mtu_change(struct dsa_port *dp, int new_mtu)
 {
 	struct dsa_notifier_mtu_info info = {
@@ -1408,6 +1429,116 @@ int dsa_port_mrp_del_ring_role(const struct dsa_port *dp,
 	return ds->ops->port_mrp_del_ring_role(ds, dp->index, mrp);
 }
 
+int dsa_port_mrp_add_ring_test(const struct dsa_port *dp,
+			       const struct switchdev_obj_ring_test_mrp *mrp)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_mrp_add_ring_test)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_mrp_add_ring_test(ds, dp->index, mrp);
+}
+
+int dsa_port_mrp_del_ring_test(const struct dsa_port *dp,
+			       const struct switchdev_obj_ring_test_mrp *mrp)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_mrp_del_ring_test)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_mrp_del_ring_test(ds, dp->index, mrp);
+}
+
+int dsa_port_mrp_add_ring_state(const struct dsa_port *dp,
+				const struct switchdev_obj_ring_state_mrp *mrp)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_mrp_add_ring_state)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_mrp_add_ring_state(ds, dp->index, mrp);
+}
+
+int dsa_port_mrp_add_in_ring_test(const struct dsa_port *dp,
+				  const struct switchdev_obj_in_test_mrp *mrp)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_mrp_add_in_ring_test)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_mrp_add_in_ring_test(ds, dp->index, mrp);
+}
+
+int dsa_port_mrp_del_in_ring_test(const struct dsa_port *dp,
+				  const struct switchdev_obj_in_test_mrp *mrp)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_mrp_del_in_ring_test)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_mrp_del_in_ring_test(ds, dp->index, mrp);
+}
+
+int dsa_port_mrp_add_in_ring_role(const struct dsa_port *dp,
+				  const struct switchdev_obj_in_role_mrp *mrp)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_mrp_add_in_ring_role)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_mrp_add_in_ring_role(ds, dp->index, mrp);
+}
+
+int dsa_port_mrp_del_in_ring_role(const struct dsa_port *dp,
+				  const struct switchdev_obj_in_role_mrp *mrp)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_mrp_del_in_ring_role)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_mrp_del_in_ring_role(ds, dp->index, mrp);
+}
+
+int dsa_port_mrp_add_in_ring_state(const struct dsa_port *dp,
+				   const struct switchdev_obj_in_state_mrp *mrp)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_mrp_add_in_ring_state)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_mrp_add_in_ring_state(ds, dp->index, mrp);
+}
+
+int dsa_port_hsr_dan_node_add(const struct dsa_port *dp,
+			      const struct switchdev_obj_node_hsr *hsr_node)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_hsr_dan_node_add)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_hsr_dan_node_add(ds, dp->index, hsr_node);
+}
+
+int dsa_port_hsr_dan_node_del(const struct dsa_port *dp,
+			      const struct switchdev_obj_node_hsr *hsr_node)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_hsr_dan_node_del)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_hsr_dan_node_del(ds, dp->index, hsr_node);
+}
+
 static int dsa_port_assign_conduit(struct dsa_port *dp,
 				   struct net_device *conduit,
 				   struct netlink_ext_ack *extack,
@@ -1598,6 +1729,22 @@ dsa_port_phylink_mac_select_pcs(struct phylink_config *config,
 
 	return pcs;
 }
+
+/* dsa_supports_eee - indicate that EEE is supported
+ * @ds: pointer to &struct dsa_switch
+ * @port: port index
+ *
+ * A default implementation for the .support_eee() DSA operations member,
+ * which drivers can use to indicate that they support EEE on all of their
+ * user ports.
+ *
+ * Returns: true
+ */
+bool dsa_supports_eee(struct dsa_switch *ds, int port)
+{
+	return true;
+}
+EXPORT_SYMBOL_GPL(dsa_supports_eee);
 
 static void dsa_port_phylink_mac_config(struct phylink_config *config,
 					unsigned int mode,

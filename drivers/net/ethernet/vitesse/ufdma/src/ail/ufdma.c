@@ -912,6 +912,7 @@ static int AIL_tx(vtss_ufdma_platform_driver_t *self, vtss_ufdma_buf_dscr_t *tx_
 {
     ufdma_state_t *state;
     ufdma_dcb_t   *dcb;
+    u32           flush_len;
 
     UFDMA_RC(AIL_self_chk(self, &state));
     UFDMA_RC(AIL_buf_dscr_chk(state, tx_buf_dscr, FALSE /* This is a Tx buffer */));
@@ -919,10 +920,10 @@ static int AIL_tx(vtss_ufdma_platform_driver_t *self, vtss_ufdma_buf_dscr_t *tx_
     dcb = UFDMA_dcb_prepare(self, tx_buf_dscr);
 
     // Ask CIL to initialize the H/W area and link it to the end of the current list.
-    UFDMA_CIL_FUNC_RC(state, tx_dcb_init, dcb, state->tx_tail_sw);
+    UFDMA_CIL_FUNC_RC(state, tx_dcb_init, dcb, state->tx_tail_sw, &flush_len);
 
     // Get the frame written to main memory
-    DCACHE_FLUSH(dcb->buf_dscr.buf, dcb->buf_dscr.buf_size_bytes);
+    DCACHE_FLUSH(dcb->buf_dscr.buf, flush_len);
 
     // Link it in to the tail of currently pending frames.
     if (state->tx_tail_sw) {

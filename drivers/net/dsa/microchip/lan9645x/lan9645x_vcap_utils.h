@@ -12,6 +12,11 @@
 #define S2_LOOKUP1 BIT(0)
 #define S2_LOOKUP2 BIT(1)
 
+/* Lookup encoding for some fields in VCAP_CFG */
+#define S1_LOOKUP1 BIT(0)
+#define S1_LOOKUP2 BIT(1)
+#define S1_LOOKUP3 BIT(2)
+
 enum s2_ip6_cfg {
 	IP6_TCP_UDP_OR_OTHER = 0,
 	IP6_STD = 1,
@@ -25,7 +30,7 @@ enum s2_ip6_cfg {
 #define ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP1_SET(x)\
 	FIELD_PREP(ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP1, x)
 #define ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP2_SET(x)\
-	FIELD_PREP(ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP1, x)
+	FIELD_PREP(ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP2, x)
 
 enum is2_mask_mode {
 	NO_ACTION = 0,
@@ -38,5 +43,7 @@ int lan9645x_vcap_rule_val_add(struct vcap_rule *rule, u16 l3_proto);
 int lan9645x_vcap_add_key_mac(struct vcap_rule *rule,
 			      enum vcap_key_field mac_field,
 			      unsigned char *mac);
+int lan9645x_add_prio_is1_rule(struct lan9645x_port *port, enum vcap_user user,
+			       u32 *rule_id);
 
 #endif

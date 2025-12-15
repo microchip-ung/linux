@@ -85,6 +85,8 @@ int lan9645x_frer_vlan_cfg_set(struct lan9645x_nl_frer *frer, const u16 vid,
 			       const struct mchp_frer_vlan_cfg *const cfg);
 int lan9645x_frer_vlan_cfg_get(struct lan9645x_nl_frer *frer, const u16 vid,
 			       struct mchp_frer_vlan_cfg *const cfg);
+int lan9645x_frer_isdx_alloc(struct lan9645x_nl_frer *frer);
+int lan9645x_frer_isdx_free(struct lan9645x_nl_frer *frer, u32 isdx);
 
 int lan9645x_frer_init(struct lan9645x_nl_frer *frer);
 int lan9645x_netlink_frer_init(struct lan9645x *lan9645x);

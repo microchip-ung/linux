@@ -7,16 +7,22 @@
 int lan9645x_mqprio_set(struct lan9645x *lan9645x, int port,
 			struct tc_mqprio_qopt_offload *mqprio)
 {
-	struct net_device *ndev = lan9645x_chipport_to_ndev(lan9645x, port);
 	struct tc_mqprio_qopt *qopt = &mqprio->qopt;
 	int num_tc = qopt->num_tc;
+	struct lan9645x_port *p;
+	struct net_device *ndev;
 	int tc, err;
 
-	dev_dbg(lan9645x->dev, "mqprio port=%d num_tc=%d hw=%u", port, num_tc,
-		qopt->hw);
+	p = lan9645x_to_port(lan9645x, port);
+	ndev = lan9645x_port_to_ndev(p);
+
+	dev_dbg(lan9645x->dev,
+		"mqprio port=%d num_tc=%d hw=%u fp_queues=0x%lx\n", port,
+		num_tc, qopt->hw, mqprio->preemptible_tcs);
 
 	if (!num_tc) {
 		netdev_reset_tc(ndev);
+		lan9645x_fp_change_preemptable_tcs(p, 0);
 		return 0;
 	}
 
@@ -36,9 +42,12 @@ int lan9645x_mqprio_set(struct lan9645x *lan9645x, int port,
 			goto err_reset_tc;
 	}
 
+	lan9645x_fp_change_preemptable_tcs(p, mqprio->preemptible_tcs);
+
 	return 0;
 
 err_reset_tc:
 	netdev_reset_tc(ndev);
+	lan9645x_fp_change_preemptable_tcs(p, 0);
 	return err;
 }

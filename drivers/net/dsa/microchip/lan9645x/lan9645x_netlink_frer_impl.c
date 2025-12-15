@@ -181,11 +181,14 @@ static int get_port_mask(struct net_device *dev1, struct net_device *dev2,
 {
 	struct lan9645x_port *p1, *p2 = NULL;
 
-	p1 = lan9645x_port_from_netdev(dev1);
-	if (IS_ERR_OR_NULL(p1))
-		return -ENOTSUPP;
+	*port_mask = 0;
 
-	*port_mask |= BIT(p1->chip_port);
+	if (dev1) {
+		p1 = lan9645x_port_from_netdev(dev1);
+		if (IS_ERR_OR_NULL(p1))
+			return -ENOTSUPP;
+		*port_mask |= BIT(p1->chip_port);
+	}
 
 	if (dev2) {
 		p2 = lan9645x_port_from_netdev(dev2);
@@ -231,6 +234,22 @@ int lan9645x_frer_ms_alloc(struct lan9645x_nl_frer *frer,
 	frer->ms_adm[i].port_mask = port_mask; /* Mark as in use */
 	*ms_id = i * MCHP_FRER_MAX_PORTS;
 	dev_dbg(lan9645x->dev, "ms_id=%u port_mask 0x%x\n", *ms_id, port_mask);
+	return 0;
+}
+
+int lan9645x_frer_isdx_alloc(struct lan9645x_nl_frer *frer)
+{
+	struct lan9645x *lan9645x = frer->lan9645x;
+
+	return lan9645x_stream_isdx_alloc(lan9645x);
+}
+
+int lan9645x_frer_isdx_free(struct lan9645x_nl_frer *frer, u32 isdx)
+{
+	struct lan9645x *lan9645x = frer->lan9645x;
+
+	lan9645x_stream_isdx_free(lan9645x, isdx);
+
 	return 0;
 }
 
@@ -377,6 +396,10 @@ int lan9645x_frer_init(struct lan9645x_nl_frer *frer)
 		lan_rmw(DEV_PORT_MISC_RTAG48_ENA_SET(1),
 			DEV_PORT_MISC_RTAG48_ENA,
 			lan9645x, DEV_PORT_MISC(port));
+
+		lan_rmw(QSYS_SW_PORT_MODE_FWD_TWOCYCLE_MODE_SET(1),
+			QSYS_SW_PORT_MODE_FWD_TWOCYCLE_MODE,
+			lan9645x, QSYS_SW_PORT_MODE(port));
 	}
 
 	/* Get default cstream register content */
@@ -395,14 +418,13 @@ int lan9645x_frer_init(struct lan9645x_nl_frer *frer)
 
 	/* Get default mstream register content */
 	val = lan_rd(lan9645x, QSYS_FRER_CFG_MBM(0));
-	val = lan_rd(lan9645x, QSYS_FRER_CFG_CMP(0));
-	ms_def_cfg.enable = QSYS_FRER_CFG_CMP_ENABLE_GET(val);
-	ms_def_cfg.alg = QSYS_FRER_CFG_CMP_VECTOR_ALGORITHM_GET(val) ?
+	ms_def_cfg.enable = QSYS_FRER_CFG_MBM_ENABLE_GET(val);
+	ms_def_cfg.alg = QSYS_FRER_CFG_MBM_VECTOR_ALGORITHM_GET(val) ?
 		MCHP_FRER_REC_ALG_VECTOR :
 		MCHP_FRER_REC_ALG_MATCH;
-	ms_def_cfg.hlen = QSYS_FRER_CFG_CMP_HISTORY_LENGTH_GET(val) + 1;
-	ms_def_cfg.reset_time = QSYS_FRER_CFG_CMP_RESET_TICKS_GET(val);
-	ms_def_cfg.take_no_seq = QSYS_FRER_CFG_CMP_TAKE_NO_SEQUENCE_GET(val);
+	ms_def_cfg.hlen = QSYS_FRER_CFG_MBM_HISTORY_LENGTH_GET(val) + 1;
+	ms_def_cfg.reset_time = QSYS_FRER_CFG_MBM_RESET_TICKS_GET(val);
+	ms_def_cfg.take_no_seq = QSYS_FRER_CFG_MBM_TAKE_NO_SEQUENCE_GET(val);
 	ms_def_cfg.cs_id = 0;
 
 	/* Sync configurstion with default values */
@@ -454,7 +476,7 @@ static int lan9645x_frer_ms_check(struct lan9645x_nl_frer *frer,
 		return -EINVAL;
 	}
 
-	for_each_set_bit(chip_port, &port_mask, 8) {
+	for_each_set_bit(chip_port, &port_mask, NUM_PHYS_PORTS) {
 		if (chip_port == port->chip_port)
 			break;
 		ix++;
@@ -718,7 +740,7 @@ int lan9645x_iflow_cfg_set(struct lan9645x_nl_frer *frer,
 		return -EINVAL;
 	}
 
-	if (hweight8(cfg->frer.split_mask) > MCHP_FRER_MAX_PORTS) {
+	if (hweight16(cfg->frer.split_mask) > MCHP_FRER_MAX_PORTS) {
 		dev_err(lan9645x->dev, "Cannot have more than %d ports\n",
 			MCHP_FRER_MAX_PORTS);
 		return -EINVAL;

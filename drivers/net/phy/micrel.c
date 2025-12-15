@@ -553,6 +553,8 @@ static const struct kszphy_type ksz8051_type = {
 
 static const struct kszphy_type ksz8081_type = {
 	.led_mode_reg		= MII_KSZPHY_CTRL_2,
+	.cable_diag_reg		= KSZ8081_LMD,
+	.pair_mask		= KSZPHY_WIRE_PAIR_MASK,
 	.has_broadcast_disable	= true,
 	.has_nand_tree_disable	= true,
 	.has_rmii_ref_clk_sel	= true,
@@ -2640,14 +2642,14 @@ static int ksz886x_cable_test_get_status(struct phy_device *phydev,
 #define LAN8814_POWER_MGMT_MODE_3_ANEG_MDI		0x13
 #define LAN8814_POWER_MGMT_MODE_4_ANEG_MDIX		0x14
 #define LAN8814_POWER_MGMT_MODE_5_10BT_MDI		0x15
-#define LAN8814_POWER_MGMT_MODE_6_10BT_MDIX		0x15
-#define LAN8814_POWER_MGMT_MODE_7_100BT_TRAIN		0x15
-#define LAN8814_POWER_MGMT_MODE_8_100BT_MDI		0x15
-#define LAN8814_POWER_MGMT_MODE_9_100BT_EEE_MDI_TX	0x15
-#define LAN8814_POWER_MGMT_MODE_10_100BT_EEE_MDI_RX	0x15
+#define LAN8814_POWER_MGMT_MODE_6_10BT_MDIX		0x16
+#define LAN8814_POWER_MGMT_MODE_7_100BT_TRAIN		0x17
+#define LAN8814_POWER_MGMT_MODE_8_100BT_MDI		0x18
+#define LAN8814_POWER_MGMT_MODE_9_100BT_EEE_MDI_TX	0x19
+#define LAN8814_POWER_MGMT_MODE_10_100BT_EEE_MDI_RX	0x1a
 #define LAN8814_POWER_MGMT_MODE_11_100BT_MDIX		0x1b
-#define LAN8814_POWER_MGMT_MODE_12_100BT_EEE_MDIX_TX	0x15
-#define LAN8814_POWER_MGMT_MODE_13_100BT_EEE_MDIX_RX	0x15
+#define LAN8814_POWER_MGMT_MODE_12_100BT_EEE_MDIX_TX	0x1c
+#define LAN8814_POWER_MGMT_MODE_13_100BT_EEE_MDIX_RX	0x1d
 #define LAN8814_POWER_MGMT_MODE_14_100BTX_EEE_TX_RX	0x1e
 
 #define LAN8814_POWER_MGMT_DLLPD_D_			BIT(0)
@@ -6763,6 +6765,14 @@ static irqreturn_t lan8832_handle_interrupt(struct phy_device *phydev)
 	return IRQ_HANDLED;
 }
 
+static int ksz9131_resume(struct phy_device *phydev)
+{
+	if (phydev->suspended && phy_interface_is_rgmii(phydev))
+		ksz9131_config_rgmii_delay(phydev);
+
+	return kszphy_resume(phydev);
+}
+
 static struct phy_driver ksphy_driver[] = {
 {
 	.phy_id		= PHY_ID_KS8737,
@@ -7045,7 +7055,7 @@ static struct phy_driver ksphy_driver[] = {
 	.get_strings	= kszphy_get_strings,
 	.get_stats	= kszphy_get_stats,
 	.suspend	= kszphy_suspend,
-	.resume		= kszphy_resume,
+	.resume		= ksz9131_resume,
 	.cable_test_start	= ksz9x31_cable_test_start,
 	.cable_test_get_status	= ksz9x31_cable_test_get_status,
 	.get_features	= ksz9477_get_features,

@@ -10,6 +10,7 @@
 #include <linux/regmap.h>
 #include <linux/ptp_clock_kernel.h>
 #include <net/dsa.h>
+#include <uapi/linux/mrp_bridge.h>
 
 #include <vcap_api.h>
 #include <vcap_api_client.h>
@@ -49,7 +50,7 @@
 
 #define LAN9645X_ISDX_MAX 128
 #define LAN9645X_ESDX_MAX 128
-#define LAN9645X_SFID_MAX 256
+#define LAN9645X_SFID_MAX 128
 
 #define HSR_NETID 0x0
 #define PRP_NETID 0x5
@@ -122,6 +123,7 @@
 #define PGID_GP_START			CPU_PORT
 #define PGID_GP_END			PGID_MRP
 
+/* PGID_MRP is a blackhole PGID */
 #define PGID_MRP			(PGID_AGGR - 7)
 #define PGID_CPU			(PGID_AGGR - 6)
 #define PGID_UC				(PGID_AGGR - 5)
@@ -210,6 +212,48 @@
 #define LAN9645X_DPL_COUNT		2
 #define LAN9645X_PCP_COUNT		8
 #define LAN9645X_PRIO_COUNT		8
+
+#define LAN9645X_NUM_BUM_POL 3
+
+enum lan9645x_bum_mode {
+	LAN9645X_BUM_MODE_DIS = 0,
+	LAN9645X_BUM_MODE_CPU,
+	LAN9645X_BUM_MODE_FPORTS,
+	LAN9645X_BUM_MODE_CPU_AND_FPORTS,
+};
+
+enum lan9645x_bum_type {
+	LAN9645X_BUM_UC = 0,
+	LAN9645X_BUM_BC = 1,
+	LAN9645X_BUM_MC = 2,
+
+	__LAN9645X_BUM_NUM,
+};
+
+struct lan9645x_bum_pol {
+	struct lan9645x *lan9645x;
+	enum lan9645x_bum_type type;
+	int unit;
+	/* Frame-rate is 2**rate * UNIT */
+	int rate;
+	enum lan9645x_bum_mode mode;
+	bool cpu_redir_ena;
+	bool known_ena;
+	bool unknown_ena;
+
+	/* Only for MC bum policer */
+	bool ipmc_known_ena;
+	bool ipmc_unknown_ena;
+};
+
+struct lan9645x_bum_ctrl {
+	struct lan9645x *lan9645x;
+	int burst;
+	struct lan9645x_bum_pol policers[LAN9645X_NUM_BUM_POL];
+	struct list_head debugfs_list;
+	/* Lock bum_ctrl and bum reg IO */
+	struct mutex bum_lock;
+};
 
 /* Rewriter VLAN port tagging encoding for REW:PORT[0-10]:TAG_CFG.TAG_CFG
  *
@@ -317,6 +361,7 @@ struct lan9645x_streamt_entry {
 	u16 isdx;
 	u16 split_mask;
 	u16 input_port_mask;
+	u8 lanid_err;
 	bool rtag_pop_ena;
 	bool seq_gen_ena;
 	bool stream_split;
@@ -324,7 +369,12 @@ struct lan9645x_streamt_entry {
 };
 
 struct lan9645x_stream {
-	struct mutex lock; /* Lock for stream table access and ISDX allocation. */
+	/* Lock for stream table access and ISDX allocation.
+	 *
+	 * If this lock must be held at the same time as stats->hw_lock, then
+	 * you must first lock stream->lock, then stats->hw_lock.
+	 */
+	struct mutex lock;
 	/* Track allocated ISDXs indices in hw */
 	DECLARE_BITMAP(isdx_mask, LAN9645X_ISDX_MAX);
 };
@@ -346,6 +396,7 @@ struct lan9645x_hsr_prp {
 	int port_b;
 	bool enabled;
 	enum lan9645x_hsr_type type; /* HSR or PRP */
+	struct list_head nodes;
 };
 
 struct lan9645x_mirror {
@@ -380,6 +431,9 @@ struct lan9645x {
 	struct dsa_switch *ds;
 	enum dsa_tag_protocol tag_proto;
 	struct regmap *rmap[NUM_TARGETS];
+
+	/* Lock manual frame injection */
+	struct mutex tx_lock;
 
 	u32 host_flood_uc_mask;
 	u32 host_flood_mc_mask;
@@ -422,6 +476,15 @@ struct lan9645x {
 	/* vcap */
 	struct vcap_control *vcap_ctrl;
 
+	/* Lock for ESDX allocation.
+	 *
+	 * If this lock must be held at the same time as stats->hw_lock, then
+	 * you must first lock esdx_lock, then stats->hw_lock.
+	 */
+	struct mutex esdx_lock;
+	/* Track allocated ESDX indices in hw */
+	DECLARE_BITMAP(esdx_mask, LAN9645X_ESDX_MAX);
+
 	/* Stream table for FRER and HSR/PRP */
 	struct lan9645x_stream *stream;
 
@@ -444,6 +507,16 @@ struct lan9645x {
 	DECLARE_BITMAP(sfi_idx_mask, LAN9645X_PSFP_NUM_SFI);
 	DECLARE_BITMAP(sgi_idx_mask, LAN9645X_PSFP_NUM_SGI);
 	struct mutex qos_lock; /* Global QOS: dscp, qos policers */
+	/* Lock SFI/SGI allocation, and tables SG_ACCESS/SFID_ACCESS
+	 *
+	 * If this lock must be held at the same time as stats->hw_lock, then
+	 * you must first lock psfp_lock, then stats->hw_lock.
+	 * */
+	struct mutex psfp_lock;
+
+	/* Polling FP verify status */
+	struct delayed_work fp_work;
+	struct workqueue_struct *queue;
 
 	/* TC chain_id to isdx management */
 	struct list_head link_isdx;
@@ -458,9 +531,25 @@ struct lan9645x {
 	u16 ptp_skbs;
 	int ptp_ext_irq;
 	int ptp_irq;
+	struct mutex ptp_logs_lock;
+	bool ptp_enable_logs;
+	struct list_head ptp_logs;
+	u16 ptp_logs_count;
 
 	/* QOS DSCP map */
 	struct lan9645x_ig_dscp i_dscp_map[LAN9645X_DSCP_COUNT];
+
+	/* BUM policers */
+	struct lan9645x_bum_ctrl *bum;
+
+	int num_port_dis;
+	bool dd_dis;
+	bool tsn_dis;
+
+	struct afi_control *afi_ctrl;
+
+	struct mrp_control *mrp_ctrl;
+	int ana_irq;
 };
 
 struct lan9645x_port_qos {
@@ -494,8 +583,25 @@ struct lan9645x_port_qos {
 	u8 pfc_enable;
 };
 
+struct lan9645x_fp_port_conf {
+	u8 admin_status;        /* IEEE802.1Qbu: framePreemptionStatusTable */
+	bool enable_tx;         /* IEEE802.3br: aMACMergeEnableTx */
+	bool verify_disable_tx; /* IEEE802.3br: aMACMergeVerifyDisableTx */
+	u8 verify_time;         /* IEEE802.3br: aMACMergeVerifyTime [msec] */
+	u8 add_frag_size;       /* IEEE802.3br: aMACMergeAddFragSize */
+};
+
+struct lan9645x_fp_port_status {
+	u32 hold_advance;      // TBD: IEEE802.1Qbu: holdAdvance [nsec]
+	u32 release_advance;   // TBD: IEEE802.1Qbu: releaseAdvance [nsec]
+	u8 preemption_active;  // IEEE802.1Qbu: preemptionActive, IEEE802.3br: aMACMergeStatusTx
+	u8 hold_request;       // TBD: IEEE802.1Qbu: holdRequest
+	int status_verify;     // IEEE802.3br: aMACMergeStatusVerify
+};
+
 struct lan9645x_port {
 	struct lan9645x *lan9645x;
+	const char *name;
 
 	u16 pvid;
 	u16 untagged_vid;
@@ -511,6 +617,7 @@ struct lan9645x_port {
 	struct fwnode_handle *fwnode;
 
 	int speed; /* internal speed value LAN9645X_SPEED_* */
+	u8 duplex;
 	struct list_head path_delays;
 	u32 rx_delay;
 
@@ -523,6 +630,10 @@ struct lan9645x_port {
 	struct mutex qos_lock; /* Port QOS config */
 	struct lan9645x_port_qos qos;
 
+	/* Frame preemption */
+	struct lan9645x_fp_port_conf fp;
+	struct mutex fp_lock; /* Lock port FP config */
+
 	/* PTP */
 	struct sk_buff_head tx_skbs;
 	struct sk_buff_head rx_skbs;
@@ -533,6 +644,9 @@ struct lan9645x_port {
 	bool cut_thru_ena;
 
 	bool pcs_lost_sync;
+
+	struct mrp_port *mrp_port;
+	int mrp_is1_p_port_rule_id;
 };
 
 struct lan9645x_path_delay {
@@ -624,11 +738,13 @@ static inline struct lan9645x_port *lan9645x_to_port(struct lan9645x *lan9645x,
 static inline struct net_device *lan9645x_port_to_ndev(struct lan9645x_port *p)
 {
 	struct lan9645x *lan9645x = p->lan9645x;
+	struct dsa_port *dp;
 
-	if (!dsa_is_user_port(lan9645x->ds, p->chip_port))
-		return NULL;
+	dp = dsa_to_port(lan9645x->ds, p->chip_port);
+	if (dp && dp->type == DSA_PORT_TYPE_USER)
+		return dp->user;
 
-	return dsa_to_port(lan9645x->ds, p->chip_port)->user;
+	return NULL;
 }
 
 static inline struct net_device *
@@ -643,6 +759,17 @@ static inline bool lan9645x_port_is_bridged(struct lan9645x_port *p)
 		return false;
 
 	return !!(p->lan9645x->bridge_mask & BIT(p->chip_port));
+}
+
+static inline bool lan9645x_port_is_used(struct lan9645x *lan9645x, int port)
+{
+	struct dsa_port *dp;
+
+	dp = dsa_to_port(lan9645x->ds, port);
+	if (!dp)
+		return false;
+
+	return dp->type != DSA_PORT_TYPE_UNUSED;
 }
 
 static inline bool lan9645x_port_is_hsr(struct lan9645x_port *p)
@@ -779,6 +906,7 @@ void lan9645x_port_set_learning(struct lan9645x *lan9645x, int port,
 void lan9645x_update_fwd_mask(struct lan9645x *lan9645x, bool joining);
 void lan9645x_port_pgid_set(struct lan9645x *lan9645x, u16 pgid,
 			    int chip_port, bool enabled);
+void lan9645x_port_stp_state_set(struct lan9645x *lan9645x, int port, u8 state);
 
 /* MAC table: lan9645x_mac.c */
 int lan9645x_mact_flush(struct lan9645x *lan9645x, int port);
@@ -792,7 +920,6 @@ int lan9645x_mact_read(struct lan9645x *lan9645x, int port, int row, int bucket,
 		       struct lan9645x_mact_entry *entry);
 void lan9645x_mac_init(struct lan9645x *lan9645x);
 void lan9645x_mac_deinit(struct lan9645x *lan9645x);
-irqreturn_t lan9645x_mac_irq_handler(int virq, void *args);
 int lan9645x_mact_dsa_dump(struct lan9645x *lan9645x, int port,
 			   dsa_fdb_dump_cb_t *cb, void *data);
 int lan9645x_mact_entry_del(struct lan9645x *lan9645x, int pgid,
@@ -900,6 +1027,12 @@ int lan9645x_hsr_prp_prepare(struct lan9645x *lan9645x, int port,
 			     struct net_device *hsr, enum lan9645x_hsr_type type,
 			     struct netlink_ext_ack *extack);
 int lan9645x_hsr2type(struct net_device *hsr, enum lan9645x_hsr_type *type);
+int lan9645x_hsr_prp_dan_node_add(struct lan9645x *lan9645x, int port,
+				  struct net_device *hsr,
+				  const unsigned char *smac);
+void lan9645x_hsr_prp_dan_node_del(struct lan9645x *lan9645x, int port,
+				   struct net_device *hsr,
+				   const unsigned char *smac);
 
 /* Mirroring */
 int lan9645x_mirror_port_add(struct lan9645x *lan9645x, int from, int to,
@@ -1014,6 +1147,8 @@ int lan9645x_port_hwtstamp_set(struct dsa_switch *ds, int port,
 void lan9645x_txtstamp(struct dsa_switch *ds, int port, struct sk_buff *skb);
 bool lan9645x_rxtstamp_defer(struct dsa_switch *ds, int port,
 			     struct sk_buff *skb, unsigned int type);
+bool lan9645x_rxtstamp_all_defer(struct dsa_switch *ds, int port,
+				 struct sk_buff *skb, unsigned int type);
 int lan9645x_get_ts_info(struct dsa_switch *ds, int port,
 			 struct kernel_ethtool_ts_info *info);
 int lan9645x_ptp_init(struct lan9645x *lan9645x);
@@ -1022,6 +1157,17 @@ irqreturn_t lan9645x_ptp_irq_handler(int irq, void *args);
 irqreturn_t lan9645x_ptp_ext_irq_handler(int irq, void *args);
 int lan9645x_ptp_gettime64(struct ptp_clock_info *ptp, struct timespec64 *ts);
 u32 lan9645x_ptp_get_period_ps(void);
+void lan9645x_ptp_improvements(struct lan9645x *lan9645x,
+			       struct lan9645x_port *p,
+			       phy_interface_t interface, int speed, int duplex);
+
+/* lan9645x_ptp_logs.c */
+void lan9645x_ptp_log_tx(struct lan9645x *lan9645x, struct sk_buff *skb,
+			 struct timespec64 ts, u32 sub_ns);
+void lan9645x_ptp_log_rx(struct lan9645x *lan9645x, struct sk_buff *skb,
+			 struct timespec64 ts, u8 sub_ns);
+int lan9645x_ptp_log_init(struct lan9645x *lan9645x);
+void lan9645x_ptp_log_deinit(struct lan9645x *lan9645x);
 
 /* lan9645x_tas.c */
 int lan9645x_taprio_add(struct lan9645x *lan9645x, int port,
@@ -1061,14 +1207,42 @@ struct lan9645x_psfp_sg_cfg {
 	struct lan9645x_psfp_gce_cfg gce[LAN9645X_PSFP_NUM_GCE];
 };
 
-int lan9645x_sfi_get(struct lan9645x *lan9645x, u32 *sfi_ix);
 int lan9645x_sfi_put(struct lan9645x *lan9645x, u32 sfi_ix);
-int lan9645x_sgi_get(struct lan9645x *lan9645x, u32 *sgi_ix);
 int lan9645x_sgi_put(struct lan9645x *lan9645x, u32 sgi_ix);
-int lan9645x_psfp_sf_set(struct lan9645x *lan9645x, const u32 sfi_ix,
-			 const struct lan9645x_psfp_sf_cfg *const c);
+int lan9645x_psfp_tc_action_set(struct lan9645x *lan9645x,
+				struct lan9645x_psfp_sf_cfg *sf_cfg,
+				struct lan9645x_psfp_sg_cfg *sg_cfg,
+				struct netlink_ext_ack *extack,
+				u32 *sfi_ix, u32 *sgi_ix);
 
-int lan9645x_psfp_sg_set(struct lan9645x *lan9645x, const u32 sgi_ix,
-			 const struct lan9645x_psfp_sg_cfg *const sg);
+/* lan9645x_fp.c */
+int lan9645x_fp_status(struct lan9645x_port *p,
+		       struct lan9645x_fp_port_status *s);
+int lan9645x_fp_set(struct lan9645x_port *p,
+		    struct lan9645x_fp_port_conf *c, bool link);
+int lan9645x_fp_get(struct lan9645x_port *p,
+		    struct lan9645x_fp_port_conf *c);
+int lan9645x_fp_init(struct lan9645x *lan9645x);
+void lan9645x_fp_link_change(struct lan9645x_port *p, bool link);
+void lan9645x_fp_change_preemptable_tcs(struct lan9645x_port *p,
+					unsigned long preemptible_tcs);
+int lan9645x_fp_ethtool_get_mm(struct lan9645x *lan9645x, int port,
+			       struct ethtool_mm_state *state);
+int lan9645x_fp_ethtool_set_mm(struct lan9645x *lan9645x, int port,
+			       struct ethtool_mm_cfg *cfg,
+			       struct netlink_ext_ack *extack);
+
+/* BUM policers lan9645x_bum_.c */
+int lan9645x_bum_init(struct lan9645x *lan9645x);
+void lan9645x_bum_deinit(struct lan9645x *lan9645x);
+
+/* Manual frame injection lan9645x_manual_inj.c */
+netdev_tx_t lan9645x_inj_xmit(struct lan9645x_port *port,
+			      struct sk_buff *skb,
+			      __be32 ifh[LAN9645X_IFH_LEN_U32]);
+
+/* Automatic Frame Injection, lan9645x_afi.c */
+int lan9645x_afi_init(struct lan9645x *lan9645x);
+void lan9645x_afi_deinit(struct lan9645x *lan9645x);
 
 #endif /* __LAN9645X_MAIN_H__ */

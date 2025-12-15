@@ -60,13 +60,56 @@ struct lan9645x_link_isdx {
 };
 
 struct lan9645x_act_state {
-	struct lan9645x_mirror *m; /* FLOW_ACTINO_MIRRED */
+	struct lan9645x_mirror *m; /* FLOW_ACTION_MIRRED */
 	u32 redir_ports; /* FLOW_ACTOIN_REDIRECT */
 	int pol_idx; /* FLOW_ACTION_POLICE */
 	int goto_isdx; /* FLOW_ACTION_GOTO */
 	int vlan_push; /* FLOW_ACTION_VLAN_PUSH */
 	int target_isdx;
+	int sfi_ix; /* FLOW_ACTION_GATE. sfi_ix < 0 indicates not used */
+	int sgi_ix;/* FLOW_ACTION_GATE. sgi_ix < 0 indicates not used */
 };
+
+static int __lan9645x_tc_esdx_alloc(struct lan9645x *lan9645x)
+{
+	int esdx;
+
+	lockdep_assert_held(&lan9645x->esdx_lock);
+
+	esdx = find_first_zero_bit(lan9645x->esdx_mask, LAN9645X_ESDX_MAX);
+	if (esdx >= LAN9645X_ESDX_MAX)
+		return -ENOSPC;
+
+	set_bit(esdx, lan9645x->esdx_mask);
+
+	return esdx;
+}
+
+static int lan9645x_tc_esdx_alloc(struct lan9645x *lan9645x)
+{
+	int ret;
+
+	mutex_lock(&lan9645x->esdx_lock);
+	ret = __lan9645x_tc_esdx_alloc(lan9645x);
+	mutex_unlock(&lan9645x->esdx_lock);
+
+	return ret;
+}
+
+static void __lan9645x_tc_esdx_free(struct lan9645x *lan9645x, u16 esdx)
+{
+	lockdep_assert_held(&lan9645x->esdx_lock);
+
+	clear_bit(esdx, lan9645x->esdx_mask);
+	lan9645x_stats_clear_counters(lan9645x, LAN9645X_STAT_ESDX, esdx);
+}
+
+static void lan9645x_tc_esdx_free(struct lan9645x *lan9645x, u16 esdx)
+{
+	mutex_lock(&lan9645x->esdx_lock);
+	__lan9645x_tc_esdx_free(lan9645x, esdx);
+	mutex_unlock(&lan9645x->esdx_lock);
+}
 
 static enum vcap_bit __vcap2bit(u32 val)
 {
@@ -1034,28 +1077,44 @@ lan9645x_tc_flower_use_dissectors(struct vcap_tc_flower_parse_usage *st,
 	return err;
 }
 
-static int lan9645x_tc_add_rule_counter(struct vcap_admin *admin,
+static int lan9645x_tc_add_rule_counter(struct lan9645x *lan9645x,
+					struct vcap_admin *admin,
 					struct vcap_rule *vrule)
 {
+	int esdx;
 	int err;
 
 	switch (admin->vtype) {
 	case VCAP_TYPE_ES0:
-		err = vcap_rule_mod_action_u32(vrule, VCAP_AF_ESDX, vrule->id);
-		if (!err)
-			vcap_rule_set_counter_id(vrule, vrule->id);
+		/* There are 127 ESDX and capacity for 128 ES0 rules. ES0 rule
+		 * 128 just does not get a 32bit counter.
+		 */
+		esdx = lan9645x_tc_esdx_alloc(lan9645x);
+		if (esdx < 0)
+			return 0;
+		err = vcap_rule_mod_action_u32(vrule, VCAP_AF_ESDX, esdx);
+		vcap_rule_set_counter_id(vrule, esdx);
 		return err;
 	default:
 		return 0;
 	}
 }
 
-static void lan9645x_tc_clear_rule_counter(struct lan9645x *lan9645x,
-					   struct vcap_admin *admin, u32 rid)
+static void lan9645x_tc_free_rule_counter(struct lan9645x *lan9645x,
+					  struct vcap_admin *admin, u32 rid)
 {
+	struct vcap_rule *vrule;
+	u32 counter_id;
+
+	vrule = vcap_get_rule(lan9645x->vcap_ctrl, rid);
+	if (IS_ERR_OR_NULL(vrule))
+		return;
+
+	counter_id = vcap_rule_get_counter_id(vrule);
+
 	switch (admin->vtype) {
 	case VCAP_TYPE_ES0:
-		lan9645x_stats_clear_counters(lan9645x, LAN9645X_STAT_ESDX, rid);
+		lan9645x_tc_esdx_free(lan9645x, counter_id);
 		return;
 	default:
 		return;
@@ -1101,11 +1160,6 @@ static int lan9645x_tc_add_rule_copy(struct lan9645x_port *p,
 	/* Link the new rule to the existing rule with the cookie */
 	vrule->cookie = erule->cookie;
 
-	err = lan9645x_tc_add_rule_counter(admin, vrule);
-	if (err) {
-		dev_dbg(lan9645x->dev, "could not add counter: %u", vrule->id);
-		goto out;
-	}
 
 	vcap_filter_rule_keys(vrule, keylist, ARRAY_SIZE(keylist), true);
 	err = vcap_set_rule_set_keyset(vrule, keyset);
@@ -1130,16 +1184,24 @@ static int lan9645x_tc_add_rule_copy(struct lan9645x_port *p,
 		}
 	}
 
+	err = lan9645x_tc_add_rule_counter(lan9645x, admin, vrule);
+	if (err) {
+		dev_dbg(lan9645x->dev, "could not add counter: %u", vrule->id);
+		goto out;
+	}
+
 	err = vcap_val_rule(vrule, ETH_P_ALL);
 	if (err) {
 		dev_err(lan9645x->dev, "could not validate rule: %u\n",
 			vrule->id);
 		vcap_set_tc_exterr(fco, vrule);
+		lan9645x_tc_free_rule_counter(lan9645x, admin, vrule->id);
 		goto out;
 	}
 	err = vcap_add_rule(vrule);
 	if (err) {
 		dev_err(lan9645x->dev, "could not add rule: %u\n", vrule->id);
+		lan9645x_tc_free_rule_counter(lan9645x, admin, vrule->id);
 		goto out;
 	}
 out:
@@ -1269,6 +1331,7 @@ static int lan9645x_tc_free_rule_resources(struct lan9645x_port *p,
 	struct vcap_control *vctrl;
 	struct vcap_rule *vrule;
 	int ret = 0;
+	u32 val;
 
 	vctrl = lan9645x->vcap_ctrl;
 
@@ -1303,22 +1366,34 @@ static int lan9645x_tc_free_rule_resources(struct lan9645x_port *p,
 		lan9645x_qos_polix_free(lan9645x, afield->data.u32.value);
 	}
 
-	/* Check for an enabled stream filter in this rule */
-	afield = vcap_find_actionfield(vrule, VCAP_AF_SFID_VAL);
-	if (afield && afield->ctrl.type == VCAP_FIELD_U32 &&
-	    afield->data.u32.value) {
+	/* Check for an enabled stream filter in this rule.
+	 * We can not use the VCAP_AF_SFID_VAL field, because if the field is
+	 * set with value 0 the field is not found.
+	 * We must look for SFID_ENA, and when set to 1, we get SFID_VAL.
+	 */
+	afield = vcap_find_actionfield(vrule, VCAP_AF_SFID_ENA);
+	if (afield && afield->ctrl.type == VCAP_FIELD_BIT &&
+	    afield->data.u1.value) {
+		afield = vcap_find_actionfield(vrule, VCAP_AF_SFID_VAL);
+		val = afield ? afield->data.u32.value : 0;
 		dev_dbg(lan9645x->dev, "rule %u: remove stream filter=%u",
-			vrule->id, afield->data.u32.value);
-		lan9645x_sfi_put(lan9645x, afield->data.u32.value);
+			vrule->id, val);
+		lan9645x_sfi_put(lan9645x, val);
 	}
 
-	/* Check for an enabled stream gate in this rule */
-	afield = vcap_find_actionfield(vrule, VCAP_AF_SGID_VAL);
-	if (afield && afield->ctrl.type == VCAP_FIELD_U32 &&
-	    afield->data.u32.value) {
+	/* Check for an enabled stream gate in this rule.
+	 * We can not use the VCAP_AF_SGID_VAL field, because if the field is
+	 * set with value 0 the field is not found.
+	 * We must look for SGID_ENA, and when set to 1, we get SGID_VAL.
+	 */
+	afield = vcap_find_actionfield(vrule, VCAP_AF_SGID_ENA);
+	if (afield && afield->ctrl.type == VCAP_FIELD_BIT &&
+	    afield->data.u1.value) {
+		afield = vcap_find_actionfield(vrule, VCAP_AF_SGID_VAL);
+		val = afield ? afield->data.u32.value : 0;
 		dev_dbg(lan9645x->dev, "rule %u: remove stream gate=%u",
-			vrule->id, afield->data.u32.value);
-		lan9645x_sgi_put(lan9645x, afield->data.u32.value);
+			vrule->id, val);
+		lan9645x_sgi_put(lan9645x, val);
 	}
 
 	vcap_free_rule(vrule);
@@ -1377,7 +1452,7 @@ int lan9645x_tc_flower_del(struct lan9645x_port *p, struct flow_cls_offload *f,
 			}
 		}
 
-		lan9645x_tc_clear_rule_counter(p->lan9645x, admin, rule_id);
+		lan9645x_tc_free_rule_counter(p->lan9645x, admin, rule_id);
 
 		err = vcap_del_rule(vctrl, ndev, rule_id);
 		if (err) {
@@ -1390,22 +1465,25 @@ int lan9645x_tc_flower_del(struct lan9645x_port *p, struct flow_cls_offload *f,
 	return err;
 }
 
-static bool lan9645x_vcap_is1_supported_flow_action(enum flow_action_id fact)
+static bool lan9645x_vcap_is1_supported_flow_action(struct lan9645x *lan9645x,
+						    enum flow_action_id fact)
 {
 	switch (fact) {
 	case FLOW_ACTION_POLICE:
 	case FLOW_ACTION_VLAN_MANGLE:
-	case FLOW_ACTION_GATE:
 	case FLOW_ACTION_PRIORITY:
 	case FLOW_ACTION_ACCEPT:
 	case FLOW_ACTION_GOTO:
 		return true;
+	case FLOW_ACTION_GATE:
+		return !lan9645x->tsn_dis;
 	default:
 		return false;
 	}
 }
 
-static bool lan9645x_vcap_is2_supported_flow_action(enum flow_action_id fact)
+static bool lan9645x_vcap_is2_supported_flow_action(struct lan9645x *lan9645x,
+						    enum flow_action_id fact)
 {
 	switch (fact) {
 	case FLOW_ACTION_TRAP:
@@ -1421,7 +1499,8 @@ static bool lan9645x_vcap_is2_supported_flow_action(enum flow_action_id fact)
 	}
 }
 
-static bool lan9645x_vcap_es0_supported_flow_action(enum flow_action_id fact)
+static bool lan9645x_vcap_es0_supported_flow_action(struct lan9645x *lan9645x,
+						    enum flow_action_id fact)
 {
 	switch (fact) {
 	case FLOW_ACTION_VLAN_MANGLE:
@@ -1435,16 +1514,17 @@ static bool lan9645x_vcap_es0_supported_flow_action(enum flow_action_id fact)
 	}
 }
 
-static bool lan9645x_vcap_supported_flow_action(enum vcap_type vcap,
+static bool lan9645x_vcap_supported_flow_action(struct lan9645x *lan9645x,
+						enum vcap_type vcap,
 						enum flow_action_id fact)
 {
 	switch (vcap) {
 	case VCAP_TYPE_IS1:
-		return lan9645x_vcap_is1_supported_flow_action(fact);
+		return lan9645x_vcap_is1_supported_flow_action(lan9645x, fact);
 	case VCAP_TYPE_IS2:
-		return lan9645x_vcap_is2_supported_flow_action(fact);
+		return lan9645x_vcap_is2_supported_flow_action(lan9645x, fact);
 	case VCAP_TYPE_ES0:
-		return lan9645x_vcap_es0_supported_flow_action(fact);
+		return lan9645x_vcap_es0_supported_flow_action(lan9645x, fact);
 	default:
 		return false;
 	}
@@ -1875,32 +1955,14 @@ static int lan9645x_tc_handle_gate(struct lan9645x_act_state *s,
 		sg.gce[i].maxoctets = act->gate.entries[i].maxoctets;
 	}
 
-	err = lan9645x_sfi_get(p->lan9645x, &sfi_ix);
-	if (err < 0) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "Cannot reserve stream filter");
+	/* SF config is all zero and unused at the moment */
+	err = lan9645x_psfp_tc_action_set(p->lan9645x, &sf, &sg, extack,
+					  &sfi_ix, &sgi_ix);
+	if (err)
 		return err;
-	}
 
-	err = lan9645x_sgi_get(p->lan9645x, &sgi_ix);
-	if (err < 0) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "Cannot reserve stream gate");
-		return err;
-	}
-
-	err = lan9645x_psfp_sg_set(p->lan9645x, sgi_ix, &sg);
-	if (err) {
-		NL_SET_ERR_MSG_MOD(extack, "Cannot set stream gate");
-		return err;
-	}
-
-	err = lan9645x_psfp_sf_set(p->lan9645x, sfi_ix, &sf);
-	if (err < 0) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "Cannot set stream filter");
-		return err;
-	}
+	s->sfi_ix = sfi_ix;
+	s->sgi_ix = sgi_ix;
 
 	err = vcap_rule_add_action_bit(vrule, VCAP_AF_SGID_ENA, VCAP_BIT_1);
 	err |= vcap_rule_add_action_u32(vrule, VCAP_AF_SGID_VAL, sgi_ix);
@@ -1928,12 +1990,18 @@ static int lan9645x_tc_parse_actions(struct lan9645x_act_state *s,
 	struct flow_rule *frule;
 	int idx, err, fcid;
 
+	/* For SFI and SGI index 0 is valid, unlike ISDX. Use -1 to signal
+	 * unset state.
+	 */
+	s->sfi_ix = -1;
+	s->sgi_ix = -1;
+
 	extack = f->common.extack;
 	frule = flow_cls_offload_flow_rule(f);
 	fcid = f->common.chain_index;
 
 	flow_action_for_each(idx, act, &frule->action) {
-		if (!lan9645x_vcap_supported_flow_action(admin->vtype,
+		if (!lan9645x_vcap_supported_flow_action(lan9645x, admin->vtype,
 							 act->id)) {
 			NL_SET_ERR_MSG_MOD(extack,
 					   "Unsupported TC action for this VCAP");
@@ -2071,6 +2139,12 @@ static void lan9645x_tc_action_state_cleanup(struct lan9645x *lan9645x,
 		lan9645x_police_del(lan9645x, s->pol_idx);
 		lan9645x_qos_polix_free(lan9645x, s->pol_idx);
 	}
+
+	if (s->sfi_ix >= 0)
+		lan9645x_sfi_put(lan9645x, s->sfi_ix);
+
+	if (s->sgi_ix >= 0)
+		lan9645x_sgi_put(lan9645x, s->sgi_ix);
 }
 
 int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,
@@ -2141,12 +2215,6 @@ int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,
 		dev_dbg(lan9645x->dev, "err: %d", err);
 		NL_SET_ERR_MSG_MOD(extack,
 				   "No matching port keyset for filter protocol and keys");
-		goto out;
-	}
-
-	err = lan9645x_tc_add_rule_counter(admin, vrule);
-	if (err) {
-		vcap_set_tc_exterr(f, vrule);
 		goto out;
 	}
 

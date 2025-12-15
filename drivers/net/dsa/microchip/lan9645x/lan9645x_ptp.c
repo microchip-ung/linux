@@ -3,6 +3,7 @@
  */
 
 #include <linux/ptp_classify.h>
+#include <linux/debugfs.h>
 #include <linux/dsa/lan9645x.h>
 
 #include "lan9645x_main.h"
@@ -49,7 +50,7 @@ static u64 lan9645x_ptp_get_nominal_value(void)
 	/* This is the default value that for each system clock, the time of day
 	 * is increased. It has the format 5.59 nanosecond.
 	 */
-	return 0x304d4873ecade305;
+	return 0x304d4873ecade304;
 }
 
 static int lan9645x_ptp_add_trap(struct lan9645x_port *port,
@@ -526,6 +527,7 @@ irqreturn_t lan9645x_ptp_irq_handler(int irq, void *args)
 		struct timespec64 ts;
 		unsigned long flags;
 		u32 val, id, txport;
+		u32 sub_ns;
 		u32 delay;
 
 		val = lan_rd(lan9645x, PTP_TWOSTEP_CTRL);
@@ -548,6 +550,9 @@ irqreturn_t lan9645x_ptp_irq_handler(int irq, void *args)
 		/* Retrieve the delay */
 		delay = lan_rd(lan9645x, PTP_TWOSTEP_STAMP_NSEC);
 		delay = PTP_TWOSTEP_STAMP_NSEC_STAMP_NSEC_GET(delay);
+
+		sub_ns = lan_rd(lan9645x, PTP_TWOSTEP_STAMP_SUBNS);
+		sub_ns = PTP_TWOSTEP_STAMP_SUBNS_STAMP_SUB_NSEC_GET(sub_ns);
 
 		/* Get next timestamp from fifo, which needs to be the
 		 * rx timestamp which represents the id of the frame
@@ -590,6 +595,8 @@ irqreturn_t lan9645x_ptp_irq_handler(int irq, void *args)
 
 		/* Get the h/w timestamp */
 		lan9645x_get_hwtimestamp(lan9645x, &ts, delay);
+
+		lan9645x_ptp_log_tx(lan9645x, skb, ts, sub_ns);
 
 		/* Set the timestamp into the skb */
 		shhwtstamps.hwtstamp = ktime_set(ts.tv_sec, ts.tv_nsec);
@@ -1049,6 +1056,8 @@ static void lan9645x_rxtstamp_port_work(struct lan9645x *lan9645x, int port)
 		ts.tv_nsec = rx_ts;
 		shhwtstamps = skb_hwtstamps(skb);
 		shhwtstamps->hwtstamp = ktime_set(ts.tv_sec, ts.tv_nsec);
+		lan9645x_ptp_log_rx(lan9645x, skb, ts,
+				    LAN9645X_SKB_CB(skb)->rx_ts_subns);
 		netif_rx(skb);
 	}
 }
@@ -1205,6 +1214,34 @@ bool lan9645x_rxtstamp_defer(struct dsa_switch *ds, int port,
 	return true;
 }
 
+/* Called by dsa_skb_defer_rx_timestamp. Return true if we defer skb rx until
+ * a timestamp is ready.
+ * This is necessary since this function is called from atomic context, so we
+ * are not allowed to call lan9645x_ptp_gettime64, and must schedule the work
+ * instead.
+ */
+bool lan9645x_rxtstamp_all_defer(struct dsa_switch *ds, int port,
+				 struct sk_buff *skb, unsigned int type)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	struct lan9645x_phc *phc;
+	struct lan9645x_port *p;
+
+	p = lan9645x_to_port(lan9645x, port);
+
+	if (!lan9645x->ptp || !p->ptp_rx_cmd)
+		return false;
+
+	if (ntohs(skb->protocol) != ETH_P_1588)
+		return false;
+
+	phc = &lan9645x->phc[LAN9645X_PHC_PORT];
+
+	skb_queue_tail(&p->rx_skbs, skb);
+	ptp_schedule_worker(phc->clock, 0);
+	return true;
+}
+
 void lan9645x_txtstamp(struct dsa_switch *ds, int port, struct sk_buff *skb)
 {
 	struct lan9645x *lan9645x = ds->priv;
@@ -1264,4 +1301,106 @@ u32 lan9645x_ptp_get_period_ps(void)
 {
 	 /* System clock period in picoseconds. */
 	return 6038;
+}
+
+void lan9645x_ptp_improvements(struct lan9645x *lan9645x,
+			       struct lan9645x_port *p,
+			       phy_interface_t interface, int speed, int duplex)
+{
+	int div_cfg, rx_stamp_sel, tx_stamp_sel;
+
+	/* The following table was received from validation people describing
+	 * which values need to be set to get working the timestamping at lower
+	 * speeds 10/100. While at this also improve the timestamping at higher
+	 * speeds.
+	 *
+	 * Mode            div_cfg rx_stamp_sel tx_stamp_sel
+	 * 1000-BaseT         4        0            3
+	 * 10/100-BaseT       2        1            2
+	 * 1000-BaseX         3        0            3
+	 * 10/100-BaseX FDX   3        0            1
+	 * 10/100-BaseX HDX   3        0            3
+	 * 2500-BaseX         7        0            3
+	*/
+
+	switch (speed) {
+	case LAN9645X_SPEED_DISABLED:
+		break;
+	case LAN9645X_SPEED_10:
+	case LAN9645X_SPEED_100:
+		if (phy_interface_mode_is_rgmii(interface) ||
+		    interface == PHY_INTERFACE_MODE_GMII) {
+			div_cfg = 2;
+			rx_stamp_sel = 1;
+			tx_stamp_sel = 3;
+		} else {
+			if (duplex == DUPLEX_FULL) {
+				div_cfg = 3;
+				rx_stamp_sel = 0;
+				tx_stamp_sel = 1;
+			} else {
+				div_cfg = 3;
+				rx_stamp_sel = 0;
+				tx_stamp_sel = 3;
+			}
+		}
+		break;
+	case LAN9645X_SPEED_1000:
+		if (phy_interface_mode_is_rgmii(interface) ||
+		    interface == PHY_INTERFACE_MODE_GMII) {
+			div_cfg = 4;
+			rx_stamp_sel = 0;
+			tx_stamp_sel = 3;
+		} else {
+			div_cfg = 3;
+			rx_stamp_sel = 0;
+			tx_stamp_sel = 3;
+		}
+		break;
+	case LAN9645X_SPEED_2500:
+		div_cfg = 7;
+		rx_stamp_sel = 0;
+		tx_stamp_sel = 3;
+		break;
+	}
+
+	lan_rmw(DEV_PTP_MISC_CFG_RX_STAMP_SEL_SET(rx_stamp_sel),
+		DEV_PTP_MISC_CFG_RX_STAMP_SEL,
+		lan9645x, DEV_PTP_MISC_CFG(p->chip_port));
+
+	lan_rmw(DEV_PTP_MISC_CFG_TX_STAMP_SEL_SET(tx_stamp_sel),
+		DEV_PTP_MISC_CFG_TX_STAMP_SEL,
+		lan9645x, DEV_PTP_MISC_CFG(p->chip_port));
+
+	/* First it is needed to disable and then enable it and after that it
+	 * needed to clear the failed bit which is set by default. Also there
+	 * are 2 phase detector ctrl one for TX and one for RX
+	 */
+	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(0),
+		DEV_PHAD_CTRL_PHAD_ENA,
+		lan9645x, DEV_PHAD_CTRL(p->chip_port, 0));
+
+	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(0),
+		DEV_PHAD_CTRL_PHAD_ENA,
+		lan9645x, DEV_PHAD_CTRL(p->chip_port, 1));
+
+	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(1) |
+		DEV_PHAD_CTRL_DIV_CFG_SET(div_cfg) |
+		DEV_PHAD_CTRL_PHAD_FAILED_SET(1) |
+		DEV_PHAD_CTRL_LOCK_ACC_SET(0),
+		DEV_PHAD_CTRL_PHAD_ENA |
+		DEV_PHAD_CTRL_DIV_CFG |
+		DEV_PHAD_CTRL_PHAD_FAILED |
+		DEV_PHAD_CTRL_LOCK_ACC,
+		lan9645x, DEV_PHAD_CTRL(p->chip_port, 0));
+
+	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(1) |
+		DEV_PHAD_CTRL_DIV_CFG_SET(div_cfg) |
+		DEV_PHAD_CTRL_PHAD_FAILED_SET(1) |
+		DEV_PHAD_CTRL_LOCK_ACC_SET(0),
+		DEV_PHAD_CTRL_PHAD_ENA |
+		DEV_PHAD_CTRL_DIV_CFG |
+		DEV_PHAD_CTRL_PHAD_FAILED |
+		DEV_PHAD_CTRL_LOCK_ACC,
+		lan9645x, DEV_PHAD_CTRL(p->chip_port, 1));
 }

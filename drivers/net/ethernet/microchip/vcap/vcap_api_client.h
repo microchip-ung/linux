@@ -189,6 +189,8 @@ int vcap_set_rule_set_actionset(struct vcap_rule *rule,
 				enum vcap_actionfield_set actionset);
 /* Set a rule counter id (for certain VCAPs only) */
 void vcap_rule_set_counter_id(struct vcap_rule *rule, u32 counter_id);
+/* Get a rule counter id */
+u32 vcap_rule_get_counter_id(struct vcap_rule *rule);
 
 /* VCAP rule field operations */
 int vcap_rule_add_key_bit(struct vcap_rule *rule, enum vcap_key_field key,

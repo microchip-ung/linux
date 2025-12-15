@@ -18,6 +18,7 @@
 #include "hsr_main.h"
 #include "hsr_framereg.h"
 #include "hsr_netlink.h"
+#include "hsr_switchdev.h"
 
 /* seq_nr_after(a, b) - return true if a is after (higher in sequence than) b,
  * false otherwise.
@@ -352,6 +353,10 @@ void hsr_handle_sup_frame(struct hsr_frame_info *frame)
 					 port_rcv->type);
 	if (!node_real)
 		goto done; /* No mem */
+	if (!node_real->spv_node) {
+		node_real->spv_node = true;
+		hsr_node_switchdev_add(hsr, node_real);
+	}
 	if (node_real == node_curr)
 		/* Node has already been merged */
 		goto done;
@@ -672,6 +677,7 @@ void hsr_prune_nodes(struct timer_list *t)
 		if (time_is_before_jiffies(timestamp +
 				msecs_to_jiffies(HSR_NODE_FORGET_TIME))) {
 			hsr_nl_nodedown(hsr, node->macaddress_A);
+			hsr_node_switchdev_del(hsr, node);
 			if (!node->removed) {
 				list_del_rcu(&node->mac_list);
 				node->removed = true;

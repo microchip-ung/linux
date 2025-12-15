@@ -95,6 +95,9 @@ void hsr_debugfs_init(struct hsr_priv *priv, struct net_device *hsr_dev)
 		priv->node_tbl_root = NULL;
 		return;
 	}
+
+	debugfs_create_bool("spv_enable", 0666, priv->node_tbl_root,
+			    &priv->enable_spv_frame);
 }
 
 /* hsr_debugfs_term - Tear down debugfs intrastructure

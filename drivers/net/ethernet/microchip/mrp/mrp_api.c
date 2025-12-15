@@ -161,8 +161,10 @@ static int mrp_port_alloc_ring_test(struct mrp_port *mrp_port)
 		return -ENOMEM;
 
 	ret = mrp_ctrl->ops->mrp_port_hijack_test(mrp_port, skb);
-	if (ret)
+	if (ret) {
+		dev_kfree_skb_any(skb);
 		return ret;
+	}
 
 	return afi_slow_inj_frm_hijack(mrp_ctrl->afi_ctrl,
 				       mrp_port->afi_ring_test_id);
@@ -293,8 +295,10 @@ static int mrp_port_alloc_in_test(struct mrp_port *mrp_port)
 		return -ENOMEM;
 
 	ret = mrp_ctrl->ops->mrp_port_hijack_test(mrp_port, skb);
-	if (ret)
+	if (ret) {
+		dev_kfree_skb_any(skb);
 		return ret;
+	}
 
 	return afi_slow_inj_frm_hijack(mrp_ctrl->afi_ctrl,
 				       mrp_port->afi_in_test_id);
@@ -537,6 +541,15 @@ int mrp_deinit(struct mrp_control *mrp)
 	return 0;
 }
 
+static void *mrp_port_priv_from_netdev(struct mrp_control *mrp_ctrl,
+				       struct net_device *dev)
+{
+	if (!mrp_ctrl->ops->mrp_port_priv_from_netdev)
+		return netdev_priv(dev);
+
+	return mrp_ctrl->ops->mrp_port_priv_from_netdev(dev);
+}
+
 struct mrp_port *mrp_add_port(struct mrp_control *mrp_ctrl,
 			      const struct switchdev_obj_mrp *mrp,
 			      struct net_device *dev)
@@ -558,7 +571,7 @@ struct mrp_port *mrp_add_port(struct mrp_control *mrp_ctrl,
 	if (!mrp_port)
 		goto out;
 
-	mrp_port->priv = netdev_priv(dev);
+	mrp_port->priv = mrp_port_priv_from_netdev(mrp_ctrl, dev);
 	mrp_port->dev = dev;
 	mrp_port->mrp_inst = mrp_inst;
 	mrp_port->ring_intr_status = MRP_INTERRUPT_STATUS_NONE;
@@ -626,7 +639,7 @@ struct mrp_port *mrp_add_in_port(struct mrp_control *mrp_ctrl,
 
 	mrp_inst->in_id = mrp->in_id;
 
-	mrp_port->priv = netdev_priv(dev);
+	mrp_port->priv = mrp_port_priv_from_netdev(mrp_ctrl, dev);
 	mrp_port->dev = dev;
 	mrp_port->mrp_inst = mrp_inst;
 	mrp_port->in_intr_status = MRP_INTERRUPT_STATUS_NONE;

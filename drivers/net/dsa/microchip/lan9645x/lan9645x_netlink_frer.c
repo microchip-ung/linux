@@ -2,12 +2,12 @@
 /* Copyright (C) 2025 Microchip Technology Inc.
  */
 
-#include "lan9645x_main.h"
 #include <net/genetlink.h>
 #include <linux/netdevice.h>
 #include <net/net_namespace.h>
 #include <net/sock.h>
 
+#include "lan9645x_main.h"
 #include "lan9645x_netlink_frer.h"
 
 static struct lan9645x_nl_frer *nl_frer;
@@ -195,6 +195,74 @@ static int lan9645x_frer_genl_cs_cnt_clr(struct sk_buff *skb,
 
 	rtnl_lock();
 	err = lan9645x_frer_cs_cnt_clear(nl_frer, cs_id);
+	rtnl_unlock();
+	return err;
+}
+
+static int lan9645x_frer_genl_isdx_alloc(struct sk_buff *skb,
+					 struct genl_info *info)
+{
+	struct sk_buff *msg;
+	void *hdr;
+	int err;
+
+	rtnl_lock();
+	int isdx = lan9645x_frer_isdx_alloc(nl_frer);
+	rtnl_unlock();
+	if (isdx < 0)
+		return isdx;
+
+	msg = genlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
+	if (!msg) {
+		pr_err("Allocate netlink msg failed\n");
+		err = -ENOMEM;
+		goto invalid_info;
+	}
+
+	hdr = genlmsg_put(msg, info->snd_portid, info->snd_seq,
+			  &lan9645x_frer_genl_family, 0,
+			  MCHP_FRER_GENL_MS_ALLOC);
+	if (!hdr) {
+		pr_err("Create msg hdr failed\n");
+		err = -EMSGSIZE;
+		goto err_msg_free;
+	}
+
+	if (nla_put_u32(msg, MCHP_FRER_ATTR_ID, isdx)) {
+		pr_err("Failed nla_put_u32\n");
+		err = -EMSGSIZE;
+		goto nla_put_failure;
+	}
+
+	genlmsg_end(msg, hdr);
+	return genlmsg_reply(msg, info);
+
+nla_put_failure:
+	genlmsg_cancel(msg, hdr);
+
+err_msg_free:
+	nlmsg_free(msg);
+
+invalid_info:
+	lan9645x_frer_isdx_free(nl_frer, isdx);
+	return err;
+}
+
+static int lan9645x_frer_genl_isdx_free(struct sk_buff * skb,
+					struct genl_info * info)
+{
+	u32 isdx;
+	int err;
+
+	if (!info->attrs[MCHP_FRER_ATTR_ID]) {
+		pr_err("ATTR_ID is missing\n");
+		return -EINVAL;
+	}
+
+	isdx = nla_get_u32(info->attrs[MCHP_FRER_ATTR_ID]);
+
+	rtnl_lock();
+	err = lan9645x_frer_isdx_free(nl_frer, isdx);
 	rtnl_unlock();
 	return err;
 }
@@ -736,6 +804,18 @@ static struct genl_ops lan9645x_frer_genl_ops[] = {
 		.flags  = GENL_ADMIN_PERM,
 	},
 	{
+		.cmd    = MCHP_FRER_GENL_ISDX_ALLOC,
+		.doit   = lan9645x_frer_genl_isdx_alloc,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
+		.flags  = GENL_ADMIN_PERM,
+	},
+	{
+		.cmd    = MCHP_FRER_GENL_ISDX_FREE,
+		.doit   = lan9645x_frer_genl_isdx_free,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
+		.flags  = GENL_ADMIN_PERM,
+	},
+	{
 		.cmd    = MCHP_FRER_GENL_MS_CFG_SET,
 		.doit   = lan9645x_frer_genl_ms_cfg_set,
 		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
@@ -793,7 +873,7 @@ static struct genl_family lan9645x_frer_genl_family = {
 	.policy		= lan9645x_frer_genl_policy,
 	.ops		= lan9645x_frer_genl_ops,
 	.n_ops		= ARRAY_SIZE(lan9645x_frer_genl_ops),
-	.resv_start_op	= MCHP_FRER_GENL_VLAN_CFG_GET + 1,
+	.resv_start_op	= MCHP_FRER_GENL_ISDX_FREE + 1,
 };
 
 int lan9645x_netlink_frer_init(struct lan9645x *lan9645x)

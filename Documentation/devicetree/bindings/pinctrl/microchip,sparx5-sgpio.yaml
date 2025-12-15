@@ -25,6 +25,7 @@ properties:
       - microchip,sparx5-sgpio
       - mscc,ocelot-sgpio
       - mscc,luton-sgpio
+      - microchip,lan9645x-sgpio
 
   "#address-cells":
     const: 1
@@ -33,6 +34,9 @@ properties:
     const: 0
 
   reg:
+    maxItems: 1
+
+  reg-names:
     maxItems: 1
 
   clocks:

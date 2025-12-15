@@ -2,6 +2,9 @@
 /* Copyright (C) 2025 Microchip Technology Inc.
  */
 
+#include <linux/debugfs.h>
+
+#include "lan9645x_stats.h"
 #include "vcap_api_client.h"
 #include "lan9645x_vcap_utils.h"
 #include "lan9645x_main.h"
@@ -21,9 +24,6 @@
  * - NETIF_F_HW_HSR_DUP: Lan9645x will duplicate PRP frames with RCT. Frames
  *   to SAN nodes, which are moving between A and B, can not be duplicated in
  *   hw.
- *
- * - NETIF_F_HW_HSR_TAG_RM: Lan9645x does not remove RCT, but we need this to avoid
- *   hsr driver validating the sequence number.
  *
  * - NETIF_F_HW_HSR_TAG_INS: Do not set this. Lan9645x can partially offload RCT
  *   insertion. SW must insert 6-byte RCT trailer and preformat trailer with PRP
@@ -59,6 +59,24 @@
 #define HSR_ASIC_KHZ 165625
 #define DD_TBL_NUM_ROWS (8 * 64)
 #define DD_AUTOAGE_UNITSIZE 1
+
+struct lan9645x_hsr_prp_node_counters {
+	u32 time_last_seen_a;
+	u32 time_last_seen_b;
+	u32 cnt_rcv_a;
+	u32 cnt_rcv_b;
+	u32 cnt_err_wrng_lan_a;
+	u32 cnt_err_wrng_lan_b;
+};
+
+struct lan9645x_hsr_prp_dan_node {
+	struct list_head list;
+	unsigned char smac[ETH_ALEN];
+	u32 vrule_a;
+	u32 vrule_b;
+	int isdx_a;
+	int isdx_b;
+};
 
 enum lan9645x_hsr_type lan9645x_hsr_prp_ver_to_type(enum hsr_version ver)
 {
@@ -125,7 +143,7 @@ static int lan9645x_vcap_s2_hsr_smac_kill(struct lan9645x *lan9645x,
 	int err;
 
 	rule = vcap_alloc_rule(lan9645x->vcap_ctrl, dev,
-			       VCAP_CID_INGRESS_STAGE2_L0, VCAP_USER_HSR_PRP, 0,
+			       VCAP_CID_INGRESS_STAGE2_L1, VCAP_USER_HSR_PRP, 0,
 			       0);
 	if (IS_ERR(rule))
 		return PTR_ERR(rule);
@@ -178,7 +196,7 @@ static int lan9645x_vcap_s2_ptp_dd_dis(struct lan9645x *lan9645x,
 	int err;
 
 	rule = vcap_alloc_rule(lan9645x->vcap_ctrl, dev,
-			       VCAP_CID_INGRESS_STAGE2_L0, VCAP_USER_HSR_PRP, 0,
+			       VCAP_CID_INGRESS_STAGE2_L1, VCAP_USER_HSR_PRP, 0,
 			       0);
 	if (IS_ERR(rule))
 		return PTR_ERR(rule);
@@ -206,7 +224,7 @@ static int lan9645x_vcap_s1_normal_isdx_clf(struct lan9645x *lan9645x,
 	struct vcap_rule *rule;
 	int err = 0;
 
-	rule = vcap_alloc_rule(vctrl, dev, LAN9645X_VCAP_CID_IS1_L0,
+	rule = vcap_alloc_rule(vctrl, dev, LAN9645X_VCAP_CID_IS1_L1,
 			       VCAP_USER_HSR_PRP, 0, 0);
 	if (IS_ERR(rule))
 		return PTR_ERR(rule);
@@ -214,6 +232,12 @@ static int lan9645x_vcap_s1_normal_isdx_clf(struct lan9645x *lan9645x,
 	if (vrule_id)
 		*vrule_id = rule->id;
 
+	/* It is not necessary to make rules for IPv4/IPv6 frame types here. We
+	 * still match all frames sent on the HSR device.
+	 *
+	 * Any ip frame sent on the HSR interface will be HSR tagged in the HSR
+	 * driver, and therefore hit the OTHER frame type in hardware.
+	 */
 	err = vcap_set_rule_set_keyset(rule, VCAP_KFS_NORMAL);
 	err |= vcap_rule_add_key_bit(rule, VCAP_KF_R_TAGGED_IS, VCAP_BIT_1);
 	err |= vcap_rule_add_key_u32(rule, VCAP_KF_IF_IGR_PORT_MASK, igr_pmsk, ~0);
@@ -231,6 +255,202 @@ static int lan9645x_vcap_s1_normal_isdx_clf(struct lan9645x *lan9645x,
 		err = lan9645x_vcap_rule_val_add(rule, ETH_P_ALL);
 	vcap_free_rule(rule);
 	return err;
+}
+
+static int lan9645x_vcap_dan_isdx_counter(struct lan9645x *lan9645x,
+					  unsigned char *smac,
+					  u32 igr_pmsk,
+					  u32 isdx,
+					  struct net_device *dev,
+					  u32 *vrule_id)
+{
+	struct vcap_control *vctrl = lan9645x->vcap_ctrl;
+	struct vcap_rule *rule;
+	int err = 0;
+
+	rule = vcap_alloc_rule(vctrl, dev, LAN9645X_VCAP_CID_IS1_L2,
+			       VCAP_USER_HSR_PRP, 0, 0);
+	if (IS_ERR(rule))
+		return PTR_ERR(rule);
+
+	if (vrule_id)
+		*vrule_id = rule->id;
+
+	err = vcap_set_rule_set_keyset(rule, VCAP_KFS_DMAC_VID);
+	err |= vcap_rule_add_key_u32(rule, VCAP_KF_IF_IGR_PORT_MASK, igr_pmsk, ~0);
+	/* This is configured to match SMAC */
+	err |= lan9645x_vcap_add_key_mac(rule, VCAP_KF_L2_DMAC, smac);
+	err |= vcap_rule_add_action_bit(rule, VCAP_AF_ISDX_REPLACE_ENA, VCAP_BIT_1);
+	err |= vcap_rule_add_action_u32(rule, VCAP_AF_ISDX_ADD_VAL, isdx);
+	err = err ? -EINVAL : 0;
+	if (!err)
+		err = lan9645x_vcap_rule_val_add(rule, ETH_P_ALL);
+	vcap_free_rule(rule);
+	return err;
+}
+
+int lan9645x_hsr_prp_dan_node_add(struct lan9645x *lan9645x,
+				  int port,
+				  struct net_device *hsr,
+				  const unsigned char *smac)
+{
+	struct lan9645x_hsr_prp *h = &lan9645x->hsr;
+	struct lan9645x_streamt_entry entry = { 0 };
+	struct lan9645x_hsr_prp_dan_node *n;
+	struct lan9645x_port *p;
+	struct net_device *dev;
+	int isdx_a, isdx_b;
+	int err = 0;
+
+	p = lan9645x_to_port(lan9645x, port);
+	dev = lan9645x_chipport_to_ndev(lan9645x, port);
+
+	mutex_lock(&h->lock);
+
+	if (!lan9645x->hsr.enabled || hsr != p->hsr)
+		goto unlock;
+
+	list_for_each_entry(n, &h->nodes , list)
+		if (ether_addr_equal(n->smac, smac))
+			goto unlock;
+
+	n = kzalloc(sizeof(*n), GFP_KERNEL);
+	if (!n) {
+		err =  -ENOMEM;
+		goto unlock;
+	}
+
+	/* To track HSR/PRP nodestable counters it is necessary to provision
+	 * this in hardware:
+	 *
+	 * - 2x ISDX's, one for frames on LAN A resp. B.
+	 * - 2x Stream table entries, one for each isdx. These entries track
+	 *   TimeLastSeen and LanidErr
+	 * - 2x IS1 VCAP rules to classify ingress frames on A/B to their ISDX.
+	 *
+	 * The regular ISDX counters are used for total frame counts on A/B.
+	 */
+
+	isdx_a = lan9645x_stream_isdx_alloc(lan9645x);
+	if (isdx_a < 0) {
+		err = isdx_a;
+		goto free_n;
+	}
+
+	isdx_b = lan9645x_stream_isdx_alloc(lan9645x);
+	if (isdx_b < 0) {
+		lan9645x_stream_isdx_free(lan9645x, isdx_a);
+		err = isdx_b;
+		goto free_n;
+	}
+
+	entry.input_port_mask = BIT(h->port_a);
+	err = lan9645x_streamt_write(lan9645x, isdx_a, &entry);
+	if (err)
+		goto free_isdx;
+
+	entry.input_port_mask = BIT(h->port_b);
+	err = lan9645x_streamt_write(lan9645x, isdx_b, &entry);
+	if (err) {
+		lan9645x_streamt_del(lan9645x, isdx_a);
+		goto free_isdx;
+	}
+
+	ether_addr_copy(n->smac, smac);
+
+	err = lan9645x_vcap_dan_isdx_counter(lan9645x, n->smac, BIT(h->port_a),
+					     isdx_a, dev, &n->vrule_a);
+	if (err)
+		goto free_streamt;
+
+	err = lan9645x_vcap_dan_isdx_counter(lan9645x, n->smac, BIT(h->port_b),
+					     isdx_b, dev, &n->vrule_b);
+	if (err) {
+		vcap_del_rule(lan9645x->vcap_ctrl, dev, n->vrule_a);
+		goto free_streamt;
+	}
+
+	n->isdx_a = isdx_a;
+	n->isdx_b = isdx_b;
+	list_add_tail(&n->list, &h->nodes);
+	mutex_unlock(&h->lock);
+	return 0;
+
+free_streamt:
+	lan9645x_streamt_del(lan9645x, isdx_a);
+	lan9645x_streamt_del(lan9645x, isdx_b);
+free_isdx:
+	lan9645x_stream_isdx_free(lan9645x, isdx_b);
+	lan9645x_stream_isdx_free(lan9645x, isdx_a);
+free_n:
+	kfree(n);
+unlock:
+	mutex_unlock(&h->lock);
+	return err;
+}
+
+static void lan9645x_hsr_prp_dan_node_dealloc(struct lan9645x *lan9645x,
+					      struct net_device *dev,
+					      struct lan9645x_hsr_prp_dan_node *n)
+{
+	if (!n)
+		return;
+
+	vcap_del_rule(lan9645x->vcap_ctrl, dev, n->vrule_a);
+	vcap_del_rule(lan9645x->vcap_ctrl, dev, n->vrule_b);
+	lan9645x_streamt_del(lan9645x, n->isdx_a);
+	lan9645x_streamt_del(lan9645x, n->isdx_b);
+	lan9645x_stream_isdx_free(lan9645x, n->isdx_a);
+	lan9645x_stream_isdx_free(lan9645x, n->isdx_b);
+	kfree(n);
+}
+
+static void lan9645x_hsr_prp_nodestable_flush(struct lan9645x *lan9645x)
+{
+	struct lan9645x_hsr_prp_dan_node *n, *tmp;
+	struct lan9645x_hsr_prp *h = &lan9645x->hsr;
+	struct net_device *dev;
+
+	lockdep_assert_held(&h->lock);
+
+	dev = lan9645x_chipport_to_ndev(lan9645x, h->port_a);
+
+	list_for_each_entry_safe(n, tmp, &h->nodes, list) {
+		list_del(&n->list);
+		lan9645x_hsr_prp_dan_node_dealloc(lan9645x, dev, n);
+	}
+}
+
+void lan9645x_hsr_prp_dan_node_del(struct lan9645x *lan9645x,
+				   int port,
+				   struct net_device *hsr,
+				   const unsigned char *smac)
+{
+	struct lan9645x_hsr_prp_dan_node *tmp, *n = NULL;
+	struct lan9645x_hsr_prp *h = &lan9645x->hsr;
+	struct lan9645x_port *p;
+	struct net_device *dev;
+
+	mutex_lock(&h->lock);
+
+	p = lan9645x_to_port(lan9645x, port);
+	dev = lan9645x_chipport_to_ndev(lan9645x, port);
+
+	if (!lan9645x->hsr.enabled || hsr != p->hsr) {
+		mutex_unlock(&h->lock);
+		return;
+	}
+
+	list_for_each_entry(tmp, &h->nodes, list) {
+		if (ether_addr_equal(tmp->smac, smac)) {
+			n = tmp;
+			list_del(&n->list);
+			break;
+		}
+	}
+	mutex_unlock(&h->lock);
+
+	lan9645x_hsr_prp_dan_node_dealloc(lan9645x, dev, n);
 }
 
 static netdev_features_t
@@ -390,8 +610,13 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 	if (err)
 		goto free_isdx;
 
-	/* Classify CPU injected frames, with HSR if SMAC, which are tagged, as
-	 * isdx and our reserved VLAN
+	/* Classify CPU injected to HSR isdx and reserved VLAN. Frames are
+	 * identified by:
+	 *
+	 * - Ingress port == CPU_PORT
+	 * - HSR interface SMAC
+	 * - Has Rtag
+	 *
 	 */
 	err = lan9645x_vcap_s1_normal_isdx_clf(lan9645x, mac, BIT(CPU_PORT), isdx,
 					       VLAN_HSR_PRP, lrea_dev,
@@ -408,7 +633,14 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 		goto s1_normal_del;
 
 	if (type == LAN9645X_HSR) {
-		/* HSR: Add vcap rule to discard own SMAC frames on port A/B */
+		/* HSR: Add vcap rule to discard own SMAC frames on port A/B.
+		 * We use IS2 lookup 2 for these rules. The rules require
+		 * reconfiguring the active keys in the port/vcap/lookup to make
+		 * sure we match all frames. This makes it challenging to use
+		 * this vcap/lookup for other purposes.
+		 * We leave lookup 1 to the user, where they can operate as
+		 * normal.
+		 */
 		err = lan9645x_vcap_s2_hsr_smac_kill(lan9645x, port_ab_mask, mac, lrea_dev,
 						     &h->local_ring_vrule_id);
 		if (err)
@@ -468,6 +700,22 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 			REW_RED_TAG_CFG_PRP_RCT_TAG_ENA,
 			lan9645x, REW_RED_TAG_CFG(port));
 
+		/* Use IS1 lookup 3 for node table entry isdx classification.
+		 * We configure S1_DMAC_VID to use SMAC instead.
+		 */
+		lan_rmw(ANA_VCAP_CFG_S1_SMAC_ENA_SET(S1_LOOKUP3),
+			ANA_VCAP_CFG_S1_SMAC_ENA,
+			lan9645x, ANA_VCAP_CFG(port));
+
+		/* Use S1_DMAC_VID for all frame types in IS1 Lookup 3. */
+		lan_rmw(ANA_VCAP_S1_CFG_KEY_IP6_CFG_SET(6) |
+			ANA_VCAP_S1_CFG_KEY_IP4_CFG_SET(4) |
+			ANA_VCAP_S1_CFG_KEY_OTHER_CFG_SET(3),
+			ANA_VCAP_S1_CFG_KEY_IP6_CFG |
+			ANA_VCAP_S1_CFG_KEY_IP4_CFG |
+			ANA_VCAP_S1_CFG_KEY_OTHER_CFG,
+			 lan9645x, ANA_VCAP_S1_CFG(port, 2));
+
 		if (type == LAN9645X_HSR) {
 			/* HSR only: Treat the frame types
 			 *
@@ -477,22 +725,22 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 			 * - OAM
 			 * - IP6
 			 *
-			 * as MAC_ETYPE in S2 first lookup. This will ensure our
+			 * as MAC_ETYPE in S2 second lookup. This will ensure our
 			 * SMAC kill rule, discards all frames. The downside is
 			 * this keyset selection configuration is global for S2
-			 * lookup1. But it is the only way to discard all frames
+			 * lookup2. But it is the only way to discard all frames
 			 * based on ingress/smac.
 			 */
-			lan_rmw(ANA_VCAP_S2_CFG_ARP_DIS_SET(S2_LOOKUP1) |
-				ANA_VCAP_S2_CFG_IP_TCPUDP_DIS_SET(S2_LOOKUP1) |
-				ANA_VCAP_S2_CFG_IP_OTHER_DIS_SET(S2_LOOKUP1) |
-				ANA_VCAP_S2_CFG_OAM_DIS_SET(S2_LOOKUP1) |
-				ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP1_SET(IP6_MAC_ETYPE),
+			lan_rmw(ANA_VCAP_S2_CFG_ARP_DIS_SET(S2_LOOKUP2) |
+				ANA_VCAP_S2_CFG_IP_TCPUDP_DIS_SET(S2_LOOKUP2) |
+				ANA_VCAP_S2_CFG_IP_OTHER_DIS_SET(S2_LOOKUP2) |
+				ANA_VCAP_S2_CFG_OAM_DIS_SET(S2_LOOKUP2) |
+				ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP2_SET(IP6_MAC_ETYPE),
 				ANA_VCAP_S2_CFG_ARP_DIS |
 				ANA_VCAP_S2_CFG_IP_TCPUDP_DIS |
 				ANA_VCAP_S2_CFG_IP_OTHER_DIS |
 				ANA_VCAP_S2_CFG_OAM_DIS |
-				ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP1,
+				ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP2,
 				lan9645x,
 				ANA_VCAP_S2_CFG(port));
 
@@ -656,6 +904,7 @@ int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 	lan9645x->vlan_mask[VLAN_HSR_PRP] = 0;
 	lan9645x_vlan_set_mask(lan9645x, VLAN_HSR_PRP);
 
+	lan9645x_streamt_del(lan9645x, h->isdx);
 	lan9645x_stream_isdx_free(lan9645x, h->isdx);
 
 	/* NOTE: need some non-NULL net_device for the vcap_api. */
@@ -680,6 +929,8 @@ int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 				"hsr remove vcap rule: %u err: %d\n",
 				h->ptp_dd_vrule_id, err);
 	}
+
+	lan9645x_hsr_prp_nodestable_flush(lan9645x);
 
 	lan_wr(0, lan9645x, QSYS_DD_CFG);
 
@@ -716,12 +967,12 @@ int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 			ANA_VCAP_S2_CFG_IP_TCPUDP_DIS_SET(0) |
 			ANA_VCAP_S2_CFG_IP_OTHER_DIS_SET(0) |
 			ANA_VCAP_S2_CFG_OAM_DIS_SET(0) |
-			ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP1_SET(IP6_STD),
+			ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP2_SET(IP6_STD),
 			ANA_VCAP_S2_CFG_ARP_DIS |
 			ANA_VCAP_S2_CFG_IP_TCPUDP_DIS |
 			ANA_VCAP_S2_CFG_IP_OTHER_DIS |
 			ANA_VCAP_S2_CFG_OAM_DIS |
-			ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP1,
+			ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP2,
 			lan9645x,
 			ANA_VCAP_S2_CFG(port));
 
@@ -771,9 +1022,85 @@ unlock:
 	return err;
 }
 
+static void
+lan9645x_hsr_prp_dan_update(struct lan9645x *lan9645x,
+			    struct lan9645x_hsr_prp_dan_node *node,
+			    struct lan9645x_hsr_prp_node_counters *ncnt)
+{
+	struct lan9645x_streamt_entry entry = { 0 };
+	u64 *isdx_cnt;
+
+	lockdep_assert_held(&lan9645x->hsr.lock);
+
+	isdx_cnt = STAT_COUNTERS(lan9645x, LAN9645X_STAT_ISDX, node->isdx_a);
+	ncnt->cnt_rcv_a = isdx_cnt[SCNT_ISDX_GREEN_PKT] +
+			  isdx_cnt[SCNT_ISDX_YELLOW_PKT] +
+			  isdx_cnt[SCNT_ISDX_RED_PKT];
+
+	isdx_cnt = STAT_COUNTERS(lan9645x, LAN9645X_STAT_ISDX, node->isdx_b);
+	ncnt->cnt_rcv_b = isdx_cnt[SCNT_ISDX_GREEN_PKT] +
+			  isdx_cnt[SCNT_ISDX_YELLOW_PKT] +
+			  isdx_cnt[SCNT_ISDX_RED_PKT];
+
+	lan9645x_streamt_read(lan9645x, node->isdx_a, &entry);
+	ncnt->cnt_err_wrng_lan_a = entry.lanid_err;
+	ncnt->time_last_seen_a = entry.time_last_seen;
+	lan9645x_streamt_read(lan9645x, node->isdx_b, &entry);
+	ncnt->cnt_err_wrng_lan_b = entry.lanid_err;
+	ncnt->time_last_seen_b = entry.time_last_seen;
+}
+
+static int lan9645x_hsr_prp_nodestable_show(struct seq_file *m,
+					    void *unused)
+{
+	struct lan9645x_hsr_prp_node_counters ncnt = { 0 };
+	struct lan9645x *lan9645x = m->private;
+	struct lan9645x_hsr_prp_dan_node *n;
+	struct lan9645x_hsr_prp *h;
+	int i = 0;
+
+	h = &lan9645x->hsr;
+
+	/* Update ISDX counters */
+	lan9645x_stats_view_update(lan9645x, LAN9645X_STAT_ISDX);
+
+	seq_printf(m, "Inst MAC Address       Node Type   RxA        RxB        LastSeenA  LastSeenB  ErrLanidA  ErrLanidB\n");
+	seq_printf(m, "---- ----------------- ----------- ---------- ---------- ---------- ---------- ---------- ----------\n");
+
+	list_for_each_entry(n, &h->nodes, list) {
+		mutex_lock(&h->lock);
+		lan9645x_hsr_prp_dan_update(lan9645x, n, &ncnt);
+		mutex_unlock(&h->lock);
+
+		seq_printf(m, "%4u %pM %-11s %10u %10u %10u %10u %10u %10u\n",
+			   i, n->smac,
+			   "DAN",
+			   ncnt.cnt_rcv_a,
+			   ncnt.cnt_rcv_b,
+			   ncnt.time_last_seen_a,
+			   ncnt.time_last_seen_b,
+			   ncnt.cnt_err_wrng_lan_a,
+			   ncnt.cnt_err_wrng_lan_b);
+		i++;
+	}
+
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(lan9645x_hsr_prp_nodestable);
+
 int lan9645x_hsr_prp_init(struct lan9645x *lan9645x)
 {
+	struct dentry *dir;
+
 	mutex_init(&lan9645x->hsr.lock);
+	INIT_LIST_HEAD(&lan9645x->hsr.nodes);
+
+	dir = debugfs_create_dir("hsr", lan9645x->debugfs_root);
+	if (PTR_ERR_OR_ZERO(dir))
+		return 0;
+
+	debugfs_create_file("nodestable", 0444, dir, lan9645x,
+			    &lan9645x_hsr_prp_nodestable_fops);
 
 	return 0;
 }

@@ -22,6 +22,7 @@
 #include <net/devlink.h>
 #include <net/switchdev.h>
 #include <net/pkt_cls.h>
+#include <linux/dcbnl.h>
 
 struct dsa_8021q_context;
 struct tc_action;
@@ -1016,6 +1017,7 @@ struct dsa_switch_ops {
 	/*
 	 * Port's MAC EEE settings
 	 */
+	bool	(*support_eee)(struct dsa_switch *ds, int port);
 	int	(*set_mac_eee)(struct dsa_switch *ds, int port,
 			       struct ethtool_keee *e);
 	int	(*get_mac_eee)(struct dsa_switch *ds, int port,
@@ -1172,6 +1174,8 @@ struct dsa_switch_ops {
 				 struct sk_buff *skb);
 	bool	(*port_rxtstamp)(struct dsa_switch *ds, int port,
 				 struct sk_buff *skb, unsigned int type);
+	bool	(*port_rxtstamp_all)(struct dsa_switch *ds, int port,
+				     struct sk_buff *skb, unsigned int type);
 
 	/* Devlink parameters, etc */
 	int	(*devlink_param_get)(struct dsa_switch *ds, u32 id,
@@ -1245,10 +1249,16 @@ struct dsa_switch_ops {
 				 struct netlink_ext_ack *extack);
 	int	(*port_hsr_leave)(struct dsa_switch *ds, int port,
 				  struct net_device *hsr);
+	int	(*port_hsr_dan_node_add)(struct dsa_switch *ds, int port,
+					 const struct switchdev_obj_node_hsr *hsr_node);
+	int	(*port_hsr_dan_node_del)(struct dsa_switch *ds, int port,
+					 const struct switchdev_obj_node_hsr *hsr_node);
 
 	/*
 	 * MRP integration
 	 */
+	void	(*port_mrp_update_br_mac)(struct dsa_switch *ds, int port,
+					  const unsigned char *addr);
 	int	(*port_mrp_add)(struct dsa_switch *ds, int port,
 				const struct switchdev_obj_mrp *mrp);
 	int	(*port_mrp_del)(struct dsa_switch *ds, int port,
@@ -1257,6 +1267,23 @@ struct dsa_switch_ops {
 					  const struct switchdev_obj_ring_role_mrp *mrp);
 	int	(*port_mrp_del_ring_role)(struct dsa_switch *ds, int port,
 					  const struct switchdev_obj_ring_role_mrp *mrp);
+	int	(*port_mrp_role)(struct dsa_switch *ds, int port, u8 mrp_port_role);
+	int	(*port_mrp_add_ring_test)(struct dsa_switch *ds, int port,
+					  const struct switchdev_obj_ring_test_mrp *mrp);
+	int	(*port_mrp_del_ring_test)(struct dsa_switch *ds, int port,
+					  const struct switchdev_obj_ring_test_mrp *mrp);
+	int	(*port_mrp_add_ring_state)(struct dsa_switch *ds, int port,
+					   const struct switchdev_obj_ring_state_mrp *mrp);
+	int	(*port_mrp_add_in_ring_test)(struct dsa_switch *ds, int port,
+					     const struct switchdev_obj_in_test_mrp *mrp);
+	int	(*port_mrp_del_in_ring_test)(struct dsa_switch *ds, int port,
+					     const struct switchdev_obj_in_test_mrp *mrp);
+	int	(*port_mrp_add_in_ring_role)(struct dsa_switch *ds, int port,
+					     const struct switchdev_obj_in_role_mrp *mrp);
+	int	(*port_mrp_del_in_ring_role)(struct dsa_switch *ds, int port,
+					     const struct switchdev_obj_in_role_mrp *mrp);
+	int	(*port_mrp_add_in_ring_state)(struct dsa_switch *ds, int port,
+					      const struct switchdev_obj_in_state_mrp *mrp);
 
 	/*
 	 * tag_8021q operations
@@ -1418,5 +1445,6 @@ static inline bool dsa_user_dev_check(const struct net_device *dev)
 
 netdev_tx_t dsa_enqueue_skb(struct sk_buff *skb, struct net_device *dev);
 void dsa_port_phylink_mac_change(struct dsa_switch *ds, int port, bool up);
+bool dsa_supports_eee(struct dsa_switch *ds, int port);
 
 #endif

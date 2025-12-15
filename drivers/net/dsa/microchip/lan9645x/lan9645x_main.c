@@ -10,6 +10,8 @@
 #include "lan9645x_stats.h"
 #include "lan9645x_netlink_qos.h"
 #include "lan9645x_netlink_frer.h"
+#include "lan9645x_netlink_fp.h"
+#include "lan9645x_mrp.h"
 
 static const char *lan9645x_resource_names[NUM_TARGETS] = {
 	[TARGET_ORG]          = "org",
@@ -112,6 +114,10 @@ static void lan9645x_teardown(struct dsa_switch *ds)
 {
 	struct lan9645x *lan9645x = ds->priv;
 
+	debugfs_remove_recursive(lan9645x->debugfs_root);
+	lan9645x_afi_deinit(lan9645x);
+	lan9645x_mrp_uninit(lan9645x);
+	lan9645x_netlink_fp_uninit();
 	lan9645x_netlink_frer_uninit();
 	lan9645x_netlink_qos_uninit();
 	lan9645x_taprio_deinit(lan9645x);
@@ -123,8 +129,10 @@ static void lan9645x_teardown(struct dsa_switch *ds)
 	lan9645x_hsr_prp_deinit(lan9645x);
 	lan9645x_streamt_deinit(lan9645x);
 	lan9645x_vcap_deinit(lan9645x);
+	lan9645x_bum_deinit(lan9645x);
 	mutex_destroy(&lan9645x->link_isdx_lock);
-	debugfs_remove_recursive(lan9645x->debugfs_root);
+	mutex_destroy(&lan9645x->psfp_lock);
+	mutex_destroy(&lan9645x->esdx_lock);
 }
 
 static void lan9645x_port_phylink_get_caps(struct dsa_switch *ds, int port,
@@ -232,6 +240,16 @@ static int lan9645x_get_max_mtu(struct dsa_switch *ds, int port)
 	return max_mtu;
 }
 
+static irqreturn_t lan9645x_ana_irq_handler(int virq, void *args)
+{
+	struct lan9645x *lan9645x = args;
+
+	lan9645x_mrp_ring_open(lan9645x);
+	lan9645x_mrp_in_open(lan9645x);
+
+	return IRQ_HANDLED;
+}
+
 static int lan9645x_port_init(struct lan9645x *lan9645x, int port)
 {
 	struct lan9645x_port *p = lan9645x->ports[port];
@@ -270,7 +288,8 @@ static int lan9645x_port_init(struct lan9645x *lan9645x, int port)
 		ANA_PORT_CFG_PORTID_VAL,
 		lan9645x, ANA_PORT_CFG(p->chip_port));
 
-	lan9645x_vlan_set_hostmode(p);
+	if (p->chip_port != lan9645x->npi)
+		lan9645x_vlan_set_hostmode(p);
 
 	return 0;
 }
@@ -338,7 +357,10 @@ static int lan9645x_parse_ports_node(struct lan9645x *lan9645x)
 {
 	struct fwnode_handle *ports, *portnp;
 	struct device *dev = lan9645x->dev;
+	int max_ports, num_ports = 0;
 	int err = 0;
+
+	max_ports = NUM_PHYS_PORTS - lan9645x->num_port_dis;
 
 	ports = device_get_named_child_node(dev, "ethernet-ports");
 	if (!ports)
@@ -352,6 +374,16 @@ static int lan9645x_parse_ports_node(struct lan9645x *lan9645x)
 		phy_interface_t phy_mode;
 		struct phy *serdes;
 		u32 p;
+
+		num_ports++;
+
+		if (num_ports > max_ports) {
+			dev_err(dev,
+				"Too many ports in device tree. Max ports supported by SKU: %d \n",
+				max_ports);
+			err = -ENODEV;
+			goto err_free_ports;
+		}
 
 		if (fwnode_property_read_u32(portnp, "reg", &p)) {
 			dev_err(dev, "Port number not defined in device tree (property \"reg\")\n");
@@ -378,6 +410,9 @@ static int lan9645x_parse_ports_node(struct lan9645x *lan9645x)
 			fwnode_handle_put(portnp);
 			goto err_free_ports;
 		}
+
+		fwnode_property_read_string(portnp, "label",
+					    &lan9645x->ports[p]->name);
 
 		lan9645x->ports[p]->phy_mode = phy_mode;
 		lan9645x->ports[p]->fwnode = fwnode_handle_get(portnp);
@@ -483,8 +518,6 @@ static int lan9645x_setup(struct dsa_switch *ds)
 	struct dsa_port *dp;
 	int err = 0;
 
-	dev_dbg(lan9645x->dev, "starting setup");
-
 	lan9645x->num_phys_ports = ds->num_ports;
 	all_phys_ports = GENMASK(lan9645x->num_phys_ports - 1, 0);
 	all_ports = all_phys_ports | BIT(CPU_PORT);
@@ -544,8 +577,17 @@ static int lan9645x_setup(struct dsa_switch *ds)
 								"lan9645x-ptp-ext");
 	}
 
+	err = lan9645x_tag_npi_setup(ds);
+	if (err) {
+		dev_err(dev, "Lan9645x setup: failed to setup NPI port.\n");
+		return err;
+	}
+
 	INIT_LIST_HEAD(&lan9645x->link_isdx);
 	mutex_init(&lan9645x->link_isdx_lock);
+	mutex_init(&lan9645x->psfp_lock);
+	mutex_init(&lan9645x->esdx_lock);
+	mutex_init(&lan9645x->tx_lock);
 	lan9645x_mac_init(lan9645x);
 	lan9645x_vlan_init(lan9645x);
 	err = lan9645x_qos_init(lan9645x);
@@ -556,6 +598,17 @@ static int lan9645x_setup(struct dsa_switch *ds)
 	if (err)
 		return dev_err_probe(dev, err, "PTP init error");
 	lan9645x_hsr_prp_init(lan9645x);
+
+	/* ESDX index 0 is not useful and counts as no-esdx, similar to ISDX */
+	set_bit(0, lan9645x->esdx_mask);
+	lan9645x_fp_init(lan9645x);
+
+	err = lan9645x_bum_init(lan9645x);
+	if (err)
+		return dev_err_probe(dev, err, "BUM init error");
+
+	lan9645x_afi_init(lan9645x);
+	lan9645x_mrp_init(lan9645x);
 
 	/* Link Aggregation Mode: NETDEV_LAG_HASH_L2 */
 	lan_wr(ANA_AGGR_CFG_AC_SMAC_ENA |
@@ -599,14 +652,31 @@ static int lan9645x_setup(struct dsa_switch *ds)
 	/* Map the 8 CPU extraction queues to CPU port 9 (datasheet is wrong) */
 	lan_wr(0, lan9645x, QSYS_CPU_GROUP_MAP);
 
+	/* Configure second cpu port (chip_port 10) for manual frame injection.
+	 * The AFI can not inject frames via the NPI port, unless frame aging is
+	 * disabled on frontports, so we use manual injection for AFI frames.
+	 */
+
 	/* Set min-spacing of EOF to SOF on injected frames to 0, on cpu device
-	 * 0. This is required when injecting with IFH.
+	 * 1. This is required when injecting with IFH.
 	 * Default values emulates delay of std preamble/IFG setting on a front
 	 * port.
 	 */
 	lan_rmw(QS_INJ_CTRL_GAP_SIZE_SET(0),
 		QS_INJ_CTRL_GAP_SIZE,
-		lan9645x, QS_INJ_CTRL(0));
+		lan9645x, QS_INJ_CTRL(1));
+
+	/* Injection: Mode: manual injection | Byte_swap */
+	lan_wr(QS_INJ_GRP_CFG_MODE_SET(1) |
+	       QS_INJ_GRP_CFG_BYTE_SWAP_SET(1),
+	       lan9645x, QS_INJ_GRP_CFG(1));
+
+	lan_rmw(QS_INJ_CTRL_GAP_SIZE_SET(0),
+		QS_INJ_CTRL_GAP_SIZE,
+		lan9645x, QS_INJ_CTRL(1));
+
+	lan_wr(SYS_PORT_MODE_INCL_INJ_HDR_SET(1),
+	       lan9645x, SYS_PORT_MODE(CPU_PORT+1));
 
 	/* Setup flooding PGIDs for IPv4/IPv6 multicast. Control and dataplane
 	 * use the same masks. Control frames are redirected to CPU, and
@@ -706,12 +776,6 @@ static int lan9645x_setup(struct dsa_switch *ds)
 		return err;
 	}
 
-	err = lan9645x_tag_npi_setup(ds);
-	if (err) {
-		dev_err(dev, "Lan9645x setup: failed to setup NPI port.\n");
-		return err;
-	}
-
 	lan9645x_set_tail_drop_wm(lan9645x);
 
 	ds->mtu_enforcement_ingress = true;
@@ -740,6 +804,18 @@ static int lan9645x_setup(struct dsa_switch *ds)
 		}
 	}
 
+	lan9645x->ana_irq = platform_get_irq_byname(to_platform_device(lan9645x->dev),
+						    "lan9645x-ana");
+	if (lan9645x->ana_irq > 0) {
+		err = devm_request_threaded_irq(lan9645x->dev, lan9645x->ana_irq,
+						NULL, lan9645x_ana_irq_handler,
+						IRQF_ONESHOT, "lan9645x ana irq",
+						lan9645x);
+		if (err)
+			return dev_err_probe(lan9645x->dev, err,
+					     "Unable to use ana irq");
+	}
+
 	lan9645x_taprio_init(lan9645x);
 
 	err = lan9645x_netlink_qos_init(lan9645x);
@@ -748,11 +824,22 @@ static int lan9645x_setup(struct dsa_switch *ds)
 		return err;
 	}
 
-	lan9645x_netlink_frer_init(lan9645x);
+	err = lan9645x_netlink_frer_init(lan9645x);
 	if (err) {
 		dev_err(dev, "Failed to init FRER netlink api. err=%d", err);
 		return err;
 	}
+
+	err = lan9645x_netlink_fp_init(lan9645x);
+	if (err) {
+		dev_err(dev, "Failed to init Frame Preemption netlink api. err=%d", err);
+		return err;
+	}
+
+	dev_info(lan9645x->dev,
+		 "Setup complete. SKU features: tsn_dis=%d hsr_dis=%d max_ports=%d",
+		 lan9645x->tsn_dis, lan9645x->dd_dis,
+		 lan9645x->num_phys_ports - lan9645x->num_port_dis);
 
 	return 0;
 }
@@ -1032,10 +1119,9 @@ static int lan9645x_port_bridge_join(struct dsa_switch *ds, int port,
 	return 0;
 }
 
-static void lan9645x_port_bridge_stp_state_set(struct dsa_switch *ds, int port,
-					       u8 state)
+void lan9645x_port_stp_state_set(struct lan9645x *lan9645x, int port,
+				 u8 state)
 {
-	struct lan9645x *lan9645x = ds->priv;
 	struct lan9645x_port *p = lan9645x->ports[port];
 	bool learn_ena;
 
@@ -1060,6 +1146,14 @@ static void lan9645x_port_bridge_stp_state_set(struct dsa_switch *ds, int port,
 		lan9645x->bridge_fwd_mask);
 	lan9645x_update_fwd_mask(lan9645x, state == BR_STATE_FORWARDING);
 	mutex_unlock(&lan9645x->fwd_domain_lock);
+}
+
+static void lan9645x_port_bridge_stp_state_set(struct dsa_switch *ds, int port,
+					       u8 state)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	lan9645x_port_stp_state_set(lan9645x, port, state);
 }
 
 static void lan9645x_port_set_host_flood(struct dsa_switch *ds, int port,
@@ -1489,6 +1583,9 @@ static int lan9645x_port_hsr_join(struct dsa_switch *ds, int port,
 	enum lan9645x_hsr_type type;
 	int err;
 
+	if (lan9645x->dd_dis)
+		return -EOPNOTSUPP;
+
 	dev_dbg(lan9645x->dev, "port=%d", port);
 
 	err = lan9645x_hsr2type(hsr, &type);
@@ -1544,6 +1641,9 @@ static int lan9645x_port_hsr_leave(struct dsa_switch *ds, int port,
 				   struct net_device *hsr)
 {
 	struct lan9645x *lan9645x = ds->priv;
+
+	if (lan9645x->dd_dis)
+		return -EOPNOTSUPP;
 
 	dev_dbg(lan9645x->dev, "port=%d", port);
 
@@ -1813,6 +1913,8 @@ static int lan9645x_port_setup_tc(struct dsa_switch *ds, int port,
 	case TC_SETUP_QDISC_ETS:
 		return lan9645x_port_setup_ets(ds, port, type_data);
 	case TC_SETUP_QDISC_TAPRIO:
+		if (lan9645x->tsn_dis)
+			return -ENOTSUPP;
 		return lan9645x_tc_setup_qdisc_taprio(ds, port, type_data);
 	/* BLOCK and FT handled by dsa */
 	default:
@@ -1937,6 +2039,153 @@ static int lan9645x_port_mrouter_set(struct dsa_switch *ds, int port, bool enabl
 	return lan9645x_mdb_port_mrouter_set(lan9645x, port, enable);
 }
 
+static int
+lan9645x_port_hsr_node_add(struct dsa_switch *ds, int port,
+			   const struct switchdev_obj_node_hsr *hsr_node)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	if (lan9645x->dd_dis)
+		return -EOPNOTSUPP;
+
+	dev_dbg(lan9645x->dev, "port=%d addrA=%pM\n",
+		port, hsr_node->addr_A);
+
+	return lan9645x_hsr_prp_dan_node_add(lan9645x, port,
+					     hsr_node->hsr,
+					     hsr_node->addr_A);
+}
+
+static int
+lan9645x_port_hsr_node_del(struct dsa_switch *ds, int port,
+			   const struct switchdev_obj_node_hsr *hsr_node)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	if (lan9645x->dd_dis)
+		return -EOPNOTSUPP;
+
+	dev_dbg(lan9645x->dev, "port=%d addrA=%pM\n",
+		 port, hsr_node->addr_A);
+
+	lan9645x_hsr_prp_dan_node_del(lan9645x, port, hsr_node->hsr,
+				      hsr_node->addr_A);
+	return 0;
+}
+
+static int lan9645x_get_mm(struct dsa_switch *ds, int port,
+			   struct ethtool_mm_state *state)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	if (lan9645x->tsn_dis)
+		return -ENOTSUPP;
+
+	return lan9645x_fp_ethtool_get_mm(lan9645x, port, state);
+}
+
+static int lan9645x_set_mm(struct dsa_switch *ds, int port,
+			   struct ethtool_mm_cfg *cfg,
+			   struct netlink_ext_ack *extack)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	if (lan9645x->tsn_dis)
+		return -ENOTSUPP;
+
+	return lan9645x_fp_ethtool_set_mm(lan9645x, port, cfg, extack);
+}
+
+static void lan9645x_port_mrp_update_mac(struct dsa_switch *ds, int port,
+					 const unsigned char *br_addr)
+{
+	return lan9645x_mrp_port_update_mrp_mac(ds->priv, port, br_addr);
+}
+
+static int lan9645x_port_mrp_add(struct dsa_switch *ds, int port,
+				 const struct switchdev_obj_mrp *mrp)
+{
+	return lan9645x_handle_mrp_add_port(ds->priv, port, mrp);
+}
+
+static int lan9645x_port_mrp_del(struct dsa_switch *ds, int port,
+				 const struct switchdev_obj_mrp *mrp)
+{
+	return lan9645x_handle_mrp_del_port(ds->priv, port, mrp);
+}
+
+static int lan9645x_port_mrp_role(struct dsa_switch *ds, int port, u8 port_role)
+{
+	return lan9645x_handle_mrp_port_role(ds->priv, port, port_role);
+}
+
+static int
+lan9645x_port_mrp_add_ring_role(struct dsa_switch *ds, int port,
+				const struct switchdev_obj_ring_role_mrp *mrp)
+{
+	return lan9645x_handle_mrp_ring_role_add(ds->priv, port, mrp);
+}
+
+static int
+lan9645x_port_mrp_del_ring_role(struct dsa_switch *ds, int port,
+				const struct switchdev_obj_ring_role_mrp *mrp)
+{
+	return lan9645x_handle_mrp_ring_role_del(ds->priv, port, mrp);
+}
+
+static int lan9645x_port_mrp_add_ring_test(struct dsa_switch *ds, int port,
+					   const struct switchdev_obj_ring_test_mrp *mrp)
+{
+	return lan9645x_handle_mrp_ring_test_add(ds->priv, port, mrp);
+}
+
+static int lan9645x_port_mrp_del_ring_test(struct dsa_switch *ds, int port,
+					   const struct switchdev_obj_ring_test_mrp *mrp)
+{
+	return lan9645x_handle_mrp_ring_test_del(ds->priv, port, mrp);
+}
+
+static int
+lan9645x_port_mrp_add_ring_state(struct dsa_switch *ds, int port,
+				 const struct switchdev_obj_ring_state_mrp *mrp)
+{
+	return lan9645x_handle_mrp_ring_state_add(ds->priv, port, mrp);
+}
+
+static int lan9645x_port_mrp_add_in_ring_state(struct dsa_switch *ds, int port,
+					       const struct switchdev_obj_in_state_mrp *mrp)
+{
+	return lan9645x_handle_mrp_in_state_add(ds->priv, port, mrp);
+}
+
+static int
+lan9645x_port_mrp_add_in_ring_test(struct dsa_switch *ds, int port,
+				   const struct switchdev_obj_in_test_mrp *mrp)
+{
+	return lan9645x_handle_mrp_in_test_add(ds->priv, port, mrp);
+}
+
+static int
+lan9645x_port_mrp_del_in_ring_test(struct dsa_switch *ds, int port,
+				   const struct switchdev_obj_in_test_mrp *mrp)
+{
+	return lan9645x_handle_mrp_in_test_del(ds->priv, port, mrp);
+}
+
+static int
+lan9645x_port_mrp_add_in_ring_role(struct dsa_switch *ds, int port,
+				   const struct switchdev_obj_in_role_mrp *mrp)
+{
+	return lan9645x_handle_mrp_in_role_add(ds->priv, port, mrp);
+}
+
+static int
+lan9645x_port_mrp_del_in_ring_role(struct dsa_switch *ds, int port,
+				   const struct switchdev_obj_in_role_mrp *mrp)
+{
+	return lan9645x_handle_mrp_in_role_del(ds->priv, port, mrp);
+}
+
 static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.get_tag_protocol		= lan9645x_get_tag_protocol,
 	.connect_tag_protocol		= lan9645x_connect_tag_protocol,
@@ -2008,6 +2257,8 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	/* HSR/PRP integration */
 	.port_hsr_join			= lan9645x_port_hsr_join,
 	.port_hsr_leave			= lan9645x_port_hsr_leave,
+	.port_hsr_dan_node_add		= lan9645x_port_hsr_node_add,
+	.port_hsr_dan_node_del		= lan9645x_port_hsr_node_del,
 
 	/* TC integration */
 	.port_mirror_add		= lan9645x_port_mirror_add,
@@ -2048,6 +2299,30 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	 .port_hwtstamp_set		= lan9645x_port_hwtstamp_set,
 	 .port_txtstamp			= lan9645x_txtstamp,
 	 .port_rxtstamp			= lan9645x_rxtstamp_defer,
+	 .port_rxtstamp_all		= lan9645x_rxtstamp_all_defer,
+
+	 /* MAC merge */
+	.get_mm				= lan9645x_get_mm,
+	.set_mm				= lan9645x_set_mm,
+
+	/*
+	 * MRP integration
+	 */
+	.port_mrp_update_br_mac		= lan9645x_port_mrp_update_mac,
+	.port_mrp_add			= lan9645x_port_mrp_add,
+	.port_mrp_del			= lan9645x_port_mrp_del,
+	.port_mrp_role			= lan9645x_port_mrp_role,
+	.port_mrp_add_ring_role		= lan9645x_port_mrp_add_ring_role,
+	.port_mrp_del_ring_role		= lan9645x_port_mrp_del_ring_role,
+	.port_mrp_add_ring_test		= lan9645x_port_mrp_add_ring_test,
+	.port_mrp_del_ring_test		= lan9645x_port_mrp_del_ring_test,
+	.port_mrp_add_ring_state	= lan9645x_port_mrp_add_ring_state,
+	.port_mrp_add_in_ring_state	= lan9645x_port_mrp_add_in_ring_state,
+	.port_mrp_add_in_ring_test	= lan9645x_port_mrp_add_in_ring_test,
+	.port_mrp_del_in_ring_test	= lan9645x_port_mrp_del_in_ring_test,
+	.port_mrp_add_in_ring_role	= lan9645x_port_mrp_add_in_ring_role,
+	.port_mrp_del_in_ring_role	= lan9645x_port_mrp_del_in_ring_role,
+
 };
 
 static int lan9645x_request_target_regmaps(struct lan9645x *lan9645x)
@@ -2068,6 +2343,17 @@ static int lan9645x_request_target_regmaps(struct lan9645x *lan9645x)
 	return 0;
 }
 
+static void lan9645x_set_feat_dis(struct lan9645x *lan9645x)
+{
+	u32 feat_dis;
+
+	feat_dis = lan_rd(lan9645x, GCB_FEAT_DISABLE);
+
+	lan9645x->num_port_dis = GCB_FEAT_DISABLE_FEAT_NUM_PORTS_DIS_GET(feat_dis);
+	lan9645x->dd_dis = GCB_FEAT_DISABLE_FEAT_DD_DIS_GET(feat_dis);
+	lan9645x->tsn_dis = GCB_FEAT_DISABLE_FEAT_TSN_DIS_GET(feat_dis);
+}
+
 static int lan9645x_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -2077,21 +2363,20 @@ static int lan9645x_probe(struct platform_device *pdev)
 
 	lan9645x = devm_kzalloc(dev, sizeof(*lan9645x), GFP_KERNEL);
 	if (!lan9645x)
-		return -ENOMEM;
+		return dev_err_probe(dev, -ENOMEM,
+				     "Failed to allocate LAN9645X");
 
 	dev_set_drvdata(dev, lan9645x);
 	lan9645x->dev = dev;
 
 	err = lan9645x_request_target_regmaps(lan9645x);
 	if (err)
-		goto err_free_lan9645x;
+		return dev_err_probe(dev, err, "Failed to request regmaps");
 
 	ds = devm_kzalloc(dev, sizeof(*ds), GFP_KERNEL);
-	if (!ds) {
-		err = -ENOMEM;
-		dev_err_probe(dev, err, "Failed to allocate DSA switch\n");
-		goto err_free_lan9645x;
-	}
+	if (!ds)
+		return dev_err_probe(dev, -ENOMEM,
+				     "Failed to allocate DSA switch");
 
 	ds->dev = dev;
 	ds->num_ports = NUM_PHYS_PORTS;
@@ -2105,19 +2390,13 @@ static int lan9645x_probe(struct platform_device *pdev)
 	lan9645x->tag_proto = DSA_TAG_PROTO_LAN9645X;
 	lan9645x->shared_queue_sz = LAN9645X_BUFFER_MEMORY;
 
+	lan9645x_set_feat_dis(lan9645x);
+
 	err = dsa_register_switch(ds);
-	if (err) {
-		dev_err_probe(dev, err, "Failed to register DSA switch\n");
-		goto err_free_ds;
-	}
+	if (err)
+		return dev_err_probe(dev, err, "Failed to register DSA switch");
 
 	return 0;
-
-err_free_ds:
-	kfree(ds);
-err_free_lan9645x:
-	kfree(lan9645x);
-	return err;
 }
 
 static void lan9645x_remove(struct platform_device *pdev)

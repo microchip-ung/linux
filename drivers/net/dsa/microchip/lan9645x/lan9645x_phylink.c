@@ -71,7 +71,6 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 	int rx_ifg1, rx_ifg2, tx_ifg, gtx_clk = 0;
 	struct lan9645x_path_delay *path_delay;
 	int gspeed = LAN9645X_SPEED_DISABLED;
-	u8 tweaks = 5;
 	int mode = 0;
 	int fc_spd;
 
@@ -130,6 +129,7 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 	}
 
 	p->speed = gspeed;
+	p->duplex = duplex;
 	fc_spd = lan9645x_speed_fc_enc(p->speed);
 
 	lan9645x_taprio_speed_set(p, speed);
@@ -260,43 +260,7 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 	lan9645x_cut_through_fwd(lan9645x);
 	mutex_unlock(&lan9645x->fwd_domain_lock);
 
-	/* Enable phase detector */
-	/* When running at 10 these tweaks need to be set */
-	if (gspeed == LAN9645X_SPEED_10)
-		tweaks = 7;
-	else
-		tweaks = 5;
-	/* First it is needed to disable and then enable it and after that it
-	 * needed to clear the failed bit which is set by default. Also there
-	 * are 2 phase detector ctrl one for TX and one for RX
-	 */
-	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(0),
-		DEV_PHAD_CTRL_PHAD_ENA,
-		lan9645x, DEV_PHAD_CTRL(p->chip_port, 0));
-
-	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(0),
-		DEV_PHAD_CTRL_PHAD_ENA,
-		lan9645x, DEV_PHAD_CTRL(p->chip_port, 1));
-
-	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(1) |
-		DEV_PHAD_CTRL_TWEAKS_SET(tweaks) |
-		DEV_PHAD_CTRL_PHAD_FAILED_SET(1) |
-		DEV_PHAD_CTRL_LOCK_ACC_SET(0),
-		DEV_PHAD_CTRL_PHAD_ENA |
-		DEV_PHAD_CTRL_TWEAKS |
-		DEV_PHAD_CTRL_PHAD_FAILED |
-		DEV_PHAD_CTRL_LOCK_ACC,
-		lan9645x, DEV_PHAD_CTRL(p->chip_port, 0));
-
-	lan_rmw(DEV_PHAD_CTRL_PHAD_ENA_SET(1) |
-		DEV_PHAD_CTRL_TWEAKS_SET(tweaks) |
-		DEV_PHAD_CTRL_PHAD_FAILED_SET(1) |
-		DEV_PHAD_CTRL_LOCK_ACC_SET(0),
-		DEV_PHAD_CTRL_PHAD_ENA |
-		DEV_PHAD_CTRL_TWEAKS |
-		DEV_PHAD_CTRL_PHAD_FAILED |
-		DEV_PHAD_CTRL_LOCK_ACC,
-		lan9645x, DEV_PHAD_CTRL(p->chip_port, 1));
+	lan9645x_ptp_improvements(lan9645x, p, interface, gspeed, duplex);
 
 	/* Core: Enable port for frame transfer */
 	lan_rmw(QSYS_SW_PORT_MODE_PORT_ENA_SET(1) |
@@ -314,6 +278,8 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 		AFI_PORT_CFG_FC_SKIP_TTI_INJ |
 		AFI_PORT_CFG_FRM_OUT_MAX,
 		lan9645x, AFI_PORT_CFG(p->chip_port));
+
+	lan9645x_fp_link_change(p, true);
 }
 
 void lan9645x_phylink_port_down(struct lan9645x *lan9645x, int port)
@@ -370,6 +336,7 @@ void lan9645x_phylink_port_down(struct lan9645x *lan9645x, int port)
 
 	mutex_lock(&lan9645x->fwd_domain_lock);
 	p->speed = LAN9645X_SPEED_DISABLED;
+	p->duplex = DUPLEX_UNKNOWN;
 	lan9645x_cut_through_fwd(lan9645x);
 	mutex_unlock(&lan9645x->fwd_domain_lock);
 
@@ -446,7 +413,7 @@ void lan9645x_phylink_port_down(struct lan9645x *lan9645x, int port)
 		lan9645x, DEV_CLOCK_CFG(p->chip_port));
 
 	/* 13: Clear flushing */
-	lan_rmw(QSYS_SW_PORT_MODE_AGING_MODE_SET(2),
+	lan_rmw(QSYS_SW_PORT_MODE_AGING_MODE_SET(1),
 		QSYS_SW_PORT_MODE_AGING_MODE,
 		lan9645x, QSYS_SW_PORT_MODE(p->chip_port));
 }
@@ -468,6 +435,8 @@ void lan9645x_phylink_mac_link_down(struct lan9645x *lan9645x, int port,
 		DEV_CLOCK_CFG_PCS_RX_RST |
 		DEV_CLOCK_CFG_PCS_TX_RST,
 		lan9645x, DEV_CLOCK_CFG(p->chip_port));
+
+	lan9645x_fp_link_change(p, false);
 }
 
 struct phylink_pcs *lan9645x_phylink_mac_select_pcs(struct lan9645x *lan9645x,

@@ -24,7 +24,6 @@
 #define SPX5_RGMII_TX_CLK_25MHZ  2   /* 100Mbps */
 #define SPX5_RGMII_TX_CLK_2M5MHZ 3   /* 10Mbps */
 #define SPX5_RGMII_PORT_START_IDX 28
-#define SPX5_RGMII_PORT_RATE 2       /* 1000Mbps  */
 #define SPX5_RGMII_DLL_SHIFT_90DEG 3 /* DLL phase shift 90deg. (2 ns @ 125MHz) */
 
 #define SPX5_PHAD_DIV 3 /* Divide port clock by the power of this */
@@ -1245,10 +1244,14 @@ static int sparx5_port_rgmii_config(struct sparx5 *sparx5, struct sparx5_port *p
 	int tx_clk_freq, rgmii_index = port->portno - SPX5_RGMII_PORT_START_IDX;
 	bool tx_delay = false;
 	bool rx_delay = false;
+	int spd = conf->speed;
+	u32 clk_spd;
 
 	tx_clk_freq = (conf->speed == SPEED_10	? SPX5_RGMII_TX_CLK_2M5MHZ :
 		       conf->speed == SPEED_100 ? SPX5_RGMII_TX_CLK_25MHZ :
 						  SPX5_RGMII_TX_CLK_125MHZ);
+
+	clk_spd = spd == SPEED_10 ? 0 : spd == SPEED_100 ? 1 : spd == SPEED_1000 ? 2 : 6;
 
 	if (conf->phy_mode == PHY_INTERFACE_MODE_RGMII ||
 	    conf->phy_mode == PHY_INTERFACE_MODE_RGMII_TXID)
@@ -1304,7 +1307,7 @@ static int sparx5_port_rgmii_config(struct sparx5 *sparx5, struct sparx5_port *p
 		DEVRGMII_MAC_IFG_CFG_RX_IFG2_SET(1),
 		sparx5, DEVRGMII_MAC_IFG_CFG(rgmii_index));
 
-	spx5_wr(DEVRGMII_DEV_RST_CTRL_SPEED_SEL_SET(SPX5_RGMII_PORT_RATE),
+	spx5_wr(DEVRGMII_DEV_RST_CTRL_SPEED_SEL_SET(clk_spd),
 		sparx5, DEVRGMII_DEV_RST_CTRL(rgmii_index));
 
 	return 0;

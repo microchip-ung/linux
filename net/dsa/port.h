@@ -46,6 +46,7 @@ int dsa_port_mst_enable(struct dsa_port *dp, bool on,
 int dsa_port_vlan_msti(struct dsa_port *dp,
 		       const struct switchdev_vlan_msti *msti);
 int dsa_port_mrouter(struct dsa_port *dp, bool enable);
+int dsa_port_mrp_role(struct dsa_port *dp, u8 mrp_port_role);
 int dsa_port_mtu_change(struct dsa_port *dp, int new_mtu);
 int dsa_port_fdb_add(struct dsa_port *dp, const unsigned char *addr,
 		     u16 vid);
@@ -92,6 +93,8 @@ int dsa_port_host_vlan_add(struct dsa_port *dp,
 			   struct netlink_ext_ack *extack);
 int dsa_port_host_vlan_del(struct dsa_port *dp,
 			   const struct switchdev_obj_port_vlan *vlan);
+void dsa_port_mrp_update_mrp_br_mac(struct dsa_port *dp,
+				    const unsigned char *addr);
 int dsa_port_mrp_add(const struct dsa_port *dp,
 		     const struct switchdev_obj_mrp *mrp);
 int dsa_port_mrp_del(const struct dsa_port *dp,
@@ -100,6 +103,30 @@ int dsa_port_mrp_add_ring_role(const struct dsa_port *dp,
 			       const struct switchdev_obj_ring_role_mrp *mrp);
 int dsa_port_mrp_del_ring_role(const struct dsa_port *dp,
 			       const struct switchdev_obj_ring_role_mrp *mrp);
+int dsa_port_mrp_add_ring_test(const struct dsa_port *dp,
+			       const struct switchdev_obj_ring_test_mrp *mrp);
+int dsa_port_mrp_del_ring_test(const struct dsa_port *dp,
+			       const struct switchdev_obj_ring_test_mrp *mrp);
+int dsa_port_mrp_add_ring_state(const struct dsa_port *dp,
+				const struct switchdev_obj_ring_state_mrp *mrp);
+int dsa_port_mrp_del_ring_state(const struct dsa_port *dp,
+				const struct switchdev_obj_ring_state_mrp *mrp);
+int dsa_port_mrp_add_in_ring_test(const struct dsa_port *dp,
+				  const struct switchdev_obj_in_test_mrp *mrp);
+int dsa_port_mrp_del_in_ring_test(const struct dsa_port *dp,
+				  const struct switchdev_obj_in_test_mrp *mrp);
+int dsa_port_mrp_add_in_ring_role(const struct dsa_port *dp,
+				  const struct switchdev_obj_in_role_mrp *mrp);
+int dsa_port_mrp_del_in_ring_role(const struct dsa_port *dp,
+				  const struct switchdev_obj_in_role_mrp *mrp);
+int dsa_port_mrp_add_in_ring_state(const struct dsa_port *dp,
+				   const struct switchdev_obj_in_state_mrp *mrp);
+int dsa_port_mrp_del_in_ring_state(const struct dsa_port *dp,
+				   const struct switchdev_obj_in_state_mrp *mrp);
+int dsa_port_hsr_dan_node_add(const struct dsa_port *dp,
+			      const struct switchdev_obj_node_hsr *hsr_node);
+int dsa_port_hsr_dan_node_del(const struct dsa_port *dp,
+			      const struct switchdev_obj_node_hsr *hsr_node);
 int dsa_port_phylink_create(struct dsa_port *dp);
 void dsa_port_phylink_destroy(struct dsa_port *dp);
 int dsa_shared_port_link_register_of(struct dsa_port *dp);

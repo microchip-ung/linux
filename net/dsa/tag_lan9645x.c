@@ -395,6 +395,7 @@ static struct sk_buff *lan9645x_rcv(struct sk_buff *skb, struct net_device *ndev
 
 	skb->priority = qos_class;
 	LAN9645X_SKB_CB(skb)->rx_ts_ns = rx_ts >> 8;
+	LAN9645X_SKB_CB(skb)->rx_ts_subns = rx_ts & GENMASK(7, 0);
 
 	/* Pushing tags is disabled in the rewriter must be disabled on
 	 * NPI/CPU_PORT with NO_REWRITE=1. Any rewrite action is communicated via

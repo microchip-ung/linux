@@ -338,7 +338,7 @@ bool afi_slow_inj_started(struct afi_control *afi,
 	struct afi_tti *tti;
 
 	if (!afi_tti_idx_chk(afi, slowid))
-		return -EINVAL;
+		return false;
 
 	tti = &afi->tti_tbl[slowid];
 
