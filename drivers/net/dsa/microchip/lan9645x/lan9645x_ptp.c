@@ -509,17 +509,49 @@ static void lan9645x_get_hwtimestamp(struct lan9645x *lan9645x,
 	mutex_unlock(&lan9645x->ptp_clock_lock);
 }
 
+static struct sk_buff *lan9645x_ptp_tx_irq_skb_match(struct lan9645x_port *port,
+						     u32 id)
+{
+	struct sk_buff *skb, *skb_tmp, *skb_match = NULL;
+	struct lan9645x *lan9645x = port->lan9645x;
+	unsigned long flags;
+
+	spin_lock_irqsave(&port->tx_skbs.lock, flags);
+	skb_queue_walk_safe(&port->tx_skbs, skb, skb_tmp)
+	{
+		if (LAN9645X_SKB_CB(skb)->ts_id != id)
+			continue;
+
+		__skb_unlink(skb, &port->tx_skbs);
+		skb_match = skb;
+		break;
+	}
+	spin_unlock_irqrestore(&port->tx_skbs.lock, flags);
+
+	/* Next ts */
+	lan_rmw(PTP_TWOSTEP_CTRL_NXT_SET(1), PTP_TWOSTEP_CTRL_NXT, lan9645x,
+		PTP_TWOSTEP_CTRL);
+
+	if (WARN_ON(!skb_match))
+		return NULL;
+
+	spin_lock_irqsave(&lan9645x->ptp_ts_id_lock, flags);
+	lan9645x->ptp_skbs--;
+	spin_unlock_irqrestore(&lan9645x->ptp_ts_id_lock, flags);
+
+	return skb_match;
+}
+
 irqreturn_t lan9645x_ptp_irq_handler(int irq, void *args)
 {
 	int budget = LAN9645X_MAX_PTP_ID;
 	struct lan9645x *lan9645x = args;
 
 	while (budget--) {
-		struct sk_buff *skb, *skb_tmp, *skb_match = NULL;
 		struct skb_shared_hwtstamps shhwtstamps;
 		struct lan9645x_port *port;
+		struct sk_buff *skb_match;
 		struct timespec64 ts;
-		unsigned long flags;
 		u32 val, id, txport;
 		u32 sub_ns;
 		u32 delay;
@@ -564,33 +596,14 @@ irqreturn_t lan9645x_ptp_irq_handler(int irq, void *args)
 		/* Read RX timestamping to get the ID */
 		id = lan_rd(lan9645x, PTP_TWOSTEP_STAMP_NSEC);
 
-		spin_lock_irqsave(&port->tx_skbs.lock, flags);
-		skb_queue_walk_safe(&port->tx_skbs, skb, skb_tmp) {
-			if (LAN9645X_SKB_CB(skb)->ts_id != id)
-				continue;
-
-			__skb_unlink(skb, &port->tx_skbs);
-			skb_match = skb;
-			break;
-		}
-		spin_unlock_irqrestore(&port->tx_skbs.lock, flags);
-
-		/* Next ts */
-		lan_rmw(PTP_TWOSTEP_CTRL_NXT_SET(1),
-			PTP_TWOSTEP_CTRL_NXT,
-			lan9645x, PTP_TWOSTEP_CTRL);
-
-		if (WARN_ON(!skb_match))
+		skb_match = lan9645x_ptp_tx_irq_skb_match(port, id);
+		if (!skb_match)
 			continue;
-
-		spin_lock_irqsave(&lan9645x->ptp_ts_id_lock, flags);
-		lan9645x->ptp_skbs--;
-		spin_unlock_irqrestore(&lan9645x->ptp_ts_id_lock, flags);
 
 		/* Get the h/w timestamp */
 		lan9645x_get_hwtimestamp(lan9645x, &ts, delay);
 
-		lan9645x_ptp_log_tx(lan9645x, skb, ts, sub_ns);
+		lan9645x_ptp_log_tx(lan9645x, skb_match, ts, sub_ns);
 
 		/* Set the timestamp into the skb */
 		shhwtstamps.hwtstamp = ktime_set(ts.tv_sec, ts.tv_nsec);
