@@ -158,18 +158,39 @@ static void lan9645x_vcap_is2_port_keys(struct lan9645x_port *port,
 		out->prf(out->dst, "\n      ipv6: ");
 		switch (ANA_VCAP_S2_CFG_IP6_CFG_GET(val) & (0x3 << l)) {
 		case VCAP_IS2_PS_IPV6_TCPUDP_OTHER:
-			out->prf(out->dst, "ipv6_tcp_udp ipv6_tcp_udp");
+			out->prf(out->dst, "ipv6_tcp_udp");
 			break;
 		case VCAP_IS2_PS_IPV6_STD:
 			out->prf(out->dst, "ipv6_std");
 			break;
 		case VCAP_IS2_PS_IPV6_IP4_TCPUDP_IP4_OTHER:
-			out->prf(out->dst, "ipv4_tcp_udp ipv4_tcp_udp");
+			out->prf(out->dst, "ipv4_tcp_udp");
 			break;
 		case VCAP_IS2_PS_IPV6_MAC_ETYPE:
 			out->prf(out->dst, "mac_etype");
 			break;
 		}
+
+		out->prf(out->dst, "\n      ipv6_other: ");
+		switch (ANA_VCAP_S2_CFG_IP6_CFG_GET(val) & (0x3 << l)) {
+		case VCAP_IS2_PS_IPV6_TCPUDP_OTHER:
+			out->prf(out->dst, "ipv6_other");
+			break;
+		case VCAP_IS2_PS_IPV6_STD:
+			out->prf(out->dst, "ipv6_std");
+			break;
+		case VCAP_IS2_PS_IPV6_IP4_TCPUDP_IP4_OTHER:
+			out->prf(out->dst, "ipv4_other");
+			break;
+		case VCAP_IS2_PS_IPV6_MAC_ETYPE:
+			out->prf(out->dst, "mac_etype");
+			break;
+		}
+
+		/* etype frames: type/len >= 0x0600 and not ARP, RARP, IP4 or IP6 */
+		out->prf(out->dst, "\n      etype: mac_etype");
+
+		out->prf(out->dst, "\n      llc: mac_llc");
 	}
 
 	out->prf(out->dst, "\n");

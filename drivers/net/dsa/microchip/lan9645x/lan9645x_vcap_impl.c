@@ -515,11 +515,10 @@ static int lan9645x_vcap_is1_get_port_keysets(struct net_device *ndev, int looku
 		vcap_keyset_list_add(keysetlist, VCAP_KFS_7TUPLE);
 		break;
 	case VCAP_IS1_PS_OTHER_NORMAL:
-		if (ANA_VCAP_CFG_S1_DMAC_DIP_ENA_GET(vcap_cfg) & BIT(lookup)) {
+		if (ANA_VCAP_CFG_S1_DMAC_DIP_ENA_GET(vcap_cfg) & BIT(lookup))
 			vcap_keyset_list_add(keysetlist, VCAP_KFS_NORMAL_DMAC);
-		} else {
+		else
 			vcap_keyset_list_add(keysetlist, VCAP_KFS_NORMAL);
-		}
 		break;
 	case VCAP_IS1_PS_OTHER_DBL_VID:
 		vcap_keyset_list_add(keysetlist, VCAP_KFS_DBL_VID);
@@ -804,7 +803,6 @@ static void lan9645x_vcap_port_key_init(struct lan9645x *lan9645x,
 			lan_rmw(REW_PORT_CFG_ES0_EN_SET(true),
 				REW_PORT_CFG_ES0_EN, lan9645x,
 				REW_PORT_CFG(p));
-
 
 		lan_rmw(REW_PORT_CFG_ES0_EN_SET(true),
 			REW_PORT_CFG_ES0_EN, lan9645x,
