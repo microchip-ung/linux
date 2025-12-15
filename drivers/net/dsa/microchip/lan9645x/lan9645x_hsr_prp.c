@@ -188,32 +188,6 @@ static int lan9645x_vcap_s2_hsr_smac_kill(struct lan9645x *lan9645x,
 	return err;
 }
 
-static int lan9645x_vcap_s2_ptp_dd_dis(struct lan9645x *lan9645x,
-				       u32 port_ab_mask, struct net_device *dev,
-				       u32 *id)
-{
-	struct vcap_rule *rule;
-	int err;
-
-	rule = vcap_alloc_rule(lan9645x->vcap_ctrl, dev,
-			       VCAP_CID_INGRESS_STAGE2_L1, VCAP_USER_HSR_PRP, 0,
-			       0);
-	if (IS_ERR(rule))
-		return PTR_ERR(rule);
-
-	*id = rule->id;
-	err = vcap_set_rule_set_keyset(rule, VCAP_KFS_MAC_ETYPE);
-	err |= vcap_rule_add_key_u32(rule, VCAP_KF_ETYPE, ETH_P_1588, 0xffff);
-	err |= vcap_rule_add_key_u32(rule, VCAP_KF_IF_IGR_PORT_MASK, 0, ~port_ab_mask);
-	err |= vcap_rule_add_action_bit(rule, VCAP_AF_DUPL_DISC_DIS, VCAP_BIT_1);
-	err = err ? -EINVAL : 0;
-	if (!err)
-		err = lan9645x_vcap_rule_val_add(rule, ETH_P_ALL);
-
-	vcap_free_rule(rule);
-	return err;
-}
-
 static int lan9645x_vcap_s1_normal_isdx_clf(struct lan9645x *lan9645x,
 					    unsigned char *mac, u32 igr_pmsk,
 					    u32 isdx_choice, u16 vid_choice,
@@ -602,8 +576,6 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 	h->enabled = true;
 
 	entry.input_port_mask = BIT(CPU_PORT);
-	entry.stream_split = true;
-	entry.split_mask = port_ab_mask;
 	entry.seq_gen_ena = true;
 
 	err = lan9645x_streamt_write(lan9645x, isdx, &entry);
@@ -645,12 +617,6 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 						     &h->local_ring_vrule_id);
 		if (err)
 			goto mac_forget;
-
-		/* HSR: Add vcap rule to disable duplicate discard for PTP frames */
-		err = lan9645x_vcap_s2_ptp_dd_dis(lan9645x, port_ab_mask, lrea_dev,
-						  &h->ptp_dd_vrule_id);
-		if (err)
-			goto local_ring_del;
 	}
 
 	lan9645x->vlan_mask[VLAN_HSR_PRP] = port_ab_mask | BIT(CPU_PORT);
@@ -667,7 +633,9 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 			REW_PORT_VLAN_CFG_PORT_VID,
 			lan9645x, REW_PORT_VLAN_CFG(port));
 
-		/* Disable egress tagging for vid=0 and vid=VLAN_HSR_PRP */
+		/* Use TPID=0x8100 and disable egress tagging for vid=0 and
+		 * vid=VLAN_HSR_PRP
+		 */
 		lan_rmw(REW_TAG_CFG_TAG_TPID_CFG_SET(0) |
 			REW_TAG_CFG_TAG_CFG_SET(LAN9645X_TAG_NO_PVID_NO_UNAWARE),
 			REW_TAG_CFG_TAG_TPID_CFG |
@@ -787,6 +755,8 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 			ANA_CPU_FWD_BPDU_CFG_BPDU_REDIR_ENA,
 			lan9645x, ANA_CPU_FWD_BPDU_CFG(port));
 
+		/* MAC lookup hit for port A/B adds both ports to dest mask */
+		lan_wr(port_ab_mask, lan9645x, ANA_PGID(port));
 		lan9645x_hsr_features_set(lan9645x, port, type);
 	}
 
@@ -839,8 +809,6 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 
 	return 0;
 
-local_ring_del:
-	vcap_del_rule(lan9645x->vcap_ctrl, lrea_dev, h->local_ring_vrule_id);
 mac_forget:
 	lan9645x_mact_forget(lan9645x, mac, VLAN_HSR_PRP, ENTRYTYPE_LOCKED);
 s1_normal_del:
@@ -1002,6 +970,7 @@ int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 
 		lan9645x_port_set_learning(lan9645x, port, false);
 
+		lan_wr(BIT(port), lan9645x, ANA_PGID(port));
 		lan9645x_hsr_features_del(lan9645x, port, type);
 	}
 
