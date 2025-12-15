@@ -11,6 +11,7 @@
 #include "lan9645x_main.h"
 #include "lan9645x_stats.h"
 #include "lan9645x_vcap_ag_api.h"
+#include "lan9645x_vcap_utils.h"
 
 #define STREAMSIZE (64 * 4)
 
@@ -753,8 +754,8 @@ static void lan9645x_vcap_block_init(struct lan9645x *lan9645x,
 				   admin->first_valid_addr);
 }
 
-static void lan9645x_vcap_port_key_deselection(struct lan9645x *lan9645x,
-					       struct vcap_admin *admin)
+static void lan9645x_vcap_port_key_init(struct lan9645x *lan9645x,
+					struct vcap_admin *admin)
 {
 	u32 val;
 	int p;
@@ -779,7 +780,56 @@ static void lan9645x_vcap_port_key_deselection(struct lan9645x *lan9645x,
 				ANA_VCAP_CFG(p));
 		}
 
+		for (int l = 0; l < LAN9645X_IS1_LOOKUPS; ++l)
+			lan_wr(val, lan9645x, ANA_VCAP_S1_CFG(CPU_PORT, l));
+
 		lan_rmw(ANA_VCAP_CFG_S1_ENA_SET(true),
+			ANA_VCAP_CFG_S1_ENA, lan9645x,
+			ANA_VCAP_CFG(CPU_PORT));
+
+		break;
+	case VCAP_TYPE_IS2:
+		val = ANA_VCAP_S2_CFG_ENA_SET(true) |
+			ANA_VCAP_S2_CFG_ISDX_ENA_SET(0x3) |
+			ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP1_SET(VCAP_IS2_PS_IPV6_TCPUDP_OTHER) |
+			ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP2_SET(VCAP_IS2_PS_IPV6_TCPUDP_OTHER);
+
+		lan9645x_for_each_chipport(lan9645x, p)
+			lan_wr(val, lan9645x, ANA_VCAP_S2_CFG(p));
+
+		lan_wr(val, lan9645x, ANA_VCAP_S2_CFG(CPU_PORT));
+		break;
+	case VCAP_TYPE_ES0:
+		lan9645x_for_each_chipport(lan9645x, p)
+			lan_rmw(REW_PORT_CFG_ES0_EN_SET(true),
+				REW_PORT_CFG_ES0_EN, lan9645x,
+				REW_PORT_CFG(p));
+
+
+		lan_rmw(REW_PORT_CFG_ES0_EN_SET(true),
+			REW_PORT_CFG_ES0_EN, lan9645x,
+			REW_PORT_CFG(CPU_PORT));
+		break;
+	default:
+		pr_err("vcap type: %s not supported\n",
+		       lan9645x_vcaps[admin->vtype].name);
+		break;
+	}
+}
+
+static void lan9645x_vcap_port_key_disable(struct lan9645x *lan9645x,
+					   struct vcap_admin *admin)
+{
+	int p;
+
+	switch (admin->vtype) {
+	case VCAP_TYPE_IS1:
+		lan9645x_for_each_chipport(lan9645x, p)
+			lan_rmw(ANA_VCAP_CFG_S1_ENA_SET(false),
+				ANA_VCAP_CFG_S1_ENA, lan9645x,
+				ANA_VCAP_CFG(p));
+
+		lan_rmw(ANA_VCAP_CFG_S1_ENA_SET(false),
 			ANA_VCAP_CFG_S1_ENA, lan9645x,
 			ANA_VCAP_CFG(CPU_PORT));
 
@@ -871,7 +921,7 @@ int lan9645x_vcap_init(struct lan9645x *lan9645x)
 			return PTR_ERR(admin);
 
 		lan9645x_vcap_block_init(lan9645x, admin, cfg);
-		lan9645x_vcap_port_key_deselection(lan9645x, admin);
+		lan9645x_vcap_port_key_init(lan9645x, admin);
 
 		list_add_tail(&admin->list, &ctrl->list);
 	}
@@ -917,7 +967,7 @@ void lan9645x_vcap_deinit(struct lan9645x *lan9645x)
 	vcap_netlink_uninit(ctrl);
 
 	list_for_each_entry_safe(admin, admin_next, &ctrl->list, list) {
-		lan9645x_vcap_port_key_deselection(lan9645x, admin);
+		lan9645x_vcap_port_key_disable(lan9645x, admin);
 		vcap_del_rules(ctrl, admin);
 		list_del(&admin->list);
 		lan9645x_vcap_admin_free(admin);
