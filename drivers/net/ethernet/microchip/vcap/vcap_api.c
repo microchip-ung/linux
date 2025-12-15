@@ -1030,7 +1030,7 @@ int vcap_set_rule_set_actionset(struct vcap_rule *rule,
 EXPORT_SYMBOL_GPL(vcap_set_rule_set_actionset);
 
 /* Check if a rule with this id exists */
-static bool vcap_rule_exists(struct vcap_control *vctrl, u32 id)
+bool vcap_rule_exists(struct vcap_control *vctrl, u32 id)
 {
 	struct vcap_rule_internal *ri;
 	struct vcap_admin *admin;
@@ -1042,6 +1042,7 @@ static bool vcap_rule_exists(struct vcap_control *vctrl, u32 id)
 				return true;
 	return false;
 }
+EXPORT_SYMBOL_GPL(vcap_rule_exists);
 
 /* Find a rule with a provided rule id return a locked vcap */
 static struct vcap_rule_internal *
