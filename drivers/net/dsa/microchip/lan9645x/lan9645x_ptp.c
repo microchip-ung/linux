@@ -25,17 +25,6 @@
 
 #define TOD_ACC_PIN		0x4
 
-/* This represents the base rule ID for the PTP rules that are added in the
- * VCAP to trap frames to CPU. This number needs to be bigger than the maximum
- * number of entries that can exist in the VCAP.
- */
-#define LAN9645X_VCAP_PTP_RULE_ID		1000000
-#define LAN9645X_VCAP_L2_PTP_TRAP		(LAN9645X_VCAP_PTP_RULE_ID + 0)
-#define LAN9645X_VCAP_IPV4_EV_PTP_TRAP		(LAN9645X_VCAP_PTP_RULE_ID + 1)
-#define LAN9645X_VCAP_IPV4_GEN_PTP_TRAP		(LAN9645X_VCAP_PTP_RULE_ID + 2)
-#define LAN9645X_VCAP_IPV6_EV_PTP_TRAP		(LAN9645X_VCAP_PTP_RULE_ID + 3)
-#define LAN9645X_VCAP_IPV6_GEN_PTP_TRAP		(LAN9645X_VCAP_PTP_RULE_ID + 4)
-
 enum {
 	PTP_PIN_ACTION_IDLE = 0,
 	PTP_PIN_ACTION_LOAD,
@@ -327,6 +316,10 @@ int lan9645x_port_hwtstamp_set(struct dsa_switch *ds, int port,
 	if (err)
 		return err;
 
+	err = lan9645x_ptp_hsr_setup(lan9645x, port, &cfg);
+	if (err)
+		return err;
+
 	/* Commit back the result & save it */
 	mutex_lock(&lan9645x->ptp_lock);
 	phc = &lan9645x->phc[LAN9645X_PHC_PORT];
@@ -596,8 +589,11 @@ irqreturn_t lan9645x_ptp_irq_handler(int irq, void *args)
 		/* Read RX timestamping to get the ID */
 		id = lan_rd(lan9645x, PTP_TWOSTEP_STAMP_NSEC);
 
-		skb_match = lan9645x_ptp_tx_irq_skb_match(port, id);
-		if (!skb_match)
+		if (lan9645x_port_is_hsr(port))
+			skb_match = lan9645x_ptp_hsr_tx_irq_skb_match(port);
+		else
+			skb_match = lan9645x_ptp_tx_irq_skb_match(port, id);
+		if (IS_ERR_OR_NULL(skb_match))
 			continue;
 
 		/* Get the h/w timestamp */

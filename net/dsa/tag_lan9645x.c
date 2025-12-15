@@ -222,6 +222,18 @@ static void lan9645x_xmit_ptp(struct sk_buff *skb, void *ifh)
 	}
 }
 
+static bool lan9645x_is_prp_dev(struct net_device *hsr)
+{
+	enum hsr_version v;
+
+	if (!hsr)
+		return false;
+
+	hsr_get_version(hsr, &v);
+
+	return v == PRP_V1;
+}
+
 static struct sk_buff *lan9645x_xmit(struct sk_buff *skb, struct net_device *ndev)
 {
 	struct dsa_port *dp = dsa_user_to_port(ndev);
@@ -229,6 +241,7 @@ static struct sk_buff *lan9645x_xmit(struct sk_buff *skb, struct net_device *nde
 	u32 cpu_port = ds->num_ports;
 	u64 vlan_tci, tag_type;
 	u64 qos_class;
+	int src_port;
 	void *ifh;
 
 	lan9645x_xmit_get_vlan_info(skb, dsa_port_bridge_dev_get(dp), &vlan_tci,
@@ -286,10 +299,11 @@ static struct sk_buff *lan9645x_xmit(struct sk_buff *skb, struct net_device *nde
 		 * However, a few fields get speciel treatment by the port, and
 		 * are passed to the IFH created in the analyzer.
 		 */
+		src_port = lan9645x_ptp_hsr_xmit_masq_port(skb, dp);
 		LAN9645X_IFH_SET(ifh, IFH_MASQ, 1);
-		LAN9645X_IFH_SET(ifh, IFH_MASQ_PORT, cpu_port);
-		LAN9645X_IFH_SET(ifh, IFH_RCT_INJ, 1);
-		LAN9645X_IFH_SET(ifh, IFH_SRCPORT, cpu_port);
+		LAN9645X_IFH_SET(ifh, IFH_MASQ_PORT, src_port);
+		LAN9645X_IFH_SET(ifh, IFH_SRCPORT, src_port);
+		LAN9645X_IFH_SET(ifh, IFH_RCT_INJ, lan9645x_is_prp_dev(dp->hsr_dev));
 	} else {
 		LAN9645X_IFH_SET(ifh, IFH_BYPASS, 1);
 		LAN9645X_IFH_SET(ifh, IFH_SRCPORT, cpu_port);
@@ -362,7 +376,20 @@ static struct sk_buff *lan9645x_rcv(struct sk_buff *skb, struct net_device *ndev
 	skb_postpull_rcsum(skb, orig_skb_data,
 			   LAN9645X_TOTAL_TAG_LEN + ifh_gap_len);
 
+	lan9645x_rcv_dbg(skb, ndev, ifh, ifh_gap_len);
+
+	skb->dev = dsa_conduit_find_user(ndev, 0, src_port);
+	if (WARN_ON_ONCE(!skb->dev)) {
+		/* This should never happen since src_port is always set, and
+		 * src_port=CPU_PORT is not possible since we have disabled
+		 * reflection back to CPU_PORT.
+		 */
+		return NULL;
+	}
+
 	if (rtagd > 0) {
+		lan964x5_set_redundancy_info(skb, rtagd,
+					     dsa_user_to_port(skb->dev));
 		skb_push_rcsum(skb, ETH_HLEN);
 		err = lan9645x_pop_hsr_tag(skb, rtagd);
 		if (err) {
@@ -378,17 +405,6 @@ static struct sk_buff *lan9645x_rcv(struct sk_buff *skb, struct net_device *ndev
 				__func__, err);
 			return NULL;
 		}
-	}
-
-	lan9645x_rcv_dbg(skb, ndev, ifh, ifh_gap_len);
-
-	skb->dev = dsa_conduit_find_user(ndev, 0, src_port);
-	if (WARN_ON_ONCE(!skb->dev)) {
-		/* This should never happen since src_port is always set, and
-		 * src_port=CPU_PORT is not possible since we have disabled
-		 * reflection back to CPU_PORT.
-		 */
-		return NULL;
 	}
 
 	lan9645x_offload_fwd_mark(skb, rtagd, acl_id, acl_hit);

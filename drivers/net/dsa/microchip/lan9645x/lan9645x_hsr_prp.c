@@ -180,10 +180,7 @@ static int lan9645x_vcap_s2_hsr_smac_kill(struct lan9645x *lan9645x,
 	err |= vcap_rule_add_action_bit(rule, VCAP_AF_CPU_DIS, VCAP_BIT_1);
 	err |= vcap_rule_add_action_u32(rule, VCAP_AF_MASK_MODE, PERMIT_MASK);
 	err |= vcap_rule_add_action_u32(rule, VCAP_AF_PORT_MASK, 0x0);
-	err = err ? -EINVAL : 0;
-	if (!err)
-		err = lan9645x_vcap_rule_val_add(rule, ETH_P_ALL);
-
+	err = err ? -EINVAL : lan9645x_vcap_rule_val_add(rule, ETH_P_ALL);
 	vcap_free_rule(rule);
 	return err;
 }
@@ -191,6 +188,7 @@ static int lan9645x_vcap_s2_hsr_smac_kill(struct lan9645x *lan9645x,
 static int lan9645x_vcap_s1_normal_isdx_clf(struct lan9645x *lan9645x,
 					    unsigned char *mac, u32 igr_pmsk,
 					    u32 isdx_choice, u16 vid_choice,
+					    bool rtagged,
 					    struct net_device *dev,
 					    u32 *vrule_id)
 {
@@ -206,15 +204,26 @@ static int lan9645x_vcap_s1_normal_isdx_clf(struct lan9645x *lan9645x,
 	if (vrule_id)
 		*vrule_id = rule->id;
 
-	/* It is not necessary to make rules for IPv4/IPv6 frame types here. We
-	 * still match all frames sent on the HSR device.
+	/* Use S1_NORMAL for all frame types from CPU_PORT in lookup 1. Otherwise,
+	 * we would have to make multiple rules.
 	 *
-	 * Any ip frame sent on the HSR interface will be HSR tagged in the HSR
-	 * driver, and therefore hit the OTHER frame type in hardware.
+	 * For PRP this is not necessary, because IFH.RCT_INJ=1 alters the
+	 * frametype classifcation. However, for HSR it is.
+	 *
+	 * We do not lose much, since CPU_PORT rules only apply for when
+	 * IFH.BYPASS=0 which is always HSR/PRP frames.
 	 */
+	lan_rmw(ANA_VCAP_S1_CFG_KEY_IP6_CFG_SET(VCAP_IS1_PS_IPV6_NORMAL) |
+		ANA_VCAP_S1_CFG_KEY_IP4_CFG_SET(VCAP_IS1_PS_IPV4_NORMAL) |
+		ANA_VCAP_S1_CFG_KEY_OTHER_CFG_SET(VCAP_IS1_PS_OTHER_NORMAL),
+		ANA_VCAP_S1_CFG_KEY_IP6_CFG |
+		ANA_VCAP_S1_CFG_KEY_IP4_CFG |
+		ANA_VCAP_S1_CFG_KEY_OTHER_CFG,
+		lan9645x, ANA_VCAP_S1_CFG(CPU_PORT, 1));
+
 	err = vcap_set_rule_set_keyset(rule, VCAP_KFS_NORMAL);
-	err |= vcap_rule_add_key_bit(rule, VCAP_KF_R_TAGGED_IS, VCAP_BIT_1);
-	err |= vcap_rule_add_key_u32(rule, VCAP_KF_IF_IGR_PORT_MASK, igr_pmsk, ~0);
+	err |= vcap_rule_add_key_bit(rule, VCAP_KF_R_TAGGED_IS, vcap2bit(rtagged));
+	err |= vcap_rule_add_key_u32(rule, VCAP_KF_IF_IGR_PORT_MASK, igr_pmsk, ~igr_pmsk);
 	err |= lan9645x_vcap_add_key_mac(rule, VCAP_KF_L2_SMAC, mac);
 	err |= vcap_rule_add_action_bit(rule, VCAP_AF_ISDX_REPLACE_ENA, VCAP_BIT_1);
 	err |= vcap_rule_add_action_u32(rule, VCAP_AF_ISDX_ADD_VAL, isdx_choice);
@@ -256,9 +265,7 @@ static int lan9645x_vcap_dan_isdx_counter(struct lan9645x *lan9645x,
 	err |= lan9645x_vcap_add_key_mac(rule, VCAP_KF_L2_DMAC, smac);
 	err |= vcap_rule_add_action_bit(rule, VCAP_AF_ISDX_REPLACE_ENA, VCAP_BIT_1);
 	err |= vcap_rule_add_action_u32(rule, VCAP_AF_ISDX_ADD_VAL, isdx);
-	err = err ? -EINVAL : 0;
-	if (!err)
-		err = lan9645x_vcap_rule_val_add(rule, ETH_P_ALL);
+	err = err ? -EINVAL : lan9645x_vcap_rule_val_add(rule, ETH_P_ALL);
 	vcap_free_rule(rule);
 	return err;
 }
@@ -533,6 +540,21 @@ int lan9645x_hsr_prp_prepare(struct lan9645x *lan9645x, int port,
 	return 0;
 }
 
+static u32 lan9645x_hsr_shadow_mask(struct lan9645x *lan9645x)
+{
+	struct lan9645x_hsr_prp *h = &lan9645x->hsr;
+	u32 mask = 0;
+
+	if (h->type != LAN9645X_HSR)
+		return mask;
+
+	for (int i = 0; i < 2; i++)
+		if (h->shadow_ports[i] >= 0)
+			mask |= BIT(h->shadow_ports[i]);
+
+	return mask;
+}
+
 int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *lrea,
 			      struct lan9645x_port *lreb,
 			      struct net_device *lrea_dev, struct net_device *hsr,
@@ -545,6 +567,7 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 	int lrea_port, lreb_port;
 	u32 port_ab_mask;
 	int isdx, err;
+	bool rtagged;
 	u8 dd_mask;
 
 	mutex_lock(&h->lock);
@@ -575,7 +598,7 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 	h->isdx = isdx;
 	h->enabled = true;
 
-	entry.input_port_mask = BIT(CPU_PORT);
+	entry.input_port_mask = BIT(CPU_PORT) | lan9645x_hsr_shadow_mask(lan9645x);
 	entry.seq_gen_ena = true;
 
 	err = lan9645x_streamt_write(lan9645x, isdx, &entry);
@@ -590,8 +613,11 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 	 * - Has Rtag
 	 *
 	 */
-	err = lan9645x_vcap_s1_normal_isdx_clf(lan9645x, mac, BIT(CPU_PORT), isdx,
-					       VLAN_HSR_PRP, lrea_dev,
+
+	rtagged = h->type == LAN9645X_PRP;
+	err = lan9645x_vcap_s1_normal_isdx_clf(lan9645x, mac,
+					       entry.input_port_mask, isdx,
+					       VLAN_HSR_PRP, rtagged, lrea_dev,
 					       &h->isdx_vrule_id);
 	if (err)
 		goto free_isdx;
@@ -619,7 +645,10 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 			goto mac_forget;
 	}
 
-	lan9645x->vlan_mask[VLAN_HSR_PRP] = port_ab_mask | BIT(CPU_PORT);
+	lan9645x->vlan_mask[VLAN_HSR_PRP] = port_ab_mask |
+		BIT(CPU_PORT) |
+		lan9645x_hsr_shadow_mask(lan9645x);
+
 	lan9645x_vlan_set_mask(lan9645x, VLAN_HSR_PRP);
 
 	for_each_hsr_port(lan_id, port, lrea_port, lreb_port) {
@@ -1061,9 +1090,14 @@ DEFINE_SHOW_ATTRIBUTE(lan9645x_hsr_prp_nodestable);
 int lan9645x_hsr_prp_init(struct lan9645x *lan9645x)
 {
 	struct dentry *dir;
+	int err;
 
 	mutex_init(&lan9645x->hsr.lock);
 	INIT_LIST_HEAD(&lan9645x->hsr.nodes);
+
+	err = lan9645x_ptp_hsr_init(lan9645x);
+	if (err)
+		return err;
 
 	dir = debugfs_create_dir("hsr", lan9645x->debugfs_root);
 	if (PTR_ERR_OR_ZERO(dir))

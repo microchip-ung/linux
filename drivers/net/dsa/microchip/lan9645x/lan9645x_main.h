@@ -188,6 +188,23 @@
 #define IFH_PDU_TYPE_IPV4		7
 #define IFH_PDU_TYPE_IPV6		8
 
+/* This represents the base rule ID for the PTP rules that are added in the
+ * VCAP to trap frames to CPU. This number needs to be bigger than the maximum
+ * number of entries that can exist in the VCAP.
+ */
+#define LAN9645X_VCAP_PTP_RULE_ID		1000000
+#define LAN9645X_VCAP_L2_PTP_TRAP		(LAN9645X_VCAP_PTP_RULE_ID + 0)
+#define LAN9645X_VCAP_IPV4_EV_PTP_TRAP		(LAN9645X_VCAP_PTP_RULE_ID + 1)
+#define LAN9645X_VCAP_IPV4_GEN_PTP_TRAP		(LAN9645X_VCAP_PTP_RULE_ID + 2)
+#define LAN9645X_VCAP_IPV6_EV_PTP_TRAP		(LAN9645X_VCAP_PTP_RULE_ID + 3)
+#define LAN9645X_VCAP_IPV6_GEN_PTP_TRAP		(LAN9645X_VCAP_PTP_RULE_ID + 4)
+
+#define LAN9645X_VCAP_L2_PTP_REW_CMD		(LAN9645X_VCAP_PTP_RULE_ID + 5)
+#define LAN9645X_VCAP_IPV4_PTP_REW_CMD		(LAN9645X_VCAP_PTP_RULE_ID + 6)
+#define LAN9645X_VCAP_IPV6_PTP_REW_CMD		(LAN9645X_VCAP_PTP_RULE_ID + 7)
+#define LAN9645X_VCAP_IS2_HSR_FWD1		(LAN9645X_VCAP_PTP_RULE_ID + 8)
+#define LAN9645X_VCAP_IS2_HSR_FWD2		(LAN9645X_VCAP_PTP_RULE_ID + 9)
+
 #define LAN9645X_LED_PROP_CNT		2
 #define LAN9645X_LED_PROP_IDX		0
 #define LAN9645X_LED_PROP_DRIVE		1
@@ -394,9 +411,11 @@ struct lan9645x_hsr_prp {
 	u16 isdx; /* Allocated ISDX for tx stream */
 	int port_a;
 	int port_b;
+	int shadow_ports[2];
 	bool enabled;
 	enum lan9645x_hsr_type type; /* HSR or PRP */
 	struct list_head nodes;
+	int ptp_users;
 };
 
 struct lan9645x_mirror {
@@ -1248,5 +1267,11 @@ netdev_tx_t lan9645x_inj_xmit(struct lan9645x_port *port,
 /* Automatic Frame Injection, lan9645x_afi.c */
 int lan9645x_afi_init(struct lan9645x *lan9645x);
 void lan9645x_afi_deinit(struct lan9645x *lan9645x);
+
+/* PTP over HSR, lan9645x_ptp_hsr.c */
+int lan9645x_ptp_hsr_init(struct lan9645x *lan9645x);
+int lan9645x_ptp_hsr_setup(struct lan9645x *lan9645x, int port,
+			   struct kernel_hwtstamp_config *cfg);
+struct sk_buff *lan9645x_ptp_hsr_tx_irq_skb_match(struct lan9645x_port *port);
 
 #endif /* __LAN9645X_MAIN_H__ */
