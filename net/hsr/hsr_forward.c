@@ -325,7 +325,11 @@ static struct sk_buff *hsr_fill_tag(struct sk_buff *skb,
 	else
 		hsr_ethhdr = (struct hsr_ethhdr *)pc;
 
-	hsr_set_path_id(frame, hsr_ethhdr, port);
+	if (REDINFO_T(skb) == DIRECTED_TX)
+		set_hsr_tag_path(&hsr_ethhdr->hsr_tag, REDINFO_PATHID(skb));
+	else
+		hsr_set_path_id(frame, hsr_ethhdr, port);
+
 	set_hsr_tag_LSDU_size(&hsr_ethhdr->hsr_tag, lsdu_size);
 	hsr_ethhdr->hsr_tag.sequence_nr = htons(frame->sequence_nr);
 	hsr_ethhdr->hsr_tag.encap_proto = hsr_ethhdr->ethhdr.h_proto;
@@ -397,6 +401,9 @@ struct sk_buff *hsr_create_tagged_frame(struct hsr_frame_info *frame,
 	 * that case
 	 */
 	skb = hsr_fill_tag(skb, frame, port, port->hsr->prot_version);
+
+	if (REDINFO_T(skb) == DIRECTED_TX)
+		return skb;
 
 	skb_shinfo(skb)->tx_flags = skb_shinfo(frame->skb_std)->tx_flags;
 	skb->sk = frame->skb_std->sk;
@@ -591,6 +598,21 @@ static void stripped_skb_set_shared_info(struct hsr_port *port,
 	}
 }
 
+static bool hsr_skip_directed_tx_port(struct hsr_frame_info *frame,
+				      struct hsr_port *port)
+{
+	if (!frame->skb_std)
+		return false;
+
+	if (port->type != HSR_PT_SLAVE_A && port->type != HSR_PT_SLAVE_B)
+		return false;
+
+	if (REDINFO_T(frame->skb_std) != DIRECTED_TX)
+		return false;
+
+	return !(REDINFO_PORTS(frame->skb_std) & BIT(port->type - 1));
+}
+
 /* Forward the frame through all devices except:
  * - Back through the receiving device
  * - If it's a HSR frame: through a device where it has passed before
@@ -648,6 +670,10 @@ static void hsr_forward_do(struct hsr_frame_info *frame)
 		 */
 		if (hsr->proto_ops->drop_frame &&
 		    hsr->proto_ops->drop_frame(frame, port))
+			continue;
+
+		/* For DIRECTED_TX, only forward to ports whose bit is set. */
+		if (hsr_skip_directed_tx_port(frame, port))
 			continue;
 
 		if (port->type == HSR_PT_SLAVE_A ||
