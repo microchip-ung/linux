@@ -808,6 +808,7 @@ void sparx5_set_port_ifh_cl_qos(struct sparx5 *sparx5, void *ifh_hdr, u8 cl_qos)
 void sparx5_set_port_ifh(struct sparx5 *sparx5, void *ifh_hdr, u16 portno);
 void sparx5_set_port_ifh_pipeline_pt(struct sparx5 *sparx5, void *ifh_hdr, u8 pipeline_pt);
 void sparx5_set_port_ifh_dst(struct sparx5 *sparx5, void *ifh_hdr, u32 dst);
+void sparx5_set_port_ifh_rb_leg(struct sparx5 *sparx5, void *ifh_hdr, u8 leg);
 u64 sparx5_get_ifh_field(struct sparx5 *sparx5, void *ifh_hdr,
 			 enum sparx5_ifh_enum field);
 bool sparx5_netdevice_check(const struct net_device *dev);

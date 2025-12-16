@@ -231,6 +231,28 @@ void sparx5_set_port_ifh_dst(struct sparx5 *sparx5, void *ifh_hdr, u32 dst)
 	__ifh_encode_bitfield(ifh_hdr, dst, 29, 8);
 }
 
+void sparx5_set_port_ifh_rb_leg(struct sparx5 *sparx5, void *ifh_hdr, u8 leg)
+{
+	const struct sparx5_ops *ops = sparx5->data->ops;
+	u32 width = ops->get_ifh_field_width(IFH_RB_CMD);
+	u32 pos = ops->get_ifh_field_pos(IFH_RB_CMD);
+	u64 cur_cmd;
+
+	/* RB_CMD is a 6-bit field:
+	 *  bits [2:1] select the HSR leg:
+	 *    01 = Leg A, 10 = Leg B, 11 = A+B
+	 *  other bits control unrelated RedBox functions.
+	 */
+	cur_cmd = sparx5_get_ifh_field(sparx5, ifh_hdr, IFH_RB_CMD);
+
+	/* Clear bits 1:2 and insert leg there */
+	cur_cmd &= ~GENMASK_ULL(2, 1);
+	cur_cmd |= ((u64)(leg & 0x3) << 1);
+
+	/* Write the modified command field back */
+	__ifh_encode_bitfield(ifh_hdr, cur_cmd, pos, width);
+}
+
 static int sparx5_port_open(struct net_device *ndev)
 {
 	struct sparx5_port *port = netdev_priv(ndev);
