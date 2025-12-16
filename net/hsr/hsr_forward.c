@@ -556,6 +556,41 @@ bool hsr_drop_frame(struct hsr_frame_info *frame, struct hsr_port *port)
 	return false;
 }
 
+static void stripped_skb_set_shared_info(struct hsr_port *port,
+					 struct sk_buff *skb_stripped,
+					 struct hsr_frame_info *frame)
+{
+	struct hsr_port *port_rcv = frame->port_rcv;
+	struct skb_redundancy_info *sred;
+	struct sk_buff *skb_hsr, *skb;
+	struct hsr_ethhdr *hsr_ethhdr;
+	u16 s;
+
+	/* It is the responsibility of the MAC driver to fill the redundancy
+	 * info, in case tag removal is offloaded; so bail out.
+	 */
+	if (port->dev->features & NETIF_F_HW_HSR_TAG_RM)
+		return;
+
+	if (!frame->skb_hsr)
+		return;
+
+	skb_hsr = frame->skb_hsr;
+	skb = skb_stripped;
+
+	if (REDINFO_T(skb_hsr)) {
+		sred = skb_redinfo(skb);
+		/* assumes no vlan */
+		hsr_ethhdr = (struct hsr_ethhdr *)skb_mac_header(skb_hsr);
+		sred->io_port = (PTP_MSG_IN | BIT(port_rcv->type - 1));
+		sred->ethertype = ntohs(hsr_ethhdr->ethhdr.h_proto);
+		s = ntohs(hsr_ethhdr->hsr_tag.path_and_LSDU_size);
+		sred->lsdu_size = s & 0xfff;
+		sred->pathid = (s >> 12) & 0xf;
+		sred->seqnr = frame->sequence_nr;
+	}
+}
+
 /* Forward the frame through all devices except:
  * - Back through the receiving device
  * - If it's a HSR frame: through a device where it has passed before
@@ -616,10 +651,17 @@ static void hsr_forward_do(struct hsr_frame_info *frame)
 			continue;
 
 		if (port->type == HSR_PT_SLAVE_A ||
-		    port->type == HSR_PT_SLAVE_B)
+		    port->type == HSR_PT_SLAVE_B) {
 			skb = hsr->proto_ops->create_tagged_frame(frame, port);
-		else
+		} else {
 			skb = hsr->proto_ops->get_untagged_frame(frame, port);
+
+			/* Make sure the Redundant info from the original HSR
+			 * tag is copied to the stripped skb (including
+			 * timestamp.)
+			 */
+			stripped_skb_set_shared_info(port, skb, frame);
+		}
 
 		if (!skb) {
 			frame->port_rcv->dev->stats.rx_dropped++;
