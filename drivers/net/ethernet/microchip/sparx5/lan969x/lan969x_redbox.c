@@ -115,12 +115,21 @@ enum {
 	FWD_MASK_MAX,
 };
 
+struct lan969x_rb_stats {
+	u32 tx_tag;
+	u32 tx_unt;
+	u32 rx_tag;
+	u32 rx_unt;
+};
+
 struct lan969x_rb_htable_port {
 	u8 age;
 	u8 fwd;
 	u8 rct;
 	u32 rx;
 	u32 rx_wrong_lan;
+	u32 rx_tag;
+	u32 rx_unt;
 };
 
 struct lan969x_rb_htable_node {
@@ -1111,6 +1120,46 @@ static void lan969x_rb_print(struct sparx5 *sparx5)
 	}
 }
 
+static void lan969x_rb_stats_read(struct sparx5 *sparx5, u32 rb, u32 idx,
+				  struct lan969x_rb_stats *stats)
+{
+	stats->tx_tag = spx5_rd(sparx5, RB_CNT_TX_TAG(rb, idx));
+	stats->tx_unt = spx5_rd(sparx5, RB_CNT_TX_UNT(rb, idx));
+	stats->rx_tag = spx5_rd(sparx5, RB_CNT_RX_TAG(rb, idx));
+	stats->rx_unt = spx5_rd(sparx5, RB_CNT_RX_UNT(rb, idx));
+}
+
+static void lan969x_rb_stats_print(struct sparx5 *sparx5)
+{
+	if (debugfs_redbox_idx >= LAN969X_RB_REDBOX_CNT) {
+		pr_err("Invalid redbox index: %u", debugfs_redbox_idx);
+		return;
+	}
+
+	pr_info("     Tx Tagged     Tx Untagged   Rx Tagged     Rx Untagged  \n");
+	pr_info("     ------------- ------------- ------------- -------------\n");
+	pr_info("Inst A      B      A      B      A      B      A      B     \n");
+	pr_info("---- ------ ------ ------ ------ ------ ------ ------ ------\n");
+
+	for (int i = 0; i < LAN969X_RB_REDBOX_CNT; i++) {
+		struct lan969x_rb_stats stats[2] = { 0 };
+
+		for (int j = 0; j < 2; j++)
+			lan969x_rb_stats_read(sparx5, i, j, &stats[j]);
+
+		pr_info("%4u %6u %6u %6u %6u %6u %6u %6u %6u\n\n",
+			i,
+			stats[0].tx_tag,
+			stats[1].tx_tag,
+			stats[0].tx_unt,
+			stats[1].tx_unt,
+			stats[0].rx_tag,
+			stats[1].rx_tag,
+			stats[0].rx_unt,
+			stats[1].rx_unt);
+	}
+}
+
 static int lan969x_rb_show(struct seq_file *s, void *unused)
 {
 	struct sparx5 *sparx5 = s->private;
@@ -1141,6 +1190,16 @@ static int lan969x_rb_dtable_show(struct seq_file *s, void *unused)
 }
 DEFINE_SHOW_ATTRIBUTE(lan969x_rb_dtable);
 
+static int lan969x_rb_stats_show(struct seq_file *s, void *unused)
+{
+	struct sparx5 *sparx5 = s->private;
+
+	lan969x_rb_stats_print(sparx5);
+
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(lan969x_rb_stats);
+
 void lan969x_rb_debugfs(struct sparx5 *sparx5)
 {
 	debugfs_create_x32("redbox_idx", 0644, sparx5->debugfs_root,
@@ -1154,6 +1213,9 @@ void lan969x_rb_debugfs(struct sparx5 *sparx5)
 
 	debugfs_create_file("redbox_dtable", 0444, sparx5->debugfs_root, sparx5,
 			    &lan969x_rb_dtable_fops);
+
+	debugfs_create_file("redbox_stats", 0444, sparx5->debugfs_root, sparx5,
+			    &lan969x_rb_stats_fops);
 }
 
 /* Retrieve a redbox for this master. */

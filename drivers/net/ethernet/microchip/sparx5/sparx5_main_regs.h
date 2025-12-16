@@ -12718,6 +12718,61 @@ extern const struct sparx5_regs *regs;
 	FIELD_GET(RB_STICKY_PRP_LANID_MISMATCH_STICKY, x)
 
 /* LAN969X ONLY */
+/* RB:STAT:CNT_TX_TAG */
+#define RB_CNT_TX_TAG(t, g)                                                    \
+	__REG(TARGET_RB, t, 5, 208, g, 3, 44, 0, 0, 1, 4)
+
+/* LAN969X ONLY */
+/* RB:STAT:CNT_TX_UNT */
+#define RB_CNT_TX_UNT(t, g)                                                    \
+	__REG(TARGET_RB, t, 5, 208, g, 3, 44, 4, 0, 1, 4)
+
+/* LAN969X ONLY */
+/* RB:STAT:CNT_TX_LL */
+#define RB_CNT_TX_LL(t, g)                                                     \
+	__REG(TARGET_RB, t, 5, 208, g, 3, 44, 8, 0, 1, 4)
+
+/* LAN969X ONLY */
+/* RB:STAT:CNT_RX_TAG */
+#define RB_CNT_RX_TAG(t, g)                                                    \
+	__REG(TARGET_RB, t, 5, 208, g, 3, 44, 12, 0, 1, 4)
+
+/* LAN969X ONLY */
+/* RB:STAT:CNT_RX_UNT */
+#define RB_CNT_RX_UNT(t, g)                                                    \
+	__REG(TARGET_RB, t, 5, 208, g, 3, 44, 16, 0, 1, 4)
+
+/* LAN969X ONLY */
+/* RB:STAT:CNT_RX_LL */
+#define RB_CNT_RX_LL(t, g)                                                     \
+	__REG(TARGET_RB, t, 5, 208, g, 3, 44, 20, 0, 1, 4)
+
+/* LAN969X ONLY */
+/* RB:STAT:CNT_RX_WRONG_LAN */
+#define RB_CNT_RX_WRONG_LAN(t, g)                                              \
+	__REG(TARGET_RB, t, 5, 208, g, 3, 44, 24, 0, 1, 4)
+
+/* LAN969X ONLY */
+/* RB:STAT:CNT_RX_OWN */
+#define RB_CNT_RX_OWN(t, g)                                                    \
+	__REG(TARGET_RB, t, 5, 208, g, 3, 44, 28, 0, 1, 4)
+
+/* LAN969X ONLY */
+/* RB:STAT:CNT_DUPL_ZERO */
+#define RB_CNT_DUPL_ZERO(t, g)                                                 \
+	__REG(TARGET_RB, t, 5, 208, g, 3, 44, 32, 0, 1, 4)
+
+/* LAN969X ONLY */
+/* RB:STAT:CNT_DUPL_ONE */
+#define RB_CNT_DUPL_ONE(t, g)                                                  \
+	__REG(TARGET_RB, t, 5, 208, g, 3, 44, 36, 0, 1, 4)
+
+/* LAN969X ONLY */
+/* RB:STAT:CNT_DUPL_TWO */
+#define RB_CNT_DUPL_TWO(t, g)                                                  \
+	__REG(TARGET_RB, t, 5, 208, g, 3, 44, 40, 0, 1, 4)
+
+/* LAN969X ONLY */
 /* RB:HOST_TBL:HOST_ACCESS_CTRL */
 #define RB_HOST_ACCESS_CTRL(t)                                                 \
 	__REG(TARGET_RB, t, 5, 340, 0, 1, 64, 0, 0, 1, 4)
