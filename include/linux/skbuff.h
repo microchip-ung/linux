@@ -587,6 +587,25 @@ struct xsk_tx_metadata_compl {
 	__u64 *tx_timestamp;
 };
 
+/* Bit fields of redundancy info io_port */
+#define PTP_MSG_IN           BIT(7)
+#define PTP_EVT_OUT          BIT(6)
+#define DIRECTED_TX          BIT(5)
+
+struct skb_redundancy_info {
+	__u8  io_port;     /* tx/rx port of the skb */
+	__u8  pathid;      /* pathid in tag */
+	__u16 ethertype;   /* ethertype in tag */
+	__u16 lsdu_size;   /* lsdu size in tag */
+	__u16 seqnr;       /* seqnr in tag */
+};
+
+#define REDINFO_T(skb)      (skb_redinfo(skb)->io_port & DIRECTED_TX)
+#define REDINFO_PORTS(skb)  (skb_redinfo(skb)->io_port & GENMASK(1, 0))
+#define REDINFO_PATHID(skb) (skb_redinfo(skb)->pathid)
+#define REDINFO_SEQNR(skb)  (skb_redinfo(skb)->seqnr)
+#define REDINFO_LSDU_SIZE(skb)  (skb_redinfo(skb)->lsdu_size)
+
 /* This data is invariant across clones and lives at
  * the end of the header data, ie. at skb->end.
  */
@@ -629,6 +648,9 @@ struct skb_shared_info {
 		 */
 		void		*destructor_arg;
 	};
+
+	/* Redbox redundancy info */
+	struct skb_redundancy_info redinfo;
 
 	/* must be last field, see pskb_expand_head() */
 	skb_frag_t	frags[MAX_SKB_FRAGS];
@@ -1787,6 +1809,11 @@ int skb_zerocopy_iter_stream(struct sock *sk, struct sk_buff *skb,
 
 /* Internal */
 #define skb_shinfo(SKB)	((struct skb_shared_info *)(skb_end_pointer(SKB)))
+
+static inline struct skb_redundancy_info *skb_redinfo(struct sk_buff *skb)
+{
+	return &skb_shinfo(skb)->redinfo;
+}
 
 static inline struct skb_shared_hwtstamps *skb_hwtstamps(struct sk_buff *skb)
 {

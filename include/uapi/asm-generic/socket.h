@@ -150,6 +150,9 @@
 #define SO_INQ			84
 #define SCM_INQ			SO_INQ
 
+#define SO_REDUNDANCY           85
+#define SCM_REDUNDANCY          SO_REDUNDANCY
+
 #if !defined(__KERNEL__)
 
 #if __BITS_PER_LONG == 64 || (defined(__x86_64__) && defined(__ILP32__))

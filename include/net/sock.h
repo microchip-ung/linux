@@ -2836,6 +2836,17 @@ static inline void sock_recv_cmsgs(struct msghdr *msg, struct sock *sk,
 
 void __sock_tx_timestamp(__u32 tsflags, __u8 *tx_flags);
 
+static inline void sock_recv_redundancy_info(struct msghdr *msg,
+					     struct sock *sk,
+					     struct sk_buff *skb)
+{
+	struct skb_redundancy_info *sred;
+
+	sred = skb_redinfo(skb);
+	if (sred->io_port)
+		put_cmsg(msg, SOL_SOCKET, SCM_REDUNDANCY, sizeof(*sred), sred);
+}
+
 /**
  * _sock_tx_timestamp - checks whether the outgoing packet is to be time stamped
  * @sk:		socket sending this packet
