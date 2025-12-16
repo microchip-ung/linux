@@ -839,6 +839,7 @@ void sparx5_ptp_get_hwtimestamp(struct sparx5 *sparx5,
 				struct timespec64 *ts,
 				u32 nsec);
 irqreturn_t sparx5_ptp_ext_irq_handler(int irq, void *args);
+const char *sparx5_ptp_msg_type_str(struct sk_buff *skb);
 
 /* sparx5_netlink *.c */
 int sparx5_netlink_qos_init(struct sparx5 *sparx5);

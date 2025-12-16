@@ -1360,3 +1360,34 @@ void sparx5_ptp_rxtstamp(struct sparx5 *sparx5, struct sk_buff *skb,
 	shhwtstamps->hwtstamp = full_ts_in_ns;
 }
 EXPORT_SYMBOL_GPL(sparx5_ptp_rxtstamp);
+
+const char *sparx5_ptp_msg_type_str(struct sk_buff *skb)
+{
+	u8 *ptp = skb->data + sizeof(struct ethhdr);
+	u8 msgtype = ptp[0] & 0x0F;
+
+	switch (msgtype) {
+	case 0x0:
+		return "Sync";
+	case 0x1:
+		return "Delay_Req";
+	case 0x2:
+		return "Pdelay_Req";
+	case 0x3:
+		return "Pdelay_Resp";
+	case 0x8:
+		return "Follow_Up";
+	case 0x9:
+		return "Delay_Resp";
+	case 0xA:
+		return "Pdelay_Resp_FU";
+	case 0xB:
+		return "Announce";
+	case 0xC:
+		return "Signaling";
+	case 0xD:
+		return "Management";
+	default:
+		return "Unknown";
+	}
+}
