@@ -509,6 +509,19 @@ static void lan969x_rb_eri_set(struct sparx5 *sparx5, u8 port, bool enable)
 		 sparx5, ASM_PORT_CFG(port));
 }
 
+/* Enable IRI extraction from the switch core towards the redbox */
+static void lan969x_rb_iri_set(struct sparx5 *sparx5, u8 rb, u8 port,
+			       bool enable)
+{
+	spx5_rmw(REW_RTAG_ETAG_CTRL_RB_ENA_SET(enable),
+		 REW_RTAG_ETAG_CTRL_RB_ENA,
+		 sparx5, REW_RTAG_ETAG_CTRL(port));
+
+	spx5_rmw(RB_RB_CFG_IRI_ENA_SET(enable),
+		 RB_RB_CFG_IRI_ENA,
+		 sparx5, RB_RB_CFG(rb));
+}
+
 /* Connect LREA and LREB to front ports (by means of taxi ports). */
 static void lan969x_rb_taxi_ports_set(struct sparx5 *sparx5, u8 lrea_taxi_port,
 				      u8 lreb_taxi_port, u8 taxi_bus)
@@ -1381,6 +1394,17 @@ int lan969x_hsr_join(struct net_device *master, struct net_device *slave)
 			   true);
 
 	lan969x_rb_eri_set(sparx5,
+			   redbox->ports[LAN969X_RB_LREB]->portno,
+			   true);
+
+	/* Enable IRI extraction from the switch core towards the redbox. */
+	lan969x_rb_iri_set(sparx5,
+			   redbox->taxi,
+			   redbox->ports[LAN969X_RB_LREA]->portno,
+			   true);
+
+	lan969x_rb_iri_set(sparx5,
+			   redbox->taxi,
 			   redbox->ports[LAN969X_RB_LREB]->portno,
 			   true);
 
