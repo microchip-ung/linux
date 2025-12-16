@@ -1348,6 +1348,17 @@ int lan969x_hsr_join(struct net_device *master, struct net_device *slave)
 		lan969x_rb_table_configure(sparx5, params, i, redbox->taxi);
 	}
 
+	/*  Redirect DMAC addresses in the range 01-80-C2-00-00-00 - 01-80-C2-00-00-0F to the CPU */
+	spx5_rmw(RB_BPDU_CFG_BPDU_REDIR_ENA_SET(0xffff),
+		 RB_BPDU_CFG_BPDU_REDIR_ENA, sparx5,
+		 RB_BPDU_CFG(redbox->taxi,
+			     redbox->ports[LAN969X_RB_LREA]->portno));
+
+	spx5_rmw(RB_BPDU_CFG_BPDU_REDIR_ENA_SET(0xffff),
+		 RB_BPDU_CFG_BPDU_REDIR_ENA, sparx5,
+		 RB_BPDU_CFG(redbox->taxi,
+			     redbox->ports[LAN969X_RB_LREB]->portno));
+
 	/* Learn LREA and LREB as static entries, with type LOCAL. */
 	lan969x_rb_htable_learn(sparx5,
 				redbox->taxi,
