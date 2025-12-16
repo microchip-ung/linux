@@ -185,6 +185,53 @@ static int lan969x_fdma_rx_process_frame(struct sparx5 *sparx5, int *src_port,
 	return sparx5_xdp_run(port, page, fdma_db_len_get(db));
 }
 
+static void lan969x_set_redundancy_info(struct sparx5 *sparx5,
+				       struct sk_buff *skb, u16 proto)
+{
+	/* HSR tag removal is offloaded to hardware.
+	 * Extract sequence number, path ID, and ingress leg from IFH metadata
+	 * so userspace (e.g. ptp4l) can still correlate redundancy paths.
+	 */
+
+	/* IFH was already stripped; restore it. */
+	u8 *ifh = skb->data - IFH_LEN * sizeof(u32);
+	struct skb_redundancy_info *sred;
+	u16 seqno, pathid;
+	u8 src;
+
+	/* We only care about frames that were HSR tagged. */
+	if (!sparx5_get_ifh_field(sparx5, ifh, IFH_RB_TAG)) {
+		pr_debug("%s: frame was not HSR tagged", __func__);
+		return;
+	}
+
+	src = sparx5_get_ifh_field(sparx5, ifh, IFH_RB_SRC);
+	seqno = sparx5_get_ifh_field(sparx5, ifh, IFH_TAGGING_SEQ_NO);
+
+	/* Path ID encoding:
+	 *  - bits [2:0] from MPLS SBIT
+	 *  - bit  [3]   from MPLS TC
+	 */
+	pathid = (sparx5_get_ifh_field(sparx5, ifh, IFH_MPLS_SBIT) & 0x7) |
+		 ((sparx5_get_ifh_field(sparx5, ifh, IFH_MPLS_TC) & 0x1) << 3);
+
+	sred = skb_redinfo(skb);
+	sred->io_port = (PTP_MSG_IN | BIT(src));
+	sred->seqnr = seqno;
+	sred->ethertype = proto;
+	sred->pathid = pathid;
+
+	pr_debug("%s: src=%u leg=%c msg: %s io_port=0x%02x seq=%u path=%u proto=0x%04x\n",
+		__func__,
+		src,
+		src ? 'B' : 'A',
+		sparx5_ptp_msg_type_str(skb),
+		sred->io_port,
+		sred->seqnr,
+		sred->pathid,
+		sred->ethertype);
+}
+
 static struct sk_buff *lan969x_fdma_rx_get_frame(struct sparx5 *sparx5,
 						 struct sparx5_rx *rx,
 						 int src_port,
@@ -226,8 +273,9 @@ static struct sk_buff *lan969x_fdma_rx_get_frame(struct sparx5 *sparx5,
 
 	if (likely(!(skb->dev->features & NETIF_F_RXFCS)))
 		skb_trim(skb, skb->len - ETH_FCS_LEN);
-#endif
 
+	lan969x_set_redundancy_info(sparx5, skb, ntohs(eth_hdr(skb)->h_proto));
+#endif
 	sparx5_ptp_rxtstamp(sparx5, skb, src_port, rx_timestamp);
 	skb->protocol = eth_type_trans(skb, skb->dev);
 

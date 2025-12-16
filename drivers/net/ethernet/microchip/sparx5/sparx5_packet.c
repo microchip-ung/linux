@@ -341,6 +341,32 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 		sparx5_set_port_ifh_timestamp(sparx5, ifh,
 					      SPARX5_SKB_CB(skb)->ts_id);
 	}
+#ifdef CONFIG_LAN969X_SWITCH
+	/* If directed TX is enabled, encode the port in the IFH and
+	 * let the RedBox use the IRI to make a forwarding decision.
+	 */
+	if (REDINFO_T(skb) == DIRECTED_TX) {
+		struct skb_redundancy_info *sred = skb_redinfo(skb);
+		u8 leg = REDINFO_PORTS(skb);
+
+		/* When ports are connected in a redbox, and frames are
+		 * CPU injected, the destination port must always be
+		 * LREA.
+		 */
+		sparx5_set_port_ifh_dst(sparx5, ifh, 0);
+		sparx5_set_port_ifh_rb_leg(sparx5, ifh, leg);
+
+		pr_debug("%s: msg_type: %s io_port=0x%02x (leg=%s, hw=%u)\n",
+			__func__, sparx5_ptp_msg_type_str(skb),
+			sred ? sred->io_port : 0,
+			leg == 1 ? "A" :
+			leg == 2 ? "B" :
+			leg == 3 ? "A+B" :
+				   "unknown",
+			leg);
+	}
+#endif
+
 #else
 	skb_pull_inline(skb, IFH_ENCAP_LEN);
 	memcpy(ifh, skb->data, IFH_LEN * 4);
