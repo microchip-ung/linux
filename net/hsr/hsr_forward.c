@@ -12,6 +12,7 @@
 #include <linux/skbuff.h>
 #include <linux/etherdevice.h>
 #include <linux/if_vlan.h>
+#include <net/sock.h>
 #include "hsr_main.h"
 #include "hsr_framereg.h"
 
@@ -325,6 +326,21 @@ static struct sk_buff *hsr_fill_tag(struct sk_buff *skb,
 	return skb;
 }
 
+static struct sk_buff *hsr_skb_clone(struct sk_buff *skb)
+{
+	struct sk_buff *skb_new;
+
+	skb_new = skb_clone(skb, GFP_ATOMIC);
+
+	/* Preserve the socket reference. This is required when handing TX
+	 * timestamps to the stack.
+	 */
+	if (skb_new && skb->sk)
+		skb_set_owner_w(skb_new, skb->sk);
+
+	return skb_new;
+}
+
 /* If the original frame was an HSR tagged frame, just clone it to be sent
  * unchanged. Otherwise, create a private frame especially tagged for 'port'.
  */
@@ -342,9 +358,10 @@ struct sk_buff *hsr_create_tagged_frame(struct hsr_frame_info *frame,
 		/* set the lane id properly, except when forwarding frames. */
 		if (!prp_drop_frame(frame, port))
 			hsr_set_path_id(frame, hsr_ethhdr, port);
-		return skb_clone(frame->skb_hsr, GFP_ATOMIC);
+
+		return hsr_skb_clone(frame->skb_hsr);
 	} else if (port->dev->features & NETIF_F_HW_HSR_TAG_INS) {
-		return skb_clone(frame->skb_std, GFP_ATOMIC);
+		return hsr_skb_clone(frame->skb_std);
 	}
 
 	/* Create the new skb with enough headroom to fit the HSR tag */
