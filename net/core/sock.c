@@ -2979,6 +2979,7 @@ EXPORT_SYMBOL(sock_alloc_send_pskb);
 int __sock_cmsg_send(struct sock *sk, struct cmsghdr *cmsg,
 		     struct sockcm_cookie *sockc)
 {
+	struct skb_redundancy_info *cred;
 	u32 tsflags;
 
 	BUILD_BUG_ON(SOF_TIMESTAMPING_LAST == (1 << 31));
@@ -3037,6 +3038,15 @@ int __sock_cmsg_send(struct sock *sk, struct cmsghdr *cmsg,
 		if (cmsg->cmsg_len != CMSG_LEN(sizeof(u32)))
 			return -EINVAL;
 		sockc->dmabuf_id = *(u32 *)CMSG_DATA(cmsg);
+		break;
+	case SCM_REDUNDANCY:
+		if (cmsg->cmsg_len !=
+		    CMSG_LEN(sizeof(struct skb_redundancy_info)))
+			return -EINVAL;
+
+		cred = (struct skb_redundancy_info *)CMSG_DATA(cmsg);
+		memcpy(&sockc->redinfo, cred,
+		       sizeof(struct skb_redundancy_info));
 		break;
 	default:
 		return -EINVAL;

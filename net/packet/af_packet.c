@@ -3047,6 +3047,7 @@ static int packet_snd(struct socket *sock, struct msghdr *msg, size_t len)
 	}
 
 	skb_setup_tx_timestamp(skb, &sockc);
+	sock_tx_redundancy_info(sk, &sockc.redinfo, skb);
 
 	if (!vnet_hdr.gso_type && (len > dev->mtu + reserve + extra_len) &&
 	    !packet_extra_vlan_len_allowed(dev, skb)) {

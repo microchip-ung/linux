@@ -1880,6 +1880,7 @@ struct sockcm_cookie {
 	u32 ts_opt_id;
 	u32 priority;
 	u32 dmabuf_id;
+	struct skb_redundancy_info redinfo;
 };
 
 static inline void sockcm_init(struct sockcm_cookie *sockc,
@@ -2845,6 +2846,18 @@ static inline void sock_recv_redundancy_info(struct msghdr *msg,
 	sred = skb_redinfo(skb);
 	if (sred->io_port)
 		put_cmsg(msg, SOL_SOCKET, SCM_REDUNDANCY, sizeof(*sred), sred);
+}
+
+static inline void sock_tx_redundancy_info(const struct sock *sk,
+					  struct skb_redundancy_info *redinfo,
+					  struct sk_buff *skb)
+{
+	struct skb_redundancy_info *sred;
+
+	if (redinfo->io_port) {
+		sred = skb_redinfo(skb);
+		memcpy(sred, redinfo, sizeof(*sred));
+	}
 }
 
 /**
