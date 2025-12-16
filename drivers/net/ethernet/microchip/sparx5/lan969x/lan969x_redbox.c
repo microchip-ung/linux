@@ -1250,6 +1250,7 @@ int lan969x_hsr_join(struct net_device *master, struct net_device *slave)
 {
 	u8 mode, lrea_taxi_port, lreb_taxi_port, lrea_taxi_idx, lreb_taxi_idx;
 	struct sparx5_port *port = netdev_priv(slave);
+	static unsigned char ptp_event_mac[ETH_ALEN];
 	struct sparx5 *sparx5 = port->sparx5;
 	struct lan969x_redbox *redbox;
 	enum hsr_version version;
@@ -1367,6 +1368,12 @@ int lan969x_hsr_join(struct net_device *master, struct net_device *slave)
 	lan969x_rb_htable_learn(sparx5,
 				redbox->taxi,
 				redbox->ports[LAN969X_RB_LREB]->ndev->dev_addr);
+
+	/* Learn PTP event destination MAC address. */
+	if (!mac_pton("01:1B:19:00:00:00", ptp_event_mac))
+		pr_warn("%s: failed to parse PTP event MAC\n", __func__);
+
+	lan969x_rb_htable_learn(sparx5, redbox->taxi, ptp_event_mac);
 
 	/* Enable Extraction Redundancy Information towards the switch core. */
 	lan969x_rb_eri_set(sparx5,
