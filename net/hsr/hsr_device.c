@@ -10,6 +10,7 @@
 #include <linux/netdevice.h>
 #include <linux/skbuff.h>
 #include <linux/etherdevice.h>
+#include <linux/ethtool.h>
 #include <linux/rtnetlink.h>
 #include <linux/pkt_sched.h>
 #include "hsr_device.h"
@@ -606,6 +607,103 @@ static int hsr_ndo_vlan_rx_kill_vid(struct net_device *dev,
 	return 0;
 }
 
+static int hsr_get_ts_info(struct net_device *dev,
+			   struct kernel_ethtool_ts_info *info)
+{
+	struct hsr_priv *hsr = netdev_priv(dev);
+	struct net_device *real_dev = dev;
+	struct hsr_port *port;
+
+	/* Pick the first slave (e.g. Slave A). */
+	hsr_for_each_port(hsr, port) {
+		if ((port->type == HSR_PT_SLAVE_A ||
+		     port->type == HSR_PT_SLAVE_B) &&
+		    port->dev) {
+			real_dev = port->dev;
+			break;
+		}
+	}
+
+	if (!real_dev || !real_dev->ethtool_ops ||
+	    !real_dev->ethtool_ops->get_link_ksettings)
+		return -EOPNOTSUPP;
+
+	return ethtool_get_ts_info_by_layer(real_dev, info);
+}
+
+static int hsr_hwtstamp_set(struct net_device *dev,
+			    struct kernel_hwtstamp_config *cfg,
+			    struct netlink_ext_ack *extack)
+{
+	struct hsr_priv *hsr = netdev_priv(dev);
+	struct hsr_port *port;
+	int ret = -EINVAL;
+
+	/* Set for both slaves. */
+	hsr_for_each_port(hsr, port) {
+		if ((port->type == HSR_PT_SLAVE_A ||
+		     port->type == HSR_PT_SLAVE_B) &&
+		     port->dev) {
+			ret = generic_hwtstamp_set_lower(port->dev, cfg,
+							 extack);
+			if (ret)
+				break;
+		}
+	}
+
+	return ret;
+}
+
+static int hsr_hwtstamp_get(struct net_device *dev,
+			    struct kernel_hwtstamp_config *cfg)
+{
+	struct hsr_priv *hsr = netdev_priv(dev);
+	struct hsr_port *port;
+	int ret = -EINVAL;
+
+	/* Pick the first slave (e.g. Slave A). */
+	hsr_for_each_port(hsr, port) {
+		if ((port->type == HSR_PT_SLAVE_A ||
+		     port->type == HSR_PT_SLAVE_B) &&
+		     port->dev) {
+			ret = generic_hwtstamp_get_lower(port->dev, cfg);
+			if (ret)
+				break;
+		}
+	}
+
+	return ret;
+}
+
+static int hsr_get_link_ksettings(struct net_device *dev,
+				  struct ethtool_link_ksettings *cmd)
+{
+	struct hsr_priv *hsr = netdev_priv(dev);
+	struct net_device *real_dev = dev;
+	struct hsr_port *p;
+
+	/* Pick the first slave (e.g. Slave A). */
+	hsr_for_each_port(hsr, p) {
+		if ((p->type == HSR_PT_SLAVE_A ||
+		     p->type == HSR_PT_SLAVE_B) && p->dev) {
+			real_dev = p->dev;
+			break;
+		}
+	}
+
+	if (!real_dev || !real_dev->ethtool_ops ||
+	    !real_dev->ethtool_ops->get_link_ksettings)
+		return -EOPNOTSUPP;
+
+	return real_dev->ethtool_ops->get_link_ksettings(real_dev, cmd);
+}
+
+static const struct ethtool_ops hsr_ethtool_ops = {
+	.get_ts_info = hsr_get_ts_info,
+	.get_link           = ethtool_op_get_link,
+	.get_link_ksettings = hsr_get_link_ksettings,
+};
+
 static const struct net_device_ops hsr_device_ops = {
 	.ndo_change_mtu = hsr_dev_change_mtu,
 	.ndo_open = hsr_dev_open,
@@ -616,6 +714,8 @@ static const struct net_device_ops hsr_device_ops = {
 	.ndo_set_rx_mode = hsr_set_rx_mode,
 	.ndo_vlan_rx_add_vid = hsr_ndo_vlan_rx_add_vid,
 	.ndo_vlan_rx_kill_vid = hsr_ndo_vlan_rx_kill_vid,
+	.ndo_hwtstamp_set = hsr_hwtstamp_set,
+	.ndo_hwtstamp_get = hsr_hwtstamp_get,
 };
 
 static const struct device_type hsr_type = {
@@ -668,6 +768,13 @@ void hsr_dev_setup(struct net_device *dev)
 			   NETIF_F_HW_VLAN_CTAG_FILTER;
 
 	dev->features = dev->hw_features;
+
+	/* VLAN on top of HSR needs testing and probably some work on
+	 * hsr_header_create() etc.
+	 */
+	dev->features |= NETIF_F_VLAN_CHALLENGED;
+
+	dev->ethtool_ops = &hsr_ethtool_ops;
 }
 
 /* Return true if dev is a HSR master; return false otherwise.
