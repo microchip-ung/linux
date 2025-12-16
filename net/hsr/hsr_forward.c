@@ -18,6 +18,16 @@
 
 struct hsr_node;
 
+static inline int is_hsr_l2ptp(struct sk_buff *skb)
+{
+	struct hsr_ethhdr *hsr_ethhdr;
+
+	hsr_ethhdr = (struct hsr_ethhdr *)skb_mac_header(skb);
+
+	return (hsr_ethhdr->ethhdr.h_proto == htons(ETH_P_HSR) &&
+		hsr_ethhdr->hsr_tag.encap_proto == htons(ETH_P_1588));
+}
+
 /* The uses I can see for these HSR supervision frames are:
  * 1) Use the frames that are sent after node initialization ("HSR_TLV.Type =
  *    22") to reset any sequence_nr counters belonging to that node. Useful if
@@ -386,7 +396,31 @@ struct sk_buff *hsr_create_tagged_frame(struct hsr_frame_info *frame,
 	/* skb_put_padto free skb on error and hsr_fill_tag returns NULL in
 	 * that case
 	 */
-	return hsr_fill_tag(skb, frame, port, port->hsr->prot_version);
+	skb = hsr_fill_tag(skb, frame, port, port->hsr->prot_version);
+
+	skb_shinfo(skb)->tx_flags = skb_shinfo(frame->skb_std)->tx_flags;
+	skb->sk = frame->skb_std->sk;
+
+	if (REDINFO_T(skb)) {
+		/* The HSR tag is already filled, now fill the redundancy
+		 * information based on that.
+		 */
+		struct skb_redundancy_info *sred;
+		struct hsr_ethhdr *hsr_ethhdr;
+		u16 s;
+
+		sred = skb_redinfo(skb);
+
+		hsr_ethhdr = (struct hsr_ethhdr *)skb_mac_header(skb);
+		sred->ethertype = ntohs(hsr_ethhdr->ethhdr.h_proto);
+		s = ntohs(hsr_ethhdr->hsr_tag.path_and_LSDU_size);
+		sred->lsdu_size = s & 0xfff;
+		sred->io_port   |= (PTP_EVT_OUT | BIT(port->type - 1));
+		sred->pathid    = (port->type == HSR_PT_SLAVE_A) ? 0 : 1;
+		sred->seqnr = hsr_get_skb_sequence_nr(skb);
+	}
+
+	return skb;
 }
 
 struct sk_buff *prp_create_tagged_frame(struct hsr_frame_info *frame,
