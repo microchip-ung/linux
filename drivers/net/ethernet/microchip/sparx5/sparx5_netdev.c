@@ -30,12 +30,30 @@
 
 static void __ifh_encode_bitfield(void *ifh, u64 value, u32 pos, u32 width)
 {
-	u8 *ifh_hdr = ifh;
 	/* Calculate the Start IFH byte position of this IFH bit position */
 	u32 byte = (35 - (pos / 8));
 	/* Calculate the Start bit position in the Start IFH byte */
-	u32 bit  = (pos % 8);
-	u64 encode = GENMASK_ULL(bit + width - 1, bit) & (value << bit);
+	u32 bit = pos % 8;
+	u8 *ifh_hdr = ifh;
+	u64 field_mask;
+	u64 encode;
+
+	field_mask = GENMASK_ULL(bit + width - 1, bit);
+	encode = (value << bit) & field_mask;
+
+	/* Make sure we clear the bitfield before writing to the, */
+	if (field_mask & 0xFF)
+		ifh_hdr[byte] &= ~(field_mask & 0xFF);
+	if (field_mask & 0xFF00)
+		ifh_hdr[byte - 1] &= ~((field_mask & 0xFF00) >> 8);
+	if (field_mask & 0xFF0000)
+		ifh_hdr[byte - 2] &= ~((field_mask & 0xFF0000) >> 16);
+	if (field_mask & 0xFF000000)
+		ifh_hdr[byte - 3] &= ~((field_mask & 0xFF000000) >> 24);
+	if (field_mask & 0xFF00000000)
+		ifh_hdr[byte - 4] &= ~((field_mask & 0xFF00000000) >> 32);
+	if (field_mask & 0xFF0000000000)
+		ifh_hdr[byte - 5] &= ~((field_mask & 0xFF0000000000) >> 40);
 
 	/* The b0-b7 goes into the start IFH byte */
 	if (encode & 0xFF)
