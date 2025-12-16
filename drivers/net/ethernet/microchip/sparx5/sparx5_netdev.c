@@ -172,6 +172,11 @@ void sparx5_set_port_ifh_pipeline_pt(struct sparx5 *sparx5, void *ifh_hdr,
 			      ops->get_ifh_field_width(IFH_MISC_PIPELINE_PT));
 }
 
+void sparx5_set_port_ifh_dst(struct sparx5 *sparx5, void *ifh_hdr, u32 dst)
+{
+	__ifh_encode_bitfield(ifh_hdr, dst, 29, 8);
+}
+
 static int sparx5_port_open(struct net_device *ndev)
 {
 	struct sparx5_port *port = netdev_priv(ndev);
@@ -420,7 +425,7 @@ int sparx5_register_netdevs(struct sparx5 *sparx5)
 			port_ndev->dev.of_node = sparx5->ports[portno]->of_node;
 
 			pr_info("of_node: %s", port_ndev->dev.of_node->name);
-			
+
 			err = register_netdev(port_ndev);
 			if (err) {
 				dev_err(sparx5->dev,
