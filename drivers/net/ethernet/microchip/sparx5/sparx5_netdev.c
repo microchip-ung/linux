@@ -75,6 +75,42 @@ static void __ifh_encode_bitfield(void *ifh, u64 value, u32 pos, u32 width)
 		ifh_hdr[byte - 5] |= (u8)((encode & 0xFF0000000000) >> 40);
 }
 
+static u64 __ifh_decode_bitfield(const void *ifh, u32 pos, u32 width)
+{
+	u32 byte = (35 - (pos / 8));
+	const u8 *ifh_hdr = ifh;
+	u32 bit = (pos % 8);
+	u64 value = 0;
+
+	/* Assemble up to 6 bytes that might contain the field */
+	value |= (u64)ifh_hdr[byte] << 0;
+	if (byte >= 1)
+		value |= (u64)ifh_hdr[byte - 1] << 8;
+	if (byte >= 2)
+		value |= (u64)ifh_hdr[byte - 2] << 16;
+	if (byte >= 3)
+		value |= (u64)ifh_hdr[byte - 3] << 24;
+	if (byte >= 4)
+		value |= (u64)ifh_hdr[byte - 4] << 32;
+	if (byte >= 5)
+		value |= (u64)ifh_hdr[byte - 5] << 40;
+
+	/* Align and mask to extract the field bits */
+	value >>= bit;
+	value &= GENMASK_ULL(width - 1, 0);
+
+	return value;
+}
+
+u64 sparx5_get_ifh_field(struct sparx5 *sparx5, void *ifh_hdr,
+			 enum sparx5_ifh_enum field)
+{
+	const struct sparx5_ops *ops = sparx5->data->ops;
+
+	return __ifh_decode_bitfield(ifh_hdr,
+				     ops->get_ifh_field_pos(field),
+				     ops->get_ifh_field_width(field));
+}
 void sparx5_set_port_ifh(struct sparx5 *sparx5, void *ifh_hdr, u16 portno)
 {
 	const struct sparx5_ops *ops = sparx5->data->ops;
