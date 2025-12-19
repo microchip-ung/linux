@@ -739,16 +739,17 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 				SYS_PORT_MODE_PRP_LANID |
 				SYS_PORT_MODE_PRP_ENA,
 				lan9645x, SYS_PORT_MODE(port));
-
-			/* Piggyback on LAG functionality to pick a port to use
-			 * as representant for mac table purposes. This avoids
-			 * mac table thrashing and the resulting IRQ pressure.
-			 */
-			lan_rmw(ANA_PORT_CFG_PORTID_VAL_SET(lrea_port),
-				ANA_PORT_CFG_PORTID_VAL,
-				lan9645x,
-				ANA_PORT_CFG(port));
 		}
+
+		/* Piggyback on LAG functionality to pick a port to use
+		 * as representant for mac table purposes. This avoids
+		 * mac table thrashing when the same MAC arrives on both A and
+		 * B.
+		 */
+		lan_rmw(ANA_PORT_CFG_PORTID_VAL_SET(lrea_port),
+			ANA_PORT_CFG_PORTID_VAL,
+			lan9645x,
+			ANA_PORT_CFG(port));
 
 		/* Trap BPDU frames. Is this required? */
 		lan_rmw(ANA_CPU_FWD_BPDU_CFG_BPDU_REDIR_ENA_SET(0xffff),
