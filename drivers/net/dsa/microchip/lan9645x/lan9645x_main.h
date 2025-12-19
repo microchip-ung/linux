@@ -804,6 +804,23 @@ static inline bool lan9645x_port_is_hsr(struct lan9645x_port *p)
 		 lan9645x->hsr.port_b == p->chip_port);
 }
 
+static inline struct lan9645x_port *
+lan9645x_port_shadow_of(struct lan9645x_port *p)
+{
+	struct lan9645x_hsr_prp *hsr = &p->lan9645x->hsr;
+
+	if (!hsr->enabled)
+		return NULL;
+
+	if (hsr->shadow_ports[0] == p->chip_port)
+		return lan9645x_to_port(p->lan9645x, hsr->port_a);
+
+	if (hsr->shadow_ports[1] == p->chip_port)
+		return lan9645x_to_port(p->lan9645x, hsr->port_b);
+
+	return NULL;
+}
+
 static inline u32 __lan_rel_addr(int gbase, int ginst, int gcnt,
 				 int gwidth, int raddr, int rinst,
 				 int rcnt, int rwidth)

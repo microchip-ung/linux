@@ -1025,7 +1025,10 @@ void lan9645x_update_fwd_mask(struct lan9645x *lan9645x, bool joining)
 	 * are only forwarded to ports q != p, where q is relevant to forward
 	 */
 	lan9645x_for_each_port(lan9645x, port, p) {
+		struct lan9645x_port *shadow_of;
 		u32 mask = 0;
+
+		shadow_of = lan9645x_port_shadow_of(p);
 
 		if (lan9645x_port_is_bridged(p)) {
 			mask = lan9645x->bridge_mask &
@@ -1037,6 +1040,10 @@ void lan9645x_update_fwd_mask(struct lan9645x *lan9645x, bool joining)
 		} else if (lan9645x_port_is_hsr(p)) {
 			mask = lan9645x_hsr_prp_dev_get_mask(lan9645x, p->hsr) &
 			       ~BIT(p->chip_port);
+		} else if (shadow_of) {
+			mask = lan9645x_hsr_prp_dev_get_mask(lan9645x,
+							     shadow_of->hsr) &
+				~BIT(p->chip_port);
 		}
 
 		lan_wr(mask, lan9645x, ANA_PGID(PGID_SRC + port));
