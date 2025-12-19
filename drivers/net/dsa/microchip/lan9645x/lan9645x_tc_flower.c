@@ -111,11 +111,6 @@ static void lan9645x_tc_esdx_free(struct lan9645x *lan9645x, u16 esdx)
 	mutex_unlock(&lan9645x->esdx_lock);
 }
 
-static enum vcap_bit __vcap2bit(u32 val)
-{
-	return !!val ? VCAP_BIT_1 : VCAP_BIT_0;
-}
-
 static struct lan9645x_link_isdx *
 __lan9645x_tc_link_isdx_find(struct lan9645x *lan9645x, u16 isdx)
 {
@@ -284,15 +279,15 @@ lan9645x_tc_flower_handler_control_usage(struct vcap_tc_flower_parse_usage *st)
 	flow_rule_match_control(st->frule, &match);
 	if (match.mask->flags & FLOW_DIS_IS_FRAGMENT) {
 		err = vcap_rule_add_key_bit(st->vrule, VCAP_KF_L3_FRAGMENT,
-					    __vcap2bit(match.key->flags &
-						       FLOW_DIS_IS_FRAGMENT));
+					    vcap2bit(match.key->flags &
+						     FLOW_DIS_IS_FRAGMENT));
 		if (err)
 			goto bad_frag_out;
 	}
 
 	if (match.mask->flags & FLOW_DIS_FIRST_FRAG) {
 		err = vcap_rule_add_key_bit(st->vrule, VCAP_KF_L3_FRAG_OFS_GT0,
-					    __vcap2bit(!(match.key->flags &
+					    vcap2bit(!(match.key->flags &
 						       FLOW_DIS_FIRST_FRAG)));
 		if (err)
 			goto bad_frag_out;

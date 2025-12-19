@@ -39,6 +39,7 @@ enum is2_mask_mode {
 	REDIRECT = 3,    /* Replace SRC, AGGR, VLAN, DMAC lookup with portmask */
 };
 
+enum vcap_bit vcap2bit(u32 val);
 int lan9645x_vcap_rule_val_add(struct vcap_rule *rule, u16 l3_proto);
 int lan9645x_vcap_add_key_mac(struct vcap_rule *rule,
 			      enum vcap_key_field mac_field,

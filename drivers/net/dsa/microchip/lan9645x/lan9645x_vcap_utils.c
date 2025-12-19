@@ -13,6 +13,11 @@
 static const u8 prio_oui_mrp[ETH_ALEN] = { 0x1, 0x15, 0x4e, 0x0, 0x0, 0x0 };
 static const u8 prio_oui_mask[ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0x0, 0x0, 0x0 };
 
+enum vcap_bit vcap2bit(u32 val)
+{
+	return !!val ? VCAP_BIT_1 : VCAP_BIT_0;
+}
+
 int lan9645x_vcap_add_key_mac(struct vcap_rule *rule,
 			      enum vcap_key_field mac_field, unsigned char *mac)
 {
