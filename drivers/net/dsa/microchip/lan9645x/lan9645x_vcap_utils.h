@@ -46,5 +46,9 @@ int lan9645x_vcap_add_key_mac(struct vcap_rule *rule,
 			      unsigned char *mac);
 int lan9645x_add_prio_is1_rule(struct lan9645x_port *port, enum vcap_user user,
 			       u32 *rule_id);
+void lan9645x_is2_only_mac_etype_llc(struct lan9645x *lan9645x, u32 lookup,
+				     int port);
+void lan9645x_is2_default_conf(struct lan9645x *lan9645x, u32 lookup,
+			       int port);
 
 #endif

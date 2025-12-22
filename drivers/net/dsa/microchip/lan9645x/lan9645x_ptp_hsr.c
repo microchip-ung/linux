@@ -30,18 +30,7 @@ static int lan9645x_ptp_hsr_forwarding(struct lan9645x *lan9645x, int shadow,
 	if (vcap_rule_exists(lan9645x->vcap_ctrl, rule_id))
 		return 0;
 
-	lan_rmw(ANA_VCAP_S2_CFG_ARP_DIS_SET(S2_LOOKUP2) |
-		ANA_VCAP_S2_CFG_IP_TCPUDP_DIS_SET(S2_LOOKUP2) |
-		ANA_VCAP_S2_CFG_IP_OTHER_DIS_SET(S2_LOOKUP2) |
-		ANA_VCAP_S2_CFG_OAM_DIS_SET(S2_LOOKUP2) |
-		ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP2_SET(IP6_MAC_ETYPE),
-		ANA_VCAP_S2_CFG_ARP_DIS |
-		ANA_VCAP_S2_CFG_IP_TCPUDP_DIS |
-		ANA_VCAP_S2_CFG_IP_OTHER_DIS |
-		ANA_VCAP_S2_CFG_OAM_DIS |
-		ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP2,
-		lan9645x,
-		ANA_VCAP_S2_CFG(shadow));
+	lan9645x_is2_only_mac_etype_llc(lan9645x, S2_LOOKUP2, shadow);
 
 	rule = vcap_alloc_rule(vctrl, ndev,
 			       LAN9645X_VCAP_CID_IS2_L1,

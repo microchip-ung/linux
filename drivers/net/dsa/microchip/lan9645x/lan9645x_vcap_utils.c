@@ -40,11 +40,7 @@ int lan9645x_vcap_rule_val_add(struct vcap_rule *rule, u16 l3_proto)
 	if (err)
 		return err;
 
-	err = vcap_add_rule(rule);
-	if (err)
-		return err;
-
-	return err;
+	return vcap_add_rule(rule);
 }
 
 static int lan9645x_is1_add_ether(struct lan9645x_port *port,
@@ -132,4 +128,71 @@ int lan9645x_add_prio_is1_rule(struct lan9645x_port *port, enum vcap_user user,
 			return 1;
 
 	return 0;
+}
+
+void lan9645x_is2_only_mac_etype_llc(struct lan9645x *lan9645x, u32 lookup,
+				     int port)
+{
+	u32 val, mask;
+
+	/* This configures VCAP IS2 (port, lookup) to treat all frame types
+	 * as MAC_ETYPE or MAC_LLC.
+	 * SNAP and LLC framesa are handled by MAC_LLC rule types, and all others
+	 * are handled by MAC_ETYPE.
+	 */
+	val = ANA_VCAP_S2_CFG_ARP_DIS_SET(lookup) |
+	      ANA_VCAP_S2_CFG_IP_TCPUDP_DIS_SET(lookup) |
+	      ANA_VCAP_S2_CFG_IP_OTHER_DIS_SET(lookup) |
+	      ANA_VCAP_S2_CFG_OAM_DIS_SET(lookup);
+
+	mask = ANA_VCAP_S2_CFG_ARP_DIS_SET(lookup) |
+		ANA_VCAP_S2_CFG_IP_TCPUDP_DIS_SET(lookup) |
+		ANA_VCAP_S2_CFG_IP_OTHER_DIS_SET(lookup) |
+		ANA_VCAP_S2_CFG_OAM_DIS_SET(lookup);
+
+	switch (lookup) {
+	case S2_LOOKUP1:
+		val |= ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP1_SET(IP6_MAC_ETYPE);
+		mask |= ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP1_SET(IP6_MAC_ETYPE);
+		break;
+	case S2_LOOKUP2:
+		val |= ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP2_SET(IP6_MAC_ETYPE);
+		mask |= ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP2_SET(IP6_MAC_ETYPE);
+		break;
+	default:
+		WARN(true, "invalid lookup value");
+	}
+
+	lan_rmw(val, mask, lan9645x, ANA_VCAP_S2_CFG(port));
+}
+
+void lan9645x_is2_default_conf(struct lan9645x *lan9645x, u32 lookup,
+			       int port)
+{
+	u32 val, mask;
+
+	val = ANA_VCAP_S2_CFG_ARP_DIS_SET(0) |
+	      ANA_VCAP_S2_CFG_IP_TCPUDP_DIS_SET(0) |
+	      ANA_VCAP_S2_CFG_IP_OTHER_DIS_SET(0) |
+	      ANA_VCAP_S2_CFG_OAM_DIS_SET(0);
+
+	mask = ANA_VCAP_S2_CFG_ARP_DIS_SET(lookup) |
+		ANA_VCAP_S2_CFG_IP_TCPUDP_DIS_SET(lookup) |
+		ANA_VCAP_S2_CFG_IP_OTHER_DIS_SET(lookup) |
+		ANA_VCAP_S2_CFG_OAM_DIS_SET(lookup);
+
+	switch (lookup) {
+	case S2_LOOKUP1:
+		val |= ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP1_SET(IP6_TCP_UDP_OR_OTHER);
+		mask |= ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP1_SET(IP6_TCP_UDP_OR_OTHER);
+		break;
+	case S2_LOOKUP2:
+		val |= ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP2_SET(IP6_TCP_UDP_OR_OTHER);
+		mask |= ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP2_SET(IP6_TCP_UDP_OR_OTHER);
+		break;
+	default:
+		WARN(true, "invalid lookup value");
+	}
+
+	lan_rmw(val, mask, lan9645x, ANA_VCAP_S2_CFG(port));
 }

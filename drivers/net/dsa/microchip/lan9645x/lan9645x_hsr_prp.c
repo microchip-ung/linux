@@ -728,18 +728,8 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 			 * lookup2. But it is the only way to discard all frames
 			 * based on ingress/smac.
 			 */
-			lan_rmw(ANA_VCAP_S2_CFG_ARP_DIS_SET(S2_LOOKUP2) |
-				ANA_VCAP_S2_CFG_IP_TCPUDP_DIS_SET(S2_LOOKUP2) |
-				ANA_VCAP_S2_CFG_IP_OTHER_DIS_SET(S2_LOOKUP2) |
-				ANA_VCAP_S2_CFG_OAM_DIS_SET(S2_LOOKUP2) |
-				ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP2_SET(IP6_MAC_ETYPE),
-				ANA_VCAP_S2_CFG_ARP_DIS |
-				ANA_VCAP_S2_CFG_IP_TCPUDP_DIS |
-				ANA_VCAP_S2_CFG_IP_OTHER_DIS |
-				ANA_VCAP_S2_CFG_OAM_DIS |
-				ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP2,
-				lan9645x,
-				ANA_VCAP_S2_CFG(port));
+			lan9645x_is2_only_mac_etype_llc(lan9645x, S2_LOOKUP2,
+							port);
 
 			/* Enable ETYPE hiding/extension. HW requires HSR header
 			 * to be aligned on a 32bit boundary. On ingress it will
@@ -961,18 +951,7 @@ int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 			REW_RED_TAG_CFG_RED_TAG_CFG,
 			lan9645x, REW_RED_TAG_CFG(port));
 
-		lan_rmw(ANA_VCAP_S2_CFG_ARP_DIS_SET(0) |
-			ANA_VCAP_S2_CFG_IP_TCPUDP_DIS_SET(0) |
-			ANA_VCAP_S2_CFG_IP_OTHER_DIS_SET(0) |
-			ANA_VCAP_S2_CFG_OAM_DIS_SET(0) |
-			ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP2_SET(IP6_STD),
-			ANA_VCAP_S2_CFG_ARP_DIS |
-			ANA_VCAP_S2_CFG_IP_TCPUDP_DIS |
-			ANA_VCAP_S2_CFG_IP_OTHER_DIS |
-			ANA_VCAP_S2_CFG_OAM_DIS |
-			ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP2,
-			lan9645x,
-			ANA_VCAP_S2_CFG(port));
+		lan9645x_is2_default_conf(lan9645x, S2_LOOKUP2, port);
 
 		lan_rmw(DEV_PORT_MISC_RTAG48_ENA_SET(false) |
 			DEV_PORT_MISC_RTAG_TYPE_SET(0), // 0xf1c1 freer
