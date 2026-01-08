@@ -7,10 +7,6 @@
 #include "sparx5_main_regs.h"
 #include "sparx5_main.h"
 
-#define EAPOL_MASK         0xc0 /* Maps to 01:80:C2:00:00:03 in BPDU register */
-#define EAPOL_FORWARD      FIELD_PREP(EAPOL_MASK, 0)
-#define EAPOL_TO_CPU       FIELD_PREP(EAPOL_MASK, 1)
-
 void sparx5_psec_set(struct sparx5_port *port, bool enable)
 {
 	struct sparx5_mact_entry *mact_entry, *tmp;
@@ -26,10 +22,10 @@ void sparx5_psec_set(struct sparx5_port *port, bool enable)
 	 * MACs are dropped. This allows user space to handle 802.1X
 	 * authentication.
 	 */
-	spx5_rmw(enable ? EAPOL_TO_CPU : EAPOL_FORWARD,
-		 EAPOL_MASK,
-		 sparx5,
-		 ANA_CL_CAPTURE_BPDU_CFG(port->portno));
+	if (enable)
+		sparx5_bpdu_eapol_redir(port);
+	else
+		sparx5_bpdu_eapol_forward(port);
 
 	/* Recalculate forwarding masks to reflect any changes in locked
 	 * ports.

@@ -1141,6 +1141,8 @@ void sparx5_psec_set(struct sparx5_port *port, bool enable);
 /* sparx5_bpdu.c */
 void sparx5_bpdu_lacp_redir(struct sparx5_port *port);
 void sparx5_bpdu_pause_discard(struct sparx5_port *port);
+void sparx5_bpdu_eapol_forward(struct sparx5_port *port);
+void sparx5_bpdu_eapol_redir(struct sparx5_port *port);
 
 /* Clock period in picoseconds */
 static inline u32 sparx5_clk_period(enum sparx5_core_clockfreq cclock)
