@@ -323,6 +323,24 @@
 				};
 			};
 
+			leds {
+				compatible = "gpio-leds";
+
+				led-p1-green {
+					label = "cu0:green";
+					gpios = <&sgpio_out0 0 0 GPIO_ACTIVE_LOW>;
+					default-state = "off";
+					linux,default-trigger = "60000413c.mdio-mii:01:link";
+				};
+
+				led-p2-green {
+					label = "cu1:green";
+					gpios = <&sgpio_out0 1 0 GPIO_ACTIVE_LOW>;
+					default-state = "off";
+					linux,default-trigger = "60000413c.mdio-mii:02:link";
+				};
+			};
+
 			cpu_ctrl: syscon@e00c0000 {
 				compatible = "microchip,lan966x-cpu-syscon", "syscon";
 				reg = <0x20c0000 0x350>;
