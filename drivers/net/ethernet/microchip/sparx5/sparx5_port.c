@@ -33,7 +33,6 @@ enum port_error {
 	SPX5_PERR_IFTYPE,
 };
 
-#define PAUSE_DISCARD        0xC
 #define ETH_MAXLEN           (ETH_DATA_LEN + ETH_HLEN + ETH_FCS_LEN)
 
 static void decode_sgmii_word(u16 lp_abil, struct sparx5_port_status *status)
@@ -1358,7 +1357,7 @@ int sparx5_port_init(struct sparx5 *sparx5,
 		QSYS_ATOP(port->portno));
 
 	/* Discard pause frame 01-80-C2-00-00-01 */
-	spx5_wr(PAUSE_DISCARD, sparx5, ANA_CL_CAPTURE_BPDU_CFG(port->portno));
+	sparx5_bpdu_pause_discard(port);
 
 	/* Redirect LACP frames to CPU */
 	sparx5_bpdu_lacp_redir(port);
