@@ -1138,6 +1138,9 @@ void sparx5_lag_mask_get(struct sparx5 *sparx5, struct net_device *lag_master,
 /* sparx5_psec.c */
 void sparx5_psec_set(struct sparx5_port *port, bool enable);
 
+/* sparx5_bpdu.c */
+void sparx5_bpdu_lacp_redir(struct sparx5_port *port);
+
 /* Clock period in picoseconds */
 static inline u32 sparx5_clk_period(enum sparx5_core_clockfreq cclock)
 {

@@ -40,7 +40,8 @@ sparx5-switch-y  := sparx5_main.o \
 		    sparx5_lag.o \
 		    sparx5_isdx.o \
 		    sparx5_mdb.o \
-		    sparx5_psec.o
+		    sparx5_psec.o \
+		    sparx5_bpdu.o
 
 sparx5-switch-$(CONFIG_SPARX5_DCB) += sparx5_dcb.o
 
