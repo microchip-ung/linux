@@ -25,6 +25,34 @@
 
 #define INJ_TIMEOUT_NS 50000
 
+static const u32 sparx5_ifh[IFH_MAX][2] = {
+	[IFH_MISC_CPU_MASK_DPORT]  = {  29,  8 },
+	[IFH_MISC_PIPELINE_PT]     = {  37,  5 },
+	[IFH_MISC_PIPELINE_ACT]    = {  42,  3 },
+	[IFH_FWD_SRC_PORT]         = {  46,  7 },
+	[IFH_FWD_SFLOW_ID]         = {  57,  7 },
+	[IFH_FWD_UPDATE_FCS]       = {  67,  1 },
+	[IFH_FWD_AFI]              = {  72,  1 },
+	[IFH_VSTAX_REW_CMD]        = { 105, 11 },
+	[IFH_VSTAX_INGR_DROP_MODE] = { 128,  1 },
+	[IFH_VSTAX_CL_QOS]         = { 129,  3 },
+	[IFH_VSTAX_SP]             = { 132,  1 },
+	[IFH_VSTAX_RSV]            = { 152,  1 },
+	[IFH_DST_PDU_TYPE]         = { 191,  4 },
+	[IFH_DST_PDU_W16_OFFSET]   = { 195,  6 },
+	[IFH_TS_TSTAMP]            = { 232, 40 },
+};
+
+u32 sparx5_get_ifh_field_pos(enum sparx5_ifh_enum idx)
+{
+	return sparx5_ifh[idx][0];
+}
+
+u32 sparx5_get_ifh_field_width(enum sparx5_ifh_enum idx)
+{
+	return sparx5_ifh[idx][1];
+}
+
 void sparx5_consume_skb(struct sk_buff *skb)
 {
 	bool ptp = false;
@@ -305,7 +333,7 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 		if (sparx5_ptp_txtstamp_request(port, skb) < 0)
 			return NETDEV_TX_BUSY;
 
-		sparx5_set_port_ifh_rew_op(ifh, SPARX5_SKB_CB(skb)->rew_op);
+		sparx5_set_port_ifh_rew_op(sparx5, ifh, SPARX5_SKB_CB(skb)->rew_op);
 		sparx5_set_port_ifh_pdu_type(sparx5, ifh,
 					     SPARX5_SKB_CB(skb)->pdu_type);
 		sparx5_set_port_ifh_pdu_w16_offset(sparx5, ifh,

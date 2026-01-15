@@ -106,6 +106,30 @@ static const struct sparx5_main_io_resource lan969x_main_iomap[] =  {
 	{ TARGET_HSIO_WRAP,           0x3408000, 1 }, /* 0xe3408000 */
 };
 
+static const u32 lan969x_ifh[IFH_MAX][2] = {
+	[IFH_TAGGING_SEQ_NO]       = {  13, 16 },
+	[IFH_MISC_CPU_MASK_DPORT]  = {  29,  8 },
+	[IFH_MISC_PIPELINE_PT]     = {  37,  5 },
+	[IFH_MISC_PIPELINE_ACT]    = {  42,  3 },
+	[IFH_FWD_SRC_PORT]         = {  46,  6 },
+	[IFH_FWD_SFLOW_ID]         = {  56,  7 },
+	[IFH_FWD_UPDATE_FCS]       = {  66,  1 },
+	[IFH_FWD_AFI]              = {  71,  1 },
+	[IFH_VSTAX_REW_CMD]        = { 105, 10 },
+	[IFH_VSTAX_INGR_DROP_MODE] = { 128,  1 },
+	[IFH_VSTAX_CL_QOS]         = { 129,  3 },
+	[IFH_VSTAX_SP]             = { 132,  1 },
+	[IFH_VSTAX_RSV]            = { 152,  1 },
+	[IFH_MPLS_TC]              = { 162,  3 },
+	[IFH_MPLS_SBIT]            = { 165,  1 },
+	[IFH_DST_PDU_TYPE]         = { 190,  4 },
+	[IFH_DST_PDU_W16_OFFSET]   = { 194,  6 },
+	[IFH_TS_TSTAMP]            = { 232, 38 },
+	[IFH_RB_CMD]               = { 272,  5 },
+	[IFH_RB_SRC]               = { 277,  1 },
+	[IFH_RB_TAG]               = { 278,  1 },
+};
+
 static struct sparx5_sdlb_group lan969x_sdlb_groups[LAN969X_SDLB_GRP_CNT] = {
 	{ 1000000000,  8192 / 2, 64 }, /*    1 G */
 	{  500000000,  8192 / 2, 64 }, /*  500 M */
@@ -117,6 +141,16 @@ static struct sparx5_sdlb_group lan969x_sdlb_groups[LAN969X_SDLB_GRP_CNT] = {
 static u32 lan969x_hsch_max_group_rate[LAN969X_HSCH_LEAK_GRP_CNT] = {
 	655355, 1048568, 6553550, 10485680
 };
+
+u32 lan969x_get_ifh_field_pos(enum sparx5_ifh_enum idx)
+{
+	return lan969x_ifh[idx][0];
+}
+
+u32 lan969x_get_ifh_field_width(enum sparx5_ifh_enum idx)
+{
+	return lan969x_ifh[idx][1];
+}
 
 static struct sparx5_sdlb_group *lan969x_get_sdlb_group(int idx)
 {
@@ -421,6 +455,8 @@ static const struct sparx5_ops lan969x_ops = {
 #endif
 	.get_mtu = &sparx5_mtu_max,
 	.port_get_10g_qxgmii_idx = &lan969x_port_get_10g_qxgmii_idx,
+	.get_ifh_field_pos = &lan969x_get_ifh_field_pos,
+	.get_ifh_field_width = &lan969x_get_ifh_field_width,
 };
 
 const struct sparx5_match_data lan969x_desc = {

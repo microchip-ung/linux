@@ -178,6 +178,31 @@ extern const u8 ifh_smac[];
 
 struct sparx5;
 
+enum sparx5_ifh_enum {
+	IFH_TAGGING_SEQ_NO,
+	IFH_FWD_SRC_PORT,
+	IFH_FWD_SFLOW_ID,
+	IFH_FWD_UPDATE_FCS,
+	IFH_FWD_AFI,
+	IFH_MISC_CPU_MASK_DPORT,
+	IFH_MISC_PIPELINE_PT,
+	IFH_MISC_PIPELINE_ACT,
+	IFH_MPLS_SBIT,
+	IFH_MPLS_TC,
+	IFH_DST_PDU_TYPE,
+	IFH_DST_PDU_W16_OFFSET,
+	IFH_TS_TSTAMP,
+	IFH_RB_TAG,
+	IFH_RB_SRC,
+	IFH_RB_CMD,
+	IFH_VSTAX_REW_CMD,
+	IFH_VSTAX_INGR_DROP_MODE,
+	IFH_VSTAX_CL_QOS,
+	IFH_VSTAX_SP,
+	IFH_VSTAX_RSV,
+	IFH_MAX,
+};
+
 struct sparx5_calendar_data {
 	u32 schedule[SPX5_DSM_CAL_LEN];
 	u32 avg_dist[SPX5_DSM_CAL_MAX_DEVS_PER_TAXI];
@@ -521,6 +546,8 @@ struct sparx5_ops {
 	int (*port_get_10g_qxgmii_idx)(struct sparx5 *sparx5,
 				       struct sparx5_port *port,
 				       size_t idx);
+	u32 (*get_ifh_field_pos)(enum sparx5_ifh_enum idx);
+	u32 (*get_ifh_field_width)(enum sparx5_ifh_enum idx);
 };
 
 struct sparx5_main_io_resource {
@@ -658,6 +685,8 @@ netdev_tx_t sparx5_port_xmit_mrp(struct sparx5_port *port, struct sk_buff *skb,
 				 u32 ifh[IFH_LEN]);
 int sparx5_manual_injection_mode(struct sparx5 *sparx5);
 void sparx5_port_inj_timer_setup(struct sparx5_port *port);
+u32 sparx5_get_ifh_field_pos(enum sparx5_ifh_enum idx);
+u32 sparx5_get_ifh_field_width(enum sparx5_ifh_enum idx);
 
 /* sparx5_fdma.c */
 int sparx5_fdma_init(struct sparx5 *sparx5);
@@ -767,7 +796,8 @@ static inline int sparx5_dcb_init(struct sparx5 *sparx5)
 /* sparx5_netdev.c */
 void sparx5_set_port_ifh_timestamp(struct sparx5 *sparx5, void *ifh_hdr,
 				   u64 timestamp);
-void sparx5_set_port_ifh_rew_op(void *ifh_hdr, u32 rew_op);
+void sparx5_set_port_ifh_rew_op(struct sparx5 *sparx5, void *ifh_hdr,
+				u32 rew_op);
 void sparx5_set_port_ifh_pdu_type(struct sparx5 *sparx5, void *ifh_hdr,
 				  u32 pdu_type);
 void sparx5_set_port_ifh_pdu_w16_offset(struct sparx5 *sparx5, void *ifh_hdr,

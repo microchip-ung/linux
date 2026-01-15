@@ -1261,6 +1261,8 @@ static const struct sparx5_ops sparx5_ops = {
 	.fdma_poll               = &sparx5_fdma_napi_callback,
 	.fdma_xmit               = &sparx5_fdma_xmit,
 	.port_get_10g_qxgmii_idx = &sparx5_port_get_10g_qxgmii_idx,
+	.get_ifh_field_pos       = &sparx5_get_ifh_field_pos,
+	.get_ifh_field_width     = &sparx5_get_ifh_field_width,
 };
 
 static const struct sparx5_match_data sparx5_desc = {
