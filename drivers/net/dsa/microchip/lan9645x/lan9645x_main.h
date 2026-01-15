@@ -415,7 +415,7 @@ struct lan9645x_phc {
 	struct ptp_clock *clock;
 	struct ptp_clock_info info;
 	struct ptp_pin_desc pins[LAN9645X_PHC_PINS_NUM];
-	struct hwtstamp_config hwtstamp_config;
+	struct kernel_hwtstamp_config hwtstamp_config;
 	struct lan9645x *lan9645x;
 	u8 index;
 };
@@ -656,6 +656,10 @@ struct lan9645x_path_delay {
 	u32 speed;
 };
 
+
+extern const struct phylink_pcs_ops lan9645x_phylink_pcs_ops;
+extern const struct phylink_mac_ops lan9645x_phylink_mac_ops;
+
 static inline struct phylink *lan9645x_get_phylink(struct lan9645x *lan9645x,
 						   int port)
 {
@@ -895,6 +899,7 @@ int lan9645x_pcs_config(struct phylink_pcs *pcs, unsigned int neg_mode,
 			const unsigned long *advertising,
 			bool permit_pause_to_mac);
 void lan9645x_pcs_get_state(struct phylink_pcs *pcs,
+			    unsigned int neg_mode,
 			    struct phylink_link_state *state);
 
 /* lan9645x_main.c */
@@ -1134,16 +1139,15 @@ int lan9645x_ets_add(struct lan9645x *lan9645x, int port,
 void lan9645x_cut_through_fwd(struct lan9645x *lan9645x);
 
 /* lan9645x_eee.c */
-int lan9645x_eee_mac_get(struct lan9645x *lan9645x, int port,
-			 struct ethtool_keee *e);
 int lan9645x_eee_mac_set(struct lan9645x *lan9645x, int port,
 			 struct ethtool_keee *e);
 
 /* lan9645x_ptp.c */
 int lan9645x_port_hwtstamp_get(struct dsa_switch *ds, int port,
-			       struct ifreq *ifr);
+                               struct kernel_hwtstamp_config *config);
 int lan9645x_port_hwtstamp_set(struct dsa_switch *ds, int port,
-			       struct ifreq *ifr);
+			       struct kernel_hwtstamp_config *config,
+			       struct netlink_ext_ack *extack);
 void lan9645x_txtstamp(struct dsa_switch *ds, int port, struct sk_buff *skb);
 bool lan9645x_rxtstamp_defer(struct dsa_switch *ds, int port,
 			     struct sk_buff *skb, unsigned int type);

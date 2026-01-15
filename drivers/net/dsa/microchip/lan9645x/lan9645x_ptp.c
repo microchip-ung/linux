@@ -260,7 +260,7 @@ static int lan9645x_ptp_del_traps(struct lan9645x_port *port)
 }
 
 static int lan9645x_ptp_setup_traps(struct lan9645x_port *port,
-				    struct hwtstamp_config *cfg)
+				    struct kernel_hwtstamp_config *cfg)
 {
 	if (cfg->rx_filter == HWTSTAMP_FILTER_NONE)
 		return lan9645x_ptp_del_traps(port);
@@ -269,18 +269,18 @@ static int lan9645x_ptp_setup_traps(struct lan9645x_port *port,
 }
 
 int lan9645x_port_hwtstamp_set(struct dsa_switch *ds, int port,
-			       struct ifreq *ifr)
+			       struct kernel_hwtstamp_config *config,
+			       struct netlink_ext_ack *extack)
 {
 	struct lan9645x *lan9645x = ds->priv;
-	struct hwtstamp_config cfg;
+	struct kernel_hwtstamp_config cfg;
 	struct lan9645x_phc *phc;
 	struct lan9645x_port *p;
 	int err = 0;
 
 	dev_dbg(lan9645x->dev, "port=%d", port);
 
-	if (copy_from_user(&cfg, ifr->ifr_data, sizeof(cfg)))
-		return -EFAULT;
+	memcpy(&cfg, config, sizeof(struct kernel_hwtstamp_config));
 
 	p = lan9645x_to_port(lan9645x, port);
 
@@ -333,26 +333,20 @@ int lan9645x_port_hwtstamp_set(struct dsa_switch *ds, int port,
 	phc->hwtstamp_config = cfg;
 	mutex_unlock(&lan9645x->ptp_lock);
 
-	if (copy_to_user(ifr->ifr_data, &cfg, sizeof(cfg))) {
-		lan9645x_ptp_del_traps(p);
-		return -EFAULT;
-	}
-
 	return 0;
 }
 
 int lan9645x_port_hwtstamp_get(struct dsa_switch *ds, int port,
-			       struct ifreq *ifr)
+                               struct kernel_hwtstamp_config *config)
 {
 	struct lan9645x *lan9645x = ds->priv;
-	struct hwtstamp_config cfg;
 	struct lan9645x_phc *phc;
 
 	dev_dbg(lan9645x->dev, "port=%d", port);
 	phc = &lan9645x->phc[LAN9645X_PHC_PORT];
-	cfg = phc->hwtstamp_config;
+	*config = phc->hwtstamp_config;
 
-	return copy_to_user(ifr->ifr_data, &cfg, sizeof(cfg)) ? -EFAULT : 0;
+	return 0;
 }
 
 static void lan9645x_ptp_classify(struct lan9645x_port *port, struct sk_buff *skb,

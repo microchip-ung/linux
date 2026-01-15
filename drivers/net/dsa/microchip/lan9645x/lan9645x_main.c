@@ -143,47 +143,6 @@ static void lan9645x_port_phylink_get_caps(struct dsa_switch *ds, int port,
 	lan9645x_phylink_get_caps(lan9645x, port, config);
 }
 
-static void
-lan9645x_port_phylink_mac_config(struct dsa_switch *ds, int port,
-				 unsigned int mode,
-				 const struct phylink_link_state *state)
-{
-	struct lan9645x *lan9645x = ds->priv;
-
-	lan9645x_phylink_mac_config(lan9645x, port, mode, state);
-}
-
-static void lan9645x_port_phylink_mac_link_up(struct dsa_switch *ds, int port,
-					      unsigned int link_an_mode,
-					      phy_interface_t interface,
-					      struct phy_device *phydev,
-					      int speed, int duplex,
-					      bool tx_pause, bool rx_pause)
-{
-	struct lan9645x *lan9645x = ds->priv;
-
-	lan9645x_phylink_mac_link_up(lan9645x, port, link_an_mode, interface,
-				     phydev, speed, duplex, tx_pause, rx_pause);
-}
-
-static void lan9645x_port_phylink_mac_link_down(struct dsa_switch *ds, int port,
-						unsigned int link_an_mode,
-						phy_interface_t interface)
-{
-	struct lan9645x *lan9645x = ds->priv;
-
-	lan9645x_phylink_mac_link_down(lan9645x, port, link_an_mode, interface);
-}
-
-static struct phylink_pcs *
-lan9645x_port_phylink_mac_select_pcs(struct dsa_switch *ds, int port,
-				     phy_interface_t iface)
-{
-	struct lan9645x *lan9645x = ds->priv;
-
-	return lan9645x_phylink_mac_select_pcs(lan9645x, port, iface);
-}
-
 static int lan9645x_port_set_maxlen(struct lan9645x *lan9645x, int port,
 				    size_t sdu)
 {
@@ -483,12 +442,6 @@ static void lan9645x_igmp_snooping(struct lan9645x *lan9645x, bool enabled,
 		lan9645x, ANA_CPU_FWD_CFG(chip_port));
 }
 
-const struct phylink_pcs_ops lan9645x_phylink_pcs_ops = {
-	.pcs_get_state = lan9645x_pcs_get_state,
-	.pcs_config = lan9645x_pcs_config,
-	.pcs_an_restart = lan9645x_pcs_aneg_restart,
-};
-
 static void lan9645x_set_tail_drop_wm(struct lan9645x *lan9645x)
 {
 	int shared_per_port;
@@ -546,7 +499,6 @@ static int lan9645x_setup(struct dsa_switch *ds)
 		p->lan9645x = lan9645x;
 		p->chip_port = port;
 		p->phylink_pcs.poll = true;
-		p->phylink_pcs.neg_mode = true;
 		p->phylink_pcs.ops = &lan9645x_phylink_pcs_ops;
 		lan9645x->ports[port] = p;
 	}
@@ -1930,12 +1882,9 @@ static int lan9645x_port_set_mac_eee(struct dsa_switch *ds, int port,
 	return lan9645x_eee_mac_set(lan9645x, port, e);
 }
 
-static int lan9645x_port_get_mac_eee(struct dsa_switch *ds, int port,
-				     struct ethtool_keee *e)
+static bool lan9645x_port_support_eee(struct dsa_switch *ds, int port)
 {
-	struct lan9645x *lan9645x = ds->priv;
-
-	return lan9645x_eee_mac_get(lan9645x, port, e);
+	return true;
 }
 
 static int lan9645x_port_set_apptrust(struct dsa_switch *ds, int port,
@@ -2197,11 +2146,7 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.teardown			= lan9645x_teardown,
 
 	/* Phylink integration */
-	.phylink_mac_config		= lan9645x_port_phylink_mac_config,
 	.phylink_get_caps		= lan9645x_port_phylink_get_caps,
-	.phylink_mac_link_up		= lan9645x_port_phylink_mac_link_up,
-	.phylink_mac_link_down		= lan9645x_port_phylink_mac_link_down,
-	.phylink_mac_select_pcs		= lan9645x_port_phylink_mac_select_pcs,
 
 	/* MTU  */
 	.port_change_mtu		= lan9645x_change_mtu,
@@ -2289,7 +2234,7 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 
 	 /* MAC EEE settings */
 	 .set_mac_eee			= lan9645x_port_set_mac_eee,
-	 .get_mac_eee			= lan9645x_port_get_mac_eee,
+	 .support_eee			= lan9645x_port_support_eee,
 
 	/*  ethtool timestamp info */
 	.get_ts_info			= lan9645x_get_ts_info,
@@ -2384,6 +2329,7 @@ static int lan9645x_probe(struct platform_device *pdev)
 	ds->dscp_prio_mapping_is_global = true;
 
 	ds->ops = &lan9645x_switch_ops;
+	ds->phylink_mac_ops = &lan9645x_phylink_mac_ops;
 	ds->priv = lan9645x;
 
 	lan9645x->ds = ds;

@@ -532,6 +532,7 @@ int lan9645x_pcs_config(struct phylink_pcs *pcs, unsigned int neg_mode,
 }
 
 void lan9645x_pcs_get_state(struct phylink_pcs *pcs,
+			    unsigned int neg_mode,
 			    struct phylink_link_state *state)
 {
 	struct lan9645x_port *p =
@@ -582,7 +583,7 @@ void lan9645x_pcs_get_state(struct phylink_pcs *pcs,
 		bmsr |= BMSR_ANEGCOMPLETE;
 
 		lp_adv = DEV_PCS1G_ANEG_STATUS_LP_ADV_GET(as);
-		phylink_mii_c22_pcs_decode_state(state, bmsr, lp_adv);
+		phylink_mii_c22_pcs_decode_state(state, neg_mode, bmsr, lp_adv);
 	} else {
 		if (!state->link)
 			return;
@@ -612,3 +613,123 @@ void lan9645x_pcs_get_state(struct phylink_pcs *pcs,
 		p->rx_delay = 0;
 	}
 }
+
+static struct lan9645x_port *
+lan9645x_phylink_config_to_port(struct phylink_config *config)
+{
+	struct dsa_port *dp = dsa_phylink_to_port(config);
+
+	return lan9645x_to_port(dp->ds->priv, dp->index);
+}
+
+static int lan9645x_phylink_mac_prepare(struct lan9645x *lan9645x, int port,
+					unsigned int mode,
+					phy_interface_t iface)
+{
+	struct lan9645x_port *p = lan9645x_to_port(lan9645x, port);
+
+	dev_dbg(lan9645x->dev, "port=%d mode=%d interface=%d\n", port, mode,
+		iface);
+
+	switch (port) {
+	case 0 ... 3:
+		lan_rmw(HSIO_HW_CFG_GMII_ENA_SET(BIT(port)),
+			HSIO_HW_CFG_GMII_ENA_SET(BIT(port)), lan9645x,
+			HSIO_HW_CFG);
+		break;
+	case 4:
+		lan_rmw(HSIO_HW_CFG_GMII_ENA_SET(BIT(port)),
+			HSIO_HW_CFG_GMII_ENA_SET(BIT(port)), lan9645x,
+			HSIO_HW_CFG);
+
+		if (phy_interface_mode_is_rgmii(iface))
+			lan_rmw(HSIO_HW_CFG_RGMII_0_CFG_SET(1),
+				HSIO_HW_CFG_RGMII_0_CFG,
+				lan9645x, HSIO_HW_CFG);
+
+		break;
+	case 5 ... 6:
+		return phy_set_mode_ext(p->serdes, PHY_MODE_ETHERNET, iface);
+	case 7 ... 8:
+		if (iface == PHY_INTERFACE_MODE_QSGMII)
+			return phy_set_mode_ext(p->serdes, PHY_MODE_ETHERNET,
+						iface);
+
+		lan_rmw(HSIO_HW_CFG_GMII_ENA_SET(BIT(port)),
+			HSIO_HW_CFG_GMII_ENA_SET(BIT(port)), lan9645x,
+			HSIO_HW_CFG);
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static void
+lan9645x_port_phylink_mac_config(struct phylink_config *config,
+				 unsigned int mode,
+				 const struct phylink_link_state *state)
+{
+	struct lan9645x_port *p = lan9645x_phylink_config_to_port(config);
+
+	lan9645x_phylink_mac_config(p->lan9645x, p->chip_port, mode, state);
+}
+
+static void lan9645x_port_phylink_mac_link_up(struct phylink_config *config,
+					      struct phy_device *phydev,
+					      unsigned int link_an_mode,
+					      phy_interface_t interface,
+					      int speed, int duplex,
+					      bool tx_pause, bool rx_pause)
+{
+	struct lan9645x_port *p = lan9645x_phylink_config_to_port(config);
+
+	lan9645x_phylink_mac_link_up(p->lan9645x, p->chip_port, link_an_mode,
+				     interface, phydev, speed, duplex, tx_pause,
+				     rx_pause);
+}
+
+static void lan9645x_port_phylink_mac_link_down(struct phylink_config *config,
+						unsigned int link_an_mode,
+						phy_interface_t interface)
+{
+	struct lan9645x_port *p = lan9645x_phylink_config_to_port(config);
+
+	lan9645x_phylink_mac_link_down(p->lan9645x, p->chip_port, link_an_mode,
+				       interface);
+}
+
+static struct phylink_pcs *
+lan9645x_port_phylink_mac_select_pcs(struct phylink_config *config,
+				     phy_interface_t iface)
+{
+	struct lan9645x_port *p = lan9645x_phylink_config_to_port(config);
+
+	return lan9645x_phylink_mac_select_pcs(p->lan9645x, p->chip_port,
+					       iface);
+}
+
+static int lan9645x_port_phylink_mac_prepare(struct phylink_config *config,
+					     unsigned int mode,
+					     phy_interface_t iface)
+{
+	struct lan9645x_port *p = lan9645x_phylink_config_to_port(config);
+
+	return lan9645x_phylink_mac_prepare(p->lan9645x, p->chip_port, mode,
+					    iface);
+}
+
+const struct phylink_pcs_ops lan9645x_phylink_pcs_ops = {
+	.pcs_get_state			= lan9645x_pcs_get_state,
+	.pcs_config			= lan9645x_pcs_config,
+	.pcs_an_restart			= lan9645x_pcs_aneg_restart,
+};
+
+const struct phylink_mac_ops lan9645x_phylink_mac_ops = {
+	.mac_config			= lan9645x_port_phylink_mac_config,
+	.mac_link_up			= lan9645x_port_phylink_mac_link_up,
+	.mac_link_down			= lan9645x_port_phylink_mac_link_down,
+	.mac_select_pcs			= lan9645x_port_phylink_mac_select_pcs,
+	.mac_prepare			= lan9645x_port_phylink_mac_prepare,
+};
