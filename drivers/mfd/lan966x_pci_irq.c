@@ -37,11 +37,11 @@ static void lan966x_irq_unmask(struct irq_data *data)
 	struct irq_chip_type *ct = irq_data_get_chip_type(data);
 	unsigned int mask = data->mask;
 
-	irq_gc_lock(gc);
+	guard(raw_spinlock)(&gc->lock);
+
 	irq_reg_writel(gc, mask, gc->chip_types[0].regs.ack);
 	*ct->mask_cache &= ~mask;
 	irq_reg_writel(gc, mask, gc->chip_types[0].regs.enable);
-	irq_gc_unlock(gc);
 }
 
 static void lan966x_irq_handler_domain(struct irq_domain *d,

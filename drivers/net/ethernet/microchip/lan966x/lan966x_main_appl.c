@@ -402,7 +402,7 @@ static void mchp_lan966x_remove(struct platform_device *pdev)
 
 static struct platform_driver mchp_lan966x_driver = {
 	.probe = mchp_lan966x_probe,
-	.remove_new = mchp_lan966x_remove,
+	.remove = mchp_lan966x_remove,
 	.driver = {
 		.name = "lan966x-switch-appl",
 		.of_match_table = mchp_lan966x_match,

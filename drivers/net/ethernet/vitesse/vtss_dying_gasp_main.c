@@ -129,7 +129,7 @@ MODULE_DEVICE_TABLE(of, vtss_dying_gasp_match);
 
 static struct platform_driver vtss_dying_gasp_driver = {
 	.probe = vtss_dying_gasp_probe,
-	.remove_new = vtss_dying_gasp_remove,
+	.remove = vtss_dying_gasp_remove,
 	.driver = {
 		.name = "vtss_dying_gasp",
 		.of_match_table = vtss_dying_gasp_match,

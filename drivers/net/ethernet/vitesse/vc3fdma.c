@@ -811,7 +811,7 @@ static void rx_throttle_timer_tick_change(u32 new_timeout)
         // the new timeout is 0, we should disable
         // the timer ASAP.
         if (new_timeout == 0) {
-            del_timer(&rx_throttle_timer);
+            timer_delete(&rx_throttle_timer);
         } else {
             // The new timeout is non-zero and the timer
             // is currently running.
@@ -2599,7 +2599,7 @@ static const struct of_device_id mscc_fdma_id_table[] = {
 MODULE_DEVICE_TABLE(of, mscc_fdma_id_table);
 
 static struct platform_driver vc3fdma_driver = {
-    .remove_new = vc3fdma_remove,
+    .remove = vc3fdma_remove,
     .driver = {
         .name = DRV_NAME,
         .of_match_table = mscc_fdma_id_table,
