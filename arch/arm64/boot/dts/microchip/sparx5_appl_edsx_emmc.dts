@@ -18,6 +18,9 @@
 		open-source;
 		priority = <200>;
 	};
+
+	/delete-node/ i2c-mux-0;
+	/delete-node/ i2c-mux-1;
 };
 
 &mux {
@@ -123,8 +126,7 @@
 	/delete-node/ gpio@61101036c;
 	/delete-node/ gpio@611010484;
 	/delete-node/ gpio@61101059c;
-	/delete-node/ i2c0-imux@0;
-	/delete-node/ i2c0-emux@0;
+
 	i2c0_edsx_imux: i2c0-edsx-imux@0 {
 		compatible = "i2c-mux-pinctrl";
 		#address-cells = <1>;
