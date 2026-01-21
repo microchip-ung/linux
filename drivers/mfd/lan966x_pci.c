@@ -126,11 +126,11 @@ static int lan966x_irq_common_init(struct pci_dev *pdev, void __iomem *regs,
 	gc->chip_types[0].chip.irq_mask = irq_gc_mask_set_bit;
 	gc->chip_types[0].chip.irq_unmask = lan966x_irq_unmask;
 	/* Enable interrupts ANA, PTP-SYNC, PTP, XTR, INJ, FDMA, GPIO, SGPIO */
-	gc->mask_cache = 0x57e00;
+	gc->mask_cache = 0x67e00;
 
 	irq_reg_writel(gc, 0x0, LAN_OFFSET(CPU_INTR_ENA));
-	irq_reg_writel(gc, 0x57e00, LAN_OFFSET(CPU_INTR_STICKY));
-	irq_reg_writel(gc, 0x57e00, LAN_OFFSET(CPU_DST_INTR_MAP(0)));
+	irq_reg_writel(gc, 0x67e00, LAN_OFFSET(CPU_INTR_STICKY));
+	irq_reg_writel(gc, 0x67e00, LAN_OFFSET(CPU_DST_INTR_MAP(0)));
 
 	/* Get second domain(32-63) */
 	gc = irq_get_domain_generic_chip(domain, 32);
