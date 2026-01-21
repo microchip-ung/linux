@@ -76,3 +76,4 @@ obj-y				+= keba/
 obj-y				+= amd-sbi/
 obj-$(CONFIG_MISC_RP1)		+= rp1/
 obj-$(CONFIG_MCHP_TFA_CTL)	+= mchp_tfa_ctl.o
+obj-$(CONFIG_SPARX5_SYMREG)	+= sparx5_symreg_debugfs.o

@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/arm/microchip,sparx5-symreg.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Microchip Sparx5 Symbolic Register (symreg) Controller
+
+maintainers:
+  - Steen Hegelund <steen.hegelund@microchip.com>
+
+description: |
+  Bindings for the Microchip Sparx5 Symbolic Register (symreg) controller,
+  which provides access to symbolic registers for debug and configuration.
+  The number of entries in 'reg', 'reg-names', and 'microchip,symreg' must always be the same.
+
+properties:
+  compatible:
+    const: microchip,sparx5-symreg
+
+  reg:
+    minItems: 1
+    description: |
+      One or more address/size pairs for the register regions.
+    items:
+      description: Register region (address and size).
+
+  reg-names:
+    description: |
+      Names for the register regions. These can be any useful reference strings,
+      but the number of names must match the number of reg entries.
+    $ref: /schemas/types.yaml#/definitions/string-array
+
+  microchip,symreg:
+    minItems: 1
+    $ref: /schemas/types.yaml#/definitions/uint32-array
+    description: |
+      Microchip-specific property for symbolic register regions.
+      The number of items must match the number of reg entries.
+      Individual regions can be larger than the ones listed in the reg property if this is useful
+    items:
+      description: Register region (address and size).
+
+required:
+  - compatible
+  - reg
+  - reg-names
+  - microchip,symreg
+
+additionalProperties: false
+
+examples:
+  - |
+    symreg: symreg_debugfs@e0000000 {
+      compatible = "microchip,sparx5-symreg";
+      reg = <0xe00c0000 0x800000>,
+            <0xe2010000 0x1410000>;
+      microchip,symreg = <0xe00c0000 0x800000>,
+                         <0xe2010000 0x1410000>;
+      reg-names = "cpu", "dev";
+      status = "okay";
+    };
+

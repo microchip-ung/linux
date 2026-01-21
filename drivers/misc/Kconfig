@@ -653,6 +653,12 @@ config MCHP_LAN966X_PCI
 	    - lan966x-miim (MDIO_MSCC_MIIM)
 	    - lan966x-switch (LAN966X_SWITCH)
 
+config SPARX5_SYMREG
+	tristate "Microchip Sparx5 Ethernet Switch Symreg Support"
+	depends on DEBUG_FS
+	help
+	  This enables the support for symbolic register access on Microchip Ethernet switches
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
