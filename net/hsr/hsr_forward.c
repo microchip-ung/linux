@@ -18,16 +18,6 @@
 
 struct hsr_node;
 
-static inline int is_hsr_l2ptp(struct sk_buff *skb)
-{
-	struct hsr_ethhdr *hsr_ethhdr;
-
-	hsr_ethhdr = (struct hsr_ethhdr *)skb_mac_header(skb);
-
-	return (hsr_ethhdr->ethhdr.h_proto == htons(ETH_P_HSR) &&
-		hsr_ethhdr->hsr_tag.encap_proto == htons(ETH_P_1588));
-}
-
 /* The uses I can see for these HSR supervision frames are:
  * 1) Use the frames that are sent after node initialization ("HSR_TLV.Type =
  *    22") to reset any sequence_nr counters belonging to that node. Useful if
