@@ -1312,6 +1312,10 @@ void lan9645x_ptp_improvements(struct lan9645x *lan9645x,
 {
 	int div_cfg, rx_stamp_sel, tx_stamp_sel;
 
+	div_cfg = 0;
+	rx_stamp_sel = 0;
+	tx_stamp_sel = 3;
+
 	/* The following table was received from validation people describing
 	 * which values need to be set to get working the timestamping at lower
 	 * speeds 10/100. While at this also improve the timestamping at higher
