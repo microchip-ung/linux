@@ -104,64 +104,72 @@ static int sparx5_appl_create_targets(struct sparx5 *sparx5)
 	return 0;
 }
 
+static const struct sparx5_regs sparx5_regs = {
+	.tsize = sparx5_tsize,
+	.gaddr = sparx5_gaddr,
+	.gcnt = sparx5_gcnt,
+	.gsize = sparx5_gsize,
+	.raddr = sparx5_raddr,
+	.rcnt = sparx5_rcnt,
+	.fpos = sparx5_fpos,
+	.fsize = sparx5_fsize,
+};
+
+static const struct sparx5_consts sparx5_consts = {
+	.n_ports = 65,
+};
+
+static const struct sparx5_ops sparx5_ops = {
+	.get_ifh_field_pos = &sparx5_get_ifh_field_pos,
+	.get_ifh_field_width = &sparx5_get_ifh_field_width,
+	.get_mtu = sparx5_fdma_get_mtu,
+	.fdma_deinit = &sparx5_fdma_deinit,
+	.fdma_init = &sparx5_fdma_init,
+	.fdma_xmit = &sparx5_fdma_xmit,
+	.fdma_poll = sparx5_fdma_napi_callback,
+};
+
 static const struct sparx5_match_data sparx5_appl_desc = {
 	.iomap = sparx5_appl_main_iomap,
 	.iomap_size = ARRAY_SIZE(sparx5_appl_main_iomap),
 	.ioranges = 3,
-	.regs = {
-		.tsize = sparx5_tsize,
-		.gaddr = sparx5_gaddr,
-		.gcnt = sparx5_gcnt,
-		.gsize = sparx5_gsize,
-		.raddr = sparx5_raddr,
-		.rcnt = sparx5_rcnt,
-		.fpos = sparx5_fpos,
-		.fsize = sparx5_fsize,
-	},
-	.ops = {
-		.get_pipeline_pt = &sparx5_get_packet_pipeline_pt,
-		.get_ifh_field_pos = &sparx5_get_ifh_field_pos,
-		.get_ifh_field_width = &sparx5_get_ifh_field_width,
-		.get_mtu = sparx5_fdma_get_mtu,
-		.fdma_deinit = &sparx5_fdma_deinit,
-		.fdma_init = &sparx5_fdma_init,
-		.fdma_xmit = &sparx5_fdma_xmit,
-		.fdma_poll = sparx5_fdma_napi_callback,
-	},
-	.consts = {
-		.chip_ports = 65,
-		.ifh_id = 11,
-	}
+	.regs = &sparx5_regs,
+	.consts = &sparx5_consts,
+	.ops = &sparx5_ops,
+};
+
+static const struct sparx5_regs lan969x_regs = {
+	.tsize = lan969x_tsize,
+	.gaddr = lan969x_gaddr,
+	.gcnt = lan969x_gcnt,
+	.gsize = lan969x_gsize,
+	.raddr = lan969x_raddr,
+	.rcnt = lan969x_rcnt,
+	.fpos = lan969x_fpos,
+	.fsize = lan969x_fsize,
+};
+
+static const struct sparx5_consts lan969x_consts = {
+	.n_ports = 30,
+};
+
+static const struct sparx5_ops lan969x_ops = {
+	.get_ifh_field_pos = &lan969x_get_ifh_field_pos,
+	.get_ifh_field_width = &lan969x_get_ifh_field_width,
+	.get_mtu = sparx5_fdma_get_mtu,
+	.fdma_deinit = lan969x_fdma_deinit,
+	.fdma_init = lan969x_fdma_init,
+	.fdma_xmit = lan969x_fdma_xmit,
+	.fdma_poll = lan969x_fdma_napi_poll,
 };
 
 static const struct sparx5_match_data lan969x_appl_desc = {
 	.iomap = lan969x_appl_main_iomap,
 	.iomap_size = ARRAY_SIZE(lan969x_appl_main_iomap),
 	.ioranges = 2,
-	.regs = {
-		.tsize = lan969x_tsize,
-		.gaddr = lan969x_gaddr,
-		.gcnt = lan969x_gcnt,
-		.gsize = lan969x_gsize,
-		.raddr = lan969x_raddr,
-		.rcnt = lan969x_rcnt,
-		.fpos = lan969x_fpos,
-		.fsize = lan969x_fsize,
-	},
-	.ops = {
-		.get_pipeline_pt = &lan969x_get_packet_pipeline_pt,
-		.get_ifh_field_pos = &lan969x_get_ifh_field_pos,
-		.get_ifh_field_width = &lan969x_get_ifh_field_width,
-		.get_mtu = sparx5_fdma_get_mtu,
-		.fdma_deinit = lan969x_fdma_deinit,
-		.fdma_init = lan969x_fdma_init,
-		.fdma_xmit = lan969x_fdma_xmit,
-		.fdma_poll = lan969x_fdma_napi_poll,
-	},
-	.consts = {
-		.chip_ports = 30,
-		.ifh_id = 14,
-	}
+	.regs = &lan969x_regs,
+	.consts = &lan969x_consts,
+	.ops = &lan969x_ops,
 };
 
 static const struct of_device_id mchp_sparx5_appl_match[] = {
@@ -258,7 +266,7 @@ static irqreturn_t sparx5_appl_xtr_irq_handler(int irq, void *args)
 		ether_addr_copy((u8 *)skb_put(skb, ETH_ALEN), ifh_dmac);
 		ether_addr_copy((u8 *)skb_put(skb, ETH_ALEN), ifh_smac);
 		*(u16 *)skb_put(skb, sizeof(u16)) = htons(IFH_ETH_TYPE);
-		*(u16 *)skb_put(skb, sizeof(u16)) = htons(consts->ifh_id);
+		*(u16 *)skb_put(skb, sizeof(u16)) = is_sparx5(sparx5) ? htons(11) : htons(14);
 
 		buf = (u32 *)skb_put(skb, IFH_LEN * 4);
 		for (i = 0; i < IFH_LEN; ++i)
@@ -369,7 +377,7 @@ static int sparx5_appl_fdma(struct sparx5 *sparx5)
 	 */
 	sparx5->rx.page_order = 2;
 
-	err = sparx5->data->ops.fdma_init(sparx5);
+	err = sparx5->data->ops->fdma_init(sparx5);
 	if (err)
 		return err;
 	sparx5_fdma_start(sparx5);
@@ -404,7 +412,7 @@ static int mchp_sparx5_appl_probe(struct platform_device *pdev)
 		return -EINVAL;
 
 	sparx5->data = data;
-	regs = &data->regs;
+	regs = data->regs;
 	ops = sparx5->data->ops;
 
 	err = sparx5_appl_create_targets(sparx5);
@@ -457,7 +465,7 @@ static void mchp_sparx5_appl_remove(struct platform_device *pdev)
 
 static struct platform_driver mchp_sparx5_appl_driver = {
 	.probe = mchp_sparx5_appl_probe,
-	.remove_new = mchp_sparx5_appl_remove,
+	.remove = mchp_sparx5_appl_remove,
 	.driver = {
 		.name = "sparx5-switch-appl",
 		.of_match_table = mchp_sparx5_appl_match,

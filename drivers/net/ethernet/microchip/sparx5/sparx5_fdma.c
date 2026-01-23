@@ -205,7 +205,8 @@ static bool sparx5_fdma_rx_get_frame(struct sparx5 *sparx5, struct sparx5_rx *rx
 	if (pskb_expand_head(skb, IFH_ENCAP_LEN, 0, GFP_ATOMIC))
 		return false;
 
-	*(u16 *)skb_push(skb, sizeof(u16)) = htons(sparx5->data->consts->ifh_id);
+	*(u16 *)skb_push(skb, sizeof(u16)) = is_sparx5(sparx5) ? htons(11) :
+								 htons(14);
 	*(u16 *)skb_push(skb, sizeof(u16)) = htons(IFH_ETH_TYPE);
 	ether_addr_copy((u8 *)skb_push(skb, ETH_ALEN), ifh_smac);
 	ether_addr_copy((u8 *)skb_push(skb, ETH_ALEN), ifh_dmac);

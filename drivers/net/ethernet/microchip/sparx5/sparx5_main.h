@@ -509,9 +509,6 @@ struct sparx5_consts {
 	const struct vcap_info *vcaps;
 	const struct vcap_statistics *vcap_stats;
 	u8 ptp_pins;
-#ifdef CONFIG_SPARX5_SWITCH_APPL
-	u16 ifh_id;
-#endif
 	int vmid_cnt;
 	int arp_tbl_cnt;
 	int bum_slb_cnt;

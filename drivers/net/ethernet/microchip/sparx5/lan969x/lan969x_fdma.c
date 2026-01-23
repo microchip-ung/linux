@@ -259,10 +259,11 @@ static struct sk_buff *lan969x_fdma_rx_get_frame(struct sparx5 *sparx5,
 #ifdef CONFIG_SPARX5_SWITCH_APPL
 	if (pskb_expand_head(skb, IFH_ENCAP_LEN, 0, GFP_ATOMIC)) {
 		kfree_skb(skb);
-		goto free;
+		goto free_page;
 	}
 
-	*(u16 *)skb_push(skb, sizeof(u16)) = htons(sparx5->data->consts.ifh_id);
+	*(u16 *)skb_push(skb, sizeof(u16)) = is_sparx5(sparx5) ? htons(11) :
+								 htons(14);
 	*(u16 *)skb_push(skb, sizeof(u16)) = htons(IFH_ETH_TYPE);
 	ether_addr_copy((u8 *)skb_push(skb, ETH_ALEN), ifh_smac);
 	ether_addr_copy((u8 *)skb_push(skb, ETH_ALEN), ifh_dmac);
