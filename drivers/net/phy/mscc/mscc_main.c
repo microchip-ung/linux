@@ -2230,7 +2230,6 @@ static int vsc8514_probe(struct phy_device *phydev)
 	u32 default_mode[4] = {VSC8531_LINK_1000_ACTIVITY,
 	   VSC8531_LINK_100_ACTIVITY, VSC8531_LINK_ACTIVITY,
 	   VSC8531_DUPLEX_COLLISION};
-	int ret;
 
 	vsc8531 = devm_kzalloc(&phydev->mdio.dev, sizeof(*vsc8531), GFP_KERNEL);
 	if (!vsc8531)
@@ -2250,16 +2249,6 @@ static int vsc8514_probe(struct phy_device *phydev)
 				      sizeof(u64), GFP_KERNEL);
 	if (!vsc8531->stats)
 		return -ENOMEM;
-
-	if (phy_package_probe_once(phydev)) {
-		ret = vsc8584_ptp_probe_once(phydev);
-		if (ret)
-			return ret;
-	}
-
-	ret = vsc8584_ptp_probe(phydev);
-	if (ret)
-		return ret;
 
 	return vsc85xx_dt_led_modes_get(phydev, default_mode);
 }
