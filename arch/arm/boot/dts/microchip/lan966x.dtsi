@@ -72,7 +72,7 @@
 	uio0: mscc_switch@e0000000 {
 		compatible = "microchip,uio_lan966x_irqmux";
 		reg = <0xe0000000 0x4000000>;
-		status = "okay";
+		status = "disabled";
 	};
 
 	uio1: mscc_sram@100000 {
@@ -196,6 +196,17 @@
 					status = "disabled";
 				};
 			};
+		};
+
+		/* Used by symreg tool, DO NOT upstream */
+		symreg: symreg_debugfs@e0000000 {
+			compatible = "microchip,sparx5-symreg";
+			reg = <0xe0000000 0x0100000>,
+			      <0xe2000000 0x0800000>;
+			microchip,symreg = <0xe0000000 0x0100000>,
+					   <0xe2000000 0x0800000>;
+			reg-names = "cpu", "gcb";
+			status = "disabled";
 		};
 
 		otp: otp@e0021000 {

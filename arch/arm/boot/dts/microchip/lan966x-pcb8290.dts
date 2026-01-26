@@ -245,3 +245,8 @@
 	atmel,vbus-gpio = <&gpio 8 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 };
+
+/* Used by symreg tool, DO NOT upstream */
+&symreg {
+	status = "okay";
+};

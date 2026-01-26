@@ -51,4 +51,5 @@
 	interrupt-names = "master", "ptp_sync", "ptp_rdy",
 			  "oam_vop", "cu_phy0", "cu_phy1",
 			  "sgpio";
+	status = "okay";
 };

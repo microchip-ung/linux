@@ -148,4 +148,10 @@
 	interrupt-names = "master", "ptp_sync", "ptp_rdy",
 			  "oam_vop", "cu_phy0", "cu_phy1",
 			  "sgpio";
+	status = "okay";
+};
+
+/* Used by symreg tool, DO NOT upstream */
+&symreg {
+	status = "okay";
 };

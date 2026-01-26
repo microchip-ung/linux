@@ -213,3 +213,8 @@
 &watchdog {
 	status = "okay";
 };
+
+/* Used by symreg tool, DO NOT upstream */
+&symreg {
+	status = "okay";
+};
