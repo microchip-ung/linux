@@ -79,6 +79,7 @@
 	uio0: mscc_switch@e0000000 {
 		compatible = "microchip,uio_lan969x_irqmux";
 		reg = <0xe0000000 0x4000000>;
+		status = "disabled";
 	};
 
 	axi: axi {
@@ -106,6 +107,17 @@
 				     <GIC_SPI 74 IRQ_TYPE_LEVEL_HIGH>;
 			resets = <&reset 0>;
 			reset-names = "switch";
+			status = "disabled";
+		};
+
+		/* Used by symreg tool, DO NOT upstream */
+		symreg: symreg_debugfs@e0000000 {
+			compatible = "microchip,sparx5-symreg";
+			reg = <0xe00c0000 0x0010000>,
+			      <0xe2000000 0x2000000>;
+			microchip,symreg = <0xe00c0000 0x0010000>,
+					   <0xe2000000 0x2000000>;
+			reg-names = "cpu", "dev";
 			status = "disabled";
 		};
 

@@ -271,6 +271,7 @@
 			  "sd10g_kr2", "sd10g_kr3", "sd10g_kr4",
 			  "sd10g_kr5", "sd10g_kr6", "sd10g_kr7",
 			  "sd10g_kr8", "sd10g_kr9";
+	status = "okay";
 };
 
 &usb0 {
@@ -278,3 +279,9 @@
 	pinctrl-0 = <&usb_ulpi_pins>, <&usb_rst_pins>, <&usb_over_pins>, <&usb_power_pins>;
 	pinctrl-names = "default";
 };
+
+/* Used by symreg tool, DO NOT upstream */
+&symreg {
+	status = "okay";
+};
+

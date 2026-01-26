@@ -109,4 +109,10 @@
 			"sd10g_kr15", "sd10g_kr16", "sd10g_kr17",
 			"sd10g_kr18", "sd10g_kr19",
 			"pushbutton";
+	status = "okay";
+};
+
+/* Used by symreg tool, DO NOT upstream */
+&symreg {
+	status = "okay";
 };

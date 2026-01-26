@@ -33,6 +33,6 @@
 };
 
 /* Used by symreg tool, DO NOT upstream */
-&uio0 {
+&symreg {
 	status = "okay";
 };
