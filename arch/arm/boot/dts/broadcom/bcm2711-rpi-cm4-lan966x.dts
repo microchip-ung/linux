@@ -458,6 +458,17 @@
 					};
 				};
 			};
+
+			/* Used by symreg tool, DO NOT upstream */
+			symreg: symreg_debugfs@e0000000 {
+				compatible = "microchip,sparx5-symreg";
+				reg = <0x02000000 0x02000000>,
+				      <0x00000000 0x01000000>;
+				microchip,symreg = <0xe0000000 0x02000000>,
+						   <0xe2000000 0x01000000>;
+				reg-names = "cpu", "csr";
+				status = "okay";
+			};
 		};
 	};
 };

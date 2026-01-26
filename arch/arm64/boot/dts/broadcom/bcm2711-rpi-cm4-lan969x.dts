@@ -222,6 +222,17 @@
 					     <8 IRQ_TYPE_LEVEL_HIGH>;
 			};
 
+			/* Used by symreg tool, DO NOT upstream */
+			symreg: symreg_debugfs@e0000000 {
+				compatible = "microchip,sparx5-symreg";
+				reg = <0xe00c0000 0x800000>,
+				      <0xe2010000 0x1410000>;
+				microchip,symreg = <0xe00c0000 0x800000>,
+						   <0xe2010000 0x1410000>;
+				reg-names = "cpu", "dev";
+				status = "okay";
+			};
+
 			serdes: serdes@e3410000 {
 
 				compatible = "microchip,lan9691-serdes";
