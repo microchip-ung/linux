@@ -6724,178 +6724,6 @@ static int lanphy_write_reg_data(struct phy_device *phydev,
 	return ret;
 }
 
-#define LAN8832_1000BT_FIX_LATENCY_ENABLE	0xf
-#define LAN8832_DAC_ICAS_AMP_POWER_DOWN	0x47
-#define LAN8832_BTRX_QBIAS_POWER_DOWN		0x46
-#define LAN8832_TX_LOW_I_CH_CD_POWER_MGMT	0x45
-#define LAN8832_TX_LOW_I_CH_B_POWER_MGMT	0x44
-#define LAN8832_TX_LOW_I_CH_A_POWER_MGMT	0x43
-
-static int lan8832_config_init(struct phy_device *phydev)
-{
-	int val;
-
-	/* MDI-X setting for swap A,B transmit */
-	val = lanphy_read_page_reg(phydev, 2, LAN8804_ALIGN_SWAP);
-	val &= ~LAN8804_ALIGN_TX_A_B_SWAP_MASK;
-	val |= LAN8804_ALIGN_TX_A_B_SWAP;
-	lanphy_write_page_reg(phydev, 2, LAN8804_ALIGN_SWAP, val);
-
-	lanphy_write_page_reg(phydev, 2, LAN8832_1000BT_FIX_LATENCY_ENABLE, 1);
-	/* Make sure that the PHY will not stop generating the clock when the
-	 * link partner goes down
-	 */
-	lanphy_write_page_reg(phydev, 31, LAN8814_CLOCK_MANAGEMENT, 0x27e);
-	val = lanphy_read_page_reg(phydev, 1, LAN8814_LINK_QUALITY);
-
-	/* Enable Cr_debug_mode OPERATION_MODE_STRAP_LOW */
-	val = lanphy_read_page_reg(phydev, 2, LAN8814_OPERATION_MODE_STRAP_LOW);
-	val |= 0x8;
-	lanphy_write_page_reg(phydev, 2, LAN8814_OPERATION_MODE_STRAP_LOW, val);
-
-	/* Enable the Fast link failure, at the top level, at the bottom level
-	 * it would be set/cleared inside lan8832_config_intr
-	 */
-	val = lanphy_read_page_reg(phydev, 0, LAN8842_FLF);
-	val |= LAN8842_FLF_ENA | LAN8842_FLF_ENA_LINK_DOWN;
-	lanphy_write_page_reg(phydev, 0, LAN8842_FLF, val);
-
-	/* Magjack center tapped ports */
-	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_3_ANEG_MDI,
-			      LAN8814_POWER_MGMT_VAL1_);
-	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_4_ANEG_MDIX,
-			      LAN8814_POWER_MGMT_VAL1_);
-	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_5_10BT_MDI,
-			      LAN8814_POWER_MGMT_VAL1_);
-	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_6_10BT_MDIX,
-			      LAN8814_POWER_MGMT_VAL1_);
-	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_7_100BT_TRAIN,
-			      LAN8814_POWER_MGMT_VAL2_);
-	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_8_100BT_MDI,
-			      LAN8814_POWER_MGMT_VAL3_);
-	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_9_100BT_EEE_MDI_TX,
-			      LAN8814_POWER_MGMT_VAL3_);
-	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_10_100BT_EEE_MDI_RX,
-			      LAN8814_POWER_MGMT_VAL4_);
-	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_11_100BT_MDIX,
-			      LAN8814_POWER_MGMT_VAL5_);
-	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_12_100BT_EEE_MDIX_TX,
-			      LAN8814_POWER_MGMT_VAL5_);
-	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_13_100BT_EEE_MDIX_RX,
-			      LAN8814_POWER_MGMT_VAL4_);
-	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_14_100BTX_EEE_TX_RX,
-			      LAN8814_POWER_MGMT_VAL4_);
-
-	/* Refresh time Waketx timer */
-	lanphy_write_page_reg(phydev, 3, LAN8814_EEE_WAKE_TX_TIMER,
-			      LAN8814_EEE_WAKE_TX_TIMER_MAX_VAL_);
-
-	val = phy_read(phydev, UNH_TEST_REGISTER);
-	val |= UNH_TEST_REGISTER_INDY_F_TEST_RX_CLK_;
-	phy_write(phydev, UNH_TEST_REGISTER, val);
-
-	/* Force channel A/B/C/D TX on */
-	lanphy_write_page_reg(phydev, 28, LAN8832_DAC_ICAS_AMP_POWER_DOWN, 0);
-	/* Force channel A/B/C/D QBias on */
-	lanphy_write_page_reg(phydev, 28, LAN8832_BTRX_QBIAS_POWER_DOWN, 0xaa);
-	/* tx low I on channel C/D overwrite */
-	lanphy_write_page_reg(phydev, 28, LAN8832_TX_LOW_I_CH_CD_POWER_MGMT, 0xbfff);
-	/* channel B low I overwrite */
-	lanphy_write_page_reg(phydev, 28, LAN8832_TX_LOW_I_CH_B_POWER_MGMT, 0xabbf);
-	/* channel A low I overwrite */
-	lanphy_write_page_reg(phydev, 28, LAN8832_TX_LOW_I_CH_A_POWER_MGMT, 0xbd3f);
-
-	return 0;
-}
-
-static int lan8832_suspend(struct phy_device *phydev)
-{
-	int aneg_en_state, ret;
-
-	/* Force link down before software power down, by restarting aneg. */
-	aneg_en_state = phy_read(phydev, MII_BMCR) & BMCR_ANENABLE;
-
-	ret = phy_restart_aneg(phydev);
-	if (ret)
-		return ret;
-
-	/* Allow time for system FIFO flush data */
-	msleep(10);
-
-	ret = genphy_suspend(phydev);
-	if (ret)
-		return ret;
-
-	if (!aneg_en_state) {
-		ret = phy_modify(phydev, MII_BMCR, BMCR_ANENABLE, 0);
-		if (ret)
-			return ret;
-	}
-
-	return 0;
-}
-
-static int lan8832_resume(struct phy_device *phydev)
-{
-	return genphy_resume(phydev);
-}
-
-static int lan8832_config_intr(struct phy_device *phydev)
-{
-	int err;
-
-	/* enable / disable interrupts */
-	if (phydev->interrupts == PHY_INTERRUPT_ENABLED) {
-		/* This is an internal PHY of lan9645x and is not possible to
-		 * change the polarity of irq sources in the OIC (CPU_INTR)
-		 * found in lan9645x. Therefore change the polarity of the
-		 * interrupt in the PHY from being active low instead of active
-		 * high.
-		 */
-		phy_write(phydev, LAN8804_CONTROL,
-			  LAN8804_CONTROL_INTR_POLARITY);
-
-		/* By default interrupt buffer is open-drain in which case the
-		 * interrupt can be active only low. Therefore change the
-		 * interrupt buffer to be push-pull to be able to change
-		 * interrupt polarity.
-		 */
-		phy_write(phydev, LAN8804_OUTPUT_CONTROL,
-			  LAN8804_OUTPUT_CONTROL_INTR_BUFFER);
-
-		err = lan8814_ack_interrupt(phydev);
-		if (err)
-			return err;
-
-		err = phy_write(phydev, LAN8814_INTC,
-				LAN8814_INT_LINK | LAN8814_INT_FLF);
-	} else {
-		err = phy_write(phydev, LAN8814_INTC, 0);
-		if (err)
-			return err;
-
-		err = lan8814_ack_interrupt(phydev);
-	}
-
-	return err;
-}
-
-static irqreturn_t lan8832_handle_interrupt(struct phy_device *phydev)
-{
-	int status;
-
-	status = phy_read(phydev, LAN8814_INTS);
-	if (status < 0) {
-		phy_error(phydev);
-		return IRQ_NONE;
-	}
-
-	if (status & (LAN8814_INT_LINK | LAN8814_INT_FLF))
-		phy_trigger_machine(phydev);
-
-	return IRQ_HANDLED;
-}
-
 static int lan8842_erratas(struct phy_device *phydev)
 {
 	int ret;
@@ -7185,6 +7013,143 @@ static void lan8842_get_phy_stats(struct phy_device *phydev,
 	stats->tx_errors = priv->phy_stats.tx_errors;
 }
 
+#define LAN9645X_CTRL_REG			0x1f
+#define LAN9645X_CTRL_REG_SW_SOFT_RST		BIT(1)
+
+#define LAN9645X_DAC_ICAS_AMP_POWER_DOWN	0x47
+#define LAN9645X_BTRX_QBIAS_POWER_DOWN		0x46
+#define LAN9645X_TX_LOW_I_CH_CD_POWER_MGMT	0x45
+#define LAN9645X_TX_LOW_I_CH_B_POWER_MGMT	0x44
+#define LAN9645X_TX_LOW_I_CH_A_POWER_MGMT	0x43
+
+static const struct lanphy_reg_data force_dac_tx_errata[] = {
+	/* Force channel A/B/C/D TX on */
+	{ LAN8814_PAGE_POWER_REGS,
+	  LAN9645X_DAC_ICAS_AMP_POWER_DOWN,
+	  0 },
+	/* Force channel A/B/C/D QBias on */
+	{ LAN8814_PAGE_POWER_REGS,
+	  LAN9645X_BTRX_QBIAS_POWER_DOWN,
+	  0xaa },
+	/* Tx low I on channel C/D overwrite */
+	{ LAN8814_PAGE_POWER_REGS,
+	  LAN9645X_TX_LOW_I_CH_CD_POWER_MGMT,
+	  0xbfff },
+	/* Channel B low I overwrite */
+	{ LAN8814_PAGE_POWER_REGS,
+	  LAN9645X_TX_LOW_I_CH_B_POWER_MGMT,
+	  0xabbf },
+	/* Channel A low I overwrite */
+	{ LAN8814_PAGE_POWER_REGS,
+	  LAN9645X_TX_LOW_I_CH_A_POWER_MGMT,
+	  0xbd3f },
+};
+
+static int lan9645x_config_init(struct phy_device *phydev)
+{
+	int ret;
+
+	/* Apply erratas from previous generations.  */
+	ret = lan8842_erratas(phydev);
+	if (ret < 0)
+		return ret;
+
+	/* Apply errata for an issue where bringing a port down, can cause a few
+	 * CRC errors for traffic flowing through adjacent ports.
+	 */
+	return lanphy_write_reg_data(phydev, force_dac_tx_errata,
+				     ARRAY_SIZE(force_dac_tx_errata));
+}
+
+static int lan9645x_suspend(struct phy_device *phydev)
+{
+	int ret, val;
+
+	/* Force link down before software power down (SPD), by doing software
+	 * soft reset. This resets the PHY, but keeps all register configuration
+	 * intact. The bit self clears.
+	 *
+	 * This is needed as a workaround for an issue where performing SPD on a
+	 * port can bring adjacent ports down, when there is traffic flowing
+	 * through the ports.
+	 */
+	ret = phy_modify(phydev, LAN9645X_CTRL_REG,
+			 LAN9645X_CTRL_REG_SW_SOFT_RST,
+			 LAN9645X_CTRL_REG_SW_SOFT_RST);
+	if (ret)
+		return ret;
+
+	ret = phy_read_poll_timeout(phydev, LAN9645X_CTRL_REG, val,
+				    !(val & LAN9645X_CTRL_REG_SW_SOFT_RST),
+				    3000, 100000, true);
+	if (ret)
+		return ret;
+
+	return genphy_suspend(phydev);
+}
+
+static int lan9645x_config_intr(struct phy_device *phydev)
+{
+	int err;
+
+	/* enable / disable interrupts */
+	if (phydev->interrupts == PHY_INTERRUPT_ENABLED) {
+		/* This is an internal PHY of lan9645x and is not possible to
+		 * change the polarity of irq sources in the OIC (CPU_INTR)
+		 * found in lan9645x. Therefore change the polarity of the
+		 * interrupt in the PHY from being active low instead of active
+		 * high.
+		 */
+		err = phy_write(phydev, LAN8804_CONTROL,
+				LAN8804_CONTROL_INTR_POLARITY);
+		if (err)
+			return err;
+
+		/* By default interrupt buffer is open-drain in which case the
+		 * interrupt can be active only low. Therefore change the
+		 * interrupt buffer to be push-pull to be able to change
+		 * interrupt polarity.
+		 */
+		err = phy_write(phydev, LAN8804_OUTPUT_CONTROL,
+				LAN8804_OUTPUT_CONTROL_INTR_BUFFER);
+		if (err)
+			return err;
+
+		err = lan8814_ack_interrupt(phydev);
+		if (err)
+			return err;
+
+		err = phy_write(phydev, LAN8814_INTC,
+				LAN8814_INT_LINK | LAN8814_INT_FLF);
+	} else {
+		err = phy_write(phydev, LAN8814_INTC, 0);
+		if (err)
+			return err;
+
+		err = lan8814_ack_interrupt(phydev);
+	}
+
+	return err;
+}
+
+static irqreturn_t lan9645x_handle_interrupt(struct phy_device *phydev)
+{
+	int status;
+
+	status = phy_read(phydev, LAN8814_INTS);
+	if (status < 0) {
+		phy_error(phydev);
+		return IRQ_NONE;
+	}
+
+	if (status & (LAN8814_INT_LINK | LAN8814_INT_FLF)) {
+		phy_trigger_machine(phydev);
+		return IRQ_HANDLED;
+	}
+
+	return IRQ_NONE;
+}
+
 static struct phy_driver ksphy_driver[] = {
 {
 	PHY_ID_MATCH_MODEL(PHY_ID_KS8737),
@@ -7392,20 +7357,20 @@ static struct phy_driver ksphy_driver[] = {
 	.config_intr	= lan8804_config_intr,
 	.handle_interrupt = lan8804_handle_interrupt,
 }, {
-	.phy_id		= PHY_ID_LAN8832,
-	.phy_id_mask	= MICREL_PHY_ID_MASK,
+	PHY_ID_MATCH_MODEL(PHY_ID_LAN9645X),
 	.name		= "Microchip LAN9645X Gigabit PHY",
-	.config_init	= lan8832_config_init,
+	.config_init	= lan9645x_config_init,
 	.driver_data	= &ksz9021_type,
 	.probe		= kszphy_probe,
 	.soft_reset	= genphy_soft_reset,
-	.get_sset_count	= kszphy_get_sset_count,
-	.get_strings	= kszphy_get_strings,
-	.get_stats	= kszphy_get_stats,
-	.suspend	= lan8832_suspend,
-	.resume		= lan8832_resume,
-	.config_intr	= lan8832_config_intr,
-	.handle_interrupt = lan8832_handle_interrupt,
+	.suspend	= lan9645x_suspend,
+	.resume		= genphy_resume,
+	.config_intr	= lan9645x_config_intr,
+	.handle_interrupt = lan9645x_handle_interrupt,
+	.get_tunable	= lan8842_get_tunable,
+	.set_tunable	= lan8842_set_tunable,
+	.get_phy_stats	= lan8842_get_phy_stats,
+	.update_stats	= lan8842_update_stats,
 }, {
 	PHY_ID_MATCH_MODEL(PHY_ID_LAN8841),
 	.name		= "Microchip LAN8841 Gigabit PHY",
@@ -7534,9 +7499,9 @@ static const struct mdio_device_id __maybe_unused micrel_tbl[] = {
 	{ PHY_ID_MATCH_MODEL(PHY_ID_KSZ9477) },
 	{ PHY_ID_MATCH_MODEL(PHY_ID_LAN8814) },
 	{ PHY_ID_MATCH_MODEL(PHY_ID_LAN8804) },
-	{ PHY_ID_MATCH_MODEL(PHY_ID_LAN8832) },
 	{ PHY_ID_MATCH_MODEL(PHY_ID_LAN8841) },
 	{ PHY_ID_MATCH_MODEL(PHY_ID_LAN8842) },
+	{ PHY_ID_MATCH_MODEL(PHY_ID_LAN9645X) },
 	{ }
 };
 
