@@ -3183,10 +3183,6 @@ int ocelot_init(struct ocelot *ocelot)
 	if (!ocelot->owq)
 		return -ENOMEM;
 
-	ret = ocelot_stats_init(ocelot);
-	if (ret)
-		goto err_stats_init;
-
 	INIT_LIST_HEAD(&ocelot->multicast);
 	INIT_LIST_HEAD(&ocelot->pgids);
 	INIT_LIST_HEAD(&ocelot->vlans);
@@ -3305,8 +3301,6 @@ int ocelot_init(struct ocelot *ocelot)
 	return 0;
 
 err_mm_init:
-	ocelot_stats_deinit(ocelot);
-err_stats_init:
 	destroy_workqueue(ocelot->owq);
 	return ret;
 }

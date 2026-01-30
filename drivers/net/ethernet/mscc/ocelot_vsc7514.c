@@ -164,6 +164,10 @@ static int mscc_ocelot_init_ports(struct platform_device *pdev,
 	if (!ocelot->devlink_ports)
 		return -ENOMEM;
 
+	err = ocelot_stats_init(ocelot);
+	if (err)
+		return err;
+
 	for_each_available_child_of_node(ports, portnp) {
 		struct regmap *target;
 		struct resource *res;
@@ -230,6 +234,7 @@ out_teardown:
 		if (devlink_ports_registered & BIT(port))
 			ocelot_port_devlink_teardown(ocelot, port);
 	}
+	ocelot_stats_deinit(ocelot);
 	return err;
 }
 
