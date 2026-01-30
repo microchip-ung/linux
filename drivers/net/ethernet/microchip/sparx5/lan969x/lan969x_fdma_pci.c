@@ -177,35 +177,53 @@ static int lan969x_fdma_pci_tx_alloc(struct sparx5 *sparx5)
 	return 0;
 }
 
-int lan969x_fdma_pci_stop(struct sparx5 *sparx5)
+int lan969x_fdma_pci_deinit(struct sparx5 *sparx5)
 {
-	fdma_free_coherent_and_unmap(sparx5->dev, sparx5->rx.fdma);
-	fdma_free_coherent_and_unmap(sparx5->dev, sparx5->tx.fdma);
+	fdma_free_coherent_and_unmap(sparx5->dev, &sparx5->rx.fdma);
+	fdma_free_coherent_and_unmap(sparx5->dev, &sparx5->tx.fdma);
 
 	return 0;
 }
 
-static struct fdma lan969x_fdma_pci_tx = {
-	.channel_id = FDMA_INJ_CHANNEL,
-	.n_dcbs = 64,
-	.n_dbs = 1,
-	.ops = {
-		.dataptr_cb = &lan969x_fdma_pci_dataptr_cb,
-		.nextptr_cb = &lan969x_fdma_pci_nextptr_cb,
-	},
-};
+static void lan969x_fdma_pci_rx_init(struct sparx5 *sparx5)
+{
+	struct fdma *fdma = &sparx5->rx.fdma;
 
-static struct fdma lan969x_fdma_pci_rx = {
-	.channel_id = FDMA_XTR_CHANNEL,
-	.n_dcbs = 64,
-	.n_dbs = 3,
-	.ops = {
-		.dataptr_cb = &lan969x_fdma_pci_dataptr_cb,
-		.nextptr_cb = &lan969x_fdma_pci_nextptr_cb,
-	},
-};
+	fdma->channel_id = FDMA_XTR_CHANNEL;
+	fdma->n_dcbs = FDMA_DCB_MAX;
+	fdma->n_dbs = 3;
+	fdma->priv = sparx5;
+	fdma->db_size = FDMA_PCI_DB_SIZE(sparx5->tx.max_mtu);
+	fdma->size = fdma_get_size_contiguous(&sparx5->rx.fdma);
+	fdma->ops.dataptr_cb = &lan969x_fdma_pci_dataptr_cb;
+	fdma->ops.nextptr_cb = &lan969x_fdma_pci_nextptr_cb;
 
-int lan969x_fdma_pci_start(struct sparx5 *sparx5)
+	/* Fetch a netdev for SKB and NAPI use, any will do */
+	for (int idx = 0; idx < sparx5->data->consts->n_ports; ++idx) {
+		struct sparx5_port *port = sparx5->ports[idx];
+
+		if (port && port->ndev) {
+			sparx5->rx.ndev = port->ndev;
+			break;
+		}
+	}
+}
+
+static void lan969x_fdma_pci_tx_init(struct sparx5 *sparx5)
+{
+	struct fdma *fdma = &sparx5->tx.fdma;
+
+	fdma->channel_id = FDMA_INJ_CHANNEL;
+	fdma->n_dcbs = FDMA_DCB_MAX;
+	fdma->n_dbs = 1;
+	fdma->priv = sparx5;
+	fdma->db_size = FDMA_PCI_DB_SIZE(sparx5->tx.max_mtu);
+	fdma->size = fdma_get_size_contiguous(&sparx5->tx.fdma);
+	fdma->ops.dataptr_cb = &lan969x_fdma_pci_dataptr_cb;
+	fdma->ops.nextptr_cb = &lan969x_fdma_pci_nextptr_cb;
+}
+
+int lan969x_fdma_pci_init(struct sparx5 *sparx5)
 {
 	struct fdma_pci_atu *atu = &sparx5->atu;
 	int err;
@@ -214,17 +232,9 @@ int lan969x_fdma_pci_start(struct sparx5 *sparx5)
 	fdma_pci_atu_init(atu, sparx5->regs[TARGET_PCIE_DBI]);
 
 	sparx5->tx.max_mtu = sparx5_fdma_get_mtu(sparx5) + XDP_PACKET_HEADROOM;
-	sparx5->rx.ndev = sparx5_fdma_get_ndev(sparx5);
 
-	sparx5->rx.fdma = &lan969x_fdma_pci_rx;
-	sparx5->rx.fdma->priv = sparx5;
-	sparx5->rx.fdma->db_size = FDMA_PCI_DB_SIZE(sparx5->tx.max_mtu);
-	sparx5->rx.fdma->size = fdma_get_size_contiguous(sparx5->rx.fdma);
-
-	sparx5->tx.fdma = &lan969x_fdma_pci_tx;
-	sparx5->tx.fdma->priv = sparx5;
-	sparx5->tx.fdma->db_size = FDMA_PCI_DB_SIZE(sparx5->tx.max_mtu);
-	sparx5->tx.fdma->size = fdma_get_size_contiguous(sparx5->tx.fdma);
+	lan969x_fdma_pci_rx_init(sparx5);
+	lan969x_fdma_pci_tx_init(sparx5);
 
 	/* Reset FDMA state */
 	spx5_wr(FDMA_CTRL_NRESET_SET(0), sparx5, FDMA_CTRL);
@@ -246,7 +256,7 @@ int lan969x_fdma_pci_start(struct sparx5 *sparx5)
 
 	err = lan969x_fdma_pci_tx_alloc(sparx5);
 	if (err) {
-		fdma_free_coherent_and_unmap(sparx5->dev, sparx5->rx.fdma);
+		fdma_free_coherent_and_unmap(sparx5->dev, &sparx5->rx.fdma);
 		dev_err(sparx5->dev, "Could not allocate TX buffers: %d\n", err);
 		return err;
 	}
@@ -254,7 +264,8 @@ int lan969x_fdma_pci_start(struct sparx5 *sparx5)
 	return 0;
 }
 
-int lan969x_fdma_pci_xmit(struct sparx5 *sparx5, u32 *ifh, struct sk_buff *skb)
+int lan969x_fdma_pci_xmit(struct sparx5 *sparx5, u32 *ifh, struct sk_buff *skb,
+			  struct net_device *dev)
 {
 	int needed_headroom, needed_tailroom, err = NETDEV_TX_OK;
 	struct sparx5_tx *tx = &sparx5->tx;

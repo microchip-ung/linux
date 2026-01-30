@@ -447,8 +447,8 @@ static const struct sparx5_ops lan969x_ops = {
 	.fdma_xmit               = lan969x_fdma_xmit,
 	.fdma_poll               = lan969x_fdma_napi_poll,
 #else
-	.fdma_deinit             = lan969x_fdma_pci_stop,
-	.fdma_init               = lan969x_fdma_pci_start,
+	.fdma_deinit             = lan969x_fdma_pci_deinit,
+	.fdma_init               = lan969x_fdma_pci_init,
 	.fdma_resize             = lan969x_fdma_pci_resize,
 	.fdma_xmit               = lan969x_fdma_pci_xmit,
 	.fdma_poll               = lan969x_fdma_pci_napi_poll,
