@@ -631,6 +631,9 @@ struct skb_shared_info {
 	 */
 	void (*free)(struct sk_buff *skb);
 
+	/* Redbox redundancy info */
+	struct skb_redundancy_info redinfo;
+
 	/*
 	 * Warning : all fields before dataref are cleared in __alloc_skb()
 	 */
@@ -648,9 +651,6 @@ struct skb_shared_info {
 		 */
 		void		*destructor_arg;
 	};
-
-	/* Redbox redundancy info */
-	struct skb_redundancy_info redinfo;
 
 	/* must be last field, see pskb_expand_head() */
 	skb_frag_t	frags[MAX_SKB_FRAGS];
