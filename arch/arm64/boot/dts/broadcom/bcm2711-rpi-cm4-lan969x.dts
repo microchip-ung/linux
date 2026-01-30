@@ -66,7 +66,7 @@
 			};
 
 			lan969x_gpio: pinctrl@e20100d4 {
-				compatible = "microchip,lan969x-pinctrl";
+				compatible = "microchip,lan9691-pinctrl";
 				reg = <0xe20100d4 0xd4>,
 				      <0xe2010370 0xa8>;
 				gpio-controller;
@@ -207,7 +207,7 @@
 			};
 
 			lan969x_switch: switch@e0000000 {
-				compatible = "microchip,lan969x-switch";
+				compatible = "microchip,lan9691-switch";
 				reg = <0xe00c0000 0x800000>,
 				      <0xe2010000 0x1410000>;
 				reg-names = "cpu", "dev";
@@ -219,7 +219,8 @@
 			};
 
 			serdes: serdes@e3410000 {
-				compatible = "microchip,lan969x-serdes";
+
+				compatible = "microchip,lan9691-serdes";
 				#phy-cells = <1>;
 				clocks = <&fabric_clk>;
 				reg = <0xe3410000 0x150000>;
