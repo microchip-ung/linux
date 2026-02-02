@@ -371,7 +371,7 @@ static void lan969x_fdma_rx_init(struct sparx5 *sparx5)
 	fdma->n_dbs = 1;
 	fdma->priv = sparx5;
 	fdma->size = fdma_get_size(fdma);
-	fdma->db_size = PAGE_SIZE;
+	fdma->db_size = PAGE_SIZE << sparx5->rx.page_order;
 	fdma->ops.dataptr_cb = &lan969x_fdma_rx_dataptr_cb;
 	fdma->ops.nextptr_cb = &fdma_nextptr_cb;
 
