@@ -35,7 +35,7 @@ static int lan969x_fdma_rx_dataptr_cb(struct fdma *fdma, int dcb, int db,
 		return -ENOMEM;
 
 	rx->page[dcb][db] = page;
-	
+
 	*dataptr = page_pool_get_dma_addr(page) + XDP_PACKET_HEADROOM;
 
 	return 0;
@@ -186,7 +186,7 @@ static int lan969x_fdma_rx_process_frame(struct sparx5 *sparx5, int *src_port,
 }
 
 static void lan969x_set_redundancy_info(struct sparx5 *sparx5,
-				       struct sk_buff *skb, u16 proto)
+					struct sk_buff *skb)
 {
 	/* HSR tag removal is offloaded to hardware.
 	 * Extract sequence number, path ID, and ingress leg from IFH metadata
@@ -218,18 +218,16 @@ static void lan969x_set_redundancy_info(struct sparx5 *sparx5,
 	sred = skb_redinfo(skb);
 	sred->io_port = (PTP_MSG_IN | BIT(src));
 	sred->seqnr = seqno;
-	sred->ethertype = proto;
 	sred->pathid = pathid;
 
-	pr_debug("%s: src=%u leg=%c msg: %s io_port=0x%02x seq=%u path=%u proto=0x%04x\n",
+	pr_debug("%s: src=%u leg=%c msg: %s io_port=0x%02x seq=%u path=%u\n",
 		__func__,
 		src,
 		src ? 'B' : 'A',
 		sparx5_ptp_msg_type_str(skb),
 		sred->io_port,
 		sred->seqnr,
-		sred->pathid,
-		sred->ethertype);
+		sred->pathid);
 }
 
 static struct sk_buff *lan969x_fdma_rx_get_frame(struct sparx5 *sparx5,
@@ -275,7 +273,7 @@ static struct sk_buff *lan969x_fdma_rx_get_frame(struct sparx5 *sparx5,
 	if (likely(!(skb->dev->features & NETIF_F_RXFCS)))
 		skb_trim(skb, skb->len - ETH_FCS_LEN);
 
-	lan969x_set_redundancy_info(sparx5, skb, ntohs(eth_hdr(skb)->h_proto));
+	lan969x_set_redundancy_info(sparx5, skb);
 #endif
 	sparx5_ptp_rxtstamp(sparx5, skb, src_port, rx_timestamp);
 	skb->protocol = eth_type_trans(skb, skb->dev);
