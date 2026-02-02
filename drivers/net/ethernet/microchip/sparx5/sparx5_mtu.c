@@ -81,7 +81,10 @@ u32 sparx5_mtu_max(struct sparx5 *sparx5)
 		if (!port)
 			continue;
 
-		mtu = sparx5_mtu_get(port);
+		mtu = sparx5_mtu_get(port) + IFH_LEN_BYTES +
+		      SKB_DATA_ALIGN(sizeof(struct skb_shared_info)) +
+		      VLAN_HLEN * 2 + XDP_PACKET_HEADROOM;
+
 		if (mtu > mtu_max)
 			mtu_max = mtu;
 	}
