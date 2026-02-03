@@ -14,6 +14,10 @@
 	status = "okay";
 };
 
+&v3d {
+	status = "disabled";
+};
+
 &pcie0 {
 	/* root bus resource [mem 0x600000000-0x63fffffff] (bus address [0xc0000000-0xffffffff])
 	 * CSR:  BAR 0: [0x600000000-0x601ffffff]: 32MB => [0xc0000000-0xc01ffffff] => 0xe2000000

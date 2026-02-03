@@ -17,6 +17,10 @@
 	status = "okay";
 };
 
+&v3d {
+	status = "disabled";
+};
+
 &pcie0 {
 	pci@0,0 {
 		#address-cells = <3>;
