@@ -257,6 +257,8 @@ static int lan966x_pci_probe(struct pci_dev *pdev,
 		return ret;
 	}
 
+	pci_disable_link_state(pdev, PCIE_LINK_STATE_L1);
+
 	return of_platform_default_populate(pdev->dev.of_node, NULL, &pdev->dev);
 }
 
