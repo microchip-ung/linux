@@ -170,14 +170,18 @@ static void lan966x_rescan_cb(struct work_struct *work)
 {
 	struct lan966x_ctx *ctx = container_of(work, struct lan966x_ctx, rescan_work);
 	struct pci_dev *pdev = ctx->pdev;
+	struct pci_dev *bridge;
 	struct pci_bus *bus;
 
 	complete(&ctx->rescan_comp);
 
 	pci_lock_rescan_remove();
 	bus = pdev->bus;
+	bridge = bus->self;
 	pci_stop_and_remove_bus_device(pdev);
-	pci_rescan_bus(bus);
+	pci_scan_child_bus(bus);
+	pci_assign_unassigned_bridge_resources(bridge);
+	pci_bus_add_devices(bus);
 	pci_unlock_rescan_remove();
 	put_device(&pdev->dev);
 }
