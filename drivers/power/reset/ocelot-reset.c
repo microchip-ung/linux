@@ -215,7 +215,7 @@ static int ocelot_restart_handle(struct notifier_block *this,
 			    IF_SI_OWNER_SIBM << if_si_owner_bit);
 
 	if (ctx->cpu_reset_only) {
-		pr_emerg("Resetting CPU\n");
+		pr_notice("Resetting CPU\n");
 		cpu_reset(ctx);
 		pr_emerg("Resetting CPU failed\n");
 	}
@@ -224,7 +224,7 @@ static int ocelot_restart_handle(struct notifier_block *this,
 	clr_bits(ctx->icpu_base + ctx->props->protect_reg,
 		 ctx->props->vcore_protect);
 
-	pr_emerg("Resetting SoC\n");
+	pr_notice("Resetting SoC\n");
 
 	writel(SOFT_CHIP_RST, ctx->base);
 
