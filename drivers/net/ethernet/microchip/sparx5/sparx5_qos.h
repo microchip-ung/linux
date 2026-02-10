@@ -107,7 +107,7 @@ int sparx5_hsch_l0_get_idx(struct sparx5 *sparx5, int port, int queue);
 #define SPX5_SE_BURST_UNIT 4096
 
 /* Dwrr */
-#define SPX5_DWRR_COST_MAX 63
+#define SPX5_DWRR_COST_MAX 31
 
 enum sparx5_qos_rate_mode {
 	SPX5_RATE_MODE_DISABLED,   /* Policer/shaper disabled */
