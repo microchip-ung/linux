@@ -282,6 +282,7 @@ void lan9645x_stats_view_idx_update(struct lan9645x *lan9645x,
 				    enum lan9645x_view_stat_type vtype, int idx)
 {
 	struct lan9645x_stats *s = lan9645x->stats;
+
 	mutex_lock(&s->hw_lock);
 	__lan9645x_stats_view_idx_update(lan9645x, vtype, idx);
 	mutex_unlock(&s->hw_lock);
@@ -356,10 +357,10 @@ void lan9645x_stats_get_strings(struct lan9645x *lan9645x, int port,
 	struct lan9645x_view_stats *port_stats;
 	int i;
 
-	port_stats = lan9645x_get_vstats(lan9645x, LAN9645X_STAT_PORTS);
-
 	if (stringset != ETH_SS_STATS)
 		return;
+
+	port_stats = lan9645x_get_vstats(lan9645x, LAN9645X_STAT_PORTS);
 
 	for (i = 0; i < port_stats->num_cnts; i++)
 		memcpy(data + i * ETH_GSTRING_LEN, port_stats->layout[i].name,
@@ -370,10 +371,10 @@ int lan9645x_stats_get_sset_count(struct lan9645x *lan9645x, int port, int sset)
 {
 	struct lan9645x_view_stats *port_stats;
 
-	port_stats = lan9645x_get_vstats(lan9645x, LAN9645X_STAT_PORTS);
-
 	if (sset != ETH_SS_STATS)
 		return -EOPNOTSUPP;
+
+	port_stats = lan9645x_get_vstats(lan9645x, LAN9645X_STAT_PORTS);
 
 	return port_stats->num_cnts;
 }
@@ -385,16 +386,19 @@ void lan9645x_stats_get_ethtool_stats(struct lan9645x *lan9645x, int port,
 	int cntr;
 	u64 *s;
 
-	lan9645x_stats_view_idx_update(lan9645x, LAN9645X_STAT_PORTS, port);
+	dev_dbg(lan9645x->dev, "port=%d", port);
+
+	mutex_lock(&lan9645x->stats->hw_lock);
+	__lan9645x_stats_view_idx_update(lan9645x, LAN9645X_STAT_PORTS, port);
 
 	port_stats = lan9645x_get_vstats(lan9645x, LAN9645X_STAT_PORTS);
 
 	s = STATS_INDEX(port_stats, port);
 
-	dev_dbg(lan9645x->dev, "port=%d", port);
-
 	for (cntr = 0; cntr < port_stats->num_cnts; cntr++)
 		*data++ = s[cntr];
+
+	mutex_unlock(&lan9645x->stats->hw_lock);
 }
 
 void lan9645x_stats_get_eth_mac_stats(struct lan9645x *lan9645x, int port,
@@ -406,9 +410,9 @@ void lan9645x_stats_get_eth_mac_stats(struct lan9645x *lan9645x, int port,
 
 	dev_dbg(lan9645x->dev, "port=%d", port);
 
-	lan9645x_stats_view_idx_update(lan9645x, LAN9645X_STAT_PORTS, port);
-
 	mutex_lock(&lan9645x->stats->hw_lock);
+
+	__lan9645x_stats_view_idx_update(lan9645x, LAN9645X_STAT_PORTS, port);
 
 	mac_stats->FramesTransmittedOK =
 		port_counters[SCNT_TX_UC] +
@@ -480,9 +484,9 @@ void lan9645x_stats_get_rmon_stats(struct lan9645x *lan9645x, int port,
 
 	dev_dbg(lan9645x->dev, "port=%d", port);
 
-	lan9645x_stats_view_idx_update(lan9645x, LAN9645X_STAT_PORTS, port);
-
 	mutex_lock(&lan9645x->stats->hw_lock);
+
+	__lan9645x_stats_view_idx_update(lan9645x, LAN9645X_STAT_PORTS, port);
 
 	rmon_stats->undersize_pkts =
 		port_cnt[SCNT_RX_SHORT] +
@@ -552,6 +556,7 @@ void lan9645x_stats_get_stats64(struct lan9645x *lan9645x, int port,
 	u64 *port_cnt = STAT_COUNTERS(lan9645x, LAN9645X_STAT_PORTS, port);
 
 	/* Avoid stats update, as this is called very often by DSA. */
+	mutex_lock(&lan9645x->stats->hw_lock);
 
 	stats->rx_bytes = port_cnt[SCNT_RX_OCT] +
 			  port_cnt[SCNT_RX_PMAC_OCT];
@@ -636,6 +641,8 @@ void lan9645x_stats_get_stats64(struct lan9645x *lan9645x, int port,
 			    port_cnt[SCNT_TX_AGED];
 
 	stats->collisions = port_cnt[SCNT_TX_COL];
+
+	mutex_unlock(&lan9645x->stats->hw_lock);
 }
 
 void lan9645x_stats_get_eth_phy_stats(struct lan9645x *lan9645x, int port,
@@ -645,9 +652,9 @@ void lan9645x_stats_get_eth_phy_stats(struct lan9645x *lan9645x, int port,
 
 	dev_dbg(lan9645x->dev, "port=%d src=%d", port, phy_stats->src);
 
-	lan9645x_stats_view_idx_update(lan9645x, LAN9645X_STAT_PORTS, port);
-
 	mutex_lock(&lan9645x->stats->hw_lock);
+
+	__lan9645x_stats_view_idx_update(lan9645x, LAN9645X_STAT_PORTS, port);
 
 	switch (phy_stats->src) {
 	case ETHTOOL_MAC_STATS_SRC_EMAC:
@@ -672,9 +679,9 @@ void lan9645x_stats_get_eth_ctrl_stats(struct lan9645x *lan9645x, int port,
 
 	dev_dbg(lan9645x->dev, "port=%d src=%d", port, ctrl_stats->src);
 
-	lan9645x_stats_view_idx_update(lan9645x, LAN9645X_STAT_PORTS, port);
-
 	mutex_lock(&lan9645x->stats->hw_lock);
+
+	__lan9645x_stats_view_idx_update(lan9645x, LAN9645X_STAT_PORTS, port);
 
 	switch (ctrl_stats->src) {
 	case ETHTOOL_MAC_STATS_SRC_EMAC:
@@ -699,9 +706,9 @@ void lan9645x_stats_get_pause_stats(struct lan9645x *lan9645x, int port,
 
 	dev_dbg(lan9645x->dev, "port=%d src=%d", port, ps->src);
 
-	lan9645x_stats_view_idx_update(lan9645x, LAN9645X_STAT_PORTS, port);
-
 	mutex_lock(&lan9645x->stats->hw_lock);
+
+	__lan9645x_stats_view_idx_update(lan9645x, LAN9645X_STAT_PORTS, port);
 
 	switch (ps->src) {
 	case ETHTOOL_MAC_STATS_SRC_EMAC:
@@ -724,11 +731,11 @@ void lan9645x_stats_get_mm_stats(struct lan9645x *lan9645x, int port,
 {
 	u64 *port_cnt = STAT_COUNTERS(lan9645x, LAN9645X_STAT_PORTS, port);
 
-	lan9645x_stats_view_idx_update(lan9645x, LAN9645X_STAT_PORTS, port);
-
 	dev_dbg(lan9645x->dev, "port=%d", port);
 
 	mutex_lock(&lan9645x->stats->hw_lock);
+
+	__lan9645x_stats_view_idx_update(lan9645x, LAN9645X_STAT_PORTS, port);
 
 	stats->MACMergeFrameAssErrorCount = port_cnt[SCNT_RX_ASSEMBLY_ERR];
 	stats->MACMergeFrameSmdErrorCount = port_cnt[SCNT_RX_SMD_ERR];
@@ -909,6 +916,8 @@ int lan9645x_stats_init(struct lan9645x *lan9645x)
 
 void lan9645x_stats_deinit(struct lan9645x *lan9645x)
 {
+	cancel_delayed_work_sync(&lan9645x->stats->work);
 	destroy_workqueue(lan9645x->stats->queue);
 	mutex_destroy(&lan9645x->stats->hw_lock);
+	lan9645x->stats->queue = NULL;
 }
