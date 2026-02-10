@@ -362,7 +362,7 @@ static int lan9645x_taprio_gcl_free_get(struct lan9645x_port *port,
 	u32 base, next, max_list;
 
 	/* By default everything is free */
-	bitmap_fill(free_list, TAS_NUM_GCL);
+	bitmap_zero(free_list, TAS_NUM_GCL);
 	num_free = TAS_NUM_GCL;
 
 	/* Iterate over all gcl entries and find out which are free. And mark
@@ -379,7 +379,7 @@ static int lan9645x_taprio_gcl_free_get(struct lan9645x_port *port,
 		next = base;
 
 		do {
-			clear_bit(next, free_list);
+			set_bit(next, free_list);
 			num_free--;
 
 			lan_rmw(TAS_TAS_CFG_CTRL_GCL_ENTRY_NUM_SET(next),
@@ -388,8 +388,13 @@ static int lan9645x_taprio_gcl_free_get(struct lan9645x_port *port,
 
 			next = lan_rd(lan9645x, TAS_TAS_GCL_CTRL_CFG2);
 			next = TAS_TAS_GCL_CTRL_CFG2_NEXT_GCL_GET(next);
-		} while (base != next);
+		} while (base != next && num_free >= 0);
 	}
+
+	/* The GCL entry table contains garbage. Some list tail did not point
+	 * back to the head.
+	 */
+	WARN_ON_ONCE(num_free < 0);
 
 	return num_free;
 }
@@ -398,20 +403,14 @@ static int lan9645x_taprio_gcl_free_get(struct lan9645x_port *port,
 static int lan9645x_taprio_gcl_base_get(unsigned long *free_list,
 					int num_entries)
 {
-	int i, empty_found;
+	int offset;
 
-	empty_found = 0;
-	for (i = 0; i < TAS_NUM_GCL; i++) {
-		if (test_bit(i, free_list))
-			empty_found++;
-		else
-			empty_found = 0;
+	offset = bitmap_find_next_zero_area(free_list, TAS_NUM_GCL, 0,
+					    num_entries, 0);
+	if (offset >= TAS_NUM_GCL)
+		return -ENOSPC;
 
-		if (empty_found == num_entries)
-			return (i - num_entries) + 1;
-	}
-
-	return -ENOENT;
+	return offset;
 }
 
 /* Setup GCLs for a specific list */
@@ -421,7 +420,9 @@ static int lan9645x_taprio_gcl_setup(struct lan9645x_port *port, int list,
 	DECLARE_BITMAP(free_list, TAS_NUM_GCL);
 	struct lan9645x *lan9645x = port->lan9645x;
 	int i, num_free, base;
+	u32 gcl_next;
 
+	/* Free list bit i is zero when free */
 	num_free = lan9645x_taprio_gcl_free_get(port, free_list);
 	if (num_free < (int)qopt->num_entries)
 		return -EINVAL;
@@ -449,16 +450,17 @@ static int lan9645x_taprio_gcl_setup(struct lan9645x_port *port, int list,
 			TAS_TAS_LIST_CFG);
 	}
 
+	gcl_next = base;
 	for (i = 0; i < qopt->num_entries; i++) {
-		u32 gcl_next = (i >= qopt->num_entries - 1) ? base :
-							      base + i + 1;
-		/* GCL index is relative to BASE_ADDR */
-		lan_rmw(TAS_TAS_CFG_CTRL_GCL_ENTRY_NUM_SET(i),
-			TAS_TAS_CFG_CTRL_GCL_ENTRY_NUM, lan9645x,
-			TAS_TAS_CFG_CTRL);
 
 		if (qopt->entries[i].command != TC_TAPRIO_CMD_SET_GATES)
 			return -EINVAL;
+
+		lan_rmw(TAS_TAS_CFG_CTRL_GCL_ENTRY_NUM_SET(gcl_next),
+			TAS_TAS_CFG_CTRL_GCL_ENTRY_NUM, lan9645x,
+			TAS_TAS_CFG_CTRL);
+
+		gcl_next = (i >= qopt->num_entries - 1) ? base : base + i + 1;
 
 		/* Set gate states for this GCL */
 		lan_rmw(TAS_TAS_GCL_CTRL_CFG_GATE_STATE_SET(qopt->entries[i].gate_mask),
