@@ -115,4 +115,5 @@ dtb-$(CONFIG_SOC_LAN966) += \
 	lan966x-appl-pcb8290.dtb \
 	lan966x-appl-pcb8291.dtb \
 	lan966x-appl-pcb8385.dtb \
-	lan966x-pcb8385-lan9645x-evb-rev-b.dtb
+	lan966x-pcb8385-lan9645x-evb-rev-b.dtb \
+	lan966x-pcb8385-lan9645x-evb-rev-c.dtb
