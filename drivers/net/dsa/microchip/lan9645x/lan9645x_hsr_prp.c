@@ -288,8 +288,10 @@ int lan9645x_hsr_prp_dan_node_add(struct lan9645x *lan9645x,
 
 	mutex_lock(&h->lock);
 
-	if (!lan9645x->hsr.enabled || hsr != p->hsr)
+	if (!lan9645x->hsr.enabled || hsr != p->hsr) {
+		err = -EOPNOTSUPP;
 		goto unlock;
+	}
 
 	list_for_each_entry(n, &h->nodes , list)
 		if (ether_addr_equal(n->smac, smac))
@@ -589,8 +591,10 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 	ether_addr_copy(mac, hsr->dev_addr);
 
 	isdx = lan9645x_stream_isdx_alloc(lan9645x);
-	if (isdx < 0)
-		return isdx;
+	if (isdx < 0) {
+		err = isdx;
+		goto mutex_unlock;
+	}
 
 	h->type = type;
 	h->port_a = lrea_port;
