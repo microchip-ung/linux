@@ -336,8 +336,14 @@ update_hw:
 	/* New entry? */
 	if (mact_entry->flags == 0) {
 		mact_entry->flags |= MAC_ENT_LOCK; /* Don't age this */
-		sparx5_fdb_call_notifiers(SWITCHDEV_FDB_ADD_TO_BRIDGE, addr,
-					  vid, port, true);
+		/* Only notify bridge for entries on physical ports.
+		 * Host/foreign device entries use a PGID (portno >= n_ports)
+		 * and must not notify, as it would override the bridge's
+		 * FDB entry pointing to the foreign device.
+		 */
+		if (portno < sparx5->data->consts->n_ports)
+			sparx5_fdb_call_notifiers(SWITCHDEV_FDB_ADD_TO_BRIDGE,
+						  addr, vid, port, true);
 	}
 
 	return ret;

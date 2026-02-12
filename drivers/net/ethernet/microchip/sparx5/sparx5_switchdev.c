@@ -549,9 +549,9 @@ static void sparx5_switchdev_bridge_fdb_event_work(struct work_struct *work)
 		port = netdev_priv(dev);
 		host_addr = false;
 	} else {
-		/* Foreign device - do nothing */
+		/* Foreign device - forward to CPU for software bridging */
 
-		goto out;
+		host_addr = true;
 	}
 
 	fdb_info = &switchdev_work->fdb_info;
@@ -644,7 +644,24 @@ err_addr_alloc:
 static bool sparx5_foreign_device_check(const struct net_device *dev,
 					const struct net_device *foreign_dev)
 {
-	return false;
+	struct sparx5_port *port = netdev_priv(dev);
+	struct sparx5 *sparx5 = port->sparx5;
+	int i;
+
+	/* Our own bridge master is not foreign. */
+	if (netif_is_bridge_master(foreign_dev))
+		if (sparx5->hw_bridge_dev == foreign_dev)
+			return false;
+
+	/* A LAG master that contains one of our ports is not foreign. */
+	if (netif_is_lag_master(foreign_dev))
+		for (i = 0; i < sparx5->data->consts->n_ports; ++i)
+			if (sparx5->ports[i] &&
+			    sparx5->ports[i]->lag_master == foreign_dev)
+				return false;
+
+	/* Everything else is a foreign device. */
+	return true;
 }
 
 static int sparx5_switchdev_event(struct notifier_block *nb,
