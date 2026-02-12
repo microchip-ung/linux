@@ -482,15 +482,7 @@ sparx5_netdevice_foreign_event(struct net_device *dev,
 			       struct notifier_block *nb, unsigned long event,
 			       struct netdev_notifier_changeupper_info *info)
 {
-	switch (event) {
-	case NETDEV_PRECHANGEUPPER:
-	case NETDEV_CHANGEUPPER:
-		/* Do not allow bridging or bonding of foreign devices. */
-		pr_info("Bridging or bonding of foreign devices is not supported");
-		return -EOPNOTSUPP;
-	default:
-		return NOTIFY_DONE;
-	}
+	return NOTIFY_DONE;
 }
 
 static int sparx5_netdevice_event(struct notifier_block *nb,
