@@ -559,7 +559,7 @@ sparx5_rr_neigh_entry_offload_mark(struct sparx5_rr_neigh_entry *entry,
 	if (!entry->neigh_tbl)
 		return;
 
-	n = neigh_lookup(entry->neigh_tbl, &entry->key.iaddr.ipv4,
+	n = neigh_lookup(entry->neigh_tbl, &entry->key.iaddr,
 			 entry->key.dev);
 	if (!n)
 		return;
@@ -586,18 +586,6 @@ static const struct rhashtable_params sparx5_rr_fib_entry_ht_params = {
 	.automatic_shrinking = true,
 };
 
-static bool sparx5_rr_iaddr_equal(struct sparx5_iaddr *a1,
-				  struct sparx5_iaddr *a2)
-{
-	if (a1->version != a2->version)
-		return false;
-
-	if (a1->version == SPARX5_IPV4)
-		return a1->ipv4 == a2->ipv4;
-
-	return !ipv6_addr_cmp(&a1->ipv6, &a2->ipv6);
-}
-
 static u16 sparx5_rr_iaddr_proto(struct sparx5_iaddr *iaddr)
 {
 	switch (iaddr->version) {
@@ -609,65 +597,6 @@ static u16 sparx5_rr_iaddr_proto(struct sparx5_iaddr *iaddr)
 		WARN_ON(1);
 		return 0;
 	}
-}
-
-static bool
-sparx5_rr_nexthop_group_has_nexthop(struct sparx5_rr_nexthop_group *nh_grp,
-				    struct sparx5_iaddr *addr, int ifindex)
-{
-	for (u8 i = 0; i < nh_grp->nhgi->count; i++) {
-		struct sparx5_rr_nexthop *nh;
-
-		nh = &nh_grp->nhgi->nexthops[i];
-		if (nh->ifindex == ifindex &&
-		    sparx5_rr_iaddr_equal(&nh->gw_addr, addr))
-			return true;
-	}
-
-	return false;
-}
-
-static void sparx5_rr_fib_nhc_to_gw(struct fib_nh_common *nhc,
-				    enum sparx5_rr_l3_version version,
-				    struct sparx5_iaddr *gw)
-{
-	gw->version = version;
-
-	switch (version) {
-	case SPARX5_IPV4:
-		gw->ipv4 = nhc->nhc_gw.ipv4;
-		break;
-	case SPARX5_IPV6:
-		gw->ipv6 = nhc->nhc_gw.ipv6;
-		break;
-	}
-}
-
-/* Return true iff fi contains exactly the same nexthops as nh_grp, modulo the
- * order of nexthops.
- */
-static bool
-sparx5_rr_fib_info_nh_group_equal(struct sparx5_rr_nexthop_group *nh_grp,
-				  struct sparx5_rr_fib_info *fi)
-{
-	u8 nhs = sparx5_rr_fib_info_nhs(fi);
-	struct sparx5_iaddr gw = { 0 };
-	struct fib_nh_common *nhc;
-	int ifindex;
-
-	if (nh_grp->nhgi->count != nhs)
-		return false;
-
-	for (u8 i = 0; i < nhs; i++) {
-		nhc = sparx5_rr_fib_info_nhc(fi, i);
-		ifindex = nhc->nhc_dev ? nhc->nhc_dev->ifindex : -1;
-		sparx5_rr_fib_nhc_to_gw(nhc, fi->version, &gw);
-
-		if (!sparx5_rr_nexthop_group_has_nexthop(nh_grp, &gw, ifindex))
-			return false;
-	}
-
-	return true;
 }
 
 static u16 sparx5_rr_route_sort_key(u32 prefix_len)
@@ -1325,11 +1254,13 @@ sparx5_rr_nh_grp_arp_tbl_grp_clear(struct sparx5 *sparx5,
 {
 	int offset = nh_grp->nhgi->atbl_offset;
 
-	if (nh_grp->nhgi->atbl_offset_valid)
+	if (nh_grp->nhgi->atbl_offset_valid) {
 		for (u8 i = 0; i < nh_grp->nhgi->count; i++)
 			sparx5_rr_arp_tbl_hw_addr_clear(sparx5, offset + i);
 
-	sparx5_rr_arp_tbl_grp_free(sparx5, nh_grp->nhgi->count, offset);
+		sparx5_rr_arp_tbl_grp_free(sparx5, nh_grp->nhgi->count, offset);
+	}
+
 	nh_grp->nhgi->atbl_offset_valid = false;
 }
 
@@ -1632,9 +1563,11 @@ sparx5_rr_lpm_arp_entry_create(struct sparx5 *sparx5,
 	if (err)
 		goto free_rule;
 
-	hw_route->vrule_id = rule->id;
-	hw_route->vrule_id_valid = true;
 	err = vcap_add_rule(rule);
+	if (!err) {
+		hw_route->vrule_id = rule->id;
+		hw_route->vrule_id_valid = true;
+	}
 
 free_rule:
 	vcap_free_rule(rule);
@@ -1787,9 +1720,11 @@ static int sparx5_rr_lpm_arp_ptr_create(struct sparx5 *sparx5,
 	if (err)
 		goto out;
 
-	hw_route->vrule_id = rule->id;
-	hw_route->vrule_id_valid = true;
 	err = vcap_add_rule(rule);
+	if (!err) {
+		hw_route->vrule_id = rule->id;
+		hw_route->vrule_id_valid = true;
+	}
 
 out:
 	vcap_free_rule(rule);
@@ -2039,6 +1974,9 @@ static void sparx5_rr_nexthop_neigh_update(struct sparx5 *sparx5,
 
 		return;
 	}
+
+	if (!nh->grp->nhgi->atbl_offset_valid)
+		return;
 
 	nh_offset = (int)(ptrdiff_t)(nh - nh->grp->nhgi->nexthops);
 	grp_idx = nh->grp->nhgi->atbl_offset;
@@ -2305,8 +2243,9 @@ static void sparx5_rr_router_leg_destroy(struct sparx5_rr_router_leg *leg)
 {
 	struct sparx5 *sparx5 = leg->sparx5;
 
+	
 	dev_dbg(sparx5->dev, "Leg destroy vid=%u vmid=%u dev=%s\n", leg->vid,
-		leg->vmid, leg->dev->name);
+		leg->vmid, leg->dev ? netdev_name(leg->dev) : "blackhole_leg");
 
 	sparx5_rr_leg_hw_deinit(sparx5, leg);
 	sparx5_vmid_free(leg->sparx5, leg->vmid);
@@ -2315,7 +2254,8 @@ static void sparx5_rr_router_leg_destroy(struct sparx5_rr_router_leg *leg)
 	if (atomic_dec_return(&sparx5->router->legs_count) == 0)
 		sparx5_rr_lpm_link_local_destroy(sparx5);
 
-	netdev_put(leg->dev, NULL);
+	if (leg->dev)
+		netdev_put(leg->dev, NULL);
 	kfree(leg);
 }
 
@@ -2439,9 +2379,9 @@ static bool sparx5_rr_fib_info_should_offload(struct sparx5 *sparx5,
 static int sparx5_rr_fib_replace(struct sparx5 *sparx5,
 				 struct sparx5_rr_fib_info *fi)
 {
-	u8 new_fib_type, fi_type = sparx5_rr_fib_info_type(fi);
-	struct sparx5_rr_nexthop_group *old_nh_grp;
+	u8 fi_type = sparx5_rr_fib_info_type(fi);
 	struct sparx5_rr_fib_entry *fib_entry;
+	struct sparx5_rr_fib_info old_fi;
 	struct sparx5_rr_fib_key key;
 	int err = 0;
 
@@ -2475,28 +2415,29 @@ static int sparx5_rr_fib_replace(struct sparx5 *sparx5,
 		goto out_fib_mark_offload;
 	}
 
-	old_nh_grp = fib_entry->nh_grp;
+	/* Save old fib_info, add new one, then release old. This ordering
+	 * ensures fib_entry retains valid fi on allocation failure.
+	 */
+	old_fi = fib_entry->fi;
 
-	/* Release and allow any previous fib_info to be deleted */
-	sparx5_rr_fib_info_put(&fib_entry->fi);
+	/* Clear fib_entry fi */
+	sparx5_rr_fib_info_init(&fib_entry->fi, fi->version);
 
 	/* Hold and replace with new fib_info */
 	err = sparx5_rr_fib_entry_fib_info_add(fib_entry, fi);
 	if (err) {
+		fib_entry->fi = old_fi;
 		dev_err(sparx5->dev, "Failed to replace fib info\n");
-		goto out_fib_mark_offload;
+		sparx5_rr_fib_info_offload_mark(sparx5, fi, false, false, true);
+		sparx5_rr_fib_entry_destroy(sparx5, fib_entry);
+		return err;
 	}
 
-	new_fib_type = sparx5_rr_rtm_type2fib_type(fi_type);
+	/* Release and allow any previous fib_info to be deleted */
+	sparx5_rr_fib_info_put(&old_fi);
 
-	/* Nexthop group did not change, so skip group reallocation. */
-	if (fib_entry->type == new_fib_type &&
-	    sparx5_rr_fib_info_nh_group_equal(old_nh_grp, &fib_entry->fi))
-		goto out_fib_mark_offload;
+	fib_entry->type = sparx5_rr_rtm_type2fib_type(fi_type);
 
-	fib_entry->type = new_fib_type;
-
-	/* Fib's nexthop group changed, so we must update it */
 	err = sparx5_rr_entry_nexthop_group_update(sparx5, fib_entry);
 
 out_fib_mark_offload:
@@ -3198,7 +3139,10 @@ static void sparx5_rr_blackhole_leg_destroy(struct sparx5 *sparx5)
 
 	list_for_each_entry_safe(leg, tmp, leg_list, leg_list_node) {
 		if (leg->vmid == vmid) {
-			sparx5_rr_router_leg_destroy(leg);
+			sparx5_rr_leg_hw_deinit(sparx5, leg);
+			sparx5_vmid_free(sparx5, leg->vmid);
+			list_del(&leg->leg_list_node);
+			kfree(leg);
 			break;
 		}
 	}
@@ -3222,6 +3166,30 @@ int sparx5_rr_router_init(struct sparx5 *sparx5)
 	if (!router->sparx5_router_owq) {
 		err = -ENOMEM;
 		goto err_alloc_workqueue;
+	}
+
+	err = rhashtable_init(&router->neigh_ht,
+			      &sparx5_neigh_ht_params);
+	if (err)
+		goto err_neigh_ht_init;
+
+	err = rhashtable_init(&router->fib_ht,
+			      &sparx5_rr_fib_entry_ht_params);
+	if (err)
+		goto err_fib_ht_init;
+
+	INIT_LIST_HEAD(&router->leg_list);
+	INIT_LIST_HEAD(&router->fib_lpm4_list);
+	INIT_LIST_HEAD(&router->fib_lpm6_list);
+
+	atomic_set(&router->legs_count, 0);
+	router->link_local.vrule_id = 0;
+	router->link_local.vrule_id_valid = false;
+	/* VCAP API requires a port net_device, to get a sparx5 reference. */
+	router->port_dev = sparx5_port_get_ndev(sparx5);
+	if (!router->port_dev) {
+		err = -ENXIO;
+		goto err_get_port_dev;
 	}
 
 	router->fib_nb.notifier_call = sparx5_rr_fib_event;
@@ -3261,30 +3229,6 @@ int sparx5_rr_router_init(struct sparx5 *sparx5)
 	err = register_inet6addr_notifier(&router->inet6addr_nb);
 	if (err)
 		goto err_register_inet6addr_notifier;
-
-	err = rhashtable_init(&router->neigh_ht,
-			      &sparx5_neigh_ht_params);
-	if (err)
-		goto err_neigh_ht_init;
-
-	err = rhashtable_init(&router->fib_ht,
-			      &sparx5_rr_fib_entry_ht_params);
-	if (err)
-		goto err_fib_ht_init;
-
-	INIT_LIST_HEAD(&router->leg_list);
-	INIT_LIST_HEAD(&router->fib_lpm4_list);
-	INIT_LIST_HEAD(&router->fib_lpm6_list);
-
-	atomic_set(&router->legs_count, 0);
-	router->link_local.vrule_id = 0;
-	router->link_local.vrule_id_valid = false;
-	/* VCAP API requires a port net_device, to get a sparx5 reference. */
-	router->port_dev = sparx5_port_get_ndev(sparx5);
-	if (!router->port_dev) {
-		err = -ENXIO;
-		goto err_get_port_dev;
-	}
 
 	/* Enable L3 UC routing on all ports.
 	 * TODO: track ports which are part of some VLAN with RLEG ENA.
@@ -3332,11 +3276,6 @@ int sparx5_rr_router_init(struct sparx5 *sparx5)
 	return 0;
 
 err_blackhole_leg:
-err_get_port_dev:
-	rhashtable_destroy(&router->fib_ht);
-err_fib_ht_init:
-	rhashtable_destroy(&router->neigh_ht);
-err_neigh_ht_init:
 	unregister_inet6addr_notifier(&router->inet6addr_nb);
 err_register_inet6addr_notifier:
 	unregister_inet6addr_validator_notifier(&router->inet6addr_valid_nb);
@@ -3351,6 +3290,11 @@ err_register_inetaddr_notifier:
 err_register_netevent_notifier:
 	unregister_fib_notifier(&init_net, &router->fib_nb);
 err_register_fib_notifier:
+err_get_port_dev:
+	rhashtable_destroy(&router->fib_ht);
+err_fib_ht_init:
+	rhashtable_destroy(&router->neigh_ht);
+err_neigh_ht_init:
 	destroy_workqueue(router->sparx5_router_owq);
 err_alloc_workqueue:
 	mutex_destroy(&router->lock);
@@ -3364,8 +3308,6 @@ void sparx5_rr_router_deinit(struct sparx5 *sparx5)
 	struct sparx5_router *router = sparx5->router;
 
 	sparx5_rr_blackhole_leg_destroy(sparx5);
-	rhashtable_destroy(&router->fib_ht);
-	rhashtable_destroy(&router->neigh_ht);
 	unregister_inet6addr_notifier(&router->inet6addr_nb);
 	unregister_inet6addr_validator_notifier(&router->inet6addr_valid_nb);
 	unregister_netdevice_notifier(&router->netdevice_nb);
@@ -3374,6 +3316,8 @@ void sparx5_rr_router_deinit(struct sparx5 *sparx5)
 	unregister_netevent_notifier(&router->netevent_nb);
 	unregister_fib_notifier(&init_net, &router->fib_nb);
 	destroy_workqueue(router->sparx5_router_owq);
+	rhashtable_destroy(&router->fib_ht);
+	rhashtable_destroy(&router->neigh_ht);
 	mutex_destroy(&router->lock);
 	kfree(router);
 }
