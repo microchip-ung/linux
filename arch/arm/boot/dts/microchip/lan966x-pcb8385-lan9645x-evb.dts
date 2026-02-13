@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 /*
- * lan966x-pcb8385-lan9645x.dts - Device Tree file for LAN966X-PCB8385 board
- * driving Lan9645x on FPGA.
+ * lan966x-pcb8385-lan9645x-evb.dts - Device Tree file for LAN966X-PCB8385 board
+ * driving Lan9645x EVB Rev A.
  *
- * Copyright (C) 2022 Microchip Technology Inc. and its subsidiaries
- *
- * Author: Horatiu Vultur <horatiu.vultur@microchip.com>
- * Author: Jerry Ray <jerry.ray@microchip.com>
+ * Copyright (C) 2026 Microchip Technology Inc. and its subsidiaries
  */
 /dts-v1/;
 
@@ -284,7 +281,7 @@
 			};
 
 			mdio@4098 { // miim0
-				reg = <0>;
+				reg = <0x4098>;
 				reg-names = "gcb_miim0";
 				compatible = "microchip,lan966x-miim";
 				#address-cells = <1>;
@@ -305,7 +302,7 @@
 			};
 
 			mdio@40bc { // miim1
-				reg = <0>, <0>;
+				reg = <0x40bc>, <0>;
 				reg-names = "gcb_miim1", "phy";
 				compatible = "microchip,lan966x-miim";
 				#address-cells = <1>;
@@ -356,48 +353,7 @@
 
 			lan9645x: ethernet-switch@1 {
 				compatible = "microchip,lan9645x-switch";
-				reg = <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>,
-				      <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>,
-				      <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>, <0>,
-				      <0>, <0>;
-				reg-names = "org",
-				            "gcb",
-				            "qs",
-				            "ptp",
-				            "chip_top",
-				            "tas",
-				            "rew",
-				            "vcap",
-				            "vcap1",
-				            "vcap2",
-				            "mep",
-				            "sys",
-				            "hsio",
-				            "dev",
-				            "dev1",
-				            "dev2",
-				            "dev3",
-				            "dev4",
-				            "dev5",
-				            "dev6",
-				            "dev7",
-				            "dev8",
-				            "uvov",
-				            "qsys",
-				            "afi",
-				            "ana",
-				            "irom",
-				            "iram",
-				            "erom_i2c",
-				            "erom_spi",
-				            "cuphy",
-				            "uart",
-				            "i2c",
-				            "i2c1",
-				            "timers",
-				            "cpu",
-				            "otp",
-				            "wdt";
+				reg = <0>;
 				interrupts-extended = <&lan9645x_irq 27>, <&lan9645x_irq 26>, <&lan9645x_irq 17>;
 				interrupt-names = "lan9645x-ptp", "lan9645x-ptp-ext", "lan9645x-ana";
 				pinctrl-0 = <&lan9645x_leds>, <&lan9645x_ptp1_pins>, <&lan9645x_ptp2_pins>;
@@ -421,7 +377,7 @@
 						phy-mode = "gmii";
 						phy-handle = <&cuphy1>;
 						phys = <&lan9645x_serdes 1 LAN9645X_CU(1)>;
-						microchip,led-drive_mode = <1 3>;
+						microchip,led-drive-mode = <1 3>;
 					};
 
 					lan2: port@2 {
@@ -559,8 +515,6 @@
 				#size-cells = <0>;
 				clocks = <&lan9645x_clock>;
 				status = "disabled";
-				//pinctrl-names = "default";
-				//pinctrl-0 = <&sgpio_pins>;
 				microchip,sgpio-port-ranges = <5 6>;
 				bus-frequency = <1000000>;
 
