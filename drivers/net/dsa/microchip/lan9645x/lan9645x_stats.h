@@ -209,6 +209,7 @@ struct lan9645x_view_stats {
 	const struct lan9645x_stat_layout *layout;
 	/* Region description for this view, used for bulk reading */
 	const struct lan9645x_stat_region *regions;
+	struct lan9645x_stats *stats;
 	char name[16];
 	/* 64bit software counters with the same addr layout hw */
 	u64 *cnts;

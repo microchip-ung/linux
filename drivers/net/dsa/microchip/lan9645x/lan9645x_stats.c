@@ -690,7 +690,7 @@ void lan9645x_stats_get_eth_ctrl_stats(struct lan9645x *lan9645x, int port,
 		break;
 	case ETHTOOL_MAC_STATS_SRC_PMAC:
 		ctrl_stats->MACControlFramesReceived =
-			port_cnt[SCNT_RX_CONTROL];
+			port_cnt[SCNT_RX_PMAC_CONTROL];
 		break;
 	default:
 		break;
@@ -817,18 +817,36 @@ static void lan9645x_check_vcap_stats_work(struct work_struct *work)
 static int lan9645x_stats_debugfs_show(struct seq_file *m, void *unused)
 {
 	struct lan9645x_view_stats *vstats = m->private;
-	u64 *idx_counters;
 	int idx, cntr;
+	size_t total;
+	u64 *snap;
+
+	total = vstats->num_cnts * vstats->num_indexes;
+
+	/* Snapshot counters under lock to avoid holding hw_lock during
+	 * slow seq_printf output. Allocation sizes per view:
+	 *   ports:   9 × 133 × 8 =  ~9.5 KB
+	 *   isdx:  128 ×  11 × 8 = ~11.0 KB
+	 *   esdx:  128 ×   4 × 8 =  ~4.0 KB
+	 *   sfid:  256 ×   5 × 8 = ~10.0 KB
+	 */
+	snap = kmalloc_array(total, sizeof(u64), GFP_KERNEL);
+	if (!snap)
+		return -ENOMEM;
+
+	mutex_lock(&vstats->stats->hw_lock);
+	memcpy(snap, vstats->cnts, total * sizeof(u64));
+	mutex_unlock(&vstats->stats->hw_lock);
 
 	for (idx = 0; idx < vstats->num_indexes; idx++) {
-		idx_counters = STATS_INDEX(vstats, idx);
 		for (cntr = 0; cntr < vstats->num_cnts; cntr++) {
 			seq_printf(m, "%s_%d_%-*s %llu\n", vstats->name, idx,
 				   30, vstats->layout[cntr].name,
-				   idx_counters[cntr]);
+				   snap[vstats->num_cnts * idx + cntr]);
 		}
 	}
 
+	kfree(snap);
 	return 0;
 }
 DEFINE_SHOW_ATTRIBUTE(lan9645x_stats_debugfs);
@@ -866,6 +884,8 @@ static int lan9645x_view_stat_init(struct lan9645x *lan9645x,
 	vstat->buf = devm_kcalloc(lan9645x->dev, total, sizeof(u32), GFP_KERNEL);
 	if (!vstat->buf)
 		return -ENOMEM;
+
+	vstat->stats = lan9645x->stats;
 
 	return 0;
 }
@@ -917,6 +937,7 @@ int lan9645x_stats_init(struct lan9645x *lan9645x)
 void lan9645x_stats_deinit(struct lan9645x *lan9645x)
 {
 	cancel_delayed_work_sync(&lan9645x->stats->work);
+	cancel_delayed_work_sync(&lan9645x->stats->vcap_work);
 	destroy_workqueue(lan9645x->stats->queue);
 	mutex_destroy(&lan9645x->stats->hw_lock);
 	lan9645x->stats->queue = NULL;
