@@ -128,6 +128,17 @@ struct lan9645x_skb_cb {
 #define LAN9645X_IFH_SET(_ifh, _fld, _val) \
 	lan9645x_ifh_set((_ifh), LAN9645X_IFH_LEN, (_val), (_fld), _fld##_SZ)
 
+/* Chip has 8 cpu queues. The cpu queues used by a frame is passed as a mask in
+ * the IFH on extraction. We use this to avoid classifying IGMP and MLD frames
+ * in the tag driver.
+ */
+enum {
+	LAN9645X_CPUQ_DEF = 0,
+	LAN9645X_CPUQ_IGMP = 1,
+	LAN9645X_CPUQ_MLD = 2,
+	LAN9645X_CPUQ_IPMC_CTRL = 3,
+};
+
 /* Get mask of ports which mirror traffic egressing dp */
 u32 lan9645x_emirror_get_dst(struct dsa_port *dp);
 int lan9645x_ptp_hsr_xmit_masq_port(struct sk_buff *skb, struct dsa_port *dp);

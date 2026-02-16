@@ -440,6 +440,15 @@ static void lan9645x_igmp_snooping(struct lan9645x *lan9645x, bool enabled,
 		ANA_CPU_FWD_CFG_MLD_REDIR_ENA |
 		ANA_CPU_FWD_CFG_IPMC_CTRL_COPY_ENA,
 		lan9645x, ANA_CPU_FWD_CFG(chip_port));
+
+	/* Use CPU queues to communicate frame classification to the CPU */
+	lan_rmw(ANA_CPUQ_CFG_CPUQ_IGMP_SET(LAN9645X_CPUQ_IGMP) |
+		ANA_CPUQ_CFG_CPUQ_MLD_SET(LAN9645X_CPUQ_MLD) |
+		ANA_CPUQ_CFG_CPUQ_IPMC_CTRL_SET(LAN9645X_CPUQ_IPMC_CTRL),
+		ANA_CPUQ_CFG_CPUQ_IGMP |
+		ANA_CPUQ_CFG_CPUQ_MLD |
+		ANA_CPUQ_CFG_CPUQ_IPMC_CTRL,
+		lan9645x, ANA_CPUQ_CFG);
 }
 
 static void lan9645x_set_tail_drop_wm(struct lan9645x *lan9645x)

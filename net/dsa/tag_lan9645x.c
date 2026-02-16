@@ -6,11 +6,9 @@
 #include <linux/if_ether.h>
 #include <linux/if_hsr.h>
 #include <linux/if_vlan.h>
-#include <linux/igmp.h>
 #include <linux/kernel.h>
 #include <linux/netdevice.h>
 #include <linux/skbuff.h>
-#include <net/addrconf.h>
 #include <net/dsa.h>
 
 #include "tag.h"
@@ -104,95 +102,21 @@ static void lan9645x_rcv_dbg(struct sk_buff *skb, struct net_device *ndev,
 		etype_ofs, ifh_gap_len, skb->offload_fwd_mark, acl_id, acl_hit);
 }
 
-/* This is the private ipv6_mc_check_ip6hdr(struct sk_buff *skb) from
- * mcast_snoop.c
- */
-static int lan9645x_ipv6_mc_check_hdr(struct sk_buff *skb)
-{
-	const struct ipv6hdr *ip6h;
-	unsigned int offset;
-	unsigned int len;
-
-	offset = skb_network_offset(skb) + sizeof(*ip6h);
-	if (!pskb_may_pull(skb, offset))
-		return -EINVAL;
-
-	ip6h = ipv6_hdr(skb);
-
-	if (ip6h->version != 6)
-		return -EINVAL;
-
-	len = offset + ntohs(ip6h->payload_len);
-	if (skb->len < len || len <= offset)
-		return -EINVAL;
-
-	skb_set_transport_header(skb, offset);
-
-	return 0;
-}
-
-/* This is the private ipv6_mc_check_exthdrs(struct sk_buff *skb) from
- * mcast_snoop.c
- */
-static int lan9645x_ipv6_mc_check_exthdr(struct sk_buff *skb)
-{
-	const struct ipv6hdr *ip6h;
-	__be16 frag_off;
-	int offset;
-	u8 nexthdr;
-
-	ip6h = ipv6_hdr(skb);
-
-	if (ip6h->nexthdr != IPPROTO_HOPOPTS)
-		return -ENOMSG;
-
-	nexthdr = ip6h->nexthdr;
-	offset = skb_network_offset(skb) + sizeof(*ip6h);
-	offset = ipv6_skip_exthdr(skb, offset, &nexthdr, &frag_off);
-
-	if (offset < 0)
-		return -EINVAL;
-
-	if (nexthdr != IPPROTO_ICMPV6)
-		return -ENOMSG;
-
-	skb_set_transport_header(skb, offset);
-
-	return 0;
-}
-
-/* This is ipv6_mc_check_mld(struct sk_buff *skb) without the checksum check and
- * potential allocation.
- */
-static bool lan9645x_is_mld(struct sk_buff *skb)
-{
-	return IS_ENABLED(CONFIG_IPV6) &&
-	       eth_hdr(skb)->h_proto == htons(ETH_P_IPV6) &&
-	       !lan9645x_ipv6_mc_check_hdr(skb) &&
-	       !lan9645x_ipv6_mc_check_exthdr(skb);
-}
-
-/* skb network_header must be set */
-static bool lan9645x_is_igmp(struct sk_buff *skb)
-{
-	return eth_hdr(skb)->h_proto == htons(ETH_P_IP) &&
-	       pskb_may_pull(skb, sizeof(struct iphdr)) &&
-	       ip_hdr(skb)->version == 4 &&
-	       ip_hdr(skb)->protocol == IPPROTO_IGMP;
-}
-
 static void lan9645x_offload_fwd_mark(struct sk_buff *skb, u32 rtagd,
-				      u32 acl_id, u32 acl_hit)
+				      u32 acl_id, u32 acl_hit, u32 cpuq)
 {
+	u32 cpu_redir;
+
 	if (acl_hit && (acl_id == 1 || (acl_id >> 3) == 1)) {
 		/* frame trapped by IS2 VCAP. Let network stack handle it. */
 		skb->offload_fwd_mark = 0;
 		return;
 	}
 
-	/* IGMP/MLD are trapped to CPU, and must be forwarded by network stack.
-	 */
-	if (lan9645x_is_igmp(skb) || lan9645x_is_mld(skb)) {
+	/* IGMP/MLD are trapped to CPU, and must be forwarded by the stack */
+	cpu_redir = BIT(LAN9645X_CPUQ_IGMP) | BIT(LAN9645X_CPUQ_MLD);
+
+	if (cpuq & cpu_redir) {
 		skb->offload_fwd_mark = 0;
 		return;
 	}
@@ -326,7 +250,7 @@ static struct sk_buff *lan9645x_xmit(struct sk_buff *skb, struct net_device *nde
 
 static struct sk_buff *lan9645x_rcv(struct sk_buff *skb, struct net_device *ndev)
 {
-	u64 vlan_tci, tag_type, popcnt, etype_ofs, acl_id, acl_hit;
+	u64 vlan_tci, tag_type, popcnt, etype_ofs, acl_id, acl_hit, cpuq;
 	u64 src_port, qos_class, rtagd, rct, rx_ts;
 	u8 *orig_skb_data = skb->data;
 	struct dsa_port *dp;
@@ -353,6 +277,7 @@ static struct sk_buff *lan9645x_rcv(struct sk_buff *skb, struct net_device *ndev
 	acl_id = LAN9645X_IFH_GET(ifh, IFH_ACL_IDX);
 	acl_hit = LAN9645X_IFH_GET(ifh, IFH_ACL_HIT);
 	rx_ts = LAN9645X_IFH_GET(ifh, IFH_TIMESTAMP);
+	cpuq = LAN9645X_IFH_GET(ifh, IFH_CPUQ);
 
 	/* Set skb->data at start of real header
 	 *
@@ -407,7 +332,7 @@ static struct sk_buff *lan9645x_rcv(struct sk_buff *skb, struct net_device *ndev
 		}
 	}
 
-	lan9645x_offload_fwd_mark(skb, rtagd, acl_id, acl_hit);
+	lan9645x_offload_fwd_mark(skb, rtagd, acl_id, acl_hit, cpuq);
 
 	skb->priority = qos_class;
 	LAN9645X_SKB_CB(skb)->rx_ts_ns = rx_ts >> 8;
