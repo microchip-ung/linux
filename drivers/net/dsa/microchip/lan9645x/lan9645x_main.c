@@ -299,8 +299,8 @@ static int lan9645x_port_setup_leds(struct lan9645x *lan9645x,
 	u32 val[LAN9645X_LED_PROP_CNT];
 	int err;
 
-	err = fwnode_property_read_u32_array(portnp, "microchip,led-drive_mode",
-					    val, LAN9645X_LED_PROP_CNT);
+	err = fwnode_property_read_u32_array(portnp, "microchip,led-drive-mode",
+					     val, LAN9645X_LED_PROP_CNT);
 	if (err)
 		return err;
 
