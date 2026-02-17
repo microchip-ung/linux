@@ -127,7 +127,7 @@ void fdma_free_phys(struct fdma *fdma)
 }
 EXPORT_SYMBOL_GPL(fdma_free_phys);
 
-#ifdef CONFIG_MFD_LAN966X_PCI
+#if IS_ENABLED(CONFIG_FDMA_PCI)
 int fdma_alloc_coherent_and_map(struct device *dev, struct fdma *fdma,
 				struct fdma_pci_atu *atu)
 {

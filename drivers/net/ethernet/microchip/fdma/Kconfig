@@ -15,4 +15,12 @@ config FDMA
 	  set of functions and data structures for interacting with the Frame
 	  DMA engine in multiple microchip switchcores.
 
+config FDMA_PCI
+	bool "PCI support for FDMA"
+	help
+	  Enables PCI support in the FDMA library, including ATU region
+	  mapping and DMA coherent allocation for PCIe devices.
+
+	  This is selected by the platform-specific PCI drivers.
+
 endif # NET_VENDOR_MICROCHIP

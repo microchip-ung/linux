@@ -1244,6 +1244,7 @@ config MFD_LAN966X_PCI
 	tristate "Microchip LAN966X Support"
 	depends on PCI
 	select GENERIC_IRQ_CHIP
+	select FDMA_PCI
 	help
 	  This enables the pci for multifunction driver. This is used
 	  when an external CPU is connected to LAN966X.
@@ -1252,6 +1253,7 @@ config MFD_LAN969X_PCI
 	tristate "Microchip LAN969X Support"
 	depends on PCI
 	select GENERIC_IRQ_CHIP
+	select FDMA_PCI
 	help
 	  This enables the pci for multifunction driver. This is used
 	  when an external CPU is connected to LAN969X.

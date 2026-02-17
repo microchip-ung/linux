@@ -635,6 +635,7 @@ config MCHP_LAN966X_PCI
 	depends on PCI
 	depends on OF_OVERLAY
 	select IRQ_DOMAIN
+	select FDMA_PCI
 	help
 	  This enables the support for the LAN966x PCIe device.
 
