@@ -316,7 +316,3 @@ obj-$(CONFIG_MFD_MICROCHIP_DPLL_I2C) += microchip-dpll-i2c.o
 
 obj-$(CONFIG_MFD_MICROCHIP_LAN9645X_SPI) += lan9645x-spi.o
 
-lan966x-pci-of-objs			:= lan966x_pci_of.o lan966x_pci_irq.o
-lan966x-pci-of-objs			+= lan966x_pci.dtb.o
-
-obj-$(CONFIG_MFD_LAN966X_PCI_OF)	+= lan966x-pci-of.o
