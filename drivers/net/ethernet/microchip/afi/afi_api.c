@@ -4,6 +4,8 @@
  * Copyright (c) 2024 Microchip Technology Inc. and its subsidiaries.
  */
 
+#include <linux/export.h>
+
 #include "afi_api.h"
 
 static bool afi_res_is_free(u32 *alloc_table, u32 res_idx)
@@ -177,6 +179,7 @@ bool afi_frm_idx_chk(struct afi_control *afi, s32 frm_idx)
 
 	return true;
 }
+EXPORT_SYMBOL_GPL(afi_frm_idx_chk);
 
 int afi_init(struct afi_control *afi)
 {
@@ -193,6 +196,7 @@ int afi_init(struct afi_control *afi)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(afi_init);
 
 void afi_deinit(struct afi_control *afi)
 {
@@ -201,6 +205,7 @@ void afi_deinit(struct afi_control *afi)
 	kfree(afi->ttis_alloced);
 	kfree(afi->frms_alloced);
 }
+EXPORT_SYMBOL_GPL(afi_deinit);
 
 int afi_slow_inj_alloc(struct afi_control *afi,
 		       struct afi_slow_inj_alloc_cfg *cfg,
@@ -261,6 +266,7 @@ int afi_slow_inj_alloc(struct afi_control *afi,
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(afi_slow_inj_alloc);
 
 int afi_slow_inj_free(struct afi_control *afi, u32 slowid)
 {
@@ -293,6 +299,7 @@ int afi_slow_inj_free(struct afi_control *afi, u32 slowid)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(afi_slow_inj_free);
 
 int afi_slow_inj_frm_hijack(struct afi_control *afi,
 			    u32 slowid)
@@ -310,6 +317,7 @@ int afi_slow_inj_frm_hijack(struct afi_control *afi,
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(afi_slow_inj_frm_hijack);
 
 static u32 afi_div_round32(u32 dividend, u32 divisor)
 {
@@ -415,6 +423,7 @@ int afi_slow_inj_start(struct afi_control *afi,
 start_tti:
 	return afi->ops->tti_start(afi, slowid, do_config);
 }
+EXPORT_SYMBOL_GPL(afi_slow_inj_start);
 
 int afi_slow_inj_stop(struct afi_control *afi,
 		      u32 slowid)
@@ -431,3 +440,4 @@ int afi_slow_inj_stop(struct afi_control *afi,
 
 	return afi->ops->tti_stop(afi, slowid);
 }
+EXPORT_SYMBOL_GPL(afi_slow_inj_stop);

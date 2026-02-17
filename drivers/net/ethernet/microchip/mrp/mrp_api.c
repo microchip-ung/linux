@@ -4,6 +4,7 @@
  * Copyright (c) 2024 Microchip Technology Inc. and its subsidiaries.
  */
 
+#include <linux/export.h>
 #include <linux/if_bridge.h>
 
 #include "mrp_api.h"
@@ -535,11 +536,13 @@ int mrp_init(struct mrp_control *mrp)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(mrp_init);
 
 int mrp_deinit(struct mrp_control *mrp)
 {
 	return 0;
 }
+EXPORT_SYMBOL_GPL(mrp_deinit);
 
 static void *mrp_port_priv_from_netdev(struct mrp_control *mrp_ctrl,
 				       struct net_device *dev)
@@ -590,6 +593,7 @@ out:
 
 	return ERR_PTR(-ENOMEM);
 }
+EXPORT_SYMBOL_GPL(mrp_add_port);
 
 int mrp_del_port(struct mrp_control *mrp_ctrl,
 		 const struct switchdev_obj_mrp *mrp,
@@ -621,6 +625,7 @@ int mrp_del_port(struct mrp_control *mrp_ctrl,
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(mrp_del_port);
 
 struct mrp_port *mrp_add_in_port(struct mrp_control *mrp_ctrl,
 				 const struct switchdev_obj_in_role_mrp *mrp,
@@ -657,6 +662,7 @@ struct mrp_port *mrp_add_in_port(struct mrp_control *mrp_ctrl,
 out:
 	return ERR_PTR(-ENOMEM);
 }
+EXPORT_SYMBOL_GPL(mrp_add_in_port);
 
 int mrp_del_in_port(struct mrp_control *mrp_ctrl,
 		    const struct switchdev_obj_in_role_mrp *mrp,
@@ -683,6 +689,7 @@ int mrp_del_in_port(struct mrp_control *mrp_ctrl,
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(mrp_del_in_port);
 
 int mrp_ring_interrupt(struct mrp_control *mrp_ctrl)
 {
@@ -715,6 +722,7 @@ int mrp_ring_interrupt(struct mrp_control *mrp_ctrl)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(mrp_ring_interrupt);
 
 int mrp_in_interrupt(struct mrp_control *mrp_ctrl)
 {
@@ -744,6 +752,7 @@ int mrp_in_interrupt(struct mrp_control *mrp_ctrl)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(mrp_in_interrupt);
 
 int mrp_port_set_ring_state(struct mrp_port *mrp_port,
 			    const struct switchdev_obj_ring_state_mrp *mrp)
@@ -779,6 +788,7 @@ int mrp_port_set_ring_state(struct mrp_port *mrp_port,
 						      mrp_port->mrp_inst->ring_transitions,
 						      mrp->ring_state);
 }
+EXPORT_SYMBOL_GPL(mrp_port_set_ring_state);
 
 int mrp_port_set_ring_role(struct mrp_port *mrp_port,
 			   const struct switchdev_obj_ring_role_mrp *mrp)
@@ -839,6 +849,7 @@ int mrp_port_set_ring_role(struct mrp_port *mrp_port,
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(mrp_port_set_ring_role);
 
 int mrp_port_start_ring_test(struct mrp_port *mrp_port,
 			     const struct switchdev_obj_ring_test_mrp *mrp)
@@ -905,6 +916,7 @@ int mrp_port_start_ring_test(struct mrp_port *mrp_port,
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(mrp_port_start_ring_test);
 
 int mrp_port_stop_ring_test(struct mrp_port *mrp_port,
 			    const struct switchdev_obj_ring_test_mrp *mrp)
@@ -939,6 +951,7 @@ int mrp_port_stop_ring_test(struct mrp_port *mrp_port,
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(mrp_port_stop_ring_test);
 
 int mrp_port_set_in_state(struct mrp_port *mrp_port,
 			  const struct switchdev_obj_in_state_mrp *mrp)
@@ -974,6 +987,7 @@ int mrp_port_set_in_state(struct mrp_port *mrp_port,
 						    mrp_port->mrp_inst->in_transitions,
 						    mrp->in_state);
 }
+EXPORT_SYMBOL_GPL(mrp_port_set_in_state);
 
 int mrp_port_set_in_role(struct mrp_port *mrp_port,
 			 const struct switchdev_obj_in_role_mrp *mrp)
@@ -1091,6 +1105,7 @@ int mrp_port_set_in_role(struct mrp_port *mrp_port,
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(mrp_port_set_in_role);
 
 int mrp_port_start_in_test(struct mrp_port *mrp_port,
 			   const struct switchdev_obj_in_test_mrp *mrp)
@@ -1122,6 +1137,7 @@ int mrp_port_start_in_test(struct mrp_port *mrp_port,
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(mrp_port_start_in_test);
 
 int mrp_port_stop_in_test(struct mrp_port *mrp_port,
 			  const struct switchdev_obj_in_test_mrp *mrp)
@@ -1149,6 +1165,7 @@ int mrp_port_stop_in_test(struct mrp_port *mrp_port,
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(mrp_port_stop_in_test);
 
 int mrp_port_set_port_role(struct mrp_port *mrp_port,
 			   enum br_mrp_port_role_type port_role)
@@ -1160,3 +1177,4 @@ int mrp_port_set_port_role(struct mrp_port *mrp_port,
 	mrp_ctrl = mrp_port->mrp_inst->mrp_ctrl;
 	return mrp_ctrl->ops->mrp_port_set_port_role(mrp_port, port_role);
 }
+EXPORT_SYMBOL_GPL(mrp_port_set_port_role);

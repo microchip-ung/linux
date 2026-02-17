@@ -2287,6 +2287,7 @@ int vcap_netlink_init(struct vcap_control *ctrl, struct net_device *ndev)
 	return vcap_netlink_init_from_priv(ndev, vcap_genl_to_ndev_default,
 					   ctrl);
 }
+EXPORT_SYMBOL_GPL(vcap_netlink_init);
 
 void vcap_netlink_uninit(struct vcap_control *vctrl)
 {

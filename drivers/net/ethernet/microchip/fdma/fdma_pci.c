@@ -3,6 +3,7 @@
 #include <linux/bitfield.h>
 #include <linux/bug.h>
 #include <linux/errno.h>
+#include <linux/export.h>
 #include <linux/io.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
@@ -149,6 +150,7 @@ u64 fdma_pci_atu_get_mapped_addr(struct fdma_pci_atu_region *region, u64 addr)
 {
 	return region->base_addr + (addr - region->target_addr);
 }
+EXPORT_SYMBOL_GPL(fdma_pci_atu_get_mapped_addr);
 
 /* Divide the OB address space in equally sized regions */
 void fdma_pci_atu_init(struct fdma_pci_atu *atu, void __iomem *addr)
@@ -167,3 +169,4 @@ void fdma_pci_atu_init(struct fdma_pci_atu *atu, void __iomem *addr)
 		regions[i].atu = atu;
 	}
 }
+EXPORT_SYMBOL_GPL(fdma_pci_atu_init);
