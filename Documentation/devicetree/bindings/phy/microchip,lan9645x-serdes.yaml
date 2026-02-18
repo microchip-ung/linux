@@ -10,17 +10,11 @@ maintainers:
   - Jens Emil Schulz Østergaard <jensemil.schulzostergaard@microchip.com>
 
 description: |
-  Lan9645x has up to 9 interfaces, consisting of 5 copper transceivers(CU),
-  2 SERDES6G and 2 RGMII interfaces. One of the SERDES6G support QSGMII.
-  Also it has 9 logical Ethernet ports which can be connected to these
-  interfaces. The Serdes controller will allow to configure these interfaces
-  and allows to "mux" the interfaces to different ports.
+  Lan9645x has 2 SERDES6G interfaces. One of the SERDES6G supports QSGMII.
+  The Serdes controller configures these interfaces and allows "muxing" them
+  to different ports.
 
-  For simple selection of the interface that is used with a port, the
-  following macros are defined LAN9645X_CU(X), SLAN9645X_SERDES6G(X),
-  LAN9645X_RGMII(X). Where X is a number that represents the index of that
-  interface type. For example LAN9645X_CU(1) means use interface copper
-  transceivers 1. LAN9645X_SERDES6G(2) means use interface SerDes 2.
+  The macro LAN9645X_SERDES6G(X) selects SerDes interface X.
 
 properties:
   $nodename:
@@ -45,9 +39,9 @@ properties:
   '#phy-cells':
     const: 2
     description: |
-      - Input port to use for a given macro.
-      - The macro to be used. The macros are defined in
-        dt-bindings/phy/phy-lan9645x-serdes.yaml
+      - Input port number.
+      - The SerDes index, using the LAN9645X_SERDES6G(X) macro from
+        dt-bindings/phy/phy-lan9645x-serdes.h.
 
 required:
   - compatible

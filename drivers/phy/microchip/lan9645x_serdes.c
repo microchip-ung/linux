@@ -11,26 +11,11 @@
 #include <dt-bindings/phy/phy-lan9645x-serdes.h>
 #include "lan9645x_serdes_regs.h"
 
-/* Encode phy type in 4 top bits of index */
-#define CUPHY_TYPE 0
-#define SERDES_TYPE 1
-#define RGMII_TYPE 2
-
-#define IDX_TYPE_MASK 0xf000
-#define IDX_VAL_MASK  0x0fff
-
-#define GET_TYPE(x) FIELD_GET(IDX_TYPE_MASK, x)
-#define SET_TYPE(x) FIELD_PREP(IDX_TYPE_MASK, x)
-#define AS_TYPED(type, idx) (SET_TYPE(type) | ((idx) & IDX_VAL_MASK))
-#define FROM_TYPED(x) FIELD_GET(IDX_VAL_MASK, x)
-
 #define PLL_CONF_25MHZ		0
 #define PLL_CONF_125MHZ		1
 #define PLL_CONF_SERDES_125MHZ	2
 #define PLL_CONF_BYPASS		3
 
-/* simple address calculation for replicated registers */
-#define ADDR(base, rinst) ((base) + (rinst) * 4)
 /* only works if size of SD grp is 32 */
 #define SD_ADDR(base, g) ((base) + (g) * 32)
 
@@ -43,35 +28,16 @@
 	.mux = _mux,						\
 }
 
-#define SERDES_MUX_GMII(i, p, m, c) \
-	SERDES_MUX(i, p, PHY_MODE_ETHERNET, PHY_INTERFACE_MODE_GMII, m, c)
 #define SERDES_MUX_SGMII(i, p, m, c) \
 	SERDES_MUX(i, p, PHY_MODE_ETHERNET, PHY_INTERFACE_MODE_SGMII, m, c)
 #define SERDES_MUX_QSGMII(i, p, m, c) \
 	SERDES_MUX(i, p, PHY_MODE_ETHERNET, PHY_INTERFACE_MODE_QSGMII, m, c)
-#define SERDES_MUX_RGMII(i, p, m, c) \
-	SERDES_MUX(i, p, PHY_MODE_ETHERNET, PHY_INTERFACE_MODE_RGMII, m, c), \
-	SERDES_MUX(i, p, PHY_MODE_ETHERNET, PHY_INTERFACE_MODE_RGMII_TXID, m, c), \
-	SERDES_MUX(i, p, PHY_MODE_ETHERNET, PHY_INTERFACE_MODE_RGMII_RXID, m, c), \
-	SERDES_MUX(i, p, PHY_MODE_ETHERNET, PHY_INTERFACE_MODE_RGMII_ID, m, c)
 
-/* TODO:
- * Maserati has HSIO:HW_CFGSTAT:HW_CFG.RGMII_ENA for configuring GPIO0-12 for
- * RGMII0 and GPIO13-GPIO25 to RGMII1 interface.
- *
- * It seems CHIP_TOP:GPIO_CFG:GPIO_CFG[0-77].RGMII is never used? This reg
- * is otherwise used by pinctrl.
- *
- * Lan9645x does not have the HW_CFG register. It is necessary on lan9645x
- * to configure thes GPIO enable bits on the relevant pins?
- */
 struct serdes_ctrl {
 	struct device *dev;
 	struct regmap *hsio;
-	struct phy **cuphys;
 	struct phy **serdes;
-	struct phy **rgmiis;
-	int num_phys;
+	int num_serdes;
 	const struct serdes_match_data *mdata;
 	struct serdes_inversion *inverted;
 	int			ref125;
@@ -103,13 +69,9 @@ struct serdes_match_data {
 	const struct serdes_mux *muxes;
 	int num_muxes;
 	int num_serdes;
-	int num_rgmii;
-	int num_cuphy;
 
 	/* register addresses relative to HSIO target */
 	u32 hw_cfg;
-	u32 rgmii_cfg_base;
-	u32 dll_cfg_base;
 	/* serdes regs. replicated by group */
 	u32 sd_cfg_base;
 	u32 mpll_cfg_base;
@@ -163,37 +125,16 @@ struct lan9645x_sd6g40_setup {
 };
 
 static const struct serdes_mux lan9645x_serdes_mux[] = {
-	/* Enable GMII on cuphys */
-	SERDES_MUX_GMII(LAN9645X_CU(0), 0, BIT(0 + 1), BIT(0 + 1)),
-	SERDES_MUX_GMII(LAN9645X_CU(1), 1, BIT(1 + 1), BIT(1 + 1)),
-	SERDES_MUX_GMII(LAN9645X_CU(2), 2, BIT(2 + 1), BIT(2 + 1)),
-	SERDES_MUX_GMII(LAN9645X_CU(3), 3, BIT(3 + 1), BIT(3 + 1)),
-	SERDES_MUX_GMII(LAN9645X_CU(4), 4, BIT(4 + 1), BIT(4 + 1)),
-
 	/* Serdes 0 with QSGMII mode, on ports 5,6,7,8 */
 	SERDES_MUX_QSGMII(LAN9645X_SERDES6G(0), 5, BIT(0), BIT(0)),
 	SERDES_MUX_QSGMII(LAN9645X_SERDES6G(0), 6, BIT(0), BIT(0)),
 	SERDES_MUX_QSGMII(LAN9645X_SERDES6G(0), 7, BIT(0), BIT(0)),
 	SERDES_MUX_QSGMII(LAN9645X_SERDES6G(0), 8, BIT(0), BIT(0)),
 
-	/* Serdes 0 with QSGMII mode, on ports 4,5,6,8. Cuphy 4 disabled and rgmii 8 disabled */
-	SERDES_MUX_QSGMII(LAN9645X_SERDES6G(0), 4, BIT(0), BIT(0)),
-	SERDES_MUX_QSGMII(LAN9645X_SERDES6G(0), 5, BIT(0), BIT(0)),
-	SERDES_MUX_QSGMII(LAN9645X_SERDES6G(0), 6, BIT(0), BIT(0)),
-	SERDES_MUX_QSGMII(LAN9645X_SERDES6G(0), 8, BIT(0), BIT(0)),
-
 	/* Serdes 0 fixed on port 5, unless QSGMII is enabled. */
 	SERDES_MUX_SGMII(LAN9645X_SERDES6G(0), 5, BIT(0), 0x0),
 	/* Serdes 1 fixed on port 6. */
 	SERDES_MUX_SGMII(LAN9645X_SERDES6G(1), 6, 0, 0),
-
-	/* RGMII 0 on port 4 or 7, and GMII enabled. */
-	SERDES_MUX_RGMII(LAN9645X_RGMII(0), 7, BIT(10) | BIT(7 + 1), BIT(7 + 1)),
-	SERDES_MUX_RGMII(LAN9645X_RGMII(0), 4, BIT(10) | BIT(4 + 1),
-			 BIT(10) | BIT(4 + 1)),
-
-	/* RGMII 1 fixed on port 8 */
-	SERDES_MUX_RGMII(LAN9645X_RGMII(1), 8, BIT(8 + 1), BIT(8 + 1)),
 };
 
 /* Register CHIP_TOP:STRAPPING:STRAPPING */
@@ -458,11 +399,6 @@ static int lan9645x_sd6g40_setup(struct serdes_macro *macro, u32 idx, int mode)
 {
 	struct lan9645x_sd6g40_setup_args conf = {};
 
-	if (GET_TYPE(idx) != SERDES_TYPE)
-		return -EINVAL;
-
-	idx = FROM_TYPED(idx);
-
 	conf.refclk125M = macro->ctrl->ref125;
 	conf.txinvert = !!macro->ctrl->inverted[idx].tx;
 	conf.rxinvert = !!macro->ctrl->inverted[idx].rx;
@@ -473,94 +409,6 @@ static int lan9645x_sd6g40_setup(struct serdes_macro *macro, u32 idx, int mode)
 		conf.mode = LAN9645X_SD6G40_MODE_SGMII;
 
 	return lan9645x_sd6g40_setup_lane(macro, conf, idx);
-}
-
-static int lan9645x_rgmii_setup(struct serdes_macro *macro, u32 idx, int mode)
-{
-	bool tx_delay = false, rx_delay = false;
-	struct serdes_ctrl *ctrl = macro->ctrl;
-	const struct serdes_match_data *d;
-	u32 rx_idx, tx_idx;
-	u8 tx_clk;
-
-	if (GET_TYPE(idx) != RGMII_TYPE)
-		return -EINVAL;
-
-	d = ctrl->mdata;
-	idx = FROM_TYPED(idx);
-
-	tx_clk = macro->speed == SPEED_1000 ? 1 :
-		 macro->speed == SPEED_100  ? 2 :
-		 macro->speed == SPEED_10   ? 3 :
-					      0;
-
-	/* Configure RGMII */
-	regmap_update_bits(ctrl->hsio, ADDR(d->rgmii_cfg_base, idx),
-			   HSIO_RGMII_CFG_RGMII_RX_RST |
-			   HSIO_RGMII_CFG_RGMII_TX_RST |
-			   HSIO_RGMII_CFG_TX_CLK_CFG,
-			   HSIO_RGMII_CFG_RGMII_RX_RST_SET(0) |
-			   HSIO_RGMII_CFG_RGMII_TX_RST_SET(0) |
-			   HSIO_RGMII_CFG_TX_CLK_CFG_SET(tx_clk));
-
-	/* We configure delays on the MAC side. When the PHY is not responsible
-	 * for delays, the MAC is, which is why RGMII_TXID results in
-	 * rx_delay=true
-	 *
-	 * See: Documentation/networking/phy.rst
-	 *
-	 * TODO: https://www.kernel.org/doc/Documentation/devicetree/bindings/net/ethernet-controller.yaml
-	 *
-	 * rx-internal-delay-ps
-	 * tx-internal-delay-ps
-	 *
-	 * See laguna (upstream).
-	 */
-	if (mode == PHY_INTERFACE_MODE_RGMII ||
-	    mode == PHY_INTERFACE_MODE_RGMII_TXID)
-		rx_delay = true;
-
-	if (mode == PHY_INTERFACE_MODE_RGMII ||
-	    mode == PHY_INTERFACE_MODE_RGMII_RXID)
-		tx_delay = true;
-
-	/* Setup DLL configuration. Register layout:
-	 * 0:        RGMII_0_RX
-	 * 1:        RGMII_0_TX
-	 * 2:        RGMII_1_RX
-	 * 3:        RGMII_1_TX
-	 * ...
-	 * (N<<1)    RGMII_N_RX,
-	 * (N<<1)+1: RGMII_N_TX,
-	 */
-
-	rx_idx = idx << 1;
-	tx_idx = rx_idx + 1;
-
-	/* Enable DLL in RGMII clock paths, deassert DLL reset, and start the delay tune FSM. */
-	regmap_update_bits(ctrl->hsio,
-			   ADDR(d->dll_cfg_base, rx_idx),
-			   HSIO_DLL_CFG_DLL_CLK_ENA |
-			   HSIO_DLL_CFG_DLL_RST |
-			   HSIO_DLL_CFG_DLL_ENA |
-			   HSIO_DLL_CFG_DELAY_ENA,
-			   HSIO_DLL_CFG_DLL_CLK_ENA_SET(1) |
-			   HSIO_DLL_CFG_DLL_RST_SET(0) |
-			   HSIO_DLL_CFG_DLL_ENA_SET(rx_delay) |
-			   HSIO_DLL_CFG_DELAY_ENA_SET(rx_delay));
-
-	regmap_update_bits(ctrl->hsio,
-			   ADDR(d->dll_cfg_base, tx_idx),
-			   HSIO_DLL_CFG_DLL_CLK_ENA |
-			   HSIO_DLL_CFG_DLL_RST |
-			   HSIO_DLL_CFG_DLL_ENA |
-			   HSIO_DLL_CFG_DELAY_ENA,
-			   HSIO_DLL_CFG_DLL_CLK_ENA_SET(1) |
-			   HSIO_DLL_CFG_DLL_RST_SET(0) |
-			   HSIO_DLL_CFG_DLL_ENA_SET(tx_delay) |
-			   HSIO_DLL_CFG_DELAY_ENA_SET(tx_delay));
-
-	return 0;
 }
 
 static bool serdes_mux_equal(const struct serdes_mux *mux,
@@ -606,52 +454,10 @@ static int serdes_set_mode(struct phy *phy, enum phy_mode mode, int submode)
 
 		macro->mode = mux->submode;
 
-		switch (GET_TYPE(macro->idx)) {
-		case CUPHY_TYPE:
-			return 0;
-		case RGMII_TYPE:
-			return lan9645x_rgmii_setup(macro, macro->idx,
-						    macro->mode);
-		case SERDES_TYPE:
-			return lan9645x_sd6g40_setup(macro, macro->idx,
-						     macro->mode);
-		default:
-			return -EOPNOTSUPP;
-		}
-
-		return -EOPNOTSUPP;
+		return lan9645x_sd6g40_setup(macro, macro->idx, macro->mode);
 	}
 
 	return -EINVAL;
-}
-
-static int serdes_set_speed(struct phy *phy, int speed)
-{
-	struct serdes_macro *macro = phy_get_drvdata(phy);
-
-	if (!phy_interface_mode_is_rgmii(macro->mode))
-		return 0;
-
-	macro->speed = speed;
-	lan9645x_rgmii_setup(macro, macro->idx, macro->mode);
-
-	return 0;
-}
-
-static struct phy *serdes_get_phy(struct serdes_ctrl *ctrl, u16 typed_idx)
-{
-	u16 idx = FROM_TYPED(typed_idx);
-
-	switch (GET_TYPE(typed_idx)) {
-	case SERDES_TYPE:
-		return ctrl->serdes[idx];
-	case RGMII_TYPE:
-		return ctrl->rgmiis[idx];
-	case CUPHY_TYPE:
-		return ctrl->cuphys[idx];
-	default:
-		return NULL;
-	}
 }
 
 static struct phy *serdes_simple_xlate(struct device *dev,
@@ -668,12 +474,14 @@ static struct phy *serdes_simple_xlate(struct device *dev,
 	port = args->args[0];
 	idx = args->args[1];
 
-	phy = serdes_get_phy(ctrl, idx);
+	if (idx >= ctrl->num_serdes)
+		return ERR_PTR(-ENODEV);
+
+	phy = ctrl->serdes[idx];
 	if (!phy)
 		return ERR_PTR(-ENODEV);
 
 	macro = phy_get_drvdata(phy);
-	WARN_ON(macro->idx != idx);
 	macro->port = port;
 	return phy;
 }
@@ -684,35 +492,23 @@ static int serdes_reset(struct phy *phy)
 	struct serdes_ctrl *ctrl = macro->ctrl;
 	const struct serdes_match_data *d = ctrl->mdata;
 
-	switch (GET_TYPE(macro->idx)) {
-	case CUPHY_TYPE:
+	if (macro->mode == PHY_INTERFACE_MODE_QSGMII)
+		/* TODO: We would have to make sure all in-use qsgmii
+		 * ports on this serdes are powered off.
+		 */
 		return 0;
-	case RGMII_TYPE:
-		return 0;
-	case SERDES_TYPE:
-		if (macro->mode == PHY_INTERFACE_MODE_QSGMII)
-			/* TODO: We would have to make sure all in-use qsgmii
-			 * ports on this serdes are powered off.
-			 */
-			return 0;
 
-		regmap_update_bits(ctrl->hsio,
-				   SD_ADDR(d->sd_cfg_base, FROM_TYPED(macro->idx)),
-				   HSIO_SD_CFG_RX_RESET | HSIO_SD_CFG_TX_RESET,
-				   HSIO_SD_CFG_RX_RESET_SET(1) |
-				   HSIO_SD_CFG_TX_RESET_SET(1));
+	regmap_update_bits(ctrl->hsio,
+			   SD_ADDR(d->sd_cfg_base, macro->idx),
+			   HSIO_SD_CFG_RX_RESET | HSIO_SD_CFG_TX_RESET,
+			   HSIO_SD_CFG_RX_RESET_SET(1) |
+			   HSIO_SD_CFG_TX_RESET_SET(1));
 
-		regmap_update_bits(ctrl->hsio, SD_ADDR(d->sd_cfg_base, macro->idx),
-				   HSIO_SD_CFG_PHY_RESET,
-				   HSIO_SD_CFG_PHY_RESET_SET(1));
-		return 0;
-	default:
-		return -EINVAL;
-	}
-
+	regmap_update_bits(ctrl->hsio, SD_ADDR(d->sd_cfg_base, macro->idx),
+			   HSIO_SD_CFG_PHY_RESET,
+			   HSIO_SD_CFG_PHY_RESET_SET(1));
 	return 0;
 }
-
 
 static int serdes_power_off(struct phy *phy)
 {
@@ -726,41 +522,31 @@ static int serdes_calibrate(struct phy *phy)
 	struct serdes_ctrl *ctrl = macro->ctrl;
 	const struct serdes_match_data *d = ctrl->mdata;
 
-	switch (GET_TYPE(macro->idx)) {
-	case CUPHY_TYPE:
+	if (macro->mode == PHY_INTERFACE_MODE_QSGMII)
+		/* TODO: We would have to make sure all in-use qsgmii
+		 * ports are ok with rx reset.
+		 */
 		return 0;
-	case RGMII_TYPE:
-		return 0;
-	case SERDES_TYPE:
-		if (macro->mode == PHY_INTERFACE_MODE_QSGMII)
-			/* TODO: We would have to make sure all in-use qsgmii
-			 * ports are ok with rx reset.
-			 */
-			return 0;
 
-		regmap_update_bits(ctrl->hsio,
-				   SD_ADDR(d->sd_cfg_base, FROM_TYPED(macro->idx)),
-				   HSIO_SD_CFG_RX_RESET,
-				   HSIO_SD_CFG_RX_RESET_SET(1));
+	regmap_update_bits(ctrl->hsio,
+			   SD_ADDR(d->sd_cfg_base, macro->idx),
+			   HSIO_SD_CFG_RX_RESET,
+			   HSIO_SD_CFG_RX_RESET_SET(1));
 
-		usleep_range(1 * USEC_PER_MSEC, 2 * USEC_PER_MSEC);
+	usleep_range(1 * USEC_PER_MSEC, 2 * USEC_PER_MSEC);
 
-		regmap_update_bits(ctrl->hsio,
-				   SD_ADDR(d->sd_cfg_base, FROM_TYPED(macro->idx)),
-				   HSIO_SD_CFG_RX_RESET,
-				   HSIO_SD_CFG_RX_RESET_SET(0));
+	regmap_update_bits(ctrl->hsio,
+			   SD_ADDR(d->sd_cfg_base, macro->idx),
+			   HSIO_SD_CFG_RX_RESET,
+			   HSIO_SD_CFG_RX_RESET_SET(0));
 
-		usleep_range(1 * USEC_PER_MSEC, 2 * USEC_PER_MSEC);
+	usleep_range(1 * USEC_PER_MSEC, 2 * USEC_PER_MSEC);
 
-		return 0;
-	default:
-		return -EINVAL;
-	}
+	return 0;
 }
 
 static const struct phy_ops serdes_ops = {
 	.set_mode	= serdes_set_mode,
-	.set_speed	= serdes_set_speed,
 	.reset		= serdes_reset,
 	.power_off	= serdes_power_off,
 	.calibrate	= serdes_calibrate,
@@ -814,17 +600,12 @@ static int serdes_probe(struct platform_device *pdev)
 
 	ctrl->dev = &pdev->dev;
 	ctrl->mdata = d;
-	ctrl->num_phys = d->num_serdes + d->num_rgmii + d->num_cuphy;
+	ctrl->num_serdes = d->num_serdes;
 	ctrl->hsio = map;
 
-	ctrl->inverted = devm_kcalloc(ctrl->dev, ctrl->mdata->num_serdes,
+	ctrl->inverted = devm_kcalloc(ctrl->dev, d->num_serdes,
 				      sizeof(*ctrl->inverted), GFP_KERNEL);
 	if (!ctrl->inverted)
-		return -ENOMEM;
-
-	ctrl->cuphys = devm_kcalloc(ctrl->dev, d->num_cuphy,
-				    sizeof(*ctrl->cuphys), GFP_KERNEL);
-	if (!ctrl->cuphys)
 		return -ENOMEM;
 
 	ctrl->serdes = devm_kcalloc(ctrl->dev, d->num_serdes,
@@ -832,33 +613,13 @@ static int serdes_probe(struct platform_device *pdev)
 	if (!ctrl->serdes)
 		return -ENOMEM;
 
-	ctrl->rgmiis = devm_kcalloc(ctrl->dev, d->num_rgmii,
-				    sizeof(*ctrl->rgmiis), GFP_KERNEL);
-	if (!ctrl->rgmiis)
-		return -ENOMEM;
-
 	/* Read strapping to set configured reference clock */
 	err = d->ops->init_read_strapping(pdev, ctrl);
 	if (err)
 		return err;
 
-	for (i = 0; i < d->num_cuphy; i++) {
-		err = serdes_phy_create(ctrl, AS_TYPED(CUPHY_TYPE, i),
-					&ctrl->cuphys[i]);
-		if (err)
-			return err;
-	}
-
 	for (i = 0; i < d->num_serdes; i++) {
-		err = serdes_phy_create(ctrl, AS_TYPED(SERDES_TYPE, i),
-					&ctrl->serdes[i]);
-		if (err)
-			return err;
-	}
-
-	for (i = 0; i < d->num_rgmii; i++) {
-		err = serdes_phy_create(ctrl, AS_TYPED(RGMII_TYPE, i),
-					&ctrl->rgmiis[i]);
+		err = serdes_phy_create(ctrl, i, &ctrl->serdes[i]);
 		if (err)
 			return err;
 	}
@@ -877,21 +638,15 @@ static int serdes_probe(struct platform_device *pdev)
 
 	dev_set_drvdata(&pdev->dev, ctrl);
 
-	dev_info(dev, "Driver registered.\n");
-
 	return PTR_ERR_OR_ZERO(devm_of_phy_provider_register(ctrl->dev,
-							     serdes_simple_xlate));
+							      serdes_simple_xlate));
 }
 
 static const struct serdes_match_data lan9645x_match_data = {
 	.num_serdes = 2,
-	.num_cuphy = 5,
-	.num_rgmii = 2,
 	.muxes = lan9645x_serdes_mux,
 	.num_muxes = ARRAY_SIZE(lan9645x_serdes_mux),
 	.hw_cfg = 0x48,
-	.rgmii_cfg_base = 0x54,
-	.dll_cfg_base = 0x64,
 	.sd_cfg_base = 0x8,
 	.mpll_cfg_base = 0x10,
 	.sd_stat_base = 0x14,
