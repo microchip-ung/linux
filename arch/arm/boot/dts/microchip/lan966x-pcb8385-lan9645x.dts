@@ -432,7 +432,6 @@
 						label = "lan0";
 						phy-mode = "gmii";
 						phy-handle = <&cuphy0>;
-						phys = <&lan9645x_serdes 0 LAN9645X_CU(0)>;
 					};
 
 					port@1 {
@@ -440,7 +439,6 @@
 						label = "lan1";
 						phy-mode = "gmii";
 						phy-handle = <&cuphy1>;
-						phys = <&lan9645x_serdes 1 LAN9645X_CU(1)>;
 					};
 
 					port@2 {
@@ -448,7 +446,6 @@
 						label = "lan2";
 						phy-mode = "gmii";
 						phy-handle = <&cuphy2>;
-						phys = <&lan9645x_serdes 2 LAN9645X_CU(2)>;
 					};
 
 					port@3 {
@@ -456,7 +453,6 @@
 						label = "lan3";
 						phy-mode = "gmii";
 						phy-handle = <&cuphy3>;
-						phys = <&lan9645x_serdes 3 LAN9645X_CU(3)>;
 					};
 
 					port@4 {
@@ -464,13 +460,6 @@
 						label = "lan4";
 						phy-mode = "gmii";
 						phy-handle = <&cuphy4>;
-						phys = <&lan9645x_serdes 4 LAN9645X_CU(4)>;
-						//DSA cpu port to maserati npi
-						//ethernet = <&port1>;
-						//fixed-link {
-						//		speed = <1000>;
-						//		full-duplex;
-						//};
 					};
 
 					port@5 {
@@ -498,7 +487,6 @@
 						label = "lan7";
 						phy-handle = <&rgmii0>;
 						phy-mode = "rgmii-id";
-						phys = <&lan9645x_serdes 7 LAN9645X_RGMII(0)>;
 						status = "ok";
 						ethernet = <&port1>;
 					};
@@ -508,7 +496,6 @@
 						label = "lan8";
 						phy-handle = <&rgmii1>;
 						phy-mode = "rgmii-id";
-						phys = <&lan9645x_serdes 8 LAN9645X_RGMII(1)>;
 						status = "ok";
 					};
 				};

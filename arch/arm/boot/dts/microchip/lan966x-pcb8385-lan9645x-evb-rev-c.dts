@@ -371,7 +371,6 @@
 						label = "lan0";
 						phy-mode = "gmii";
 						phy-handle = <&cuphy0>;
-						phys = <&lan9645x_serdes 0 LAN9645X_CU(0)>;
 					};
 
 					lan1: port@1 {
@@ -379,7 +378,6 @@
 						label = "lan1";
 						phy-mode = "gmii";
 						phy-handle = <&cuphy1>;
-						phys = <&lan9645x_serdes 1 LAN9645X_CU(1)>;
 						microchip,led-drive-mode = <1 3>;
 					};
 
@@ -388,7 +386,6 @@
 						label = "lan2";
 						phy-mode = "gmii";
 						phy-handle = <&cuphy2>;
-						phys = <&lan9645x_serdes 2 LAN9645X_CU(2)>;
 					};
 
 					lan3: port@3 {
@@ -396,7 +393,6 @@
 						label = "lan3";
 						phy-mode = "gmii";
 						phy-handle = <&cuphy3>;
-						phys = <&lan9645x_serdes 3 LAN9645X_CU(3)>;
 					};
 
 					lan4: port@4 {
@@ -405,7 +401,6 @@
 						status = "disabled";
 						phy-mode = "gmii";
 						phy-handle = <&cuphy4>;
-						phys = <&lan9645x_serdes 4 LAN9645X_CU(4)>;
 					};
 
 					lan5: port@5 {
@@ -430,7 +425,6 @@
 						reg = <7>;
 						label = "lan7";
 						phy-mode = "rgmii-id";
-						phys = <&lan9645x_serdes 7 LAN9645X_RGMII(0)>;
 						status = "okay";
 						ethernet = <&port2>;
 						fixed-link {
@@ -445,7 +439,6 @@
 						label = "lan8";
 						phy-handle = <&rgmii1>;
 						phy-mode = "rgmii-id";
-						phys = <&lan9645x_serdes 8 LAN9645X_RGMII(1)>;
 						status = "disabled";
 					};
 				};
