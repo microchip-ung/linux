@@ -7,6 +7,83 @@
 
 #include "lan9645x_main.h"
 
+static int lan9645x_port_to_rgmii_idx(int port)
+{
+	/* Port 4 or 7 uses RGMII 0, port 8 uses RGMII 1 */
+	if (port == 4 || port == 7)
+		return 0;
+	if (port == 8)
+		return 1;
+	return -EINVAL;
+}
+
+static void lan9645x_rgmii_setup(struct lan9645x *lan9645x, int port,
+				 phy_interface_t interface, int speed)
+{
+	bool tx_delay = false, rx_delay = false;
+	int idx, rx_idx, tx_idx;
+	u8 tx_clk;
+
+	idx = lan9645x_port_to_rgmii_idx(port);
+	if (idx < 0)
+		return;
+
+	tx_clk = speed == SPEED_1000 ? 1 :
+		 speed == SPEED_100  ? 2 :
+		 speed == SPEED_10   ? 3 :
+				       0;
+
+	/* Configure RGMII TX clock */
+	lan_rmw(HSIO_RGMII_CFG_RGMII_RX_RST_SET(0) |
+		HSIO_RGMII_CFG_RGMII_TX_RST_SET(0) |
+		HSIO_RGMII_CFG_TX_CLK_CFG_SET(tx_clk),
+		HSIO_RGMII_CFG_RGMII_RX_RST |
+		HSIO_RGMII_CFG_RGMII_TX_RST |
+		HSIO_RGMII_CFG_TX_CLK_CFG,
+		lan9645x, HSIO_RGMII_CFG(idx));
+
+	/* Configure MAC-side delays. When the PHY is not responsible for
+	 * delays, the MAC handles them, which is why e.g. RGMII_TXID results
+	 * in rx_delay=true (the PHY handles TX delay, MAC handles RX).
+	 *
+	 * See: Documentation/networking/phy.rst
+	 */
+	if (interface == PHY_INTERFACE_MODE_RGMII ||
+	    interface == PHY_INTERFACE_MODE_RGMII_TXID)
+		rx_delay = true;
+
+	if (interface == PHY_INTERFACE_MODE_RGMII ||
+	    interface == PHY_INTERFACE_MODE_RGMII_RXID)
+		tx_delay = true;
+
+	/* DLL register layout:
+	 * idx*2:     RGMII_<idx>_RX
+	 * idx*2 + 1: RGMII_<idx>_TX
+	 */
+	rx_idx = idx * 2;
+	tx_idx = rx_idx + 1;
+
+	lan_rmw(HSIO_DLL_CFG_DLL_CLK_ENA_SET(1) |
+		HSIO_DLL_CFG_DLL_RST_SET(0) |
+		HSIO_DLL_CFG_DLL_ENA_SET(rx_delay) |
+		HSIO_DLL_CFG_DELAY_ENA_SET(rx_delay),
+		HSIO_DLL_CFG_DLL_CLK_ENA |
+		HSIO_DLL_CFG_DLL_RST |
+		HSIO_DLL_CFG_DLL_ENA |
+		HSIO_DLL_CFG_DELAY_ENA,
+		lan9645x, HSIO_DLL_CFG(rx_idx));
+
+	lan_rmw(HSIO_DLL_CFG_DLL_CLK_ENA_SET(1) |
+		HSIO_DLL_CFG_DLL_RST_SET(0) |
+		HSIO_DLL_CFG_DLL_ENA_SET(tx_delay) |
+		HSIO_DLL_CFG_DELAY_ENA_SET(tx_delay),
+		HSIO_DLL_CFG_DLL_CLK_ENA |
+		HSIO_DLL_CFG_DLL_RST |
+		HSIO_DLL_CFG_DLL_ENA |
+		HSIO_DLL_CFG_DELAY_ENA,
+		lan9645x, HSIO_DLL_CFG(tx_idx));
+}
+
 void lan9645x_phylink_get_caps(struct lan9645x *lan9645x, int port,
 			       struct phylink_config *c)
 {
@@ -42,17 +119,12 @@ void lan9645x_phylink_mac_config(struct lan9645x *lan9645x, int port,
 				 unsigned int mode,
 				 const struct phylink_link_state *state)
 {
-	struct lan9645x_port *p = lan9645x->ports[port];
+	dev_dbg(lan9645x->dev, "%s: port=%d mode=%d interface=%d\n",
+		__func__, port, mode, state->interface);
 
-	dev_dbg(lan9645x->dev, "%s: port=%d mode=%d interface=%d\n", __func__, port, mode, state->interface);
-
-	if (p->serdes) {
-		if (phy_set_mode_ext(p->serdes, PHY_MODE_ETHERNET, state->interface)) {
-			dev_err(lan9645x->dev,
-				"Could not set mode of serdes port=%d mode=%u",
-				port, state->interface);
-		}
-	}
+	if (phy_interface_mode_is_rgmii(state->interface))
+		lan9645x_rgmii_setup(lan9645x, port, state->interface,
+				     state->speed);
 }
 
 static int lan9645x_port_is_cuphy(struct lan9645x *lan9645x, int port,
@@ -80,7 +152,7 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 		rx_pause);
 
 	if (phy_interface_mode_is_rgmii(interface))
-		phy_set_speed(p->serdes, speed);
+		lan9645x_rgmii_setup(lan9645x, port, interface, speed);
 
 	if (duplex == DUPLEX_FULL) {
 		mode |= DEV_MAC_MODE_CFG_FDX_ENA_SET(1);
