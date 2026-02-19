@@ -217,7 +217,7 @@ enum vcap_is1_port_sel_rt {
 	VCAP_IS1_PS_RT_FOLLOW_OTHER = 7,
 };
 
-#ifdef CONFIG_MFD_LAN966X_PCI
+#if IS_ENABLED(CONFIG_FDMA_PCI)
 
 #define PCIE_ATU_REGION_MAX  6
 
@@ -262,7 +262,7 @@ struct lan966x_rx {
 
 	struct page_pool *page_pool;
 
-#ifdef CONFIG_MFD_LAN966X_PCI
+#if IS_ENABLED(CONFIG_FDMA_PCI)
 	struct fdma_pci_atu_region *atu_region;
 #endif
 };
@@ -287,7 +287,7 @@ struct lan966x_tx {
 
 	struct fdma *fdma;
 
-#ifdef CONFIG_MFD_LAN966X_PCI
+#if IS_ENABLED(CONFIG_FDMA_PCI)
 	struct fdma_pci_atu_region *atu_region;
 #endif
 	/* Array of dcbs that are given to the HW */
@@ -468,7 +468,7 @@ struct lan966x {
 	struct lan966x_tx tx;
 	struct napi_struct napi;
 
-#ifdef CONFIG_MFD_LAN966X_PCI
+#if IS_ENABLED(CONFIG_FDMA_PCI)
 	/* fdma pci */
 	struct fdma_pci_atu atu;
 #endif
@@ -762,7 +762,7 @@ void lan966x_fdma_tx_activate(struct lan966x_tx *tx);
 int lan966x_fdma_napi_poll(struct napi_struct *napi, int weight);
 void lan966x_fdma_tx_start(struct lan966x_tx *tx);
 
-#ifdef CONFIG_MFD_LAN966X_PCI
+#if IS_ENABLED(CONFIG_FDMA_PCI)
 extern const struct lan966x_match_data lan966x_pci_desc;
 #endif
 

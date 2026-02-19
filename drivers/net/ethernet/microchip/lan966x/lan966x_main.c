@@ -940,7 +940,7 @@ static int lan966x_probe_port(struct lan966x *lan966x, u32 p,
 
 	port->phylink = phylink;
 
-#ifndef CONFIG_MFD_LAN966X_PCI
+#if !IS_ENABLED(CONFIG_FDMA_PCI)
 	if (lan966x->fdma)
 		dev->xdp_features = NETDEV_XDP_ACT_BASIC |
 				    NETDEV_XDP_ACT_REDIRECT |
@@ -1413,7 +1413,7 @@ static const struct lan966x_match_data lan966x_desc = {
 
 static const struct of_device_id lan966x_match[] = {
 	{ .compatible = "microchip,lan966x-switch", .data = &lan966x_desc },
-#ifdef CONFIG_MFD_LAN966X_PCI
+#if IS_ENABLED(CONFIG_FDMA_PCI)
 	{ .compatible = "microchip,lan966x-pci-switch", .data = &lan966x_pci_desc },
 #endif
 	{ }
