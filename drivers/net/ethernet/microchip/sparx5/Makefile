@@ -66,7 +66,7 @@ sparx5-switch-$(CONFIG_LAN969X_SWITCH) += lan969x/lan969x_regs.o \
 					  lan969x/lan969x_fdma.o \
 					  lan969x/lan969x_redbox.o
 
-sparx5-switch-$(CONFIG_MFD_LAN969X_PCI) += lan969x/lan969x_fdma_pci.o
+sparx5-switch-$(CONFIG_FDMA_PCI) += lan969x/lan969x_fdma_pci.o
 
 # Provide include files
 ccflags-y += -I$(srctree)/drivers/net/ethernet/microchip/vcap

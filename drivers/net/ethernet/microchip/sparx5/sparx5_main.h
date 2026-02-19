@@ -640,7 +640,7 @@ struct sparx5 {
 	bool is_pcie_device;
 	/* L3 Forwarding */
 	struct sparx5_router *router;
-#ifdef CONFIG_MFD_LAN969X_PCI
+#if IS_ENABLED(CONFIG_FDMA_PCI)
 	/* fdma pci */
 	struct fdma_pci_atu atu;
 #endif

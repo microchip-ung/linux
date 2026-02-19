@@ -78,7 +78,7 @@ void sparx5_fdma_rx_activate(struct sparx5 *sparx5, struct sparx5_rx *rx)
 {
 	struct fdma *fdma = &rx->fdma;
 
-#ifdef CONFIG_MFD_LAN969X_PCI
+#if IS_ENABLED(CONFIG_FDMA_PCI)
 		sparx5_fdma_llp_configure(sparx5, fdma->atu_region->base_addr,
 					  fdma->channel_id);
 #else
@@ -130,7 +130,7 @@ void sparx5_fdma_tx_activate(struct sparx5 *sparx5, struct sparx5_tx *tx)
 {
 	struct fdma *fdma = &tx->fdma;
 
-#ifdef CONFIG_MFD_LAN969X_PCI
+#if IS_ENABLED(CONFIG_FDMA_PCI)
 		sparx5_fdma_llp_configure(sparx5, fdma->atu_region->base_addr,
 					  fdma->channel_id);
 #else
