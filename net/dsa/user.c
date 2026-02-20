@@ -3964,6 +3964,19 @@ static int dsa_user_fdb_event(struct net_device *dev,
 		 */
 		if (!ds->assisted_learning_on_cpu_port)
 			return 0;
+
+		/* A LAG with no members cannot carry traffic. Dynamic FDB
+		 * entries are stale and being cleaned up by the bridge -
+		 * skip installing or removing host addresses for them.
+		 * This avoids spurious -ENOENT errors when a LAG loses all
+		 * its DSA member ports (dp->lag cleared) but remains as an
+		 * empty bridge port: the bridge flushes FDB entries, the
+		 * dispatch treats the memberless LAG as foreign, and tries
+		 * to delete host FDB entries that were never created.
+		 */
+		if (netif_is_lag_master(orig_dev) &&
+		    list_empty(&orig_dev->adj_list.lower))
+			return 0;
 	}
 
 	/* Also treat FDB entries on foreign interfaces bridged with us as host
