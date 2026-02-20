@@ -201,7 +201,7 @@ int lan9645x_lag_apply_hash_type(struct lan9645x *lan9645x,
 
 	} else if (ht != info->hash_type) {
 		NL_SET_ERR_MSG_FMT_MOD(extack,
-				       "LAG can not change existing hashtype: %s. Hashtype is global for all LAGs.",
+				       "LAG can not change hashtype: %s. Hashtype is global.",
 				       lag_hash_types[ht]);
 		return -EINVAL;
 	}
