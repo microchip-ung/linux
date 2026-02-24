@@ -6,8 +6,6 @@
 #include <linux/debugfs.h>
 #include <linux/err.h>
 #include <linux/platform_device.h>
-#include <linux/of_platform.h>
-#include <linux/mfd/lan9645x.h>
 #include <linux/kernel.h>
 #include <linux/device.h>
 #include <linux/spi/spi.h>
@@ -15,6 +13,40 @@
 #include <linux/types.h>
 #include <linux/units.h>
 #include <linux/mfd/core.h>
+
+#define LAN9645X_SPI_MAX_PADDING_BYTES 15
+#define LAN9645X_SPI_DEFAULT_PADDING_BYTES 15
+
+/* The IF_CTRL registers hold a 4-bit value, which controls the encoding of
+ * data values using SPI.
+ *
+ * BIT(0): 0: Little-endian byte order, 1:Big-endian byte order
+ * BIT(1): 0: MSB-first bit order, 1:LSB-first bit order
+ * BIT[2:3] = must be 0.
+ *
+ * The default value is 0x1 (Big-endian, MSB).
+ *
+ * It is possible to write to these registers no matter the initial configuration
+ * of the SPI-controller, using the following scheme:
+ *
+ * a) copy the 4-bit value into bits 3:0, 11:8, 19:16, and 27:24.
+ * b) reverse the 4-bit value and copy into bits 7:4, 15:12, 23:20, and 31:28
+ *
+ * desired value    write value     effect
+ *     0x0          0x00000000      LE byte order, MSB-first bit order
+ *     0x1          0x81818181      BE byte order, MSB-first bit order
+ *     0x2          0x42424242      LE byte order, LSB-first bit order
+ *     0x3          0xc3c3c3c3      BE byte order, LSB-first bit order
+ */
+
+#define LAN9645X_SPI_BYTE_ORDER_LE 0x00000000
+#define LAN9645X_SPI_BYTE_ORDER_BE 0x81818181
+
+#ifdef __LITTLE_ENDIAN
+#define LAN9645X_SPI_BYTE_ORDER LAN9645X_SPI_BYTE_ORDER_LE
+#else
+#define LAN9645X_SPI_BYTE_ORDER LAN9645X_SPI_BYTE_ORDER_BE
+#endif
 
 #define DEVCPU_GCB_IF_CTRL (0x0007 << 2)
 #define DEVCPU_GCB_IF_CFGSTAT (0x0008 << 2)
@@ -41,24 +73,48 @@
  */
 #define LAN9645X_REG_ACCESS_TIME_US 2
 
-static const struct resource lan9645x_soc_resources[] = {
-	/* irq controller */
+struct lan9645x_ddata {
+	struct device *dev;
+	struct regmap *gcb;
+
+	int spi_padding_bytes;
+
+	struct regmap *regs;
+	struct dentry *debugfs_root;
+};
+
+static const struct resource lan9645x_irq_resources[] = {
 	DEFINE_RES_REG_NAMED(0x52001c, 0xec, "cpu_intr"),
-	/* pinctrl */
+};
+
+static const struct resource lan9645x_pinctrl_resources[] = {
 	DEFINE_RES_REG_NAMED(0x4028, 0x6c, "gcb_gpio"),
-	/* miim bus 0 */
+};
+
+static const struct resource lan9645x_miim0_resources[] = {
 	DEFINE_RES_REG_NAMED(0x4098, 0x28, "gcb_miim0"),
-	/* miim bus 1 */
+};
+
+static const struct resource lan9645x_miim1_resources[] = {
 	DEFINE_RES_REG_NAMED(0x40bc, 0x28, "gcb_miim1"),
+	/* CHIP_TOP:CUPHY_CFG:CUPHY_COMMON_CFG */
 	DEFINE_RES_REG_NAMED(0x10048, 0x1, "phy"),
-	/* serdes */
+};
+
+static const struct resource lan9645x_serdes_resources[] = {
 	DEFINE_RES_REG_NAMED(0x30000, 0xe4, "hsio"),
 	DEFINE_RES_REG_NAMED(0x10000, 0x134, "chip_top"),
-	/* i2c controller */
+};
+
+static const struct resource lan9645x_i2c_resources[] = {
 	DEFINE_RES_REG_NAMED(0x4c0000, 0x400, "i2c"),
-	/* sgprio controller */
+};
+
+static const struct resource lan9645x_sgpio_resources[] = {
 	DEFINE_RES_REG_NAMED(0x40e0, 0x118, "gcb_sio"),
-	/* switch */
+};
+
+static const struct resource lan9645x_resources[] = {
 	DEFINE_RES_REG_NAMED(0x0, 0x48, "org"),
 	DEFINE_RES_REG_NAMED(0x4000, 0x244, "gcb"),
 	DEFINE_RES_REG_NAMED(0x8000, 0x4c, "qs"),
@@ -97,11 +153,82 @@ static const struct resource lan9645x_soc_resources[] = {
 	DEFINE_RES_REG_NAMED(0x520000, 0x120, "cpu"),
 	DEFINE_RES_REG_NAMED(0x540000, 0x304, "otp"),
 	DEFINE_RES_REG_NAMED(0x560000, 0x1000, "wdt"),
-	/* SI spi controller */
+};
+
+static const struct resource lan9645x_spi_resources[] = {
 	DEFINE_RES_REG_NAMED(0x4000, 0x244, "gcb"),
 #if defined(CONFIG_DEBUG_FS)
 	DEFINE_RES_REG_NAMED(0x0, 0x561001, "all"),
 #endif
+};
+
+static const struct mfd_cell lan9645x_devs[] = {
+	{
+		.name = "lan9645x-irq",
+		.of_compatible = "microchip,lan9645x-oic",
+		.num_resources = ARRAY_SIZE(lan9645x_irq_resources),
+		.resources = lan9645x_irq_resources,
+	},
+	{
+		.name = "lan9645x-pinctrl",
+		.of_compatible = "microchip,lan9645x-pinctrl",
+		.num_resources = ARRAY_SIZE(lan9645x_pinctrl_resources),
+		.resources = lan9645x_pinctrl_resources,
+	},
+	{
+		.name = "lan9645x-i2c",
+		.of_compatible = "mchp,lan9645x-i2c",
+		.num_resources = ARRAY_SIZE(lan9645x_i2c_resources),
+		.resources = lan9645x_i2c_resources,
+	},
+	{
+		.name = "lan9645x-sgpio",
+		.of_compatible = "microchip,lan9645x-sgpio",
+		.of_reg = 0x40d4,
+		.use_of_reg = true,
+		.num_resources = ARRAY_SIZE(lan9645x_sgpio_resources),
+		.resources = lan9645x_sgpio_resources,
+	},
+	{
+		.name = "lan9645x-miim0",
+		.of_compatible = "microchip,lan966x-miim",
+		.of_reg = 0x4098,
+		.use_of_reg = true,
+		.num_resources = ARRAY_SIZE(lan9645x_miim0_resources),
+		.resources = lan9645x_miim0_resources,
+	},
+	{
+		.name = "lan9645x-miim1",
+		.of_compatible = "microchip,lan966x-miim",
+		.of_reg = 0x40bc,
+		.use_of_reg = true,
+		.num_resources = ARRAY_SIZE(lan9645x_miim1_resources),
+		.resources = lan9645x_miim1_resources,
+	},
+	{
+		.name = "lan9645x-serdes",
+		.of_compatible = "microchip,lan9645x-serdes",
+		.num_resources = ARRAY_SIZE(lan9645x_serdes_resources),
+		.resources = lan9645x_serdes_resources,
+	},
+	{
+		.name = "lan9645x-i2c-mux",
+		.of_compatible = "i2c-mux-pinctrl",
+	},
+	{
+		.name = "lan9645x-sfp0",
+		.of_compatible = "sff,sfp",
+	},
+	{
+		.name = "lan9645x-sfp1",
+		.of_compatible = "sff,sfp",
+	},
+	{
+		.name = "lan9645x-switch",
+		.of_compatible = "microchip,lan9645x-switch",
+		.num_resources = ARRAY_SIZE(lan9645x_resources),
+		.resources = lan9645x_resources,
+	},
 };
 
 /* Assume byte-addressed register addresses.
@@ -222,7 +349,13 @@ static int lan9645x_add_regmaps(struct device *dev,
 	return 0;
 }
 
-int lan9645x_spi_chip_reset(struct device *dev)
+static int lan9645x_mfd_add_devs(struct device *dev)
+{
+	return devm_mfd_add_devices(dev, PLATFORM_DEVID_AUTO, lan9645x_devs,
+				    ARRAY_SIZE(lan9645x_devs), NULL, 0, NULL);
+}
+
+static int lan9645x_spi_chip_reset(struct device *dev)
 {
 	struct lan9645x_ddata *ddata = dev_get_drvdata(dev);
 	int ret, val;
@@ -394,8 +527,17 @@ static int lan9645x_spi_probe(struct spi_device *spi)
 		return dev_err_probe(&spi->dev, err,
 				     "Error performing SPI setup\n");
 
-	err = lan9645x_add_regmaps(dev, lan9645x_soc_resources,
-				   ARRAY_SIZE(lan9645x_soc_resources));
+	for (int d = 0; d < ARRAY_SIZE(lan9645x_devs); d++) {
+		const struct mfd_cell *child = &lan9645x_devs[d];
+
+		err = lan9645x_add_regmaps(dev, child->resources,
+					   child->num_resources);
+		if (err)
+			return err;
+	}
+
+	err = lan9645x_add_regmaps(dev, lan9645x_spi_resources,
+				   ARRAY_SIZE(lan9645x_spi_resources));
 	if (err)
 		return err;
 
@@ -432,11 +574,13 @@ static int lan9645x_spi_probe(struct spi_device *spi)
 		return dev_err_probe(dev, err,
 				     "Error initializing SPI bus after reset\n");
 
-	/* We rely on child device probe function to request required regmaps by
-	 * name, from their parent (this device).
-	 * Current implementations use the reg-names property.
-	 */
-	return of_platform_default_populate(dev->of_node, NULL, dev);
+	/* Add child devices and register their regmaps */
+	err = lan9645x_mfd_add_devs(dev);
+	if (err)
+		return dev_err_probe(dev, err,
+				     "Error initializing MFD Lan9645x child devices\n");
+
+	return 0;
 }
 
 static const struct spi_device_id lan9645x_spi_ids[] = {
