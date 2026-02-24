@@ -261,29 +261,28 @@ static int lan9645x_spi_regmap_bus_read(void *context, const void *reg,
 	struct device *dev = context;
 	struct lan9645x_ddata *ddata;
 	const u8 *regu8 = reg;
-	u8 tx[MAX_BUF_SIZE];
-	u8 rx[MAX_BUF_SIZE];
+	u8 buf[MAX_BUF_SIZE];
 	u8 *valu8 = val;
 	int err;
 
 	ddata = dev_get_drvdata(dev);
 
-	tx[0] = regu8[0];
-	tx[1] = regu8[1];
-	tx[2] = regu8[2];
+	buf[0] = regu8[0];
+	buf[1] = regu8[1];
+	buf[2] = regu8[2];
 
-	t.tx_buf = tx;
-	t.rx_buf = rx;
+	t.tx_buf = buf;
+	t.rx_buf = buf;
 	t.len = reg_size + ddata->spi_padding_bytes + val_size;
 
 	err = spi_sync_transfer(to_spi_device(dev), &t, 1);
 	if (err)
 		return err;
 
-	valu8[0] = rx[reg_size + ddata->spi_padding_bytes + 0];
-	valu8[1] = rx[reg_size + ddata->spi_padding_bytes + 1];
-	valu8[2] = rx[reg_size + ddata->spi_padding_bytes + 2];
-	valu8[3] = rx[reg_size + ddata->spi_padding_bytes + 3];
+	valu8[0] = buf[reg_size + ddata->spi_padding_bytes + 0];
+	valu8[1] = buf[reg_size + ddata->spi_padding_bytes + 1];
+	valu8[2] = buf[reg_size + ddata->spi_padding_bytes + 2];
+	valu8[3] = buf[reg_size + ddata->spi_padding_bytes + 3];
 
 	return 0;
 }
