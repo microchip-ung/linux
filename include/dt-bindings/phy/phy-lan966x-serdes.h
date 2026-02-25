@@ -9,6 +9,8 @@
 #define SERDES6G_MAX	SERDES6G(3)
 #define RGMII(x)	(SERDES6G_MAX + 1 + (x))
 #define RGMII_MAX	RGMII(2)
-#define SERDES_MAX	(RGMII_MAX + 1)
+#define RMII(x)		(RGMII_MAX + 1 + (x))
+#define RMII_MAX	RMII(2)
+#define SERDES_MAX	(RMII_MAX + 1)
 
 #endif
