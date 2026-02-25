@@ -3388,7 +3388,8 @@ static int lan8814_hwtstamp(struct mii_timestamper *mii_ts,
 	if (ptp_priv->layer & PTP_CLASS_L2) {
 		rxcfg = PTP_RX_PARSE_CONFIG_LAYER2_EN_;
 		txcfg = PTP_TX_PARSE_CONFIG_LAYER2_EN_;
-	} else if (ptp_priv->layer & PTP_CLASS_L4) {
+	}
+	if (ptp_priv->layer & PTP_CLASS_L4) {
 		rxcfg |= PTP_RX_PARSE_CONFIG_IPV4_EN_ | PTP_RX_PARSE_CONFIG_IPV6_EN_;
 		txcfg |= PTP_TX_PARSE_CONFIG_IPV4_EN_ | PTP_TX_PARSE_CONFIG_IPV6_EN_;
 	}
