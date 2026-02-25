@@ -3408,22 +3408,11 @@ static int lan8814_hwtstamp(struct mii_timestamper *mii_ts,
 	tx_mod = lanphy_read_page_reg(ptp_priv->phydev, 5, PTP_TX_MOD);
 
 	if (ptp_priv->hwts_tx_type == HWTSTAMP_TX_ONESTEP_SYNC) {
-		// lanphy_modify_page_reg(ptp_priv->phydev, LAN8814_PAGE_PORT_REGS,
-		// 		       PTP_TX_MOD,
-		// 		       PTP_TX_MOD_TX_PTP_SYNC_TS_INSERT_,
-		// 		       PTP_TX_MOD_TX_PTP_SYNC_TS_INSERT_);
-
 		tx_mod |= PTP_TX_MOD_TX_PTP_SYNC_TS_INSERT_;
 
 		lan8814_latency_workaround(phydev, &latencies, true);
 		lan8814_latency_config(phydev, &latencies);
-
 	} else if (ptp_priv->hwts_tx_type == HWTSTAMP_TX_ON) {
-		// lanphy_modify_page_reg(ptp_priv->phydev, LAN8814_PAGE_PORT_REGS,
-		// 		       PTP_TX_MOD,
-		// 		       PTP_TX_MOD_TX_PTP_SYNC_TS_INSERT_,
-		// 		       0);
-
 		lan8814_latency_workaround(phydev, &latencies, false);
 		lan8814_latency_config(phydev, &latencies);
 	} else {
