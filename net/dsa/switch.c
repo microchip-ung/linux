@@ -993,6 +993,29 @@ static int dsa_switch_bridge_mrouter(struct dsa_switch *ds,
 	return err;
 }
 
+static int dsa_switch_bridge_mc_disabled(struct dsa_switch *ds,
+					 struct dsa_notifier_mc_disabled_info *info)
+{
+	struct dsa_port *dp;
+	int err;
+
+	if (!ds->ops->port_mc_disabled_set)
+		return ds == info->dp->ds ? -EOPNOTSUPP : 0;
+
+	dsa_switch_for_each_user_port(dp, ds) {
+		if (!dsa_port_bridge_same(dp, info->dp))
+			continue;
+
+		err = ds->ops->port_mc_disabled_set(ds, dp->index,
+						    info->mc_disabled,
+						    info->db);
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+
 static int
 dsa_switch_conduit_state_change(struct dsa_switch *ds,
 				struct dsa_notifier_conduit_state_info *info)
@@ -1065,6 +1088,9 @@ static int dsa_switch_event(struct notifier_block *nb,
 		break;
 	case DSA_NOTIFIER_BRIDGE_MROUTER:
 		err = dsa_switch_bridge_mrouter(ds, info);
+		break;
+	case DSA_NOTIFIER_BRIDGE_MC_DISABLED:
+		err = dsa_switch_bridge_mc_disabled(ds, info);
 		break;
 	case DSA_NOTIFIER_VLAN_ADD:
 		err = dsa_switch_vlan_add(ds, info);

@@ -47,6 +47,7 @@ int dsa_port_vlan_msti(struct dsa_port *dp,
 		       const struct switchdev_vlan_msti *msti);
 int dsa_port_mrouter(struct dsa_port *dp, bool mrouter);
 int dsa_port_bridge_mrouter(struct dsa_port *dp, bool mrouter);
+int dsa_port_bridge_mc_disabled(struct dsa_port *dp, bool mc_disabled);
 int dsa_port_mrp_role(struct dsa_port *dp, u8 mrp_port_role);
 int dsa_port_mtu_change(struct dsa_port *dp, int new_mtu);
 int dsa_port_fdb_add(struct dsa_port *dp, const unsigned char *addr,

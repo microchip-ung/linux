@@ -996,6 +996,20 @@ int dsa_port_bridge_mrouter(struct dsa_port *dp, bool mrouter)
 	return dsa_port_notify(dp, DSA_NOTIFIER_BRIDGE_MROUTER, &info);
 }
 
+int dsa_port_bridge_mc_disabled(struct dsa_port *dp, bool mc_disabled)
+{
+	struct dsa_notifier_mc_disabled_info info = {
+		.dp = dp,
+		.mc_disabled = mc_disabled,
+		.db = {
+			.type = DSA_DB_BRIDGE,
+			.bridge = *dp->bridge,
+		},
+	};
+
+	return dsa_port_notify(dp, DSA_NOTIFIER_BRIDGE_MC_DISABLED, &info);
+}
+
 int dsa_port_mrp_role(struct dsa_port *dp, u8 mrp_port_role)
 {
 	struct dsa_switch *ds = dp->ds;

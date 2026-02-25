@@ -1100,6 +1100,8 @@ struct dsa_switch_ops {
 				struct dsa_db db);
 	int	(*port_mrouter_set)(struct dsa_switch *ds, int port,
 				    bool mrouter, struct dsa_db db);
+	int	(*port_mc_disabled_set)(struct dsa_switch *ds, int port,
+				       bool mc_disabled, struct dsa_db db);
 
 	/*
 	 * RXNFC
