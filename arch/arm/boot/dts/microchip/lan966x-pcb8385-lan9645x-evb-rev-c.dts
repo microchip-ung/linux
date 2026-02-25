@@ -362,6 +362,7 @@
 				interrupt-names = "lan9645x-ptp", "lan9645x-ptp-ext", "lan9645x-ana";
 				pinctrl-0 = <&lan9645x_leds>, <&lan9645x_ptp1_pins>, <&lan9645x_ptp2_pins>;
 				pinctrl-names = "default";
+				microchip,shadow-ports = <4 8>;
 				ethernet-ports {
 					#address-cells = <1>;
 					#size-cells = <0>;
