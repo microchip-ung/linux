@@ -2075,11 +2075,15 @@ static void lan9645x_port_disable(struct dsa_switch *ds, int port)
 	phy_power_off(p->serdes);
 }
 
-static int lan9645x_port_mrouter_set(struct dsa_switch *ds, int port, bool enable)
+static int lan9645x_port_mrouter_set(struct dsa_switch *ds, int port,
+				     bool mrouter, struct dsa_db db)
 {
 	struct lan9645x *lan9645x = ds->priv;
 
-	return lan9645x_mdb_port_mrouter_set(lan9645x, port, enable);
+	if (port == lan9645x->npi)
+		port = CPU_PORT;
+
+	return lan9645x_mdb_port_mrouter_set(lan9645x, port, mrouter);
 }
 
 static int

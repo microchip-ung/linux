@@ -959,6 +959,40 @@ dsa_switch_disconnect_tag_proto(struct dsa_switch *ds,
 	return 0;
 }
 
+static int dsa_switch_mrouter(struct dsa_switch *ds,
+			      struct dsa_notifier_mrouter_info *info)
+{
+	int port = dsa_towards_port(ds, info->dp->ds->index,
+				    info->dp->index);
+
+	if (!ds->ops->port_mrouter_set)
+		return ds == info->dp->ds ? -EOPNOTSUPP : 0;
+
+	return ds->ops->port_mrouter_set(ds, port, info->mrouter, info->db);
+}
+
+static int dsa_switch_bridge_mrouter(struct dsa_switch *ds,
+				     struct dsa_notifier_mrouter_info *info)
+{
+	struct dsa_port *dp;
+	int err = 0;
+
+	if (!ds->ops->port_mrouter_set)
+		return ds == info->dp->ds ? -EOPNOTSUPP : 0;
+
+	dsa_switch_for_each_port(dp, ds) {
+		if (!dsa_port_host_address_match(dp, info->dp))
+			continue;
+
+		err = ds->ops->port_mrouter_set(ds, dp->index,
+						info->mrouter, info->db);
+		if (err)
+			break;
+	}
+
+	return err;
+}
+
 static int
 dsa_switch_conduit_state_change(struct dsa_switch *ds,
 				struct dsa_notifier_conduit_state_info *info)
@@ -1025,6 +1059,12 @@ static int dsa_switch_event(struct notifier_block *nb,
 		break;
 	case DSA_NOTIFIER_HOST_MDB_DEL:
 		err = dsa_switch_host_mdb_del(ds, info);
+		break;
+	case DSA_NOTIFIER_MROUTER:
+		err = dsa_switch_mrouter(ds, info);
+		break;
+	case DSA_NOTIFIER_BRIDGE_MROUTER:
+		err = dsa_switch_bridge_mrouter(ds, info);
 		break;
 	case DSA_NOTIFIER_VLAN_ADD:
 		err = dsa_switch_vlan_add(ds, info);

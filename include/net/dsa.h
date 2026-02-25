@@ -237,6 +237,7 @@ struct dsa_bridge {
 	struct net_device *dev;
 	unsigned int num;
 	bool tx_fwd_offload;
+	bool mrouter;
 	refcount_t refcount;
 };
 
@@ -1098,7 +1099,8 @@ struct dsa_switch_ops {
 				const struct switchdev_obj_port_mdb *mdb,
 				struct dsa_db db);
 	int	(*port_mrouter_set)(struct dsa_switch *ds, int port,
-				    bool enable);
+				    bool mrouter, struct dsa_db db);
+
 	/*
 	 * RXNFC
 	 */
