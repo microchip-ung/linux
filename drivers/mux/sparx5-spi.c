@@ -137,4 +137,3 @@ static struct platform_driver mux_sparx5_driver = {
 	.probe = mux_sparx5_probe,
 };
 module_platform_driver(mux_sparx5_driver);
-MODULE_LICENSE("GPL");
