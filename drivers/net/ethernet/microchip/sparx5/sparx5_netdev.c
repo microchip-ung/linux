@@ -500,8 +500,6 @@ int sparx5_register_netdevs(struct sparx5 *sparx5)
 
 			port_ndev->dev.of_node = sparx5->ports[portno]->of_node;
 
-			pr_info("of_node: %s", port_ndev->dev.of_node->name);
-
 			err = register_netdev(port_ndev);
 			if (err) {
 				dev_err(sparx5->dev,
