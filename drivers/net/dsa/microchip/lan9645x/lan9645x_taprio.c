@@ -431,24 +431,20 @@ static int lan9645x_taprio_gcl_setup(struct lan9645x_port *port, int list,
 	if (base < 0)
 		return -EINVAL;
 
-	for (i = 0; i < TAS_ENTRIES_PER_PORT; i++) {
-		lan_rmw(TAS_TAS_CFG_CTRL_LIST_NUM_SET(list + i),
-			TAS_TAS_CFG_CTRL_LIST_NUM, lan9645x, TAS_TAS_CFG_CTRL);
+	lan_rmw(TAS_TAS_CFG_CTRL_LIST_NUM_SET(list),
+		TAS_TAS_CFG_CTRL_LIST_NUM, lan9645x, TAS_TAS_CFG_CTRL);
 
-		lan_rmw(TAS_TAS_LIST_BASE_ADDR_LIST_BASE_ADDR_SET(base),
-			TAS_TAS_LIST_BASE_ADDR_LIST_BASE_ADDR, lan9645x,
-			TAS_TAS_LIST_BASE_ADDR);
+	lan_rmw(TAS_TAS_LIST_BASE_ADDR_LIST_BASE_ADDR_SET(base),
+		TAS_TAS_LIST_BASE_ADDR_LIST_BASE_ADDR, lan9645x,
+		TAS_TAS_LIST_BASE_ADDR);
 
-		/* Associate TAS list with physical port number and
-		 * scheduler element.
-		 */
-		lan_rmw(TAS_TAS_LIST_CFG_LIST_PORT_NUM_SET(port->chip_port) |
-			TAS_TAS_LIST_CFG_LIST_HSCH_POS_SET(port->chip_port),
-			TAS_TAS_LIST_CFG_LIST_PORT_NUM |
-			TAS_TAS_LIST_CFG_LIST_HSCH_POS,
-			lan9645x,
-			TAS_TAS_LIST_CFG);
-	}
+	/* Associate TAS list with physical port number and scheduler element */
+	lan_rmw(TAS_TAS_LIST_CFG_LIST_PORT_NUM_SET(port->chip_port) |
+		TAS_TAS_LIST_CFG_LIST_HSCH_POS_SET(port->chip_port),
+		TAS_TAS_LIST_CFG_LIST_PORT_NUM |
+		TAS_TAS_LIST_CFG_LIST_HSCH_POS,
+		lan9645x,
+		TAS_TAS_LIST_CFG);
 
 	gcl_next = base;
 	for (i = 0; i < qopt->num_entries; i++) {
