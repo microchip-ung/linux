@@ -5,6 +5,7 @@
 #include <linux/debugfs.h>
 #include <linux/platform_device.h>
 #include <linux/phy/phy.h>
+#include <net/pkt_sched.h>
 
 #include "lan9645x_main.h"
 #include "lan9645x_stats.h"
@@ -1923,6 +1924,17 @@ static int lan9645x_port_setup_tc(struct dsa_switch *ds, int port,
 		if (lan9645x->tsn_dis)
 			return -ENOTSUPP;
 		return lan9645x_tc_setup_qdisc_taprio(ds, port, type_data);
+	case TC_QUERY_CAPS: {
+		struct tc_query_caps_base *base = type_data;
+
+		if (base->type == TC_SETUP_QDISC_TAPRIO) {
+			struct tc_taprio_caps *caps = base->caps;
+
+			caps->supports_queue_max_sdu = true;
+			return 0;
+		}
+		return -EOPNOTSUPP;
+	}
 	/* BLOCK and FT handled by dsa */
 	default:
 		return -ENOTSUPP;

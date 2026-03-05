@@ -79,6 +79,7 @@
 #define TAS_MAX_CYCLE_TIME_NS ((1 * NSEC_PER_SEC) - 1)
 #define TAS_NUM_GCL		900
 #define TAS_ENTRIES_PER_PORT 2
+#define TAS_QMAXSDU_GRANULARITY		64
 
 /* TAS link speeds for calculation of guard band: */
 enum lan9645x_taprio_link_speed {
@@ -473,6 +474,112 @@ static int lan9645x_taprio_gcl_setup(struct lan9645x_port *port, int list,
 	return 0;
 }
 
+/* Configure QMAXSDU per-TC to set the guard band size.
+ *
+ * Guard band time = (QMAXSDU_GRANULARITY * 8) * QMAXSDU_VAL / LINK_SPEED.
+ *
+ * Use max_sdu[tc] when provided by user, otherwise fall back to the port MTU +
+ * L2 overhead.
+ */
+static void lan9645x_taprio_guard_bands_update(struct lan9645x_port *port,
+					       struct tc_taprio_qopt_offload *qopt)
+{
+	struct dsa_port *dp = dsa_to_port(port->lan9645x->ds, port->chip_port);
+	struct lan9645x *lan9645x = port->lan9645x;
+	struct net_device *dev = dp->user;
+	u32 max_guard_band = 0;
+	int tc, i;
+
+	for (tc = 0; tc < LAN9645X_NUM_TC; tc++) {
+		u32 max_sdu_bytes, maxsdu_val, maxsdu_lsb;
+
+		max_sdu_bytes = dev->mtu + ETH_HLEN + 2 * VLAN_HLEN +
+				ETH_FCS_LEN;
+
+		if (qopt && qopt->max_sdu[tc])
+			max_sdu_bytes = qopt->max_sdu[tc] + ETH_HLEN +
+					2 * VLAN_HLEN + ETH_FCS_LEN;
+
+		maxsdu_val = max_sdu_bytes / TAS_QMAXSDU_GRANULARITY;
+		maxsdu_lsb = max_sdu_bytes % TAS_QMAXSDU_GRANULARITY;
+
+		/* Track the largest guard band across all TCs for validation */
+		if (maxsdu_val > max_guard_band)
+			max_guard_band = maxsdu_val;
+
+		lan_rmw(TAS_TAS_QMAXSDU_CFG_QMAXSDU_VAL_SET(maxsdu_val),
+			TAS_TAS_QMAXSDU_CFG_QMAXSDU_VAL,
+			lan9645x,
+			TAS_TAS_QMAXSDU_CFG(port->chip_port, tc));
+
+		lan_rmw(TAS_QMAXSDU_DISC_CFG_QMAXSDU_LSB_SET(maxsdu_lsb) |
+			TAS_QMAXSDU_DISC_CFG_QMAXSDU_DISC_ENA_SET(!!maxsdu_val),
+			TAS_QMAXSDU_DISC_CFG_QMAXSDU_LSB |
+			TAS_QMAXSDU_DISC_CFG_QMAXSDU_DISC_ENA,
+			lan9645x,
+			TAS_QMAXSDU_DISC_CFG(port->chip_port, tc));
+	}
+
+	/* Warn if any GCL entry interval is shorter than the largest guard
+	 * band across all TCs.  This is a conservative check: the actual
+	 * guard band for a given entry depends on which TCs are gated, so
+	 * the effective guard band may be smaller than max_guard_band.
+	 *
+	 * Convert max_guard_band from QMAXSDU_VAL units to nanoseconds:
+	 * gb_time_ns = 512000 * QMAXSDU_VAL / speed_mbps
+	 * Skip when the port speed is unknown (port down).
+	 */
+	if (!qopt)
+		return;
+
+	switch (port->speed) {
+	case LAN9645X_SPEED_10:
+		max_guard_band *= 51200;
+		break;
+	case LAN9645X_SPEED_100:
+		max_guard_band *= 5120;
+		break;
+	case LAN9645X_SPEED_1000:
+		max_guard_band *= 512;
+		break;
+	case LAN9645X_SPEED_2500:
+		/* 512000 / 2500 = 204.8, round up */
+		max_guard_band *= 205;
+		break;
+	default:
+		return;
+	}
+
+	for (i = 0; i < qopt->num_entries; i++) {
+		if (qopt->entries[i].interval < max_guard_band)
+			dev_warn(lan9645x->dev,
+				 "port %d: GCL entry %d interval %u ns shorter than worst-case guard band %u ns (max across all TCs)\n",
+				 port->chip_port, i,
+				 qopt->entries[i].interval,
+				 max_guard_band);
+	}
+}
+
+static void lan9645x_taprio_guard_bands_reset(struct lan9645x_port *port)
+{
+	struct lan9645x *lan9645x = port->lan9645x;
+	int tc;
+
+	for (tc = 0; tc < LAN9645X_NUM_TC; tc++) {
+		lan_rmw(TAS_TAS_QMAXSDU_CFG_QMAXSDU_VAL_SET(0),
+			TAS_TAS_QMAXSDU_CFG_QMAXSDU_VAL,
+			lan9645x,
+			TAS_TAS_QMAXSDU_CFG(port->chip_port, tc));
+
+		lan_rmw(TAS_QMAXSDU_DISC_CFG_QMAXSDU_LSB_SET(0) |
+			TAS_QMAXSDU_DISC_CFG_QMAXSDU_DISC_ENA_SET(0),
+			TAS_QMAXSDU_DISC_CFG_QMAXSDU_LSB |
+			TAS_QMAXSDU_DISC_CFG_QMAXSDU_DISC_ENA,
+			lan9645x,
+			TAS_QMAXSDU_DISC_CFG(port->chip_port, tc));
+	}
+}
+
 int lan9645x_taprio_add(struct lan9645x *lan9645x, int port,
 			struct tc_taprio_qopt_offload *qopt)
 {
@@ -486,25 +593,35 @@ int lan9645x_taprio_add(struct lan9645x *lan9645x, int port,
 
 	mutex_lock(&lan9645x->qos_lock);
 	if (cycle_time > TAS_MAX_CYCLE_TIME_NS) {
+		NL_SET_ERR_MSG_MOD(qopt->extack,
+				   "Cycle time exceeds maximum (999999999 ns)");
 		err = -EINVAL;
 		goto out;
 	}
 	for (i = 0; i < qopt->num_entries; i++) {
 		if (qopt->entries[i].interval < TAS_MIN_CYCLE_TIME_NS) {
+			NL_SET_ERR_MSG_MOD(qopt->extack,
+					   "Entry interval below minimum (1 us)");
 			err = -EINVAL;
 			goto out;
 		}
 		if (qopt->entries[i].interval > TAS_MAX_CYCLE_TIME_NS) {
+			NL_SET_ERR_MSG_MOD(qopt->extack,
+					   "Entry interval exceeds maximum");
 			err = -EINVAL;
 			goto out;
 		}
 		calculated_cycle_time += qopt->entries[i].interval;
 	}
 	if (calculated_cycle_time > TAS_MAX_CYCLE_TIME_NS) {
+		NL_SET_ERR_MSG_MOD(qopt->extack,
+				   "Total entry time exceeds maximum");
 		err = -EINVAL;
 		goto out;
 	}
 	if (cycle_time < calculated_cycle_time) {
+		NL_SET_ERR_MSG_MOD(qopt->extack,
+				   "Cycle time less than sum of entry intervals");
 		err = -EINVAL;
 		goto out;
 	}
@@ -514,6 +631,8 @@ int lan9645x_taprio_add(struct lan9645x *lan9645x, int port,
 	/* Select an appropriate entry to use */
 	err = lan9645x_taprio_list_find(p, &new_list, &obsolete);
 	if (err) {
+		NL_SET_ERR_MSG_MOD(qopt->extack,
+				   "No suitable TAS list in ADMIN state");
 		err = -EINVAL;
 		goto out;
 	}
@@ -521,9 +640,14 @@ int lan9645x_taprio_add(struct lan9645x *lan9645x, int port,
 	/* Setup GCL entries */
 	err = lan9645x_taprio_gcl_setup(p, new_list, qopt);
 	if (err) {
+		NL_SET_ERR_MSG_MOD(qopt->extack,
+				   "Failed to setup GCL entries");
 		err = -EINVAL;
 		goto out;
 	}
+
+	/* Configure guard bands from max_sdu or port MTU */
+	lan9645x_taprio_guard_bands_update(p, qopt);
 
 	/* Setup TAS list */
 	ts = ktime_to_timespec64(base_time);
@@ -563,6 +687,10 @@ int lan9645x_taprio_del(struct lan9645x *lan9645x, int port)
 		goto out;
 
 	err = lan9645x_taprio_shutdown_operating(p);
+	if (err)
+		goto out;
+
+	lan9645x_taprio_guard_bands_reset(p);
 out:
 	mutex_unlock(&lan9645x->qos_lock);
 
