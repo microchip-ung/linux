@@ -709,7 +709,7 @@ void lan9645x_taprio_init(struct lan9645x *lan9645x)
 	       TAS_TAS_STATEMACHINE_CFG);
 
 	/* For now we always use guard band on all queues */
-	lan_rmw(TAS_TAS_CFG_CTRL_LIST_NUM_MAX_SET(num_tas_lists) |
+	lan_rmw(TAS_TAS_CFG_CTRL_LIST_NUM_MAX_SET(num_tas_lists - 1) |
 		TAS_TAS_CFG_CTRL_ALWAYS_GUARD_BAND_SCH_Q_SET(1),
 		TAS_TAS_CFG_CTRL_LIST_NUM_MAX |
 		TAS_TAS_CFG_CTRL_ALWAYS_GUARD_BAND_SCH_Q,
