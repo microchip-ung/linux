@@ -357,14 +357,20 @@ static int lan9645x_taprio_gcl_setup(struct lan9645x_port *port, int list,
  *
  * Use max_sdu[tc] when provided by user, otherwise fall back to the port MTU +
  * L2 overhead.
+ *
+ * For preemptible TCs (when frame preemption is active), guard banding is
+ * disabled via SCH_TRAFFIC_QUEUES and MAC HOLD is used instead.  The
+ * HOLDADVANCE register controls the hold timing.
  */
 static void lan9645x_taprio_guard_bands_update(struct lan9645x_port *p,
 					       struct tc_taprio_qopt_offload *qopt)
 {
 	struct dsa_port *dp = dsa_to_port(p->lan9645x->ds, p->chip_port);
 	struct lan9645x *lan9645x = p->lan9645x;
+	u8 preemptible_tcs = p->fp.admin_status;
 	struct net_device *dev = dp->user;
 	u32 max_guard_band = 0;
+	u8 holdadv;
 	int tc, i;
 
 	for (tc = 0; tc < LAN9645X_NUM_TC; tc++) {
@@ -396,6 +402,23 @@ static void lan9645x_taprio_guard_bands_update(struct lan9645x_port *p,
 			lan9645x,
 			TAS_QMAXSDU_DISC_CFG(p->chip_port, tc));
 	}
+
+	/* Configure frame preemption TAS registers unconditionally.
+	 * SCH_TRAFFIC_QUEUES marks queues where guard banding is disabled
+	 * (preemptible queues use MAC HOLD instead).  HOLDADVANCE controls
+	 * the hold timing based on minimum fragment size.
+	 */
+	holdadv = preemptible_tcs ? p->fp.add_frag_size + 1 : 0;
+
+	lan_rmw(TAS_TAS_PROFILE_CONFIG_SCH_TRAFFIC_QUEUES_SET(preemptible_tcs),
+		TAS_TAS_PROFILE_CONFIG_SCH_TRAFFIC_QUEUES,
+		lan9645x,
+		TAS_TAS_PROFILE_CONFIG(p->chip_port));
+
+	lan_rmw(TAS_TAS_PROFILE_CONFIG_HOLDADVANCE_SET(holdadv),
+		TAS_TAS_PROFILE_CONFIG_HOLDADVANCE,
+		lan9645x,
+		TAS_TAS_PROFILE_CONFIG(p->chip_port));
 
 	/* Warn if any GCL entry interval is shorter than the largest guard
 	 * band across all TCs.  This is a conservative check: the actual
@@ -455,6 +478,17 @@ static void lan9645x_taprio_guard_bands_reset(struct lan9645x_port *p)
 			lan9645x,
 			TAS_QMAXSDU_DISC_CFG(p->chip_port, tc));
 	}
+
+	/* Clear frame preemption TAS configuration */
+	lan_rmw(TAS_TAS_PROFILE_CONFIG_SCH_TRAFFIC_QUEUES_SET(0),
+		TAS_TAS_PROFILE_CONFIG_SCH_TRAFFIC_QUEUES,
+		lan9645x,
+		TAS_TAS_PROFILE_CONFIG(p->chip_port));
+
+	lan_rmw(TAS_TAS_PROFILE_CONFIG_HOLDADVANCE_SET(0),
+		TAS_TAS_PROFILE_CONFIG_HOLDADVANCE,
+		lan9645x,
+		TAS_TAS_PROFILE_CONFIG(p->chip_port));
 }
 
 int lan9645x_taprio_add(struct lan9645x *lan9645x, int port,
@@ -691,9 +725,9 @@ void lan9645x_taprio_deinit(struct lan9645x *lan9645x)
 		lan9645x_taprio_del(lan9645x, port);
 }
 
-int lan9645x_taprio_speed_set(struct lan9645x_port *port, int speed)
+int lan9645x_taprio_speed_set(struct lan9645x_port *p, int speed)
 {
-	struct lan9645x *lan9645x = port->lan9645x;
+	struct lan9645x *lan9645x = p->lan9645x;
 	u8 spd;
 
 	/* Update TAS profile speed */
@@ -718,13 +752,23 @@ int lan9645x_taprio_speed_set(struct lan9645x_port *port, int speed)
 
 	lan_rmw(TAS_TAS_PROFILE_CONFIG_LINK_SPEED_SET(spd),
 		TAS_TAS_PROFILE_CONFIG_LINK_SPEED, lan9645x,
-		TAS_TAS_PROFILE_CONFIG(port->chip_port));
+		TAS_TAS_PROFILE_CONFIG(p->chip_port));
 
 	/* Recalculate guard bands for the new link speed */
-	if (port->tas.taprio)
-		lan9645x_taprio_guard_bands_update(port, port->tas.taprio);
+	if (p->tas.taprio)
+		lan9645x_taprio_guard_bands_update(p, p->tas.taprio);
 
 	mutex_unlock(&lan9645x->qos_lock);
 
 	return 0;
+}
+
+void lan9645x_taprio_guard_bands_recalc(struct lan9645x_port *p)
+{
+	struct lan9645x *lan9645x = p->lan9645x;
+
+	mutex_lock(&lan9645x->qos_lock);
+	if (p->tas.taprio)
+		lan9645x_taprio_guard_bands_update(p, p->tas.taprio);
+	mutex_unlock(&lan9645x->qos_lock);
 }

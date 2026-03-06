@@ -115,6 +115,12 @@ void lan9645x_fp_change_preemptable_tcs(struct lan9645x_port *p,
 	c.admin_status = preemptible_tcs;
 	__lan9645x_fp_set(p, &c, netif_carrier_ok(dev));
 	mutex_unlock(&p->fp_lock);
+
+	/* Recalculate TAS guard bands: preemptible TCs use MAC HOLD
+	 * instead of guard banding, so the guard band configuration
+	 * changes when the preemptible TC set changes.
+	 */
+	lan9645x_taprio_guard_bands_recalc(p);
 }
 
 int lan9645x_fp_status(struct lan9645x_port *p,

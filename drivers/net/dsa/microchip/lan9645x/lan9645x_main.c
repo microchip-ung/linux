@@ -182,9 +182,13 @@ static int lan9645x_port_set_maxlen(struct lan9645x *lan9645x, int port,
 
 static int lan9645x_change_mtu(struct dsa_switch *ds, int port, int new_mtu)
 {
+	struct lan9645x_port *p = lan9645x_to_port(ds->priv, port);
 	struct lan9645x *lan9645x = ds->priv;
 
 	lan9645x_port_set_maxlen(lan9645x, port, new_mtu);
+
+	/* Guard band size depends on MTU when max_sdu is not configured */
+	lan9645x_taprio_guard_bands_recalc(p);
 
 	return 0;
 }

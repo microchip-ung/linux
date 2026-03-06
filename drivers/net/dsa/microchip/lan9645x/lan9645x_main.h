@@ -1232,6 +1232,7 @@ int lan9645x_taprio_del(struct lan9645x *lan9645x, int port);
 void lan9645x_taprio_init(struct lan9645x *lan9645x);
 void lan9645x_taprio_deinit(struct lan9645x *lan9645x);
 int lan9645x_taprio_speed_set(struct lan9645x_port *port, int speed);
+void lan9645x_taprio_guard_bands_recalc(struct lan9645x_port *port);
 void lan9645x_new_base_time(struct lan9645x *lan9645x, const u32 cycle_time,
 			    const ktime_t org_base_time,
 			    ktime_t *new_base_time);
