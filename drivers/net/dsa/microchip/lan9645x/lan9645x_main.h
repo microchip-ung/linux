@@ -32,6 +32,7 @@
 #define CPU_PORT		9
 #define NUM_PRIO_QUEUES		8
 #define LAN9645X_NUM_TC		8
+#define LAN9645X_TAS_NUM_GCL	900
 
 /* 0-87 : Queue scheduler elements
  * 8 queues per egress port
@@ -525,6 +526,7 @@ struct lan9645x {
 	DECLARE_BITMAP(pol_idx_mask, LAN9645X_NUM_POL_POOL);
 	DECLARE_BITMAP(sfi_idx_mask, LAN9645X_PSFP_NUM_SFI);
 	DECLARE_BITMAP(sgi_idx_mask, LAN9645X_PSFP_NUM_SGI);
+	DECLARE_BITMAP(tas_gcl_bitmap, LAN9645X_TAS_NUM_GCL);
 	struct mutex qos_lock; /* Global QOS: dscp, qos policers */
 	/* Lock SFI/SGI allocation, and tables SG_ACCESS/SFID_ACCESS
 	 *
@@ -648,6 +650,20 @@ struct lan9645x_port {
 
 	struct mutex qos_lock; /* Port QOS config */
 	struct lan9645x_port_qos qos;
+
+	/* Time-Aware Shaper (TAS / taprio) */
+	struct {
+		struct tc_taprio_qopt_offload *taprio; /* Stored schedule */
+		int list_base;    /* Pre-computed TAS list base index */
+		int active_list;  /* Which list is OPERATING, or -1 */
+		/* Per-list GCL tracking for deferred freeing. Entries are
+		 * only freed when HW confirms the list is in ADMIN state.
+		 */
+		struct {
+			int gcl_base;
+			int gcl_count;
+		} lists[2];
+	} tas;
 
 	/* Frame preemption */
 	struct lan9645x_fp_port_conf fp;
@@ -1209,7 +1225,7 @@ void lan9645x_ptp_log_rx(struct lan9645x *lan9645x, struct sk_buff *skb,
 int lan9645x_ptp_log_init(struct lan9645x *lan9645x);
 void lan9645x_ptp_log_deinit(struct lan9645x *lan9645x);
 
-/* lan9645x_tas.c */
+/* lan9645x_taprio.c */
 int lan9645x_taprio_add(struct lan9645x *lan9645x, int port,
 			struct tc_taprio_qopt_offload *qopt);
 int lan9645x_taprio_del(struct lan9645x *lan9645x, int port);
