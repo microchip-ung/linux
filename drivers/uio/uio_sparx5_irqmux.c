@@ -322,15 +322,6 @@ static int uio_sparx5_irqmux_probe(struct platform_device *pdev)
 			priv->info.mem[i].addr = res->start;
 			priv->info.mem[i].size = sz;
 			priv->info.mem[i].name = res->name;
-			priv->info.mem[i].internal_addr =
-				devm_ioremap(dev, priv->info.mem[i].addr,
-					     priv->info.mem[i].size);
-			if (!priv->info.mem[i].internal_addr) {
-				dev_err(dev,
-					"failed to map chip region %d sz %zd\n",
-					i, sz);
-				return -ENODEV;
-			}
 		}
 	}
 
