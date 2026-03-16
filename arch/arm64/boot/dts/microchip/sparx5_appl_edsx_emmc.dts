@@ -24,6 +24,8 @@
 };
 
 &mux {
+	microchip,si2_interface;
+
 	mux@0 {
 		reg = <0>;
 		microchip,bus-interface = <0>;
