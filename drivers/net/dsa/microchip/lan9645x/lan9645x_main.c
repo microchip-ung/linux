@@ -54,6 +54,14 @@ static const char *lan9645x_resource_names[NUM_TARGETS] = {
 	[TARGET_WDT]          = "wdt",
 };
 
+struct lan9645x_host_flood_work {
+	struct work_struct work;
+	struct lan9645x *lan9645x;
+	int port;
+	bool uc;
+	bool mc;
+};
+
 static struct regmap *lan9645x_request_regmap(struct lan9645x *lan9645x,
 					      enum lan9645x_target target)
 {
@@ -1040,6 +1048,78 @@ void lan9645x_update_fwd_mask(struct lan9645x *lan9645x, bool joining)
 		lan9645x_cut_through_fwd(lan9645x);
 }
 
+static void __lan9645x_port_set_host_flood(struct lan9645x *lan9645x, int port,
+					   bool uc, bool mc)
+{
+	bool mc_ena, uc_ena;
+
+	lockdep_assert_held(&lan9645x->fwd_domain_lock);
+
+	/* We want promiscuous and all_multi to affect standalone ports, for
+	 * debug and test purposes.
+	 *
+	 * However, the linux bridge is incredibly eager to put bridged ports in
+	 * promiscuous mode.
+	 *
+	 * This is unfortunate since lan9645x flood masks are global and not per
+	 * ingress port. When some port triggers unknown uc/mc to the CPU, the
+	 * traffic from any port is forwarded to the CPU.
+	 *
+	 * If the host CPU is weak, this can cause tremendous stress. Therefore,
+	 * we compromise by ignoring this host flood request for bridged ports.
+	 */
+	if (lan9645x_port_is_bridged(lan9645x_to_port(lan9645x, port)))
+		return;
+
+	if (uc)
+		lan9645x->host_flood_uc_mask |= BIT(port);
+	else
+		lan9645x->host_flood_uc_mask &= ~BIT(port);
+
+	if (mc)
+		lan9645x->host_flood_mc_mask |= BIT(port);
+	else
+		lan9645x->host_flood_mc_mask &= ~BIT(port);
+
+	uc_ena = !!lan9645x->host_flood_uc_mask;
+	lan9645x_port_pgid_set(lan9645x, PGID_UC, CPU_PORT, uc_ena);
+
+	mc_ena = !!lan9645x->host_flood_mc_mask;
+	lan9645x_port_pgid_set(lan9645x, PGID_MC, CPU_PORT, mc_ena);
+	lan9645x_port_pgid_set(lan9645x, PGID_MCIPV4, CPU_PORT, mc_ena);
+	lan9645x_port_pgid_set(lan9645x, PGID_MCIPV6, CPU_PORT, mc_ena);
+}
+
+static void lan9645x_host_flood_work_fn(struct work_struct *work)
+{
+	struct lan9645x_host_flood_work *w =
+		container_of(work, struct lan9645x_host_flood_work, work);
+
+	mutex_lock(&w->lan9645x->fwd_domain_lock);
+	__lan9645x_port_set_host_flood(w->lan9645x, w->port, w->uc, w->mc);
+	mutex_unlock(&w->lan9645x->fwd_domain_lock);
+	kfree(w);
+}
+
+/* Called in atomic context */
+static void lan9645x_port_set_host_flood(struct dsa_switch *ds, int port,
+					 bool uc, bool mc)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	struct lan9645x_host_flood_work *w;
+
+	w = kzalloc(sizeof(*w), GFP_ATOMIC);
+	if (!w)
+		return;
+
+	INIT_WORK(&w->work, lan9645x_host_flood_work_fn);
+	w->lan9645x = lan9645x;
+	w->port = port;
+	w->uc = uc;
+	w->mc = mc;
+	schedule_work(&w->work);
+}
+
 static int lan9645x_port_bridge_join(struct dsa_switch *ds, int port,
 				     struct dsa_bridge bridge,
 				     bool *tx_fwd_offload,
@@ -1055,10 +1135,18 @@ static int lan9645x_port_bridge_join(struct dsa_switch *ds, int port,
 		return -EBUSY;
 	}
 
+	mutex_lock(&lan9645x->fwd_domain_lock);
+
 	if (!lan9645x->bridge_mask)
 		lan9645x->bridge = bridge.dev;
 
+	/* The bridge puts ports in IFF_ALLMULTI before calling
+	 * port_bridge_join, so clean up before the port is marked as bridged.
+	 */
+	__lan9645x_port_set_host_flood(lan9645x, port, false, false);
 	lan9645x->bridge_mask |= BIT(lan9645x_port->chip_port);
+
+	mutex_unlock(&lan9645x->fwd_domain_lock);
 
 	/* stp_state_set updates forwarding */
 
@@ -1102,45 +1190,6 @@ static void lan9645x_port_bridge_stp_state_set(struct dsa_switch *ds, int port,
 	lan9645x_port_stp_state_set(lan9645x, port, state);
 }
 
-static void lan9645x_port_set_host_flood(struct dsa_switch *ds, int port,
-					 bool uc, bool mc)
-{
-	struct lan9645x *lan9645x = ds->priv;
-	bool mc_ena, uc_ena;
-
-	dev_dbg(lan9645x->dev, "port=%d uc=%u mc=%u", port, uc, mc);
-
-	/* We want promiscuous and all_multi to affect standalone ports.
-	 *
-	 * However, the linux bridge will put bridged ports in promiscuous mode
-	 * in almost all circumstances (> 1 port in LEARNING or FLOOD mode).
-	 * This is unfortunate since we can only accept all frames by adding the
-	 * CPU_PORT to the global flood masks, so all unknown UC, or mc data
-	 * frames, always get sent the CPU.
-	 *
-	 * If the host CPU is weak, this can cause tremendous stress. Therefore,
-	 * we simply ignore this host flood request for bridged ports.
-	 *
-	 */
-	if (lan9645x_port_is_bridged(lan9645x_to_port(lan9645x, port)))
-		return;
-
-	if (uc)
-		lan9645x->host_flood_uc_mask |= BIT(port);
-	else
-		lan9645x->host_flood_uc_mask &= ~BIT(port);
-
-	if (mc)
-		lan9645x->host_flood_mc_mask |= BIT(port);
-	else
-		lan9645x->host_flood_mc_mask &= ~BIT(port);
-
-	uc_ena = !!lan9645x->host_flood_uc_mask;
-	lan9645x_port_pgid_set(lan9645x, PGID_UC, CPU_PORT, uc_ena);
-
-	mc_ena = !!lan9645x->host_flood_mc_mask;
-	lan9645x_port_pgid_set(lan9645x, PGID_MC, CPU_PORT, mc_ena);
-}
 
 static void lan9645x_port_bridge_leave(struct dsa_switch *ds, int port,
 				       struct dsa_bridge bridge)
