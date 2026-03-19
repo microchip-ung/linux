@@ -874,16 +874,6 @@ static int lan9645x_fdb_dump(struct dsa_switch *ds, int port,
 	return lan9645x_mact_dsa_dump(lan9645x, port, cb, data);
 }
 
-static int __lan9645x_fdb_add(struct lan9645x *lan9645x, int pgid,
-			      const unsigned char *mac, u16 vid,
-			      struct net_device *bridge)
-{
-	if (!vid)
-		vid = lan9645x_vlan_unaware_pvid(lan9645x, bridge);
-
-	return lan9645x_mact_entry_add(lan9645x, pgid, mac, vid);
-}
-
 static int lan9645x_fdb_add(struct dsa_switch *ds, int port,
 			    const unsigned char *addr, u16 vid,
 			    struct dsa_db db)
@@ -892,8 +882,6 @@ static int lan9645x_fdb_add(struct dsa_switch *ds, int port,
 	struct dsa_port *dp = dsa_to_port(ds, port);
 	struct lan9645x *lan9645x = ds->priv;
 
-	/* dev_dbg(lan9645x->dev, "port=%d vid=%u addr=%pM\n", port, vid, addr); */
-
 	if (IS_ERR(br))
 		return PTR_ERR(br);
 
@@ -901,32 +889,14 @@ static int lan9645x_fdb_add(struct dsa_switch *ds, int port,
 	    dsa_fdb_present_in_other_db(ds, port, addr, vid, db))
 		return 0;
 
-	if (dsa_port_is_cpu(dp)) {
-		/* Trap DSA cpu port */
-		return lan9645x_mact_learn(lan9645x, PGID_CPU, addr,
-					   lan9645x_vlan_unaware_pvid(lan9645x, br),
-					   ENTRYTYPE_LOCKED);
-	}
-
-	return __lan9645x_fdb_add(lan9645x, port, addr, vid, br);
-}
-
-static int __lan9645x_fdb_del(struct lan9645x *lan9645x, int port,
-			      const unsigned char *addr, u16 vid,
-			      struct net_device *bridge)
-{
-	int err;
-
 	if (!vid)
-		vid = lan9645x_vlan_unaware_pvid(lan9645x, bridge);
+		vid = lan9645x_vlan_unaware_pvid(lan9645x, br);
 
-	err = lan9645x_mact_entry_del(lan9645x, port, addr, vid);
-	if (err == -ENOENT) {
-		dev_dbg(lan9645x->dev, "fdb not found mac %pM vid %u pgid %u",
-			addr, vid, port);
-		return 0;
-	}
-	return err;
+	if (dsa_port_is_cpu(dp))
+		return lan9645x_mact_learn(lan9645x, PGID_CPU, addr, vid,
+					   ENTRYTYPE_LOCKED);
+
+	return lan9645x_mact_entry_add(lan9645x, port, addr, vid);
 }
 
 static int lan9645x_fdb_del(struct dsa_switch *ds, int port,
@@ -936,8 +906,7 @@ static int lan9645x_fdb_del(struct dsa_switch *ds, int port,
 	struct net_device *br = lan9645x_classify_db(db);
 	struct dsa_port *dp = dsa_to_port(ds, port);
 	struct lan9645x *lan9645x = ds->priv;
-
-	/* dev_dbg(lan9645x->dev, "port=%d vid=%u addr=%pM\n", port, vid, addr); */
+	int err;
 
 	if (IS_ERR(br))
 		return PTR_ERR(br);
@@ -946,13 +915,22 @@ static int lan9645x_fdb_del(struct dsa_switch *ds, int port,
 	    dsa_fdb_present_in_other_db(ds, port, addr, vid, db))
 		return 0;
 
-	if (dsa_port_is_cpu(dp)) {
-		return lan9645x_mact_forget(lan9645x, addr,
-					    lan9645x_vlan_unaware_pvid(lan9645x, br),
+	if (!vid)
+		vid = lan9645x_vlan_unaware_pvid(lan9645x, br);
+
+	if (dsa_port_is_cpu(dp))
+		return lan9645x_mact_forget(lan9645x, addr, vid,
 					    ENTRYTYPE_LOCKED);
+
+	err = lan9645x_mact_entry_del(lan9645x, port, addr, vid);
+	if (err == -ENOENT) {
+		dev_dbg(lan9645x->dev,
+			"fdb not found port=%d addr=%pM vid=%u\n", port, addr,
+			vid);
+		return 0;
 	}
 
-	return __lan9645x_fdb_del(lan9645x, port, addr, vid, br);
+	return err;
 }
 
 static int lan9645x_set_ageing_time(struct dsa_switch *ds, unsigned int msecs)
@@ -1372,15 +1350,16 @@ static int lan9645x_lag_fdb_add(struct dsa_switch *ds, struct dsa_lag lag,
 	struct lan9645x *lan9645x = ds->priv;
 	int lag_port;
 
-	dev_dbg(lan9645x->dev, "mac=%pM vid=%u lag_id=%d\n", addr, vid,
-		lan9645x_lag_dev_get_id(lan9645x, lag.dev));
-
 	if (IS_ERR(br))
 		return PTR_ERR(br);
 
 	mutex_lock(&lan9645x->fwd_domain_lock);
 	lag_port = lan9645x_lag_dev_get_id(lan9645x, lag.dev);
 	mutex_unlock(&lan9645x->fwd_domain_lock);
+
+	dev_dbg(lan9645x->dev, "mac=%pM vid=%u lag_id=%d\n", addr, vid,
+		lag_port);
+
 	if (lag_port < 0)
 		return 0;
 
@@ -1397,9 +1376,7 @@ static int lan9645x_lag_fdb_del(struct dsa_switch *ds, struct dsa_lag lag,
 	struct net_device *br = lan9645x_classify_db(db);
 	struct lan9645x *lan9645x = ds->priv;
 	int lag_id;
-
-	dev_dbg(lan9645x->dev, "mac=%pM vid=%u lag_id=%d\n", addr, vid,
-		lan9645x_lag_dev_get_id(lan9645x, lag.dev));
+	int err;
 
 	if (IS_ERR(br))
 		return PTR_ERR(br);
@@ -1408,10 +1385,22 @@ static int lan9645x_lag_fdb_del(struct dsa_switch *ds, struct dsa_lag lag,
 	lag_id = lan9645x_lag_dev_get_id(lan9645x, lag.dev);
 	mutex_unlock(&lan9645x->fwd_domain_lock);
 
-	if (lag_id >= 0)
-		return __lan9645x_fdb_del(lan9645x, lag_id, addr, vid, br);
+	dev_dbg(lan9645x->dev, "mac=%pM vid=%u lag_id=%d\n", addr, vid, lag_id);
 
-	return -ENOENT;
+	if (lag_id < 0)
+		return -ENOENT;
+
+	if (!vid)
+		vid = lan9645x_vlan_unaware_pvid(lan9645x, br);
+
+	err = lan9645x_mact_entry_del(lan9645x, lag_id, addr, vid);
+	if (err == -ENOENT) {
+		dev_dbg(lan9645x->dev, "fdb not found mac %pM vid %u pgid %u\n",
+			addr, vid, lag_id);
+		return 0;
+	}
+
+	return err;
 }
 
 static int lan9645x_mdb_add(struct dsa_switch *ds, int port,
