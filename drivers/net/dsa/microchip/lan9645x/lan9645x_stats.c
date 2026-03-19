@@ -550,13 +550,13 @@ void lan9645x_stats_get_rmon_stats(struct lan9645x *lan9645x, int port,
 	*ranges = lan9645x_rmon_ranges;
 }
 
+/* Called in atomic context */
 void lan9645x_stats_get_stats64(struct lan9645x *lan9645x, int port,
 				struct rtnl_link_stats64 *stats)
 {
 	u64 *port_cnt = STAT_COUNTERS(lan9645x, LAN9645X_STAT_PORTS, port);
 
 	/* Avoid stats update, as this is called very often by DSA. */
-	mutex_lock(&lan9645x->stats->hw_lock);
 
 	stats->rx_bytes = port_cnt[SCNT_RX_OCT] +
 			  port_cnt[SCNT_RX_PMAC_OCT];
@@ -641,8 +641,6 @@ void lan9645x_stats_get_stats64(struct lan9645x *lan9645x, int port,
 			    port_cnt[SCNT_TX_AGED];
 
 	stats->collisions = port_cnt[SCNT_TX_COL];
-
-	mutex_unlock(&lan9645x->stats->hw_lock);
 }
 
 void lan9645x_stats_get_eth_phy_stats(struct lan9645x *lan9645x, int port,
