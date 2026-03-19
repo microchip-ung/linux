@@ -439,6 +439,7 @@ static struct genl_family lan9645x_qos_genl_family = {
 	.version = 1,
 	.maxattr = MCHP_QOS_ATTR_MAX,
 	.policy = lan9645x_qos_genl_policy,
+	.parallel_ops = true,
 	.ops = lan9645x_qos_genl_ops,
 	.n_ops = ARRAY_SIZE(lan9645x_qos_genl_ops),
 	.resv_start_op = MCHP_QOS_GENL_DSCP_PRIO_DPL_GET + 1,
