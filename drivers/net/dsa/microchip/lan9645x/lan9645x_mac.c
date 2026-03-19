@@ -431,9 +431,14 @@ forget:
 
 void lan9645x_mac_init(struct lan9645x *lan9645x)
 {
+	u32 val = 0;
+
 	/* Clear the MAC table */
 	lan_wr(CMD_INIT, lan9645x, ANA_MACACCESS);
-	lan9645x_mac_wait_for_completion(lan9645x, NULL);
+
+	if (lan9645x_rd_poll_timeout(lan9645x, ANA_MACACCESS, val,
+				     ANA_MACACCESS_MAC_TABLE_CMD_GET(val) == CMD_IDLE))
+		dev_err(lan9645x->dev, "Failed to clear mac table\n");
 
 	mutex_init(&lan9645x->mac_entry_lock);
 	mutex_init(&lan9645x->mact_lock);
