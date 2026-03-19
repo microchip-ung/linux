@@ -171,6 +171,9 @@ static struct sk_buff *lan9645x_xmit(struct sk_buff *skb, struct net_device *nde
 	lan9645x_xmit_get_vlan_info(skb, dsa_port_bridge_dev_get(dp), &vlan_tci,
 				    &tag_type);
 
+	if (__skb_put_padto(skb, ETH_ZLEN, false))
+		return NULL;
+
 	qos_class = netdev_get_num_tc(ndev) ?
 		netdev_get_prio_tc_map(ndev, skb->priority) :
 		skb->priority;
@@ -338,28 +341,17 @@ static struct sk_buff *lan9645x_rcv(struct sk_buff *skb, struct net_device *ndev
 	LAN9645X_SKB_CB(skb)->rx_ts_ns = rx_ts >> 8;
 	LAN9645X_SKB_CB(skb)->rx_ts_subns = rx_ts & GENMASK(7, 0);
 
-	/* Pushing tags is disabled in the rewriter must be disabled on
-	 * NPI/CPU_PORT with NO_REWRITE=1. Any rewrite action is communicated via
-	 * the IFH, and must be performed by software. For VLAN-aware ports we
-	 * add the VLAN tag from the IFH to the skb.
-	 *
-	 * NOTE: In VLAN-unaware mode, we don't want to do that, we want the
-	 * frame to remain unmodified, because the classified VLAN is always
-	 * equal to the pvid of the ingress port and should not be used for
-	 * processing.
+	/* While we have REW_PORT_NO_REWRITE=0 on the NPI port, we still disable
+	 * port VLAN tagging with REW_TAG_CFG. Any classified VID, different
+	 * from a VID in the frame, will not be written to the frame, but is
+	 * only communicated via the IFH. So for VLAN-aware ports we add the IFH
+	 * vlan to the skb.
 	 */
 	dp = dsa_user_to_port(skb->dev);
 	vlan_tpid = tag_type ? ETH_P_8021AD : ETH_P_8021Q;
 
-	if (dsa_port_is_vlan_filtering(dp) &&
-	    eth_hdr(skb)->h_proto == htons(vlan_tpid)) {
-		u16 dummy_vlan_tci;
-
-		skb_push_rcsum(skb, ETH_HLEN);
-		__skb_vlan_pop(skb, &dummy_vlan_tci);
-		skb_pull_rcsum(skb, ETH_HLEN);
+	if (dsa_port_is_vlan_filtering(dp) && vlan_tci)
 		__vlan_hwaccel_put_tag(skb, htons(vlan_tpid), vlan_tci);
-	}
 
 	return skb;
 }
