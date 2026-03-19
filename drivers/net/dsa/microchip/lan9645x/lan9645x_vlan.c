@@ -129,13 +129,15 @@ static u16 lan9645x_vlan_port_get_pvid(struct lan9645x_port *port)
 void lan9645x_vlan_port_set_vid(struct lan9645x_port *p, u16 vid, bool pvid,
 				bool untagged)
 {
-	/* Egress vlan classification */
 	if (untagged)
 		p->untagged_vid = vid;
+	else if (p->untagged_vid == vid)
+		p->untagged_vid = 0;
 
-	/* Default ingress vlan classification */
 	if (pvid)
 		p->pvid = vid;
+	else if (p->pvid == vid)
+		p->pvid = 0;
 }
 
 static void lan9645x_vlan_port_remove_vid(struct lan9645x_port *p, u16 vid)
