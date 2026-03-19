@@ -871,6 +871,7 @@ static struct genl_family lan9645x_frer_genl_family = {
 	.version	= 1,
 	.maxattr	= MCHP_FRER_ATTR_MAX,
 	.policy		= lan9645x_frer_genl_policy,
+	.parallel_ops	= true,
 	.ops		= lan9645x_frer_genl_ops,
 	.n_ops		= ARRAY_SIZE(lan9645x_frer_genl_ops),
 	.resv_start_op	= MCHP_FRER_GENL_ISDX_FREE + 1,
