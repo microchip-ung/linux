@@ -26,6 +26,16 @@ struct vcap_nl {
 };
 
 static LIST_HEAD(vcap_nl_list);
+/* Protects vcap_nl_list during platform registration and removal.
+ *
+ * We cannot use rtnl_lock here because genl_register_family() takes cb_lock,
+ * and genl handlers (under cb_lock) take rtnl_lock via pre_doit. Holding
+ * rtnl_lock during registration would create a circular dependency.
+ *   rtnl_mutex -> cb_lock (registration) vs cb_lock -> rtnl_mutex (handlers)
+ *
+ * At runtime, genl handlers access the list under RTNL via pre_doit/post_doit.
+ */
+static DEFINE_MUTEX(vcap_nl_lock);
 static struct genl_family vcap_genl_family;
 
 #define VCAP_NETLINK_NAME "mchp_vcap_nl"
@@ -2260,7 +2270,7 @@ int vcap_netlink_init_from_priv(void *priv,
 		return err;
 	}
 
-	rtnl_lock();
+	mutex_lock(&vcap_nl_lock);
 	first_platform = !vcap_genl_has_platforms();
 	vnl->priv = priv;
 	vnl->to_ndev = to_ndev;
@@ -2268,7 +2278,7 @@ int vcap_netlink_init_from_priv(void *priv,
 	list_add(&vnl->list, &vcap_nl_list);
 	if (first_platform)
 		err = genl_register_family(&vcap_genl_family);
-	rtnl_unlock();
+	mutex_unlock(&vcap_nl_lock);
 
 	if (err) {
 		pr_err("genl_register_family() vcap netlink failed: '%s' %d",
@@ -2293,7 +2303,7 @@ void vcap_netlink_uninit(struct vcap_control *vctrl)
 {
 	struct vcap_nl *vnl;
 
-	rtnl_lock();
+	mutex_lock(&vcap_nl_lock);
 	vnl = vcap_genl_by_name(vctrl->stats->name);
 	if (!vnl)
 		goto out;
@@ -2308,5 +2318,5 @@ void vcap_netlink_uninit(struct vcap_control *vctrl)
 	}
 
 out:
-	rtnl_unlock();
+	mutex_unlock(&vcap_nl_lock);
 }
