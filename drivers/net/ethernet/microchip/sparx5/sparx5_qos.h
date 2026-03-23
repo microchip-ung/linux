@@ -109,16 +109,6 @@ int sparx5_hsch_l0_get_idx(struct sparx5 *sparx5, int port, int queue);
 /* Dwrr */
 #define SPX5_DWRR_COST_MAX 31
 
-enum sparx5_qos_rate_mode {
-	SPX5_RATE_MODE_DISABLED,   /* Policer/shaper disabled */
-	SPX5_RATE_MODE_LINE,       /* Measure line rate in kbps incl. IPG */
-	SPX5_RATE_MODE_DATA,       /* Measures data rate in kbps excl. IPG */
-	SPX5_RATE_MODE_FRAME,      /* Measures frame rate in fps */
-	__SPX5_RATE_MODE_END,
-	SPX5_NUM_RATE_MODE = __SPX5_RATE_MODE_END,
-	SPX5_RATE_MODE_MAX = __SPX5_RATE_MODE_END - 1,
-};
-
 struct sparx5_shaper {
 	u32 mode;
 	u32 rate;
