@@ -85,24 +85,24 @@
 	};
 
 	spi@1 {
-			compatible = "spidev";
-			mux-controls = <&mux>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-			reg = <1>;
-			pinctrl-0 = <&cs1_pins>;
-			pinctrl-names = "default";
-			spi-max-frequency = <8000000>;
+		compatible = "spidev";
+		mux-controls = <&mux>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <1>;
+		pinctrl-0 = <&cs1_pins>;
+		pinctrl-names = "default";
+		spi-max-frequency = <8000000>;
 	};
 	spi@2 {
-			compatible = "spidev";
-			mux-controls = <&mux>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-			reg = <2>;
-			pinctrl-0 = <&cs2_pins>;
-			pinctrl-names = "default";
-			spi-max-frequency = <8000000>;
+		compatible = "spidev";
+		mux-controls = <&mux>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <2>;
+		pinctrl-0 = <&cs2_pins>;
+		pinctrl-names = "default";
+		spi-max-frequency = <8000000>;
 	};
 };
 
