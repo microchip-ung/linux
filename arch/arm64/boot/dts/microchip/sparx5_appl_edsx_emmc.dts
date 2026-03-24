@@ -75,6 +75,15 @@
 &spi0 {
 	mux-controls = <&mux>;
 	pinctrl-names = "default";
+
+	/delete-node/ spi@0;
+
+	flash@0 {
+		compatible = "jedec,spi-nor";
+		spi-max-frequency = <8000000>;
+		reg = <0>;
+	};
+
 	spi@1 {
 			compatible = "spidev";
 			mux-controls = <&mux>;
