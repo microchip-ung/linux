@@ -434,7 +434,8 @@ static inline void __init highmem_init(void)
 	 * If CPU cannot support HIGHMEM discard the memory above highstart_pfn
 	 */
 	if (cpu_has_dc_aliases) {
-		memblock_remove(PFN_PHYS(highstart_pfn), -1);
+		memblock_remove(PFN_PHYS(highstart_pfn),
+			       PFN_PHYS(highend_pfn - highstart_pfn));
 		return;
 	}
 
