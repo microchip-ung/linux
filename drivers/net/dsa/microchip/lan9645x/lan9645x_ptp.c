@@ -1135,13 +1135,15 @@ int lan9645x_ptp_init(struct lan9645x *lan9645x)
 	if (!lan9645x->ptp)
 		return 0;
 
+	mutex_init(&lan9645x->ptp_clock_lock);
+	lan9645x_ptp_log_init(lan9645x);
+
 	for (i = 0; i < LAN9645X_PHC_COUNT; ++i) {
 		err = lan9645x_ptp_phc_init(lan9645x, i, &lan9645x_ptp_clock_info);
 		if (err)
 			return err;
 	}
 
-	mutex_init(&lan9645x->ptp_clock_lock);
 	spin_lock_init(&lan9645x->ptp_ts_id_lock);
 	mutex_init(&lan9645x->ptp_lock);
 
@@ -1190,6 +1192,8 @@ void lan9645x_ptp_deinit(struct lan9645x *lan9645x)
 
 	for (i = 0; i < LAN9645X_PHC_COUNT; ++i)
 		ptp_clock_unregister(lan9645x->phc[i].clock);
+
+	lan9645x_ptp_log_deinit(lan9645x);
 }
 
 /* Called by dsa_skb_defer_rx_timestamp. Return true if we defer skb rx until

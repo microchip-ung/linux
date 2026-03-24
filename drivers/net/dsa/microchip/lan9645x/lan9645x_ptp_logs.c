@@ -295,6 +295,10 @@ int lan9645x_ptp_log_init(struct lan9645x *lan9645x)
 {
 	struct dentry *dir;
 
+	mutex_init(&lan9645x->ptp_logs_lock);
+	INIT_LIST_HEAD(&lan9645x->ptp_logs);
+	lan9645x->ptp_logs_count = 0;
+
 	dir = debugfs_create_dir("ptp", lan9645x->debugfs_root);
 	if (PTR_ERR_OR_ZERO(dir))
 		return 0;
@@ -303,10 +307,6 @@ int lan9645x_ptp_log_init(struct lan9645x *lan9645x)
 			    &lan9645x_ptp_enable_log_fops);
 	debugfs_create_file("log", 0444, dir, lan9645x,
 			    &lan9645x_ptp_log_fops);
-
-	mutex_init(&lan9645x->ptp_logs_lock);
-	INIT_LIST_HEAD(&lan9645x->ptp_logs);
-	lan9645x->ptp_logs_count = 0;
 
 	return 0;
 }
