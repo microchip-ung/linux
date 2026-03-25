@@ -205,14 +205,30 @@ static void lan9645x_ptp_update_t4(struct lan9645x *lan9645x,
 	}
 }
 
+static unsigned long lan9645x_cb_to_ptp_class(u8 rew_op, u8 pdu_type)
+{
+	if (rew_op == IFH_REW_OP_NOOP)
+		return PTP_CLASS_NONE;
+
+	switch (pdu_type) {
+	case IFH_PDU_TYPE_IPV4:
+		return PTP_CLASS_IPV4;
+	case IFH_PDU_TYPE_IPV6:
+		return PTP_CLASS_IPV6;
+	default:
+		return PTP_CLASS_L2;
+	}
+}
+
 void lan9645x_ptp_log_tx(struct lan9645x *lan9645x, struct sk_buff *skb,
 			 struct timespec64 ts, u32 sub_ns)
 {
+	struct lan9645x_skb_cb *cb = LAN9645X_SKB_CB(skb);
 	struct ptp_header *ptp_header;
 	unsigned long type;
 	u16 seq;
 
-	type = ptp_classify_raw(skb);
+	type = lan9645x_cb_to_ptp_class(cb->rew_op, cb->pdu_type);
 	if (type == PTP_CLASS_NONE)
 		return;
 
