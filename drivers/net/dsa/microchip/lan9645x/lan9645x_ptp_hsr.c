@@ -357,20 +357,25 @@ int lan9645x_ptp_hsr_setup(struct lan9645x *lan9645x, int port,
 /* Called in atomic context. Used in lan9645x_ptp.c */
 struct sk_buff *lan9645x_ptp_hsr_tx_irq_skb_match(struct lan9645x_port *port)
 {
-	struct sk_buff *skb, *skb_tmp, *skb_match = NULL;
 	struct lan9645x *lan9645x = port->lan9645x;
+	struct sk_buff *skb_match;
+	struct sk_buff_head tmp;
 	unsigned long flags;
 	u32 tx_queue_sz;
+	int purged;
+
+	__skb_queue_head_init(&tmp);
 
 	spin_lock_irqsave(&port->tx_skbs.lock, flags);
 	tx_queue_sz = skb_queue_len(&port->tx_skbs);
-	skb_queue_walk_safe(&port->tx_skbs, skb, skb_tmp)
-	{
-		__skb_unlink(skb, &port->tx_skbs);
-		skb_match = skb;
-		break;
-	}
+	skb_match = __skb_dequeue_tail(&port->tx_skbs);
+
+	/* Purge any remaining stale entries. */
+	skb_queue_splice_init(&port->tx_skbs, &tmp);
 	spin_unlock_irqrestore(&port->tx_skbs.lock, flags);
+
+	purged = skb_queue_len(&tmp);
+	__skb_queue_purge_reason(&tmp, SKB_DROP_REASON_QUEUE_PURGE);
 
 	/* Next ts */
 	lan_rmw(PTP_TWOSTEP_CTRL_NXT_SET(1), PTP_TWOSTEP_CTRL_NXT, lan9645x,
@@ -384,15 +389,13 @@ struct sk_buff *lan9645x_ptp_hsr_tx_irq_skb_match(struct lan9645x_port *port)
 	}
 
 	spin_lock_irqsave(&lan9645x->ptp_ts_id_lock, flags);
-	lan9645x->ptp_skbs--;
+	lan9645x->ptp_skbs -= 1 + purged;
 	spin_unlock_irqrestore(&lan9645x->ptp_ts_id_lock, flags);
 
-	if (tx_queue_sz > 1) {
+	if (purged) {
 		dev_err_ratelimited(lan9645x->dev,
-				    "%u SKBs waiting for timestamp, can not perform match. Dropping skb and timestamp on port %d.\n",
-				    tx_queue_sz, port->chip_port);
-		dev_kfree_skb_any(skb_match);
-		return ERR_PTR(-EINVAL);
+				    "Purged %d stale SKBs on port %d (had %u inflight)\n",
+				    purged, port->chip_port, tx_queue_sz);
 	}
 
 	return skb_match;
@@ -459,4 +462,31 @@ void lan964x5_set_redundancy_info(struct sk_buff *skb, int rtagd,
 	 */
 	sred = skb_redinfo(skb);
 	sred->io_port = PTP_MSG_IN | lan9645x_ptp_hsr_dp2ioport(dp);
+}
+
+void lan9645x_ptp_hsr_flush_tx_skbs(struct lan9645x_port *port)
+{
+	struct lan9645x *lan9645x = port->lan9645x;
+	struct sk_buff_head tmp;
+	unsigned long flags;
+	int purged;
+
+	if (skb_queue_empty_lockless(&port->tx_skbs))
+		return;
+
+	__skb_queue_head_init(&tmp);
+
+	spin_lock_irqsave(&port->tx_skbs.lock, flags);
+	skb_queue_splice_init(&port->tx_skbs, &tmp);
+	spin_unlock_irqrestore(&port->tx_skbs.lock, flags);
+
+	purged = skb_queue_len(&tmp);
+
+	__skb_queue_purge_reason(&tmp, SKB_DROP_REASON_QUEUE_PURGE);
+
+	if (purged) {
+		spin_lock_irqsave(&lan9645x->ptp_ts_id_lock, flags);
+		lan9645x->ptp_skbs -= purged;
+		spin_unlock_irqrestore(&lan9645x->ptp_ts_id_lock, flags);
+	}
 }

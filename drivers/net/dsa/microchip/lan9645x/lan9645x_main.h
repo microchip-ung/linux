@@ -1307,5 +1307,6 @@ int lan9645x_ptp_hsr_init(struct lan9645x *lan9645x);
 int lan9645x_ptp_hsr_setup(struct lan9645x *lan9645x, int port,
 			   struct kernel_hwtstamp_config *cfg);
 struct sk_buff *lan9645x_ptp_hsr_tx_irq_skb_match(struct lan9645x_port *port);
+void lan9645x_ptp_hsr_flush_tx_skbs(struct lan9645x_port *port);
 
 #endif /* __LAN9645X_MAIN_H__ */

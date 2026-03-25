@@ -290,6 +290,7 @@ int lan9645x_port_hwtstamp_set(struct dsa_switch *ds, int port,
 	switch (cfg.rx_filter) {
 	case HWTSTAMP_FILTER_NONE:
 		p->ptp_rx_cmd = false;
+		lan9645x_ptp_hsr_flush_tx_skbs(p);
 		break;
 	case HWTSTAMP_FILTER_ALL:
 	case HWTSTAMP_FILTER_PTP_V1_L4_EVENT:
