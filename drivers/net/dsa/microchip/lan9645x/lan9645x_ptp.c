@@ -60,13 +60,17 @@ static int lan9645x_ptp_add_trap(struct lan9645x_port *port,
 		u32 value, mask;
 
 		/* Just modify the ingress port mask and exit */
-		vcap_rule_get_key_u32(vrule, VCAP_KF_IF_IGR_PORT_MASK,
-				      &value, &mask);
-		mask &= ~BIT(port->chip_port);
-		vcap_rule_mod_key_u32(vrule, VCAP_KF_IF_IGR_PORT_MASK,
-				      value, mask);
+		err = vcap_rule_get_key_u32(vrule, VCAP_KF_IF_IGR_PORT_MASK,
+					    &value, &mask);
+		if (err)
+			goto free_rule;
 
-		err = vcap_mod_rule(vrule);
+		mask &= ~BIT(port->chip_port);
+		err = vcap_rule_mod_key_u32(vrule, VCAP_KF_IF_IGR_PORT_MASK,
+					    value, mask);
+		if (!err)
+			err = vcap_mod_rule(vrule);
+
 		goto free_rule;
 	}
 
@@ -109,7 +113,11 @@ static int lan9645x_ptp_del_trap(struct lan9645x_port *port,
 	if (IS_ERR(vrule))
 		return -EEXIST;
 
-	vcap_rule_get_key_u32(vrule, VCAP_KF_IF_IGR_PORT_MASK, &value, &mask);
+	err = vcap_rule_get_key_u32(vrule, VCAP_KF_IF_IGR_PORT_MASK, &value,
+				    &mask);
+	if (err)
+		goto free_rule;
+
 	mask |= BIT(port->chip_port);
 
 	/* No other port requires this trap, so it is safe to remove it */
@@ -118,8 +126,10 @@ static int lan9645x_ptp_del_trap(struct lan9645x_port *port,
 		goto free_rule;
 	}
 
-	vcap_rule_mod_key_u32(vrule, VCAP_KF_IF_IGR_PORT_MASK, value, mask);
-	err = vcap_mod_rule(vrule);
+	err = vcap_rule_mod_key_u32(vrule, VCAP_KF_IF_IGR_PORT_MASK, value,
+				    mask);
+	if (!err)
+		err = vcap_mod_rule(vrule);
 
 free_rule:
 	vcap_free_rule(vrule);
@@ -196,9 +206,10 @@ static int lan9645x_ptp_del_ipv4_rules(struct lan9645x_port *port)
 	int err;
 
 	err = lan9645x_ptp_del_trap(port, LAN9645X_VCAP_IPV4_EV_PTP_TRAP);
-	err |= lan9645x_ptp_del_trap(port, LAN9645X_VCAP_IPV4_GEN_PTP_TRAP);
+	if (err)
+		return err;
 
-	return err;
+	return lan9645x_ptp_del_trap(port, LAN9645X_VCAP_IPV4_GEN_PTP_TRAP);
 }
 
 static int lan9645x_ptp_del_ipv6_rules(struct lan9645x_port *port)
@@ -206,9 +217,10 @@ static int lan9645x_ptp_del_ipv6_rules(struct lan9645x_port *port)
 	int err;
 
 	err = lan9645x_ptp_del_trap(port, LAN9645X_VCAP_IPV6_EV_PTP_TRAP);
-	err |= lan9645x_ptp_del_trap(port, LAN9645X_VCAP_IPV6_GEN_PTP_TRAP);
+	if (err)
+		return err;
 
-	return err;
+	return lan9645x_ptp_del_trap(port, LAN9645X_VCAP_IPV6_GEN_PTP_TRAP);
 }
 
 static int lan9645x_ptp_add_traps(struct lan9645x_port *port)
@@ -242,10 +254,14 @@ static int lan9645x_ptp_del_traps(struct lan9645x_port *port)
 	int err;
 
 	err = lan9645x_ptp_del_l2_rule(port);
-	err |= lan9645x_ptp_del_ipv4_rules(port);
-	err |= lan9645x_ptp_del_ipv6_rules(port);
+	if (err)
+		return err;
 
-	return err;
+	err = lan9645x_ptp_del_ipv4_rules(port);
+	if (err)
+		return err;
+
+	return lan9645x_ptp_del_ipv6_rules(port);
 }
 
 static int lan9645x_ptp_setup_traps(struct lan9645x_port *port,
@@ -266,8 +282,6 @@ int lan9645x_port_hwtstamp_set(struct dsa_switch *ds, int port,
 	struct lan9645x_phc *phc;
 	struct lan9645x_port *p;
 	int err = 0;
-
-	dev_dbg(lan9645x->dev, "port=%d", port);
 
 	memcpy(&cfg, config, sizeof(struct kernel_hwtstamp_config));
 
@@ -386,7 +400,7 @@ static void lan9645x_ptp_classify(struct lan9645x_port *port, struct sk_buff *sk
 	 * otherwise run as 2 step
 	 */
 	msgtype = ptp_get_msgtype(header, type);
-	if ((msgtype & 0xf) == 0) {
+	if ((msgtype & 0xf) == PTP_MSGTYPE_SYNC) {
 		*rew_op = IFH_REW_OP_ONE_STEP_PTP;
 		return;
 	}
