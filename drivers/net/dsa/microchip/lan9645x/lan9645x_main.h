@@ -422,7 +422,7 @@ struct lan9645x_hsr_prp {
 	bool enabled;
 	enum lan9645x_hsr_type type; /* HSR or PRP */
 	struct list_head nodes;
-	int ptp_users;
+	u16 ptp_ports;
 };
 
 struct lan9645x_mirror {

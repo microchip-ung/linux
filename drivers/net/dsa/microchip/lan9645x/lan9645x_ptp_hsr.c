@@ -247,11 +247,11 @@ static int lan9645x_ptp_ip_rew_cmd(struct lan9645x *lan9645x, int port,
 					    rid, 500);
 }
 
-/* Restores HSR port to normal use, by removing PTP related VCAP rules. */
-static void __lan9645x_ptp_hsr_port_deinit(struct lan9645x *lan9645x, int port)
+/* Remove all PTP HSR VCAP rules. */
+static void __lan9645x_ptp_hsr_rules_delete(struct lan9645x *lan9645x)
 {
 	struct vcap_control *vctrl = lan9645x->vcap_ctrl;
-	int vrule_idx[] = {
+	const int rules[] = {
 		LAN9645X_VCAP_L2_PTP_REW_CMD,
 		LAN9645X_VCAP_IPV4_PTP_REW_CMD,
 		LAN9645X_VCAP_IPV6_PTP_REW_CMD,
@@ -265,18 +265,26 @@ static void __lan9645x_ptp_hsr_port_deinit(struct lan9645x *lan9645x, int port)
 
 	lockdep_assert_held(&lan9645x->hsr.lock);
 
+	ndev = lan9645x_chipport_to_ndev(lan9645x, lan9645x->hsr.port_a);
+
+	for (int j = 0; j < ARRAY_SIZE(rules); j++)
+		vcap_del_rule(vctrl, ndev, rules[j]);
+}
+
+/* Restores HSR port to normal use, by removing PTP related VCAP rules. */
+static void __lan9645x_ptp_hsr_port_deinit(struct lan9645x *lan9645x, int port)
+{
+	lockdep_assert_held(&lan9645x->hsr.lock);
+
 	if (!lan9645x_port_is_hsr(lan9645x_to_port(lan9645x, port)))
 		return;
 
-	ndev = lan9645x_chipport_to_ndev(lan9645x, port);
+	lan9645x->hsr.ptp_ports &= ~BIT(port);
 
-	if (--lan9645x->hsr.ptp_users > 0)
+	if (lan9645x->hsr.ptp_ports)
 		return;
 
-	WARN_ON(lan9645x->hsr.ptp_users < 0);
-
-	for (int j = 0; j < ARRAY_SIZE(vrule_idx); j++)
-		vcap_del_rule(vctrl, ndev, vrule_idx[j]);
+	__lan9645x_ptp_hsr_rules_delete(lan9645x);
 }
 
 static void lan9645x_ptp_hsr_port_deinit(struct lan9645x *lan9645x, int port)
@@ -302,16 +310,29 @@ static int lan9645x_ptp_hsr_port_init(struct lan9645x *lan9645x, int port)
 		goto unlock;
 
 	if (hsr->shadow_ports[1] < 0) {
-		dev_err(lan9645x->dev,
-			"Require 2 shadow ports for PTP over HSR functionality.");
-		err =  -EINVAL;
+		dev_warn(lan9645x->dev,
+			 "PTP over HSR requires 2 shadow ports, skipping HSR PTP setup\n");
 		goto unlock;
 	}
 
-	lan9645x->hsr.ptp_users++;
-	WARN_ON(lan9645x->hsr.ptp_users > 2);
+	/* Detect stale state: if ptp_ports has bits for ports not in the
+	 * current HSR pair, the old VCAP rules have wrong parameters. Delete
+	 * them so they get recreated below.
+	 */
+	if (hsr->ptp_ports & ~(BIT(hsr->port_a) | BIT(hsr->port_b))) {
+		dev_warn(lan9645x->dev,
+			 "stale PTP HSR state (ptp_ports=0x%x), cleaning up\n",
+			 hsr->ptp_ports);
+		__lan9645x_ptp_hsr_rules_delete(lan9645x);
+		hsr->ptp_ports = 0;
+	}
 
-	/* Add VCAP rules in IS2 lookup 0 to timestamp PTP event frames */
+	if (hsr->ptp_ports & BIT(port))
+		goto unlock;
+
+	hsr->ptp_ports |= BIT(port);
+
+	/* Add VCAP rules to timestamp PTP event frames */
 	err = lan9645x_ptp_ip_rew_cmd(lan9645x, port, VCAP_KFS_IP4_TCP_UDP);
 	if (err)
 		goto errout;
