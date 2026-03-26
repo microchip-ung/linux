@@ -175,17 +175,19 @@ static void vcap_encode_typegroups(u32 *stream, int sw_width,
 
 static bool vcap_bitarray_zero(int width, u8 *value)
 {
-	int bytes = DIV_ROUND_UP(width, BITS_PER_BYTE);
-	u8 total = 0, bmask = 0xff;
-	int rwidth = width;
+	int remain = width % BITS_PER_BYTE;
+	int bytes = width / BITS_PER_BYTE;
 	int idx;
 
-	for (idx = 0; idx < bytes; ++idx, rwidth -= BITS_PER_BYTE) {
-		if (rwidth && rwidth < BITS_PER_BYTE)
-			bmask = (1 << rwidth) - 1;
-		total += value[idx] & bmask;
+	for (idx = 0; idx < bytes; ++idx) {
+		if (value[idx])
+			return false;
 	}
-	return total == 0;
+
+	if (remain && (value[idx] & ((1 << remain) - 1)))
+		return false;
+
+	return true;
 }
 
 static bool vcap_get_bit(u32 *stream, struct vcap_stream_iter *itr)
