@@ -159,7 +159,7 @@ static int i2c_mux_gpio_probe(struct platform_device *pdev)
 		return ngpios ?: -EINVAL;
 	}
 	mux->ngpios = ngpios;
-	mux->current_val = ngpios + 1;
+	mux->current_val = UINT_MAX;  /* No initial match in the cache */
 
 	parent = i2c_get_adapter(mux->data.parent);
 	if (!parent)
