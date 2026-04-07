@@ -1025,7 +1025,8 @@ void lan9645x_update_fwd_mask(struct lan9645x *lan9645x, bool joining)
 
 		shadow_of = lan9645x_port_shadow_of(p);
 
-		if (lan9645x_port_is_bridged(p)) {
+		if (lan9645x_port_is_bridged(p) &&
+		    (lan9645x->bridge_fwd_mask & BIT(p->chip_port))) {
 			mask = lan9645x->bridge_mask &
 			       lan9645x->bridge_fwd_mask & ~BIT(p->chip_port);
 
