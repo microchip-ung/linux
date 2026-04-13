@@ -940,6 +940,7 @@ static int microchip_sgpio_probe(struct platform_device *pdev)
 		.reg_bits = 32,
 		.val_bits = 32,
 		.reg_stride = 4,
+		.use_raw_spinlock = true,
 	};
 
 	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
