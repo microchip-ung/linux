@@ -136,7 +136,7 @@ struct sgpio_priv {
 	u32 clock;
 	struct regmap *regs;
 	const struct sgpio_properties *properties;
-	spinlock_t lock;
+	raw_spinlock_t lock;
 	/* protects the config register and single shot mode */
 	struct mutex poll_lock;
 };
@@ -676,7 +676,7 @@ static void microchip_sgpio_irq_settype(struct irq_data *data,
 
 	sgpio_pin_to_addr(bank->priv, gpio, &addr);
 
-	spin_lock_irqsave(&bank->priv->lock, flags);
+	raw_spin_lock_irqsave(&bank->priv->lock, flags);
 
 	/* Disable interrupt while changing type */
 	ena = sgpio_readl(bank->priv, REG_INT_ENABLE, addr.bit);
@@ -695,7 +695,7 @@ static void microchip_sgpio_irq_settype(struct irq_data *data,
 	/* Possibly re-enable interrupts */
 	sgpio_writel(bank->priv, ena, REG_INT_ENABLE, addr.bit);
 
-	spin_unlock_irqrestore(&bank->priv->lock, flags);
+	raw_spin_unlock_irqrestore(&bank->priv->lock, flags);
 }
 
 static void microchip_sgpio_irq_setreg(struct irq_data *data,
@@ -948,7 +948,7 @@ static int microchip_sgpio_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	priv->dev = dev;
-	spin_lock_init(&priv->lock);
+	raw_spin_lock_init(&priv->lock);
 	mutex_init(&priv->poll_lock);
 
 	reset = devm_reset_control_get_optional_shared(&pdev->dev, "switch");
