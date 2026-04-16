@@ -750,6 +750,7 @@ static int lan9645x_setup(struct dsa_switch *ds)
 	ds->mtu_enforcement_ingress = true;
 	ds->assisted_learning_on_cpu_port = true;
 	ds->fdb_isolation = true;
+	ds->max_num_bridges = VLAN_HSR_PRP - 1;
 
 	if (lan9645x->ptp) {
 		err = devm_request_threaded_irq(dev, lan9645x->ptp_irq, NULL,
@@ -843,11 +844,16 @@ static struct net_device *lan9645x_classify_db(struct dsa_db db)
 
 u16 lan9645x_vlan_unaware_pvid(struct lan9645x *lan9645x, struct net_device *bridge)
 {
-	/* Logic must reflect lan9645x_vlan_port_get_pvid */
+	struct dsa_port *dp;
+
 	if (!bridge)
 		return HOST_PVID;
 
-	return UNAWARE_PVID;
+	dsa_switch_for_each_port(dp, lan9645x->ds)
+		if (dsa_port_bridge_dev_get(dp) == bridge)
+			return dsa_port_bridge_num_get(dp);
+
+	return HOST_PVID;
 }
 
 void lan9645x_port_set_learning(struct lan9645x *lan9645x, int port, bool enabled)
@@ -1006,6 +1012,29 @@ static int lan9645x_port_bridge_flags(struct dsa_switch *ds, int port,
 	return 0;
 }
 
+static u32 lan9645x_get_bridge_fwd_mask(struct lan9645x *lan9645x,
+					struct lan9645x_port *src)
+{
+	struct dsa_port *src_dp = dsa_to_port(lan9645x->ds, src->chip_port);
+	struct net_device *br = dsa_port_bridge_dev_get(src_dp);
+	struct lan9645x_port *p;
+	u32 mask = 0;
+	int port;
+
+	if (!br)
+		return 0;
+
+	lan9645x_for_each_port(lan9645x, port, p) {
+		struct dsa_port *dp = dsa_to_port(lan9645x->ds, port);
+
+		if (p->stp_state == BR_STATE_FORWARDING &&
+		    dsa_port_bridge_dev_get(dp) == br)
+			mask |= BIT(p->chip_port);
+	}
+
+	return mask & ~BIT(src->chip_port);
+}
+
 void lan9645x_update_fwd_mask(struct lan9645x *lan9645x, bool joining)
 {
 	struct lan9645x_port *p;
@@ -1026,8 +1055,7 @@ void lan9645x_update_fwd_mask(struct lan9645x *lan9645x, bool joining)
 		shadow_of = lan9645x_port_shadow_of(p);
 
 		if (lan9645x_port_is_bridged(p)) {
-			mask = lan9645x->bridge_mask &
-			       lan9645x->bridge_fwd_mask & ~BIT(p->chip_port);
+			mask = lan9645x_get_bridge_fwd_mask(lan9645x, p);
 
 			if (p->bond)
 				mask &= ~lan9645x_lag_dev_get_mask(lan9645x,
@@ -1127,24 +1155,26 @@ static int lan9645x_port_bridge_join(struct dsa_switch *ds, int port,
 {
 	struct lan9645x *lan9645x = ds->priv;
 	struct lan9645x_port *lan9645x_port = lan9645x->ports[port];
+	u16 pvid = bridge.num;
 
-	dev_dbg(lan9645x->dev, "port_bridge_join port=%d\n", port);
-
-	if (lan9645x->bridge && lan9645x->bridge != bridge.dev) {
-		NL_SET_ERR_MSG_MOD(extack, "Only one bridge supported");
-		return -EBUSY;
-	}
+	dev_dbg(lan9645x->dev, "port_bridge_join port=%d bridge_num=%u\n",
+		port, pvid);
 
 	mutex_lock(&lan9645x->fwd_domain_lock);
-
-	if (!lan9645x->bridge_mask)
-		lan9645x->bridge = bridge.dev;
 
 	/* The bridge puts ports in IFF_ALLMULTI before calling
 	 * port_bridge_join, so clean up before the port is marked as bridged.
 	 */
 	__lan9645x_port_set_host_flood(lan9645x, port, false, false);
-	lan9645x->bridge_mask |= BIT(lan9645x_port->chip_port);
+
+	/* Set up VLAN table entry for per-bridge PVID */
+	lan9645x->vlan_mask[pvid] |= BIT(lan9645x_port->chip_port) |
+				      BIT(CPU_PORT);
+	lan9645x->vlan_flags[pvid] |= LAN9645X_VLAN_SEC_FWD_ENA;
+	lan9645x_vlan_set_mask(lan9645x, pvid);
+	lan9645x_vlan_cpu_set_vlan(lan9645x, pvid);
+
+	*tx_fwd_offload = true;
 
 	mutex_unlock(&lan9645x->fwd_domain_lock);
 
@@ -1163,11 +1193,6 @@ void lan9645x_port_stp_state_set(struct lan9645x *lan9645x, int port,
 
 	p->stp_state = state;
 
-	if (state == BR_STATE_FORWARDING)
-		lan9645x->bridge_fwd_mask |= BIT(p->chip_port);
-	else
-		lan9645x->bridge_fwd_mask &= ~BIT(p->chip_port);
-
 	learn_ena =
 		(state == BR_STATE_LEARNING || state == BR_STATE_FORWARDING) &&
 		p->learn_ena;
@@ -1176,8 +1201,7 @@ void lan9645x_port_stp_state_set(struct lan9645x *lan9645x, int port,
 		ANA_PORT_CFG_LEARN_ENA, lan9645x,
 		ANA_PORT_CFG(p->chip_port));
 
-	dev_dbg(lan9645x->dev, "port=%d state=%u fwd_mask=0x%x\n", port, state,
-		lan9645x->bridge_fwd_mask);
+	dev_dbg(lan9645x->dev, "port=%d state=%u\n", port, state);
 	lan9645x_update_fwd_mask(lan9645x, state == BR_STATE_FORWARDING);
 	mutex_unlock(&lan9645x->fwd_domain_lock);
 }
@@ -1196,15 +1220,24 @@ static void lan9645x_port_bridge_leave(struct dsa_switch *ds, int port,
 {
 	struct lan9645x *lan9645x = ds->priv;
 	struct lan9645x_port *lan9645x_port = lan9645x->ports[port];
+	u16 pvid = bridge.num;
+	u16 user_mask;
 
-	dev_dbg(lan9645x->dev, "port_bridge_leave port=%d\n", port);
+	dev_dbg(lan9645x->dev, "port_bridge_leave port=%d bridge_num=%u\n",
+		port, pvid);
 
 	mutex_lock(&lan9645x->fwd_domain_lock);
 
-	lan9645x->bridge_mask &= ~BIT(lan9645x_port->chip_port);
+	lan9645x->vlan_mask[pvid] &= ~BIT(lan9645x_port->chip_port);
 
-	if (!lan9645x->bridge_mask)
-		lan9645x->bridge = NULL;
+	/* If no user ports remain in this bridge PVID, clean up */
+	user_mask = lan9645x->vlan_mask[pvid] & ~BIT(CPU_PORT);
+	if (!user_mask) {
+		lan9645x->vlan_mask[pvid] = 0;
+		lan9645x->vlan_flags[pvid] &= ~LAN9645X_VLAN_SEC_FWD_ENA;
+		lan9645x_vlan_cpu_clear_vlan(lan9645x, pvid);
+	}
+	lan9645x_vlan_set_mask(lan9645x, pvid);
 
 	lan9645x_vlan_set_hostmode(lan9645x_port);
 	lan9645x_update_fwd_mask(lan9645x, false);

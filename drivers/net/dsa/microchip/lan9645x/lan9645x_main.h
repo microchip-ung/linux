@@ -472,9 +472,6 @@ struct lan9645x {
 	struct list_head mac_entries;
 	struct mutex mact_lock; /* lock access to mact_table */
 	struct mutex mac_entry_lock; /* lock for mac_entries list */
-	struct net_device *bridge; /* Only support single bridge */
-	u16 bridge_mask; /* Mask for bridged ports */
-	u16 bridge_fwd_mask; /* Mask for forwarding bridged ports */
 	struct mutex fwd_domain_lock; /* lock forwarding configuration */
 
 	/* VLAN */
@@ -778,10 +775,13 @@ lan9645x_chipport_to_ndev(struct lan9645x *lan9645x, int port)
 
 static inline bool lan9645x_port_is_bridged(struct lan9645x_port *p)
 {
+	struct dsa_port *dp;
+
 	if (!p)
 		return false;
 
-	return !!(p->lan9645x->bridge_mask & BIT(p->chip_port));
+	dp = dsa_to_port(p->lan9645x->ds, p->chip_port);
+	return !!dsa_port_bridge_dev_get(dp);
 }
 
 static inline bool lan9645x_port_is_used(struct lan9645x *lan9645x, int port)
@@ -939,7 +939,6 @@ void lan9645x_pcs_get_state(struct phylink_pcs *pcs,
 			    struct phylink_link_state *state);
 
 /* lan9645x_main.c */
-bool lan9645x_port_is_bridged(struct lan9645x_port *p);
 u16 lan9645x_vlan_unaware_pvid(struct lan9645x *lan9645x,
 			       struct net_device *bridge);
 void lan9645x_port_set_learning(struct lan9645x *lan9645x, int port,

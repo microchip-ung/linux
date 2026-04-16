@@ -120,10 +120,13 @@ static bool lan9645x_vlan_cpu_member_cpu_vlan_mask(struct lan9645x *lan9645x,
 
 static u16 lan9645x_vlan_port_get_pvid(struct lan9645x_port *port)
 {
+	struct dsa_port *dp;
+
 	if (!lan9645x_port_is_bridged(port))
 		return HOST_PVID;
 
-	return port->vlan_aware ? port->pvid : UNAWARE_PVID;
+	dp = dsa_to_port(port->lan9645x->ds, port->chip_port);
+	return port->vlan_aware ? port->pvid : dsa_port_bridge_num_get(dp);
 }
 
 void lan9645x_vlan_port_set_vid(struct lan9645x_port *p, u16 vid, bool pvid,
@@ -317,17 +320,14 @@ void lan9645x_vlan_init(struct lan9645x *lan9645x)
 		lan9645x_vlan_set_mask(lan9645x, vid);
 	}
 
-	/* Set all the ports + cpu to be part of HOST_PVID and UNAWARE_PVID */
+	/* Set all the ports + cpu to be part of HOST_PVID */
 	lan9645x->vlan_mask[HOST_PVID] = all_ports;
 	lan9645x_vlan_set_mask(lan9645x, HOST_PVID);
 
-	lan9645x->vlan_mask[UNAWARE_PVID] = all_ports;
-	lan9645x_vlan_set_mask(lan9645x, UNAWARE_PVID);
-
-	lan9645x_vlan_cpu_set_vlan(lan9645x, UNAWARE_PVID);
+	lan9645x_vlan_cpu_set_vlan(lan9645x, HOST_PVID);
 
 	/* Configure the CPU port to be vlan aware */
-	lan_wr(ANA_VLAN_CFG_VLAN_VID_SET(UNAWARE_PVID) |
+	lan_wr(ANA_VLAN_CFG_VLAN_VID_SET(HOST_PVID) |
 	       ANA_VLAN_CFG_VLAN_AWARE_ENA_SET(1) |
 	       ANA_VLAN_CFG_VLAN_POP_CNT_SET(1),
 	       lan9645x, ANA_VLAN_CFG(CPU_PORT));
