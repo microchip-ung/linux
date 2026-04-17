@@ -1111,6 +1111,10 @@ static struct ptp_clock_info lan9645x_ptp_clock_info = {
 	.n_per_out	= LAN9645X_PHC_PINS_NUM,
 	.n_ext_ts	= LAN9645X_PHC_PINS_NUM,
 	.n_pins		= LAN9645X_PHC_PINS_NUM,
+	.supported_extts_flags = PTP_RISING_EDGE |
+				 PTP_STRICT_FLAGS,
+	.supported_perout_flags = PTP_PEROUT_DUTY_CYCLE |
+				  PTP_PEROUT_PHASE,
 };
 
 static int lan9645x_ptp_phc_init(struct lan9645x *lan9645x,
