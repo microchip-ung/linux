@@ -292,17 +292,22 @@ static int lan9645x_mrp_port_update_mac(struct mrp_port *mrp_port)
 {
 	struct lan9645x_port *port = mrp_port->priv;
 	struct lan9645x *lan9645x = port->lan9645x;
+	const u8 *addr;
 	u32 macl, mach;
 
-	dev_dbg(lan9645x->dev, "port=%d addr=%pM\n",
-		port->chip_port, lan9645x->bridge->dev_addr);
+	if (WARN_ON(!port->bridge))
+		return -ENODEV;
 
-	mach = lan9645x->bridge->dev_addr[0] << 8;
-	mach |= lan9645x->bridge->dev_addr[1] << 0;
-	macl = lan9645x->bridge->dev_addr[2] << 24;
-	macl |= lan9645x->bridge->dev_addr[3] << 16;
-	macl |= lan9645x->bridge->dev_addr[4] << 8;
-	macl |= lan9645x->bridge->dev_addr[5] << 0;
+	addr = port->bridge->dev_addr;
+
+	dev_dbg(lan9645x->dev, "port=%d addr=%pM\n", port->chip_port, addr);
+
+	mach = addr[0] << 8;
+	mach |= addr[1] << 0;
+	macl = addr[2] << 24;
+	macl |= addr[3] << 16;
+	macl |= addr[4] << 8;
+	macl |= addr[5] << 0;
 
 	lan_wr(macl, lan9645x, MEP_MRP_MAC_LSB(port->chip_port));
 	lan_wr(mach, lan9645x, MEP_MRP_MAC_MSB(port->chip_port));

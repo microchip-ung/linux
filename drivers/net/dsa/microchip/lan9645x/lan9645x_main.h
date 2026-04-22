@@ -493,9 +493,6 @@ struct lan9645x {
 	struct list_head mac_entries;
 	struct mutex mact_lock; /* lock access to mact_table */
 	struct mutex mac_entry_lock; /* lock for mac_entries list */
-	struct net_device *bridge; /* Only support single bridge */
-	u16 bridge_mask; /* Mask for bridged ports */
-	u16 bridge_fwd_mask; /* Mask for forwarding bridged ports */
 	struct mutex fwd_domain_lock; /* lock forwarding configuration */
 
 	/* VLAN entries */
@@ -665,6 +662,9 @@ struct lan9645x_port {
 	enum netdev_lag_hash hash_type;
 	bool lag_tx_active;
 
+	struct net_device *bridge;
+	int bridge_num;
+
 	struct net_device *hsr; /* HSR/PRP upper device */
 
 	struct mutex qos_lock; /* Port QOS config */
@@ -816,7 +816,7 @@ static inline bool lan9645x_port_is_bridged(struct lan9645x_port *p)
 	if (!p)
 		return false;
 
-	return !!(p->lan9645x->bridge_mask & BIT(p->chip_port));
+	return p->bridge;
 }
 
 static inline bool lan9645x_port_is_used(struct lan9645x *lan9645x, int port)
