@@ -724,10 +724,10 @@ static int lan9645x_setup(struct dsa_switch *ds)
 	/* Configure and enable the CPU port */
 	lan9645x_cpu_port_init(lan9645x);
 
-	/* Multicast to all front ports */
-	lan_wr(all_phys_ports, lan9645x, ANA_PGID(PGID_MC));
-
-	/* Snooping on by default. This will be controlled by mrouter ports */
+	/* PGID_MC / MCIPV4 / MCIPV6 are driven by mc_flood_mask
+	 * (BR_MCAST_FLOOD), mrouter_mask and host flood state.
+	 */
+	lan_wr(0x0, lan9645x, ANA_PGID(PGID_MC));
 	lan_wr(0x0, lan9645x, ANA_PGID(PGID_MCIPV4));
 	lan_wr(0x0, lan9645x, ANA_PGID(PGID_MCIPV6));
 
@@ -1002,6 +1002,25 @@ void lan9645x_port_pgid_set(struct lan9645x *lan9645x, u16 pgid,
 	lan_rmw(port_msk, reg_msk, lan9645x, ANA_PGID(pgid));
 }
 
+void __lan9645x_pgid_mc_update(struct lan9645x *lan9645x)
+{
+	u32 unbridged = ~lan9645x->bridge_mask & GENMASK(lan9645x->num_phys_ports - 1, 0);
+	u32 cpu_bit = 0;
+	u32 l2mc, ipmc;
+
+	lockdep_assert_held(&lan9645x->fwd_domain_lock);
+
+	if (lan9645x->host_flood_mc_mask & unbridged)
+		cpu_bit = BIT(CPU_PORT);
+
+	l2mc = lan9645x->mc_flood_mask | cpu_bit;
+	ipmc = lan9645x->mrouter_mask  | cpu_bit;
+
+	lan_wr(ANA_PGID_PGID_SET(l2mc), lan9645x, ANA_PGID(PGID_MC));
+	lan_wr(ANA_PGID_PGID_SET(ipmc), lan9645x, ANA_PGID(PGID_MCIPV4));
+	lan_wr(ANA_PGID_PGID_SET(ipmc), lan9645x, ANA_PGID(PGID_MCIPV6));
+}
+
 static int lan9645x_port_bridge_flags(struct dsa_switch *ds, int port,
 				      struct switchdev_brport_flags f,
 				      struct netlink_ext_ack *extack)
@@ -1017,9 +1036,15 @@ static int lan9645x_port_bridge_flags(struct dsa_switch *ds, int port,
 	if (f.mask & BR_FLOOD)
 		lan9645x_port_pgid_set(l, PGID_UC, port, !!(f.val & BR_FLOOD));
 
-	if (f.mask & BR_MCAST_FLOOD)
-		lan9645x_port_pgid_set(l, PGID_MC, port,
-				       !!(f.val & BR_MCAST_FLOOD));
+	if (f.mask & BR_MCAST_FLOOD) {
+		mutex_lock(&l->fwd_domain_lock);
+		if (f.val & BR_MCAST_FLOOD)
+			l->mc_flood_mask |= BIT(port);
+		else
+			l->mc_flood_mask &= ~BIT(port);
+		__lan9645x_pgid_mc_update(l);
+		mutex_unlock(&l->fwd_domain_lock);
+	}
 
 	if (f.mask & BR_BCAST_FLOOD)
 		lan9645x_port_pgid_set(l, PGID_BC, port,
@@ -1089,7 +1114,7 @@ static void __lan9645x_port_mark_host_flood(struct lan9645x *lan9645x, int port,
 
 static void __lan9645x_port_set_host_flood(struct lan9645x *lan9645x)
 {
-	bool mc_ena, uc_ena;
+	bool uc_ena;
 	u16 unbridged;
 
 	lockdep_assert_held(&lan9645x->fwd_domain_lock);
@@ -1113,10 +1138,7 @@ static void __lan9645x_port_set_host_flood(struct lan9645x *lan9645x)
 	uc_ena = !!(lan9645x->host_flood_uc_mask & unbridged);
 	lan9645x_port_pgid_set(lan9645x, PGID_UC, CPU_PORT, uc_ena);
 
-	mc_ena = !!(lan9645x->host_flood_mc_mask & unbridged);
-	lan9645x_port_pgid_set(lan9645x, PGID_MC, CPU_PORT, mc_ena);
-	lan9645x_port_pgid_set(lan9645x, PGID_MCIPV4, CPU_PORT, mc_ena);
-	lan9645x_port_pgid_set(lan9645x, PGID_MCIPV6, CPU_PORT, mc_ena);
+	__lan9645x_pgid_mc_update(lan9645x);
 }
 
 static void lan9645x_host_flood_work_fn(struct work_struct *work)

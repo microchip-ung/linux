@@ -830,6 +830,9 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 	lan9645x_vlan_clear_hostmode(lreb);
 	lrea->hsr = hsr;
 	lreb->hsr = hsr;
+	lan9645x->mc_flood_mask |= port_ab_mask;
+	lan9645x->mrouter_mask |= port_ab_mask;
+	__lan9645x_pgid_mc_update(lan9645x);
 	lan9645x_update_fwd_mask(lan9645x, true);
 	mutex_unlock(&lan9645x->fwd_domain_lock);
 
@@ -894,6 +897,9 @@ int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 	mutex_lock(&lan9645x->fwd_domain_lock);
 	lrea->hsr = NULL;
 	lreb->hsr = NULL;
+	lan9645x->mc_flood_mask &= ~(BIT(lrea_port) | BIT(lreb_port));
+	lan9645x->mrouter_mask &= ~(BIT(lrea_port) | BIT(lreb_port));
+	__lan9645x_pgid_mc_update(lan9645x);
 	lan9645x_update_fwd_mask(lan9645x, false);
 	lan9645x_vlan_set_hostmode(lrea);
 	lan9645x_vlan_set_hostmode(lreb);

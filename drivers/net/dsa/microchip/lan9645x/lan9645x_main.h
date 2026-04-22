@@ -495,6 +495,7 @@ struct lan9645x {
 	/* lock for mdb_entries and pgid_entries */
 	struct mutex mdb_lock;
 	u32 mrouter_mask;
+	u16 mc_flood_mask;
 
 	/* Statistics  */
 	struct lan9645x_stats *stats;
@@ -967,6 +968,7 @@ u16 lan9645x_vlan_unaware_pvid(struct lan9645x *lan9645x,
 void lan9645x_update_fwd_mask(struct lan9645x *lan9645x, bool joining);
 void lan9645x_port_pgid_set(struct lan9645x *lan9645x, u16 pgid,
 			    int chip_port, bool enabled);
+void __lan9645x_pgid_mc_update(struct lan9645x *lan9645x);
 void lan9645x_port_stp_state_set(struct lan9645x *lan9645x, int port, u8 state);
 
 /* MAC table: lan9645x_mac.c */

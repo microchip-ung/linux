@@ -402,18 +402,19 @@ int lan9645x_mdb_port_mrouter_set(struct lan9645x *lan9645x, int port,
 	dev_dbg(lan9645x->dev, "port=%d enable=%d", port, enable);
 
 	mutex_lock(&lan9645x->mdb_lock);
-	if (enable)
-		lan9645x->mrouter_mask |= BIT(port);
-	else
-		lan9645x->mrouter_mask &= ~BIT(port);
 
 	/* In the control path we need to forward reports to router ports, and
 	 * this is handled by the kernel.
 	 *
 	 * Unknown IP mc in data-path is forwarded to router ports.
 	 */
-	lan9645x_port_pgid_set(lan9645x, PGID_MCIPV4, port, enable);
-	lan9645x_port_pgid_set(lan9645x, PGID_MCIPV6, port, enable);
+	mutex_lock(&lan9645x->fwd_domain_lock);
+	if (enable)
+		lan9645x->mrouter_mask |= BIT(port);
+	else
+		lan9645x->mrouter_mask &= ~BIT(port);
+	__lan9645x_pgid_mc_update(lan9645x);
+	mutex_unlock(&lan9645x->fwd_domain_lock);
 
 	/* Known IP mc in data-path is forwarded to router ports by merging the
 	 * mdb port group mask with the mrouter mask.
