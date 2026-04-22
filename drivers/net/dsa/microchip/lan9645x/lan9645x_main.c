@@ -562,7 +562,9 @@ static int lan9645x_setup(struct dsa_switch *ds)
 	mutex_init(&lan9645x->esdx_lock);
 	mutex_init(&lan9645x->tx_lock);
 	lan9645x_mac_init(lan9645x);
-	lan9645x_vlan_init(lan9645x);
+	err = lan9645x_vlan_init(lan9645x);
+	if (err)
+		return dev_err_probe(dev, err, "VLAN init error");
 	err = lan9645x_qos_init(lan9645x);
 	if (err)
 		return dev_err_probe(dev, err, "QOS init error");
@@ -854,15 +856,6 @@ static struct net_device *lan9645x_classify_db(struct dsa_db db)
 	}
 }
 
-u16 lan9645x_vlan_unaware_pvid(struct lan9645x *lan9645x, struct net_device *bridge)
-{
-	/* Logic must reflect lan9645x_vlan_port_get_pvid */
-	if (!bridge)
-		return HOST_PVID;
-
-	return UNAWARE_PVID;
-}
-
 static void lan9645x_port_set_learning(struct lan9645x *lan9645x, int port,
 				       bool enabled)
 {
@@ -920,7 +913,7 @@ static int lan9645x_fdb_add(struct dsa_switch *ds, int port,
 		return 0;
 
 	if (!vid)
-		vid = lan9645x_vlan_unaware_pvid(lan9645x, br);
+		vid = lan9645x_vlan_unaware_pvid(!!br);
 
 	if (dsa_port_is_cpu(dp))
 		return lan9645x_mact_learn(lan9645x, PGID_CPU, addr, vid,
@@ -946,7 +939,7 @@ static int lan9645x_fdb_del(struct dsa_switch *ds, int port,
 		return 0;
 
 	if (!vid)
-		vid = lan9645x_vlan_unaware_pvid(lan9645x, br);
+		vid = lan9645x_vlan_unaware_pvid(!!br);
 
 	if (dsa_port_is_cpu(dp))
 		return lan9645x_mact_forget(lan9645x, addr, vid,
@@ -1198,7 +1191,13 @@ static int lan9645x_port_bridge_join(struct dsa_switch *ds, int port,
 
 	lan9645x->bridge_mask |= BIT(lan9645x_port->chip_port);
 	__lan9645x_port_set_host_flood(lan9645x);
-	lan9645x_vlan_clear_hostmode(lan9645x_port);
+
+	/* Remove port from HOST_PVID trap VLAN, to prevent tagged VID 4095
+	 * frames from being forwarded between bridge members.
+	 * set_hostmode() (bridge_leave) restores membership.
+	 */
+	lan9645x->vlans[HOST_PVID].portmask &= ~BIT(lan9645x_port->chip_port);
+	lan9645x_vlan_hw_wr(lan9645x, HOST_PVID);
 
 	mutex_unlock(&lan9645x->fwd_domain_lock);
 
@@ -1276,7 +1275,7 @@ static int lan9645x_port_vlan_filtering(struct dsa_switch *ds, int port,
 	struct lan9645x_port *p = lan9645x->ports[port];
 
 	dev_dbg(lan9645x->dev, "port=%d enabled=%u\n", port, enabled);
-	lan9645x_vlan_port_set_vlan_aware(p, enabled);
+	p->vlan_aware = enabled;
 	lan9645x_vlan_port_apply(p);
 
 	return 0;
@@ -1289,7 +1288,6 @@ static int lan9645x_port_vlan_add(struct dsa_switch *ds, int port,
 	struct lan9645x *lan9645x = ds->priv;
 	struct lan9645x_port *p = lan9645x->ports[port];
 	bool pvid, untagged;
-	int err;
 
 	pvid = vlan->flags & BRIDGE_VLAN_INFO_PVID;
 	untagged = vlan->flags & BRIDGE_VLAN_INFO_UNTAGGED;
@@ -1298,18 +1296,10 @@ static int lan9645x_port_vlan_add(struct dsa_switch *ds, int port,
 		"port=%d vid=%u pvid=%u untagged=%u changed=%d\n",
 		port, vlan->vid, pvid, untagged, vlan->changed);
 
-	err = lan9645x_port_vlan_prepare(p, vlan->vid, pvid, untagged, extack);
-	if (err)
-		return err;
-
-	if (port == lan9645x->npi) {
-		lan9645x_vlan_cpu_set_vlan(lan9645x, vlan->vid);
+	if (port == lan9645x->npi)
 		lan9645x_mac_bc_flood_add(lan9645x, vlan->vid);
-	}
 
-	lan9645x_vlan_port_add_vlan(p, vlan->vid, pvid, untagged);
-
-	return 0;
+	return lan9645x_vlan_port_add_vlan(p, vlan->vid, pvid, untagged, extack);
 }
 
 static int lan9645x_port_vlan_del(struct dsa_switch *ds, int port,
@@ -1321,14 +1311,10 @@ static int lan9645x_port_vlan_del(struct dsa_switch *ds, int port,
 	dev_dbg(lan9645x->dev, "port=%d vid=%u changed=%u flags=0x%x\n", port,
 		vlan->vid, vlan->changed, vlan->flags);
 
-	if (port == lan9645x->npi) {
-		lan9645x_vlan_cpu_clear_vlan(lan9645x, vlan->vid);
+	if (port == lan9645x->npi)
 		lan9645x_mac_bc_flood_del(lan9645x, vlan->vid);
-	}
 
-	lan9645x_vlan_port_del_vlan(p, vlan->vid);
-
-	return 0;
+	return lan9645x_vlan_port_del_vlan(p, vlan->vid);
 }
 
 static int lan9645x_lag_join(struct dsa_switch *ds, int port,
@@ -1469,7 +1455,7 @@ static int lan9645x_lag_fdb_add(struct dsa_switch *ds, struct dsa_lag lag,
 		return 0;
 
 	if (!vid)
-		vid = lan9645x_vlan_unaware_pvid(lan9645x, br);
+		vid = lan9645x_vlan_unaware_pvid(!!br);
 
 	return lan9645x_mact_entry_add(lan9645x, lag_port, addr, vid);
 }
@@ -1496,7 +1482,7 @@ static int lan9645x_lag_fdb_del(struct dsa_switch *ds, struct dsa_lag lag,
 		return -ENOENT;
 
 	if (!vid)
-		vid = lan9645x_vlan_unaware_pvid(lan9645x, br);
+		vid = lan9645x_vlan_unaware_pvid(!!br);
 
 	err = lan9645x_mact_entry_del(lan9645x, lag_id, addr, vid);
 	if (err == -ENOENT) {

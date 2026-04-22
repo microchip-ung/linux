@@ -358,14 +358,14 @@ static int lan9645x_frer_show(struct seq_file *m, void *unused)
 			   s->hlen, s->reset_time, s->take_no_seq);
 	}
 	seq_puts(m, "VLAN config:\n");
-	for (i = 0; i < ARRAY_SIZE(lan9645x->vlan_flags); i++) {
-		if (!lan9645x->vlan_flags[i])
+	for (i = 0; i < ARRAY_SIZE(lan9645x->vlans); i++) {
+		const struct lan9645x_vlan *v = &lan9645x->vlans[i];
+
+		if (!(v->src_chk || v->mir || v->lrn_dis ||
+		      v->prv_vlan || v->fld_dis || v->s_fwd_ena))
 			continue;
-		seq_printf(m, "vid %d flags 0x%x fd %d ld %d\n",
-			   i, lan9645x->vlan_flags[i],
-			   !!(lan9645x->vlan_flags[i] & LAN9645X_VLAN_FLOOD_DIS),
-			   !!(lan9645x->vlan_flags[i] &
-			      LAN9645X_VLAN_LEARN_DISABLED));
+		seq_printf(m, "vid %d fd %d ld %d\n",
+			   i, v->fld_dis, v->lrn_dis);
 	}
 	rtnl_unlock();
 	return 0;
@@ -780,16 +780,14 @@ int lan9645x_frer_vlan_cfg_get(struct lan9645x_nl_frer *frer,
 	ASSERT_RTNL();
 	dev_dbg(lan9645x->dev, "vid %u\n", vid);
 
-	if (vid >= ARRAY_SIZE(lan9645x->vlan_flags)) {
+	if (vid >= ARRAY_SIZE(lan9645x->vlans)) {
 		dev_err(lan9645x->dev, "Invalid vid (%u). Use 0..%u\n",
-			vid, (u32)ARRAY_SIZE(lan9645x->vlan_flags) - 1);
+			vid, (u32)ARRAY_SIZE(lan9645x->vlans) - 1);
 		return -EINVAL;
 	}
 
-	cfg->flood_disable =
-		!!(lan9645x->vlan_flags[vid] & LAN9645X_VLAN_FLOOD_DIS);
-	cfg->learn_disable =
-		!!(lan9645x->vlan_flags[vid] & LAN9645X_VLAN_LEARN_DISABLED);
+	cfg->flood_disable = lan9645x->vlans[vid].fld_dis;
+	cfg->learn_disable = lan9645x->vlans[vid].lrn_dis;
 	return 0;
 }
 
@@ -803,22 +801,14 @@ int lan9645x_frer_vlan_cfg_set(struct lan9645x_nl_frer *frer,
 	dev_dbg(lan9645x->dev, "vid %u fd %d ld %d\n",
 		vid, cfg->flood_disable, cfg->learn_disable);
 
-	if (vid >= ARRAY_SIZE(lan9645x->vlan_flags)) {
+	if (vid >= ARRAY_SIZE(lan9645x->vlans)) {
 		dev_err(lan9645x->dev, "Invalid vid (%u). Use 0..%u\n",
-			vid, (u32)ARRAY_SIZE(lan9645x->vlan_flags) - 1);
+			vid, (u32)ARRAY_SIZE(lan9645x->vlans) - 1);
 		return -EINVAL;
 	}
 
-	if (cfg->flood_disable)
-		lan9645x->vlan_flags[vid] |= LAN9645X_VLAN_FLOOD_DIS;
-	else
-		lan9645x->vlan_flags[vid] &= ~LAN9645X_VLAN_FLOOD_DIS;
+	lan9645x->vlans[vid].fld_dis = cfg->flood_disable;
+	lan9645x->vlans[vid].lrn_dis = cfg->learn_disable;
 
-	if (cfg->learn_disable)
-		lan9645x->vlan_flags[vid] |= LAN9645X_VLAN_LEARN_DISABLED;
-	else
-		lan9645x->vlan_flags[vid] &= ~LAN9645X_VLAN_LEARN_DISABLED;
-
-	lan9645x_vlan_set_mask(lan9645x, vid);
-	return 0;
+	return lan9645x_vlan_hw_wr(lan9645x, vid);
 }

@@ -79,14 +79,6 @@
 
 #define VLAN_N_VID 4096
 
-/* VLAN flags for VLAN table defined in ANA_VLANTIDX */
-#define LAN9645X_VLAN_SRC_CHK		0x01
-#define LAN9645X_VLAN_MIRROR		0x02
-#define LAN9645X_VLAN_LEARN_DISABLED	0x04
-#define LAN9645X_VLAN_PRIV_VLAN	0x08
-#define LAN9645X_VLAN_FLOOD_DIS	0x10
-#define LAN9645X_VLAN_SEC_FWD_ENA	0x20
-
 /* 160KiB / 1.25Mbit */
 #define LAN9645X_BUFFER_MEMORY (160 * 1024)
 
@@ -293,6 +285,27 @@ enum lan9645x_vlan_port_tag {
 	LAN9645X_TAG_ALL = 3,
 };
 
+/* Shadow of registers VLANTIDX + VLAN_PORT_MASK per VID.
+ * portmask:  VLAN member ports      VLAN_PORT_MASK
+ * untagged:  egress-untagged ports
+ * src_chk:   VLAN_SRC_CHK           ingress filter: drop if port not in VLAN
+ * mir:       VLAN_MIRROR            mirror frames on this VLAN
+ * lrn_dis:   VLAN_LEARN_DISABLED
+ * prv_vlan:  VLAN_PRIV_VLAN         private VLAN (see ISOLATED_PORTS)
+ * fld_dis:   VLAN_FLOOD_DIS         disable unknown-DMAC flooding (incl. BC/MC)
+ * s_fwd_ena: VLAN_SEC_FWD_ENA       secure forwarding (known SMAC only)
+ */
+struct lan9645x_vlan {
+	u32 portmask: 10, /* ports 0-8 + CPU_PORT */
+	    untagged: 9, /* ports 0-8 */
+	    src_chk: 1,
+	    mir: 1,
+	    lrn_dis: 1,
+	    prv_vlan: 1,
+	    fld_dis: 1,
+	    s_fwd_ena: 1;
+};
+
 /* NPI port prefix config encoding
  *
  * 0: No CPU extraction header (normal frames)
@@ -484,10 +497,8 @@ struct lan9645x {
 	u16 bridge_fwd_mask; /* Mask for forwarding bridged ports */
 	struct mutex fwd_domain_lock; /* lock forwarding configuration */
 
-	/* VLAN */
-	u16 vlan_mask[VLAN_N_VID]; /* Port mask per vlan */
-	u8 vlan_flags[VLAN_N_VID];
-	DECLARE_BITMAP(cpu_vlan_mask, VLAN_N_VID); /* CPU port VLAN membership */
+	/* VLAN entries */
+	struct lan9645x_vlan vlans[VLAN_N_VID];
 
 	/* Multicast Forwarding Database */
 	struct list_head mdb_entries;
@@ -633,7 +644,6 @@ struct lan9645x_port {
 	const char *name;
 
 	u16 pvid;
-	u16 untagged_vid;
 	u8 chip_port;
 	u8 stp_state;
 	bool vlan_aware;
@@ -964,8 +974,6 @@ void lan9645x_pcs_get_state(struct phylink_pcs *pcs,
 
 /* lan9645x_main.c */
 bool lan9645x_port_is_bridged(struct lan9645x_port *p);
-u16 lan9645x_vlan_unaware_pvid(struct lan9645x *lan9645x,
-			       struct net_device *bridge);
 void lan9645x_update_fwd_mask(struct lan9645x *lan9645x, bool joining);
 void lan9645x_port_pgid_set(struct lan9645x *lan9645x, u16 pgid,
 			    int chip_port, bool enabled);
@@ -997,23 +1005,15 @@ int lan9645x_mac_bc_flood_add(struct lan9645x *lan9645x, u16 vid);
 int lan9645x_mac_bc_flood_del(struct lan9645x *lan9645x, u16 vid);
 
 /* VLAN lan9645x_vlan.c */
-void lan9645x_vlan_init(struct lan9645x *lan9645x);
-void lan9645x_vlan_port_set_vlan_aware(struct lan9645x_port *p,
-				       bool vlan_aware);
-void lan9645x_vlan_port_set_vid(struct lan9645x_port *p, u16 vid, bool pvid,
-				bool untagged);
+int lan9645x_vlan_init(struct lan9645x *lan9645x);
+u16 lan9645x_vlan_unaware_pvid(bool is_bridged);
 void lan9645x_vlan_port_apply(struct lan9645x_port *p);
-void lan9645x_vlan_port_rew_host(struct lan9645x_port *p);
-void lan9645x_vlan_port_add_vlan(struct lan9645x_port *p, u16 vid, bool pvid,
-				 bool untagged);
-void lan9645x_vlan_port_del_vlan(struct lan9645x_port *p, u16 vid);
-void lan9645x_vlan_cpu_set_vlan(struct lan9645x *lan9645x, u16 vid);
-void lan9645x_vlan_cpu_clear_vlan(struct lan9645x *lan9645x, u16 vid);
-void lan9645x_vlan_set_mask(struct lan9645x *lan9645x, u16 vid);
+int lan9645x_vlan_port_add_vlan(struct lan9645x_port *p, u16 vid, bool pvid,
+				bool untagged,
+				struct netlink_ext_ack *extack);
+int lan9645x_vlan_port_del_vlan(struct lan9645x_port *p, u16 vid);
+int lan9645x_vlan_hw_wr(struct lan9645x *lan9645x, u16 vid);
 void lan9645x_vlan_set_hostmode(struct lan9645x_port *p);
-void lan9645x_vlan_clear_hostmode(struct lan9645x_port *p);
-int lan9645x_port_vlan_prepare(struct lan9645x_port *p, u16 vid, bool pvid,
-			       bool untagged, struct netlink_ext_ack *extack);
 
 /* LAG: Link aggregation group lan9645x_lag.c */
 u32 lan9645x_lag_dev_get_mask(struct lan9645x *lan9645x,

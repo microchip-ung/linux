@@ -371,7 +371,7 @@ int lan9645x_mdb_port_add(struct lan9645x *lan9645x, int port,
 	type = lan9645x_mdb_classify(mdb->addr);
 
 	if (!vid)
-		vid = lan9645x_vlan_unaware_pvid(lan9645x, bridge);
+		vid = lan9645x_vlan_unaware_pvid(!!bridge);
 
 	return lan9645x_mdb_add(lan9645x, port, mdb->addr, vid, type);
 }
@@ -386,7 +386,7 @@ int lan9645x_mdb_port_del(struct lan9645x *lan9645x, int port,
 	type = lan9645x_mdb_classify(mdb->addr);
 
 	if (!vid)
-		vid = lan9645x_vlan_unaware_pvid(lan9645x, bridge);
+		vid = lan9645x_vlan_unaware_pvid(!!bridge);
 
 	return lan9645x_mdb_del(lan9645x, port, mdb->addr, vid, type);
 }
