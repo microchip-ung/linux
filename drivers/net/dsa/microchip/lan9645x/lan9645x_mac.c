@@ -514,7 +514,7 @@ int lan9645x_mact_dsa_dump(struct lan9645x *lan9645x, int port,
 		    entry.common.type == ENTRYTYPE_NORMAL) {
 			cnt++;
 
-			if (entry.common.key.vid > VLAN_MAX)
+			if (entry.common.key.vid >= VLAN_RSV_RANGE_START)
 				entry.common.key.vid = 0;
 
 			err = cb(entry.common.key.mac, entry.common.key.vid,

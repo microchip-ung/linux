@@ -75,7 +75,8 @@
 #define UNAWARE_PVID			0
 #define HOST_PVID			4095
 #define VLAN_HSR_PRP			4094
-#define VLAN_MAX			(VLAN_HSR_PRP - 1)
+#define VLAN_RSV_RANGE_START		4000
+#define VLAN_MAX			(VLAN_RSV_RANGE_START - 1)
 
 #define VLAN_N_VID 4096
 

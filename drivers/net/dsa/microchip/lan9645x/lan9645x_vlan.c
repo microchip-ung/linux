@@ -262,8 +262,8 @@ int lan9645x_vlan_port_add_vlan(struct lan9645x_port *p, u16 vid, bool pvid,
 	if (!vid)
 		return 0;
 
-	if (vid > VLAN_MAX) {
-		NL_SET_ERR_MSG_MOD(extack, "VLAN range 4094-4095 reserved.");
+	if (vid >= VLAN_RSV_RANGE_START) {
+		NL_SET_ERR_MSG_MOD(extack, "VLAN range 4000-4095 reserved.");
 		return -EBUSY;
 	}
 
@@ -312,7 +312,7 @@ int lan9645x_vlan_port_del_vlan(struct lan9645x_port *p, u16 vid)
 	if (!vid)
 		return 0;
 
-	if (vid > VLAN_MAX)
+	if (vid >= VLAN_RSV_RANGE_START)
 		return -EBUSY;
 
 	if (p->chip_port == lan9645x->npi)
