@@ -176,12 +176,6 @@ void lan9645x_vlan_port_apply(struct lan9645x_port *p)
 		ANA_VLAN_CFG_VLAN_POP_CNT,
 		lan9645x, ANA_VLAN_CFG(p->chip_port));
 
-	lan_rmw(DEV_MAC_TAGS_CFG_VLAN_AWR_ENA_SET(p->vlan_aware) |
-		DEV_MAC_TAGS_CFG_PB_ENA_SET(p->vlan_aware),
-		DEV_MAC_TAGS_CFG_VLAN_AWR_ENA |
-		DEV_MAC_TAGS_CFG_PB_ENA,
-		lan9645x, DEV_MAC_TAGS_CFG(p->chip_port));
-
 	/* Drop frames with multicast source address */
 	val = ANA_DROP_CFG_DROP_MC_SMAC_ENA_SET(1);
 	if (p->vlan_aware && !pvid)

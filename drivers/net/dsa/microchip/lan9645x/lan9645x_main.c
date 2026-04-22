@@ -249,6 +249,16 @@ static int lan9645x_port_init(struct lan9645x *lan9645x, int port)
 		ANA_DROP_CFG_DROP_MC_SMAC_ENA, lan9645x,
 		ANA_DROP_CFG(p->chip_port));
 
+	lan_rmw(DEV_MAC_TAGS_CFG_VLAN_AWR_ENA_SET(1) |
+		DEV_MAC_TAGS_CFG_PB_ENA_SET(1) |
+		DEV_MAC_TAGS_CFG_VLAN_LEN_AWR_ENA_SET(1) |
+		DEV_MAC_TAGS_CFG_TAG_ID_SET(ETH_P_8021AD),
+		DEV_MAC_TAGS_CFG_VLAN_AWR_ENA |
+		DEV_MAC_TAGS_CFG_PB_ENA |
+		DEV_MAC_TAGS_CFG_VLAN_LEN_AWR_ENA |
+		DEV_MAC_TAGS_CFG_TAG_ID,
+		lan9645x, DEV_MAC_TAGS_CFG(p->chip_port));
+
 	/* Enable receiving frames on the port, and activate auto-learning of
 	 * MAC addresses.
 	 */
