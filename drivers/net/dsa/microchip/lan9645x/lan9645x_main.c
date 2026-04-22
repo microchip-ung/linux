@@ -1172,6 +1172,7 @@ static int lan9645x_port_bridge_join(struct dsa_switch *ds, int port,
 
 	lan9645x->bridge_mask |= BIT(lan9645x_port->chip_port);
 	__lan9645x_port_set_host_flood(lan9645x);
+	lan9645x_vlan_clear_hostmode(lan9645x_port);
 
 	mutex_unlock(&lan9645x->fwd_domain_lock);
 

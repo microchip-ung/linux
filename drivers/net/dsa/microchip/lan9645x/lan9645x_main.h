@@ -1008,6 +1008,7 @@ void lan9645x_vlan_cpu_set_vlan(struct lan9645x *lan9645x, u16 vid);
 void lan9645x_vlan_cpu_clear_vlan(struct lan9645x *lan9645x, u16 vid);
 void lan9645x_vlan_set_mask(struct lan9645x *lan9645x, u16 vid);
 void lan9645x_vlan_set_hostmode(struct lan9645x_port *p);
+void lan9645x_vlan_clear_hostmode(struct lan9645x_port *p);
 int lan9645x_port_vlan_prepare(struct lan9645x_port *p, u16 vid, bool pvid,
 			       bool untagged, struct netlink_ext_ack *extack);
 

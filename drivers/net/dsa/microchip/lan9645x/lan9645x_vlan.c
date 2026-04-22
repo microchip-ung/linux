@@ -289,6 +289,12 @@ void lan9645x_vlan_set_hostmode(struct lan9645x_port *p)
 	lan9645x_vlan_port_set_vid(p, HOST_PVID, false, false);
 	lan9645x_vlan_port_apply(p);
 	lan9645x_vlan_port_rew_host(p);
+	lan9645x_vlan_port_add_vlan_mask(p, HOST_PVID);
+}
+
+void lan9645x_vlan_clear_hostmode(struct lan9645x_port *p)
+{
+	lan9645x_vlan_port_del_vlan_mask(p, HOST_PVID);
 }
 
 void lan9645x_vlan_init(struct lan9645x *lan9645x)
