@@ -865,6 +865,33 @@ static int lan9645x_db_bridge_num(struct dsa_db db)
 	return 0;
 }
 
+static int lan9645x_single_vlan_aware_bridge(struct lan9645x *lan9645x,
+					     struct netlink_ext_ack *extack)
+{
+	struct net_device *bridge = NULL;
+	struct lan9645x_port *p;
+	int port;
+
+	lan9645x_for_each_port(lan9645x, port, p) {
+		if (!p->bridge || !br_vlan_enabled(p->bridge))
+			continue;
+
+		if (!bridge) {
+			bridge = p->bridge;
+			continue;
+		}
+
+		if (p->bridge == bridge)
+			continue;
+
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Only one VLAN-aware bridge is supported");
+		return -EBUSY;
+	}
+
+	return 0;
+}
+
 static void lan9645x_port_set_learning(struct lan9645x *lan9645x, int port,
 				       bool enabled)
 {
@@ -1216,10 +1243,15 @@ static int lan9645x_port_bridge_join(struct dsa_switch *ds, int port,
 {
 	struct lan9645x *lan9645x = ds->priv;
 	struct lan9645x_port *p, *q;
+	int err;
 	int i;
 
 	p = lan9645x->ports[port];
 	dev_dbg(lan9645x->dev, "port_bridge_join port=%d\n", port);
+
+	err = lan9645x_single_vlan_aware_bridge(lan9645x, extack);
+	if (err)
+		return err;
 
 	lan9645x_for_each_port(lan9645x, i, q) {
 		if (q->bridge && q->bridge != bridge.dev) {
@@ -1318,8 +1350,13 @@ static int lan9645x_port_vlan_filtering(struct dsa_switch *ds, int port,
 {
 	struct lan9645x *lan9645x = ds->priv;
 	struct lan9645x_port *p = lan9645x->ports[port];
+	int err;
 
 	dev_dbg(lan9645x->dev, "port=%d enabled=%u\n", port, enabled);
+
+	err = lan9645x_single_vlan_aware_bridge(lan9645x, extack);
+	if (err)
+		return err;
 
 	mutex_lock(&lan9645x->fwd_domain_lock);
 
