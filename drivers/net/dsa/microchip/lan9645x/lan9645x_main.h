@@ -496,6 +496,7 @@ struct lan9645x {
 	struct mutex mdb_lock;
 	u32 mrouter_mask;
 	u16 mc_flood_mask;
+	u16 mc_disabled_mask;
 
 	/* Statistics  */
 	struct lan9645x_stats *stats;

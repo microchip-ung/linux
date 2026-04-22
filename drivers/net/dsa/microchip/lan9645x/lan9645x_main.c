@@ -461,15 +461,6 @@ static void lan9645x_igmp_snooping(struct lan9645x *lan9645x, bool enabled,
 		ANA_CPU_FWD_CFG_MLD_REDIR_ENA |
 		ANA_CPU_FWD_CFG_IPMC_CTRL_COPY_ENA,
 		lan9645x, ANA_CPU_FWD_CFG(chip_port));
-
-	/* Use CPU queues to communicate frame classification to the CPU */
-	lan_rmw(ANA_CPUQ_CFG_CPUQ_IGMP_SET(LAN9645X_CPUQ_IGMP) |
-		ANA_CPUQ_CFG_CPUQ_MLD_SET(LAN9645X_CPUQ_MLD) |
-		ANA_CPUQ_CFG_CPUQ_IPMC_CTRL_SET(LAN9645X_CPUQ_IPMC_CTRL),
-		ANA_CPUQ_CFG_CPUQ_IGMP |
-		ANA_CPUQ_CFG_CPUQ_MLD |
-		ANA_CPUQ_CFG_CPUQ_IPMC_CTRL,
-		lan9645x, ANA_CPUQ_CFG);
 }
 
 static void lan9645x_set_tail_drop_wm(struct lan9645x *lan9645x)
@@ -752,6 +743,15 @@ static int lan9645x_setup(struct dsa_switch *ds)
 		lan9645x_igmp_snooping(lan9645x, true, dp->index);
 	}
 
+	/* Use CPU queues to communicate frame classification to the CPU */
+	lan_rmw(ANA_CPUQ_CFG_CPUQ_IGMP_SET(LAN9645X_CPUQ_IGMP) |
+		ANA_CPUQ_CFG_CPUQ_MLD_SET(LAN9645X_CPUQ_MLD) |
+		ANA_CPUQ_CFG_CPUQ_IPMC_CTRL_SET(LAN9645X_CPUQ_IPMC_CTRL),
+		ANA_CPUQ_CFG_CPUQ_IGMP |
+		ANA_CPUQ_CFG_CPUQ_MLD |
+		ANA_CPUQ_CFG_CPUQ_IPMC_CTRL,
+		lan9645x, ANA_CPUQ_CFG);
+
 	err = lan9645x_stats_init(lan9645x);
 	if (err) {
 		dev_err(dev, "Lan9645x setup: failed to init stats.");
@@ -1004,7 +1004,9 @@ void lan9645x_port_pgid_set(struct lan9645x *lan9645x, u16 pgid,
 
 void __lan9645x_pgid_mc_update(struct lan9645x *lan9645x)
 {
-	u32 unbridged = ~lan9645x->bridge_mask & GENMASK(lan9645x->num_phys_ports - 1, 0);
+	u32 unbridged = ~lan9645x->bridge_mask &
+			GENMASK(lan9645x->num_phys_ports - 1, 0);
+	u32 snoop_off_flood;
 	u32 cpu_bit = 0;
 	u32 l2mc, ipmc;
 
@@ -1013,8 +1015,10 @@ void __lan9645x_pgid_mc_update(struct lan9645x *lan9645x)
 	if (lan9645x->host_flood_mc_mask & unbridged)
 		cpu_bit = BIT(CPU_PORT);
 
+	snoop_off_flood = lan9645x->mc_disabled_mask & lan9645x->mc_flood_mask;
+
 	l2mc = lan9645x->mc_flood_mask | cpu_bit;
-	ipmc = lan9645x->mrouter_mask  | cpu_bit;
+	ipmc = lan9645x->mrouter_mask | snoop_off_flood | cpu_bit;
 
 	lan_wr(ANA_PGID_PGID_SET(l2mc), lan9645x, ANA_PGID(PGID_MC));
 	lan_wr(ANA_PGID_PGID_SET(ipmc), lan9645x, ANA_PGID(PGID_MCIPV4));
@@ -1256,6 +1260,7 @@ static void lan9645x_port_bridge_leave(struct dsa_switch *ds, int port,
 	if (!lan9645x->bridge_mask)
 		lan9645x->bridge = NULL;
 
+	lan9645x->mc_disabled_mask &= ~BIT(lan9645x_port->chip_port);
 	__lan9645x_port_set_host_flood(lan9645x);
 	lan9645x_vlan_set_hostmode(lan9645x_port);
 	lan9645x_update_fwd_mask(lan9645x, false);
@@ -2108,6 +2113,22 @@ static int lan9645x_port_mrouter_set(struct dsa_switch *ds, int port,
 	return lan9645x_mdb_port_mrouter_set(lan9645x, port, mrouter);
 }
 
+static int lan9645x_port_mc_disabled_set(struct dsa_switch *ds, int port,
+					 bool mc_disabled, struct dsa_db db)
+{
+	struct lan9645x *lan9645x = ds->priv;
+
+	mutex_lock(&lan9645x->fwd_domain_lock);
+	if (mc_disabled)
+		lan9645x->mc_disabled_mask |= BIT(port);
+	else
+		lan9645x->mc_disabled_mask &= ~BIT(port);
+	__lan9645x_pgid_mc_update(lan9645x);
+	mutex_unlock(&lan9645x->fwd_domain_lock);
+
+	return 0;
+}
+
 static int
 lan9645x_port_hsr_node_add(struct dsa_switch *ds, int port,
 			   const struct switchdev_obj_node_hsr *hsr_node)
@@ -2306,6 +2327,7 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.port_mdb_add			= lan9645x_mdb_add,
 	.port_mdb_del			= lan9645x_mdb_del,
 	.port_mrouter_set		= lan9645x_port_mrouter_set,
+	.port_mc_disabled_set		= lan9645x_port_mc_disabled_set,
 
 	/* Port statistics counters. */
 	.get_strings			= lan9645x_get_strings,
