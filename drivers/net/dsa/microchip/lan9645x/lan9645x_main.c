@@ -1242,9 +1242,8 @@ static int lan9645x_port_bridge_join(struct dsa_switch *ds, int port,
 				     struct netlink_ext_ack *extack)
 {
 	struct lan9645x *lan9645x = ds->priv;
-	struct lan9645x_port *p, *q;
+	struct lan9645x_port *p;
 	int err;
-	int i;
 
 	p = lan9645x->ports[port];
 	dev_dbg(lan9645x->dev, "port_bridge_join port=%d\n", port);
@@ -1252,13 +1251,6 @@ static int lan9645x_port_bridge_join(struct dsa_switch *ds, int port,
 	err = lan9645x_single_vlan_aware_bridge(lan9645x, extack);
 	if (err)
 		return err;
-
-	lan9645x_for_each_port(lan9645x, i, q) {
-		if (q->bridge && q->bridge != bridge.dev) {
-			NL_SET_ERR_MSG_MOD(extack, "Only one bridge supported");
-			return -EBUSY;
-		}
-	}
 
 	if (WARN_ON(bridge.num <= 0))
 		return -EINVAL;
