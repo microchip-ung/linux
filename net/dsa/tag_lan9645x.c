@@ -350,8 +350,14 @@ static struct sk_buff *lan9645x_rcv(struct sk_buff *skb, struct net_device *ndev
 	dp = dsa_user_to_port(skb->dev);
 	vlan_tpid = tag_type ? ETH_P_8021AD : ETH_P_8021Q;
 
-	if (dsa_port_is_vlan_filtering(dp) && vlan_tci)
-		__vlan_hwaccel_put_tag(skb, htons(vlan_tpid), vlan_tci);
+	if (dsa_port_is_vlan_filtering(dp) && vlan_tci) {
+		u16 port_pvid = 0;
+
+		br_vlan_get_pvid_rcu(skb->dev, &port_pvid);
+
+		if ((vlan_tci & VLAN_VID_MASK) != port_pvid)
+			__vlan_hwaccel_put_tag(skb, htons(vlan_tpid), vlan_tci);
+	}
 
 	return skb;
 }
