@@ -964,8 +964,6 @@ void lan9645x_pcs_get_state(struct phylink_pcs *pcs,
 bool lan9645x_port_is_bridged(struct lan9645x_port *p);
 u16 lan9645x_vlan_unaware_pvid(struct lan9645x *lan9645x,
 			       struct net_device *bridge);
-void lan9645x_port_set_learning(struct lan9645x *lan9645x, int port,
-				bool enabled);
 void lan9645x_update_fwd_mask(struct lan9645x *lan9645x, bool joining);
 void lan9645x_port_pgid_set(struct lan9645x *lan9645x, u16 pgid,
 			    int chip_port, bool enabled);

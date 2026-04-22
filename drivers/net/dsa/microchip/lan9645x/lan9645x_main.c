@@ -231,8 +231,6 @@ static int lan9645x_port_init(struct lan9645x *lan9645x, int port)
 		ANA_PORT_CFG_LEARN_ENA,
 		lan9645x, ANA_PORT_CFG(p->chip_port));
 
-	p->learn_ena = false;
-
 	lan9645x_port_set_maxlen(lan9645x, port, ETH_DATA_LEN);
 
 	lan9645x_phylink_port_down(lan9645x, port);
@@ -865,13 +863,22 @@ u16 lan9645x_vlan_unaware_pvid(struct lan9645x *lan9645x, struct net_device *bri
 	return UNAWARE_PVID;
 }
 
-void lan9645x_port_set_learning(struct lan9645x *lan9645x, int port, bool enabled)
+static void lan9645x_port_set_learning(struct lan9645x *lan9645x, int port,
+				       bool enabled)
 {
+	struct lan9645x_port *p = lan9645x_to_port(lan9645x, port);
+
+	mutex_lock(&lan9645x->fwd_domain_lock);
+
+	p->learn_ena = enabled;
+
+	enabled = enabled && (p->stp_state == BR_STATE_LEARNING ||
+			      p->stp_state == BR_STATE_FORWARDING);
+
 	lan_rmw(ANA_PORT_CFG_LEARN_ENA_SET(enabled), ANA_PORT_CFG_LEARN_ENA,
 		lan9645x, ANA_PORT_CFG(port));
 
-	if (port < lan9645x->num_phys_ports)
-		lan9645x->ports[port]->learn_ena = enabled;
+	mutex_unlock(&lan9645x->fwd_domain_lock);
 }
 
 static void lan9645x_port_fast_age(struct dsa_switch *ds, int port)

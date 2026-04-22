@@ -675,7 +675,9 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 			REW_TAG_CFG_TAG_CFG,
 			lan9645x, REW_TAG_CFG(port));
 
-		lan9645x_port_set_learning(lan9645x, port, true);
+		lan_rmw(ANA_PORT_CFG_LEARN_ENA_SET(true),
+			ANA_PORT_CFG_LEARN_ENA,
+			lan9645x, ANA_PORT_CFG(port));
 
 		lan_rmw(ANA_RED_CFG_PRP_AWARE_ENA_SET(type == LAN9645X_PRP) |
 			ANA_RED_CFG_HSR_AWARE_ENA_SET(type == LAN9645X_HSR) |
@@ -981,7 +983,9 @@ int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 				ANA_PORT_CFG(port));
 		}
 
-		lan9645x_port_set_learning(lan9645x, port, false);
+		lan_rmw(ANA_PORT_CFG_LEARN_ENA_SET(false),
+			ANA_PORT_CFG_LEARN_ENA,
+			lan9645x, ANA_PORT_CFG(port));
 
 		lan_wr(BIT(port), lan9645x, ANA_PGID(port));
 		lan9645x_hsr_features_del(lan9645x, port, type);
