@@ -1071,10 +1071,26 @@ void lan9645x_update_fwd_mask(struct lan9645x *lan9645x, bool joining)
 		lan9645x_cut_through_fwd(lan9645x);
 }
 
-static void __lan9645x_port_set_host_flood(struct lan9645x *lan9645x, int port,
-					   bool uc, bool mc)
+static void __lan9645x_port_mark_host_flood(struct lan9645x *lan9645x, int port,
+					    bool uc, bool mc)
+{
+	lockdep_assert_held(&lan9645x->fwd_domain_lock);
+
+	if (uc)
+		lan9645x->host_flood_uc_mask |= BIT(port);
+	else
+		lan9645x->host_flood_uc_mask &= ~BIT(port);
+
+	if (mc)
+		lan9645x->host_flood_mc_mask |= BIT(port);
+	else
+		lan9645x->host_flood_mc_mask &= ~BIT(port);
+}
+
+static void __lan9645x_port_set_host_flood(struct lan9645x *lan9645x)
 {
 	bool mc_ena, uc_ena;
+	u16 unbridged;
 
 	lockdep_assert_held(&lan9645x->fwd_domain_lock);
 
@@ -1091,23 +1107,13 @@ static void __lan9645x_port_set_host_flood(struct lan9645x *lan9645x, int port,
 	 * If the host CPU is weak, this can cause tremendous stress. Therefore,
 	 * we compromise by ignoring this host flood request for bridged ports.
 	 */
-	if (lan9645x_port_is_bridged(lan9645x_to_port(lan9645x, port)))
-		return;
+	unbridged = ~lan9645x->bridge_mask &
+		    GENMASK(lan9645x->num_phys_ports - 1, 0);
 
-	if (uc)
-		lan9645x->host_flood_uc_mask |= BIT(port);
-	else
-		lan9645x->host_flood_uc_mask &= ~BIT(port);
-
-	if (mc)
-		lan9645x->host_flood_mc_mask |= BIT(port);
-	else
-		lan9645x->host_flood_mc_mask &= ~BIT(port);
-
-	uc_ena = !!lan9645x->host_flood_uc_mask;
+	uc_ena = !!(lan9645x->host_flood_uc_mask & unbridged);
 	lan9645x_port_pgid_set(lan9645x, PGID_UC, CPU_PORT, uc_ena);
 
-	mc_ena = !!lan9645x->host_flood_mc_mask;
+	mc_ena = !!(lan9645x->host_flood_mc_mask & unbridged);
 	lan9645x_port_pgid_set(lan9645x, PGID_MC, CPU_PORT, mc_ena);
 	lan9645x_port_pgid_set(lan9645x, PGID_MCIPV4, CPU_PORT, mc_ena);
 	lan9645x_port_pgid_set(lan9645x, PGID_MCIPV6, CPU_PORT, mc_ena);
@@ -1119,7 +1125,8 @@ static void lan9645x_host_flood_work_fn(struct work_struct *work)
 		container_of(work, struct lan9645x_host_flood_work, work);
 
 	mutex_lock(&w->lan9645x->fwd_domain_lock);
-	__lan9645x_port_set_host_flood(w->lan9645x, w->port, w->uc, w->mc);
+	__lan9645x_port_mark_host_flood(w->lan9645x, w->port, w->uc, w->mc);
+	__lan9645x_port_set_host_flood(w->lan9645x);
 	mutex_unlock(&w->lan9645x->fwd_domain_lock);
 	kfree(w);
 }
@@ -1163,11 +1170,8 @@ static int lan9645x_port_bridge_join(struct dsa_switch *ds, int port,
 	if (!lan9645x->bridge_mask)
 		lan9645x->bridge = bridge.dev;
 
-	/* The bridge puts ports in IFF_ALLMULTI before calling
-	 * port_bridge_join, so clean up before the port is marked as bridged.
-	 */
-	__lan9645x_port_set_host_flood(lan9645x, port, false, false);
 	lan9645x->bridge_mask |= BIT(lan9645x_port->chip_port);
+	__lan9645x_port_set_host_flood(lan9645x);
 
 	mutex_unlock(&lan9645x->fwd_domain_lock);
 
@@ -1229,6 +1233,7 @@ static void lan9645x_port_bridge_leave(struct dsa_switch *ds, int port,
 	if (!lan9645x->bridge_mask)
 		lan9645x->bridge = NULL;
 
+	__lan9645x_port_set_host_flood(lan9645x);
 	lan9645x_vlan_set_hostmode(lan9645x_port);
 	lan9645x_update_fwd_mask(lan9645x, false);
 
