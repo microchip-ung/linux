@@ -826,6 +826,8 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 		lan9645x, ANA_RED_MISC_CFG);
 
 	mutex_lock(&lan9645x->fwd_domain_lock);
+	lan9645x_vlan_clear_hostmode(lrea);
+	lan9645x_vlan_clear_hostmode(lreb);
 	lrea->hsr = hsr;
 	lreb->hsr = hsr;
 	lan9645x_update_fwd_mask(lan9645x, true);
@@ -893,6 +895,8 @@ int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 	lrea->hsr = NULL;
 	lreb->hsr = NULL;
 	lan9645x_update_fwd_mask(lan9645x, false);
+	lan9645x_vlan_set_hostmode(lrea);
+	lan9645x_vlan_set_hostmode(lreb);
 	mutex_unlock(&lan9645x->fwd_domain_lock);
 
 	lan9645x->vlan_mask[VLAN_HSR_PRP] = 0;
@@ -998,9 +1002,6 @@ int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 		ANA_PORT_CFG_LEARN_ENA,
 		lan9645x,
 		ANA_PORT_CFG(CPU_PORT));
-
-	lan9645x_vlan_set_hostmode(lrea);
-	lan9645x_vlan_set_hostmode(lreb);
 
 	h->enabled = false;
 unlock:
