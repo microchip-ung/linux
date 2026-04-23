@@ -1014,6 +1014,8 @@ int lan9645x_vlan_port_add_vlan(struct lan9645x_port *p, u16 vid, bool pvid,
 				struct netlink_ext_ack *extack);
 int lan9645x_vlan_port_del_vlan(struct lan9645x_port *p, u16 vid);
 int lan9645x_vlan_hw_wr(struct lan9645x *lan9645x, u16 vid);
+int lan9645x_vlan_set_port_mask(struct lan9645x *lan9645x, u16 vid,
+				u16 new_mask);
 void lan9645x_vlan_set_hostmode(struct lan9645x_port *p);
 
 /* LAG: Link aggregation group lan9645x_lag.c */

@@ -1175,8 +1175,9 @@ static int lan9645x_port_bridge_join(struct dsa_switch *ds, int port,
 				     struct netlink_ext_ack *extack)
 {
 	struct lan9645x *lan9645x = ds->priv;
-	struct lan9645x_port *lan9645x_port = lan9645x->ports[port];
+	struct lan9645x_port *p;
 
+	p = lan9645x->ports[port];
 	dev_dbg(lan9645x->dev, "port_bridge_join port=%d\n", port);
 
 	if (lan9645x->bridge && lan9645x->bridge != bridge.dev) {
@@ -1189,15 +1190,12 @@ static int lan9645x_port_bridge_join(struct dsa_switch *ds, int port,
 	if (!lan9645x->bridge_mask)
 		lan9645x->bridge = bridge.dev;
 
-	lan9645x->bridge_mask |= BIT(lan9645x_port->chip_port);
+	lan9645x->bridge_mask |= BIT(p->chip_port);
 	__lan9645x_port_set_host_flood(lan9645x);
 
-	/* Remove port from HOST_PVID trap VLAN, to prevent tagged VID 4095
-	 * frames from being forwarded between bridge members.
-	 * set_hostmode() (bridge_leave) restores membership.
-	 */
-	lan9645x->vlans[HOST_PVID].portmask &= ~BIT(lan9645x_port->chip_port);
-	lan9645x_vlan_hw_wr(lan9645x, HOST_PVID);
+	lan9645x_vlan_set_port_mask(lan9645x, HOST_PVID,
+				    lan9645x->vlans[HOST_PVID].portmask &
+				    ~BIT(p->chip_port));
 
 	mutex_unlock(&lan9645x->fwd_domain_lock);
 
@@ -1296,9 +1294,6 @@ static int lan9645x_port_vlan_add(struct dsa_switch *ds, int port,
 		"port=%d vid=%u pvid=%u untagged=%u changed=%d\n",
 		port, vlan->vid, pvid, untagged, vlan->changed);
 
-	if (port == lan9645x->npi)
-		lan9645x_mac_bc_flood_add(lan9645x, vlan->vid);
-
 	return lan9645x_vlan_port_add_vlan(p, vlan->vid, pvid, untagged, extack);
 }
 
@@ -1310,9 +1305,6 @@ static int lan9645x_port_vlan_del(struct dsa_switch *ds, int port,
 
 	dev_dbg(lan9645x->dev, "port=%d vid=%u changed=%u flags=0x%x\n", port,
 		vlan->vid, vlan->changed, vlan->flags);
-
-	if (port == lan9645x->npi)
-		lan9645x_mac_bc_flood_del(lan9645x, vlan->vid);
 
 	return lan9645x_vlan_port_del_vlan(p, vlan->vid);
 }

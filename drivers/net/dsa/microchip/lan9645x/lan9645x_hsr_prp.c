@@ -649,12 +649,6 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 			goto mac_forget;
 	}
 
-	lan9645x->vlans[VLAN_HSR_PRP].portmask = port_ab_mask |
-		BIT(CPU_PORT) |
-		lan9645x_hsr_shadow_mask(lan9645x);
-
-	lan9645x_vlan_hw_wr(lan9645x, VLAN_HSR_PRP);
-
 	for_each_hsr_port(lan_id, port, lrea_port, lreb_port) {
 		/* Set PVID to reserved for port AB (rx pid) */
 		lan_rmw(ANA_VLAN_CFG_VLAN_VID_SET(VLAN_HSR_PRP),
@@ -826,9 +820,13 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 		lan9645x, ANA_RED_MISC_CFG);
 
 	mutex_lock(&lan9645x->fwd_domain_lock);
-	lan9645x->vlans[HOST_PVID].portmask &= ~BIT(lrea->chip_port) &
-					       ~BIT(lreb->chip_port);
-	lan9645x_vlan_hw_wr(lan9645x, HOST_PVID);
+	lan9645x_vlan_set_port_mask(lan9645x, HOST_PVID,
+				    lan9645x->vlans[HOST_PVID].portmask &
+				    ~BIT(lrea->chip_port) &
+				    ~BIT(lreb->chip_port));
+	lan9645x_vlan_set_port_mask(lan9645x, VLAN_HSR_PRP,
+				    port_ab_mask | BIT(CPU_PORT) |
+				    lan9645x_hsr_shadow_mask(lan9645x));
 	lrea->hsr = hsr;
 	lreb->hsr = hsr;
 	lan9645x->mc_flood_mask |= port_ab_mask;
@@ -904,10 +902,8 @@ int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 	lan9645x_update_fwd_mask(lan9645x, false);
 	lan9645x_vlan_set_hostmode(lrea);
 	lan9645x_vlan_set_hostmode(lreb);
+	lan9645x_vlan_set_port_mask(lan9645x, VLAN_HSR_PRP, 0);
 	mutex_unlock(&lan9645x->fwd_domain_lock);
-
-	lan9645x->vlans[VLAN_HSR_PRP].portmask = 0;
-	lan9645x_vlan_hw_wr(lan9645x, VLAN_HSR_PRP);
 
 	lan9645x_streamt_del(lan9645x, h->isdx);
 	lan9645x_stream_isdx_free(lan9645x, h->isdx);

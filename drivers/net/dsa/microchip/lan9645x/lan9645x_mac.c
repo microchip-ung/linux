@@ -444,10 +444,6 @@ void lan9645x_mac_init(struct lan9645x *lan9645x)
 	mutex_init(&lan9645x->mact_lock);
 	mutex_init(&lan9645x->fwd_domain_lock);
 	INIT_LIST_HEAD(&lan9645x->mac_entries);
-
-	lan9645x_mac_bc_flood_add(lan9645x, UNAWARE_PVID);
-	lan9645x_mac_bc_flood_add(lan9645x, HOST_PVID);
-	lan9645x_mac_bc_flood_add(lan9645x, VLAN_HSR_PRP);
 }
 
 void lan9645x_mac_deinit(struct lan9645x *lan9645x)

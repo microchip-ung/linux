@@ -90,6 +90,34 @@ int lan9645x_vlan_hw_wr(struct lan9645x *lan9645x, u16 vid)
 	return err;
 }
 
+static int lan9645x_vlan_commit_port_mask(struct lan9645x *lan9645x, u16 vid,
+					  u16 old_mask)
+{
+	bool had = !!(old_mask & ~BIT(CPU_PORT));
+	bool has = !!(lan9645x->vlans[vid].portmask & ~BIT(CPU_PORT));
+	int err;
+
+	err = lan9645x_vlan_hw_wr(lan9645x, vid);
+	if (err)
+		return err;
+
+	if (!had && has)
+		lan9645x_mac_bc_flood_add(lan9645x, vid);
+	else if (had && !has)
+		lan9645x_mac_bc_flood_del(lan9645x, vid);
+
+	return 0;
+}
+
+int lan9645x_vlan_set_port_mask(struct lan9645x *lan9645x, u16 vid,
+				u16 new_mask)
+{
+	u16 old_mask = lan9645x->vlans[vid].portmask;
+
+	lan9645x->vlans[vid].portmask = new_mask;
+	return lan9645x_vlan_commit_port_mask(lan9645x, vid, old_mask);
+}
+
 u16 lan9645x_vlan_unaware_pvid(bool is_bridged)
 {
 	return is_bridged ? UNAWARE_PVID : HOST_PVID;
@@ -240,8 +268,9 @@ static int lan9645x_vlan_cpu_add(struct lan9645x_port *p, u16 vid, bool pvid,
 	struct lan9645x_vlan *v;
 
 	v = lan9645x_vlan_port_modify(p, vid, pvid, untagged);
-	v->portmask |= BIT(CPU_PORT) | BIT(p->chip_port);
-	lan9645x_vlan_hw_wr(p->lan9645x, vid);
+	lan9645x_vlan_set_port_mask(p->lan9645x, vid,
+				    v->portmask | BIT(CPU_PORT) |
+				    BIT(p->chip_port));
 	lan9645x_vlan_port_apply_ingress(p);
 
 	return 0;
@@ -285,7 +314,7 @@ int lan9645x_vlan_port_add_vlan(struct lan9645x_port *p, u16 vid, bool pvid,
 		return -EBUSY;
 	}
 
-	lan9645x_vlan_hw_wr(lan9645x, vid);
+	lan9645x_vlan_commit_port_mask(lan9645x, vid, old_vlan.portmask);
 	lan9645x_vlan_port_apply_ingress(p);
 	lan9645x_vlan_port_apply_egress(p, &info);
 
@@ -297,8 +326,9 @@ static int lan9645x_vlan_cpu_del(struct lan9645x_port *p, u16 vid)
 	struct lan9645x_vlan *v;
 
 	v = lan9645x_vlan_port_modify(p, vid, false, false);
-	v->portmask &= ~BIT(CPU_PORT) & ~BIT(p->chip_port);
-	lan9645x_vlan_hw_wr(p->lan9645x, vid);
+	lan9645x_vlan_set_port_mask(p->lan9645x, vid,
+				    v->portmask & ~BIT(CPU_PORT) &
+				    ~BIT(p->chip_port));
 	lan9645x_vlan_port_apply_ingress(p);
 
 	return 0;
@@ -319,8 +349,8 @@ int lan9645x_vlan_port_del_vlan(struct lan9645x_port *p, u16 vid)
 		return lan9645x_vlan_cpu_del(p, vid);
 
 	v = lan9645x_vlan_port_modify(p, vid, false, false);
-	v->portmask &= ~BIT(p->chip_port);
-	lan9645x_vlan_hw_wr(lan9645x, vid);
+	lan9645x_vlan_set_port_mask(lan9645x, vid,
+				    v->portmask & ~BIT(p->chip_port));
 	lan9645x_vlan_port_apply(p);
 
 	return 0;
@@ -336,8 +366,9 @@ void lan9645x_vlan_set_hostmode(struct lan9645x_port *p)
 	struct lan9645x *lan9645x = p->lan9645x;
 
 	p->vlan_aware = false;
-	lan9645x->vlans[HOST_PVID].portmask |= BIT(p->chip_port);
-	lan9645x_vlan_hw_wr(lan9645x, HOST_PVID);
+	lan9645x_vlan_set_port_mask(lan9645x, HOST_PVID,
+				    lan9645x->vlans[HOST_PVID].portmask |
+				    BIT(p->chip_port));
 	lan9645x_vlan_port_apply(p);
 }
 
@@ -366,14 +397,11 @@ int lan9645x_vlan_init(struct lan9645x *lan9645x)
 			return err;
 	}
 
-	/* Set all the ports + cpu to be part of HOST_PVID and UNAWARE_PVID */
-	lan9645x->vlans[HOST_PVID].portmask = all_ports;
-	err = lan9645x_vlan_hw_wr(lan9645x, HOST_PVID);
+	err = lan9645x_vlan_set_port_mask(lan9645x, HOST_PVID, all_ports);
 	if (err)
 		return err;
 
-	lan9645x->vlans[UNAWARE_PVID].portmask = all_ports;
-	err = lan9645x_vlan_hw_wr(lan9645x, UNAWARE_PVID);
+	err = lan9645x_vlan_set_port_mask(lan9645x, UNAWARE_PVID, all_ports);
 	if (err)
 		return err;
 
