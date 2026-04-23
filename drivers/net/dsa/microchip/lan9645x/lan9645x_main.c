@@ -766,6 +766,7 @@ static int lan9645x_setup(struct dsa_switch *ds)
 	ds->mtu_enforcement_ingress = true;
 	ds->assisted_learning_on_cpu_port = true;
 	ds->fdb_isolation = true;
+	ds->max_num_bridges = NUM_PHYS_PORTS;
 
 	if (lan9645x->ptp) {
 		err = devm_request_threaded_irq(dev, lan9645x->ptp_irq, NULL,
@@ -857,6 +858,13 @@ static struct net_device *lan9645x_classify_db(struct dsa_db db)
 	}
 }
 
+static int lan9645x_db_bridge_num(struct dsa_db db)
+{
+	if (db.type == DSA_DB_BRIDGE)
+		return db.bridge.num;
+	return 0;
+}
+
 static void lan9645x_port_set_learning(struct lan9645x *lan9645x, int port,
 				       bool enabled)
 {
@@ -914,7 +922,7 @@ static int lan9645x_fdb_add(struct dsa_switch *ds, int port,
 		return 0;
 
 	if (!vid)
-		vid = lan9645x_vlan_unaware_pvid(!!br);
+		vid = lan9645x_vlan_unaware_pvid(lan9645x_db_bridge_num(db));
 
 	if (dsa_port_is_cpu(dp))
 		return lan9645x_mact_learn(lan9645x, PGID_CPU, addr, vid,
@@ -940,7 +948,7 @@ static int lan9645x_fdb_del(struct dsa_switch *ds, int port,
 		return 0;
 
 	if (!vid)
-		vid = lan9645x_vlan_unaware_pvid(!!br);
+		vid = lan9645x_vlan_unaware_pvid(lan9645x_db_bridge_num(db));
 
 	if (dsa_port_is_cpu(dp))
 		return lan9645x_mact_forget(lan9645x, addr, vid,
@@ -1220,6 +1228,9 @@ static int lan9645x_port_bridge_join(struct dsa_switch *ds, int port,
 		}
 	}
 
+	if (WARN_ON(bridge.num <= 0))
+		return -EINVAL;
+
 	mutex_lock(&lan9645x->fwd_domain_lock);
 
 	p->bridge = bridge.dev;
@@ -1229,6 +1240,10 @@ static int lan9645x_port_bridge_join(struct dsa_switch *ds, int port,
 	lan9645x_vlan_set_port_mask(lan9645x, HOST_PVID,
 				    lan9645x->vlans[HOST_PVID].portmask &
 				    ~BIT(p->chip_port));
+
+	if (!br_vlan_enabled(bridge.dev))
+		lan9645x_vlan_add_unaware_pvid(p);
+
 	lan9645x_vlan_port_apply(p);
 
 	mutex_unlock(&lan9645x->fwd_domain_lock);
@@ -1280,6 +1295,12 @@ static void lan9645x_port_bridge_leave(struct dsa_switch *ds, int port,
 
 	mutex_lock(&lan9645x->fwd_domain_lock);
 
+	/* Must run before p->bridge/p->bridge_num are cleared, since it
+	 * derives the reserved VID from p->bridge_num.
+	 */
+	if (!br_vlan_enabled(bridge.dev))
+		lan9645x_vlan_del_unaware_pvid(p);
+
 	p->bridge = NULL;
 	p->bridge_num = -1;
 
@@ -1299,8 +1320,20 @@ static int lan9645x_port_vlan_filtering(struct dsa_switch *ds, int port,
 	struct lan9645x_port *p = lan9645x->ports[port];
 
 	dev_dbg(lan9645x->dev, "port=%d enabled=%u\n", port, enabled);
+
+	mutex_lock(&lan9645x->fwd_domain_lock);
+
+	if (p->bridge) {
+		if (enabled && !p->vlan_aware)
+			lan9645x_vlan_del_unaware_pvid(p);
+		else if (!enabled && p->vlan_aware)
+			lan9645x_vlan_add_unaware_pvid(p);
+	}
+
 	p->vlan_aware = enabled;
 	lan9645x_vlan_port_apply(p);
+
+	mutex_unlock(&lan9645x->fwd_domain_lock);
 
 	return 0;
 }
@@ -1473,7 +1506,7 @@ static int lan9645x_lag_fdb_add(struct dsa_switch *ds, struct dsa_lag lag,
 		return 0;
 
 	if (!vid)
-		vid = lan9645x_vlan_unaware_pvid(!!br);
+		vid = lan9645x_vlan_unaware_pvid(lan9645x_db_bridge_num(db));
 
 	return lan9645x_mact_entry_add(lan9645x, lag_port, addr, vid);
 }
@@ -1500,7 +1533,7 @@ static int lan9645x_lag_fdb_del(struct dsa_switch *ds, struct dsa_lag lag,
 		return -ENOENT;
 
 	if (!vid)
-		vid = lan9645x_vlan_unaware_pvid(!!br);
+		vid = lan9645x_vlan_unaware_pvid(lan9645x_db_bridge_num(db));
 
 	err = lan9645x_mact_entry_del(lan9645x, lag_id, addr, vid);
 	if (err == -ENOENT) {
@@ -1532,7 +1565,8 @@ static int lan9645x_mdb_add(struct dsa_switch *ds, int port,
 	if (port == lan9645x->npi)
 		port = CPU_PORT;
 
-	return lan9645x_mdb_port_add(lan9645x, port, mdb, bridge_dev);
+	return lan9645x_mdb_port_add(lan9645x, port, mdb,
+				     lan9645x_db_bridge_num(db));
 }
 
 static int lan9645x_mdb_del(struct dsa_switch *ds, int port,
@@ -1555,7 +1589,8 @@ static int lan9645x_mdb_del(struct dsa_switch *ds, int port,
 	if (port == lan9645x->npi)
 		port = CPU_PORT;
 
-	return lan9645x_mdb_port_del(lan9645x, port, mdb, bridge_dev);
+	return lan9645x_mdb_port_del(lan9645x, port, mdb,
+				     lan9645x_db_bridge_num(db));
 }
 
 static void lan9645x_get_strings(struct dsa_switch *ds, int port, u32 stringset,

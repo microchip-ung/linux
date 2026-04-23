@@ -118,27 +118,29 @@ int lan9645x_vlan_set_port_mask(struct lan9645x *lan9645x, u16 vid,
 	return lan9645x_vlan_commit_port_mask(lan9645x, vid, old_mask);
 }
 
-u16 lan9645x_vlan_unaware_pvid(bool is_bridged)
+u16 lan9645x_vlan_unaware_pvid(int bridge_num)
 {
-	return is_bridged ? UNAWARE_PVID : HOST_PVID;
+	if (bridge_num <= 0)
+		return HOST_PVID;
+
+	return VLAN_N_VID - bridge_num - 1;
 }
 
 static u16 lan9645x_vlan_port_get_pvid(struct lan9645x_port *port)
 {
-	bool is_bridged = lan9645x_port_is_bridged(port);
+	if (!lan9645x_port_is_bridged(port))
+		return HOST_PVID;
 
-	if (is_bridged && port->vlan_aware)
-		return port->pvid;
-	else
-		return lan9645x_vlan_unaware_pvid(is_bridged);
+	return port->vlan_aware ? port->pvid :
+		lan9645x_vlan_unaware_pvid(port->bridge_num);
 }
 
 /* Dynamically choose the egress tagging mode based on the port vlan state:
  *
  * Standalone:
- * TAG_NO_PVID_NO_UNAWARE with PORT_VID=HOST_PVID. This avoids leaking the
- * internal HOST_PVID tag on ingress mirrored frames while leaving normal
- * egress frames untagged.
+ * TAG_NO_PVID_NO_UNAWARE with PORT_VID=HOST_PVID. This avoids
+ * leaking the internal HOST_PVID tag on ingress mirrored frames
+ * while leaving normal egress frames untagged.
  *
  * Bridged, VLAN-aware:
  *  - N untagged, 0 tagged: TAG_DISABLED
@@ -154,7 +156,7 @@ lan9645x_vlan_port_apply_egress(struct lan9645x_port *p,
 {
 	struct lan9645x *lan9645x = p->lan9645x;
 	enum lan9645x_vlan_port_tag tag_cfg;
-	u16 port_vid = UNAWARE_PVID;
+	u16 port_vid = HOST_PVID;
 
 	if (!lan9645x_port_is_bridged(p)) {
 		tag_cfg = LAN9645X_TAG_NO_PVID_NO_UNAWARE;
@@ -285,7 +287,7 @@ int lan9645x_vlan_port_add_vlan(struct lan9645x_port *p, u16 vid, bool pvid,
 	struct lan9645x_vlan *v;
 	u16 old_pvid;
 
-	/* Kernel VLAN core adds vid 0, which collides with our UNAWARE_PVID.
+	/* Kernel VLAN core adds vid 0, which collides with HOST_PVID.
 	 * We handle priority tagged frames by other means.
 	 */
 	if (!vid)
@@ -356,11 +358,6 @@ int lan9645x_vlan_port_del_vlan(struct lan9645x_port *p, u16 vid)
 	return 0;
 }
 
-/* Return the port to standalone VLAN state. Also restore its membership in the
- * HOST_PVID trap VLAN: HOST_PVID is the standalone trap VLAN (seeded in init),
- * and bridged ports are removed from it at bridge_join to prevent tagged VID
- * 4095 frames from traversing the bridge.
- */
 void lan9645x_vlan_set_hostmode(struct lan9645x_port *p)
 {
 	struct lan9645x *lan9645x = p->lan9645x;
@@ -370,6 +367,29 @@ void lan9645x_vlan_set_hostmode(struct lan9645x_port *p)
 				    lan9645x->vlans[HOST_PVID].portmask |
 				    BIT(p->chip_port));
 	lan9645x_vlan_port_apply(p);
+}
+
+void lan9645x_vlan_add_unaware_pvid(struct lan9645x_port *p)
+{
+	struct lan9645x *lan9645x = p->lan9645x;
+	u16 vid = lan9645x_vlan_unaware_pvid(p->bridge_num);
+
+	lan9645x_vlan_set_port_mask(lan9645x, vid,
+				    lan9645x->vlans[vid].portmask |
+				    BIT(p->chip_port) | BIT(CPU_PORT));
+}
+
+void lan9645x_vlan_del_unaware_pvid(struct lan9645x_port *p)
+{
+	struct lan9645x *lan9645x = p->lan9645x;
+	u16 vid = lan9645x_vlan_unaware_pvid(p->bridge_num);
+	u16 new_mask = lan9645x->vlans[vid].portmask & ~BIT(p->chip_port);
+
+	/* Drop CPU membership when no other port remains in this bridge. */
+	if (!(new_mask & ~BIT(CPU_PORT)))
+		new_mask &= ~BIT(CPU_PORT);
+
+	lan9645x_vlan_set_port_mask(lan9645x, vid, new_mask);
 }
 
 int lan9645x_vlan_init(struct lan9645x *lan9645x)
@@ -401,12 +421,8 @@ int lan9645x_vlan_init(struct lan9645x *lan9645x)
 	if (err)
 		return err;
 
-	err = lan9645x_vlan_set_port_mask(lan9645x, UNAWARE_PVID, all_ports);
-	if (err)
-		return err;
-
 	/* Configure the CPU port to be vlan aware */
-	lan_wr(ANA_VLAN_CFG_VLAN_VID_SET(UNAWARE_PVID) |
+	lan_wr(ANA_VLAN_CFG_VLAN_VID_SET(HOST_PVID) |
 	       ANA_VLAN_CFG_VLAN_AWARE_ENA_SET(1) |
 	       ANA_VLAN_CFG_VLAN_POP_CNT_SET(1),
 	       lan9645x, ANA_VLAN_CFG(CPU_PORT));

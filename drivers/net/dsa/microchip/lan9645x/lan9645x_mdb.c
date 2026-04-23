@@ -363,7 +363,7 @@ static int lan9645x_mdb_del(struct lan9645x *lan9645x, int chip_port,
 
 int lan9645x_mdb_port_add(struct lan9645x *lan9645x, int port,
 			  const struct switchdev_obj_port_mdb *mdb,
-			  struct net_device *bridge)
+			  int bridge_num)
 {
 	enum macaccess_entry_type type;
 	u16 vid = mdb->vid;
@@ -371,14 +371,14 @@ int lan9645x_mdb_port_add(struct lan9645x *lan9645x, int port,
 	type = lan9645x_mdb_classify(mdb->addr);
 
 	if (!vid)
-		vid = lan9645x_vlan_unaware_pvid(!!bridge);
+		vid = lan9645x_vlan_unaware_pvid(bridge_num);
 
 	return lan9645x_mdb_add(lan9645x, port, mdb->addr, vid, type);
 }
 
 int lan9645x_mdb_port_del(struct lan9645x *lan9645x, int port,
 			  const struct switchdev_obj_port_mdb *mdb,
-			  struct net_device *bridge)
+			  int bridge_num)
 {
 	enum macaccess_entry_type type;
 	u16 vid = mdb->vid;
@@ -386,7 +386,7 @@ int lan9645x_mdb_port_del(struct lan9645x *lan9645x, int port,
 	type = lan9645x_mdb_classify(mdb->addr);
 
 	if (!vid)
-		vid = lan9645x_vlan_unaware_pvid(!!bridge);
+		vid = lan9645x_vlan_unaware_pvid(bridge_num);
 
 	return lan9645x_mdb_del(lan9645x, port, mdb->addr, vid, type);
 }

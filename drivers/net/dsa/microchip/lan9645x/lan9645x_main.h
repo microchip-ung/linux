@@ -59,22 +59,23 @@
 #define PRP_LANID_B 0x1
 /* Reserved VLAN IDs.
  *
- * We use these to enable isolated vlan unaware standalone ports, and vlan
- * unware bridged ports.
+ * We use these to enable isolated VLAN-unaware standalone ports and
+ * per-bridge isolation for VLAN-unaware bridges. Because the MAC table is
+ * keyed on (mac, vid), distinct reserved VIDs give each unaware bridge
+ * its own MAC table namespace.
  *
- * Standalone: RX frames, with DMAC == iface mac, should be tapped to the CPU,
- * but no egress on any front ports.
- * This is achieved with PGID SRC_PORT set to 0x0, and using HOST_PVID as pvid
- * for unaware standalone ports.
+ * Standalone: untagged RX frames are classified to HOST_PVID.
  *
- * Trapping is ensured with MAC table entries (iface mac, HOST_PVID) which point
- * to the PGID_CPU.
+ * VLAN-unaware bridge n: untagged RX frames are classified to
+ * VLAN_N_VID - n - 1 (counting down from 4094), where n is the
+ * dsa_bridge.num. Frames forward within the bridge's PGID SRC mask,
+ * and (mac, per-bridge-vid) entries isolate the MAC table across
+ * bridges.
  *
- * Bridged: Similar trick with UNAWARE_PVID instead.
+ * VIDs 4000..4095 are reserved from userspace by VLAN_RSV_RANGE_START.
  */
-#define UNAWARE_PVID			0
-#define HOST_PVID			4095
-#define VLAN_HSR_PRP			4094
+#define HOST_PVID			0
+#define VLAN_HSR_PRP			4095
 #define VLAN_RSV_RANGE_START		4000
 #define VLAN_MAX			(VLAN_RSV_RANGE_START - 1)
 
@@ -1007,7 +1008,7 @@ int lan9645x_mac_bc_flood_del(struct lan9645x *lan9645x, u16 vid);
 
 /* VLAN lan9645x_vlan.c */
 int lan9645x_vlan_init(struct lan9645x *lan9645x);
-u16 lan9645x_vlan_unaware_pvid(bool is_bridged);
+u16 lan9645x_vlan_unaware_pvid(int bridge_num);
 void lan9645x_vlan_port_apply(struct lan9645x_port *p);
 int lan9645x_vlan_port_add_vlan(struct lan9645x_port *p, u16 vid, bool pvid,
 				bool untagged,
@@ -1017,6 +1018,8 @@ int lan9645x_vlan_hw_wr(struct lan9645x *lan9645x, u16 vid);
 int lan9645x_vlan_set_port_mask(struct lan9645x *lan9645x, u16 vid,
 				u16 new_mask);
 void lan9645x_vlan_set_hostmode(struct lan9645x_port *p);
+void lan9645x_vlan_add_unaware_pvid(struct lan9645x_port *p);
+void lan9645x_vlan_del_unaware_pvid(struct lan9645x_port *p);
 
 /* LAG: Link aggregation group lan9645x_lag.c */
 u32 lan9645x_lag_dev_get_mask(struct lan9645x *lan9645x,
@@ -1036,10 +1039,10 @@ int lan9645x_lag_reconfigure(struct lan9645x *lan9645x, struct net_device *bond,
 /* Multicast Database lan9645x_mdb.c */
 int lan9645x_mdb_port_add(struct lan9645x *lan9645x, int port,
 			  const struct switchdev_obj_port_mdb *mdb,
-			  struct net_device *bridge);
+			  int bridge_num);
 int lan9645x_mdb_port_del(struct lan9645x *lan9645x, int port,
 			  const struct switchdev_obj_port_mdb *mdb,
-			  struct net_device *bridge);
+			  int bridge_num);
 void lan9645x_mdb_init(struct lan9645x *lan9645x);
 void lan9645x_mdb_deinit(struct lan9645x *lan9645x);
 int lan9645x_mdb_port_mrouter_set(struct lan9645x *lan9645x, int port,
