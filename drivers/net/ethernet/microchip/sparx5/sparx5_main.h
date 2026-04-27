@@ -655,6 +655,7 @@ struct sparx5 {
 /* sparx5_main.c */
 bool is_sparx5(struct sparx5 *sparx5);
 bool sparx5_has_feature(struct sparx5 *sparx5, enum sparx5_feature feature);
+enum spx5_target_chiptype sparx5_fix_target_ct(struct sparx5 *sparx5);
 
 /* sparx5_switchdev.c */
 int sparx5_register_notifier_blocks(struct sparx5 *sparx5);

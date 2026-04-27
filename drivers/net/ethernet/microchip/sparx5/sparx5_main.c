@@ -841,7 +841,7 @@ static bool sparx5_is_pcie_device(struct sparx5 *sparx5)
  * number, so not to add new targets which just confuse more then make sure to
  * change the target_chiptype to the correct one.
  */
-static enum spx5_target_chiptype sparx5_fix_target_ct(struct sparx5 *sparx5)
+enum spx5_target_chiptype sparx5_fix_target_ct(struct sparx5 *sparx5)
 {
 	/* If the target is already known then there is nothing to do and just
 	 * return the current target chiptype.
