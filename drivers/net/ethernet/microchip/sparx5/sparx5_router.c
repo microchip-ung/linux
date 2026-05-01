@@ -1790,7 +1790,7 @@ sparx5_rr_fib_entry_ecmp_hw_apply(struct sparx5 *sparx5,
 err_arp_ptr_create:
 	for (i--; i >= 0; i--)
 		sparx5_rr_arp_tbl_hw_addr_clear(sparx5, offset + i);
-	sparx5_rr_arp_tbl_grp_free(sparx5, offset, nhgi->count);
+	sparx5_rr_arp_tbl_grp_free(sparx5, nhgi->count, offset);
 	fib_entry->offload_fail = true;
 	nhgi->atbl_offset_valid = false;
 
