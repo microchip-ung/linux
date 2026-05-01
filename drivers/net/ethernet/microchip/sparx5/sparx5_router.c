@@ -2078,11 +2078,13 @@ sparx5_rr_entry_nexthop_group_update(struct sparx5 *sparx5,
 	struct vcap_control *vctrl = sparx5->vcap_ctrl;
 	struct sparx5_rr_nexthop_group *new_nh_grp;
 	struct sparx5_rr_nexthop_group *old_nh_grp;
+	bool old_vrule_id_valid;
 	u32 old_vrule_id;
 	int err;
 
 	old_nh_grp = fib_entry->nh_grp;
 	old_vrule_id = fib_entry->hw_route.vrule_id;
+	old_vrule_id_valid = fib_entry->hw_route.vrule_id_valid;
 
 	/* Prepare new group in SW representation */
 	new_nh_grp = sparx5_rr_nexthop_group_create(sparx5, fib_entry);
@@ -2100,7 +2102,7 @@ sparx5_rr_entry_nexthop_group_update(struct sparx5 *sparx5,
 		goto hw_apply_err;
 
 	/* Clean up old rule and start routing traffic according to new rule */
-	if (fib_entry->hw_route.vrule_id != old_vrule_id)
+	if (old_vrule_id_valid && fib_entry->hw_route.vrule_id != old_vrule_id)
 		vcap_del_rule(vctrl, pdev, old_vrule_id);
 
 	/* Remove old unused group */
