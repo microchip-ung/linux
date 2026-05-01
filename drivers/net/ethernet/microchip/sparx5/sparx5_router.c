@@ -940,6 +940,7 @@ sparx5_rr_neigh_entry_alloc(struct sparx5 *sparx5,
 		entry->neigh_tbl = &nd_tbl;
 		break;
 #else
+		kfree(entry);
 		return NULL;
 #endif
 	}
