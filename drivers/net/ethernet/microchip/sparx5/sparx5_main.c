@@ -1239,6 +1239,7 @@ static const struct sparx5_consts sparx5_consts = {
 	.bum_slb_cnt         = 1024,
 	.isdx_cnt            = 4096,
 	.vmid_cnt = 511,
+	.arp_tbl_cnt         = 2048,
 };
 
 static const struct sparx5_ops sparx5_ops = {
