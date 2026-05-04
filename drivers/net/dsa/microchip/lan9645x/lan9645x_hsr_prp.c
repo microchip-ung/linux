@@ -681,7 +681,7 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 
 		lan_rmw(ANA_RED_CFG_PRP_AWARE_ENA_SET(type == LAN9645X_PRP) |
 			ANA_RED_CFG_HSR_AWARE_ENA_SET(type == LAN9645X_HSR) |
-			ANA_RED_CFG_LANID_SET(lan_id) |
+			ANA_RED_CFG_LANID_SET(!lan_id) |
 			ANA_RED_CFG_NETID_SET(net_id),
 			ANA_RED_CFG_PRP_AWARE_ENA |
 			ANA_RED_CFG_HSR_AWARE_ENA |
