@@ -57,6 +57,8 @@ static void mrp_ring_loc_work(struct work_struct *work)
 						     ring_loc_work);
 	struct mrp_port *mrp_port;
 
+	rtnl_lock();
+	rcu_read_lock();
 	mrp_port = mrp_find_port(mrp_inst, BR_MRP_PORT_ROLE_PRIMARY);
 	if (mrp_port->ring_intr_status == MRP_INTERRUPT_STATUS_OPEN) {
 		br_mrp_ring_port_open(mrp_port->dev, true);
@@ -78,6 +80,8 @@ static void mrp_ring_loc_work(struct work_struct *work)
 		br_mrp_ring_port_open(mrp_port->dev, false);
 		mrp_port->ring_intr_status = MRP_INTERRUPT_STATUS_NONE;
 	}
+	rcu_read_unlock();
+	rtnl_unlock();
 }
 
 static void mrp_in_loc_work(struct work_struct *work)
@@ -88,6 +92,8 @@ static void mrp_in_loc_work(struct work_struct *work)
 						     in_loc_work);
 	struct mrp_port *mrp_port;
 
+	rtnl_lock();
+	rcu_read_lock();
 	mrp_port = mrp_find_port(mrp_inst, BR_MRP_PORT_ROLE_PRIMARY);
 	if (mrp_port->in_intr_status == MRP_INTERRUPT_STATUS_OPEN) {
 		br_mrp_in_port_open(mrp_port->dev, true);
@@ -120,6 +126,8 @@ static void mrp_in_loc_work(struct work_struct *work)
 		br_mrp_in_port_open(mrp_port->dev, false);
 		mrp_port->in_intr_status = MRP_INTERRUPT_STATUS_NONE;
 	}
+	rcu_read_unlock();
+	rtnl_unlock();
 }
 
 static enum mrp_interrupt_status mrp_port_get_ring_interrupt_status(struct mrp_port *mrp_port)
