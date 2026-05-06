@@ -645,14 +645,9 @@ static enum mrp_interrupt_status lan9645x_mrp_port_get_ring_intr_status(struct m
 	val = lan_rd(lan9645x, MEP_TST_CFG(port->chip_port));
 	val = MEP_TST_CFG_MISS_CNT_GET(val);
 
-	if (val == mrp_port->ring_max_miss) {
-		lan9645x_port_stp_state_set(lan9645x, port->chip_port,
-					    BR_STATE_FORWARDING);
+	if (val == mrp_port->ring_max_miss)
 		return MRP_INTERRUPT_STATUS_OPEN;
-	}
 
-	lan9645x_port_stp_state_set(lan9645x, port->chip_port,
-				    BR_STATE_BLOCKING);
 	return MRP_INTERRUPT_STATUS_CLOSED;
 }
 
@@ -848,14 +843,9 @@ static enum mrp_interrupt_status lan9645x_mrp_port_get_in_intr_status(struct mrp
 	val = lan_rd(lan9645x, MEP_ITST_CFG(port->chip_port));
 	val = MEP_ITST_CFG_ITST_MISS_CNT_GET(val);
 
-	if (val == mrp_port->in_max_miss) {
-		lan9645x_port_stp_state_set(lan9645x, port->chip_port,
-					    BR_STATE_FORWARDING);
+	if (val == mrp_port->in_max_miss)
 		return MRP_INTERRUPT_STATUS_OPEN;
-	}
 
-	lan9645x_port_stp_state_set(lan9645x, port->chip_port,
-				    BR_STATE_BLOCKING);
 	return MRP_INTERRUPT_STATUS_CLOSED;
 }
 
