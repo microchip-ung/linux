@@ -531,14 +531,6 @@ struct lan9645x {
 
 	/* Port mirroring */
 	struct lan9645x_mirror *mirror;
-	/* Lower 16 bits is the egress mirror port mask, and top 16 bits is
-	 * BIT(to) -  the mirrored port.
-	 * Egress traffic on port 'to' must be mirroroed to ports in the lower
-	 * 16bit mask.
-	 * This us used by the tag driver, for egress mirroring on standalone
-	 * ports, where we bypass the forwarding engine.
-	 */
-	u32 emirror_map;
 
 	/* TC / QOS Policer resource management */
 	DECLARE_BITMAP(pol_idx_mask, LAN9645X_NUM_POL_POOL);
@@ -1322,5 +1314,9 @@ int lan9645x_ptp_hsr_setup(struct lan9645x *lan9645x, int port,
 			   struct kernel_hwtstamp_config *cfg);
 struct sk_buff *lan9645x_ptp_hsr_tx_irq_skb_match(struct lan9645x_port *port);
 void lan9645x_ptp_hsr_flush_tx_skbs(struct lan9645x_port *port);
+int lan9645x_port_xmit_redundancy_src(struct dsa_switch *ds, int port,
+				      struct sk_buff *skb);
+void lan9645x_port_set_rcv_redundancy_info(struct dsa_switch *ds, int port,
+					   struct sk_buff *skb);
 
 #endif /* __LAN9645X_MAIN_H__ */

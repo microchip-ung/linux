@@ -2415,6 +2415,10 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.port_hsr_dan_node_add		= lan9645x_port_hsr_node_add,
 	.port_hsr_dan_node_del		= lan9645x_port_hsr_node_del,
 
+	/* Tag-driver glue for HSR PTP redundancy offload */
+	.port_xmit_redundancy_src	= lan9645x_port_xmit_redundancy_src,
+	.port_set_rcv_redundancy_info	= lan9645x_port_set_rcv_redundancy_info,
+
 	/* TC integration */
 	.port_mirror_add		= lan9645x_port_mirror_add,
 	.port_mirror_del		= lan9645x_port_mirror_del,

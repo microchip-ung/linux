@@ -1247,6 +1247,11 @@ struct dsa_switch_ops {
 	int	(*port_hsr_dan_node_del)(struct dsa_switch *ds, int port,
 					 const struct switchdev_obj_node_hsr *hsr_node);
 
+	int	(*port_xmit_redundancy_src)(struct dsa_switch *ds, int port,
+					    struct sk_buff *skb);
+	void	(*port_set_rcv_redundancy_info)(struct dsa_switch *ds, int port,
+						struct sk_buff *skb);
+
 	/*
 	 * MRP integration
 	 */
@@ -1292,6 +1297,24 @@ struct dsa_switch_ops {
 					const struct net_device *conduit,
 					bool operational);
 };
+
+static inline int dsa_port_xmit_redundancy_src(struct dsa_port *dp,
+					       struct sk_buff *skb)
+{
+	if (dp->ds->ops->port_xmit_redundancy_src)
+		return dp->ds->ops->port_xmit_redundancy_src(dp->ds, dp->index,
+							     skb);
+
+	return dp->ds->num_ports;
+}
+
+static inline void dsa_port_set_rcv_redundancy_info(struct dsa_port *dp,
+						    struct sk_buff *skb)
+{
+	if (dp->ds->ops->port_set_rcv_redundancy_info)
+		dp->ds->ops->port_set_rcv_redundancy_info(dp->ds, dp->index,
+							  skb);
+}
 
 #define DSA_DEVLINK_PARAM_DRIVER(_id, _name, _type, _cmodes)		\
 	DEVLINK_PARAM_DRIVER(_id, _name, _type, _cmodes,		\

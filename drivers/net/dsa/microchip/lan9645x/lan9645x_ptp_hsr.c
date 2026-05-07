@@ -486,67 +486,64 @@ struct sk_buff *lan9645x_ptp_hsr_tx_irq_skb_match(struct lan9645x_port *port)
 	return skb_match;
 }
 
-static int lan9645x_ptp_hsr_egress_port(struct dsa_port *dp, u8 red_ports)
+static int lan9645x_ptp_hsr_egress_port(struct lan9645x *lan9645x, u8 red_ports)
 {
-	struct lan9645x *lan9645x;
-
-	lan9645x = dp->ds->priv;
-
 	switch (red_ports) {
 	case BIT(0):
 		return lan9645x->hsr.shadow_ports[0];
 	case BIT(1):
 		return lan9645x->hsr.shadow_ports[1];
 	default:
-		return dp->ds->num_ports;
+		return lan9645x->ds->num_ports;
 	}
 }
 
-/* Called in atomic context. Used in tag_lan9645x.c */
-int lan9645x_ptp_hsr_xmit_masq_port(struct sk_buff *skb, struct dsa_port *dp)
+/* ds->ops->port_xmit_redundancy_src. Called in atomic context from the tag
+ * driver.
+ */
+int lan9645x_port_xmit_redundancy_src(struct dsa_switch *ds, int port,
+				      struct sk_buff *skb)
 {
+	struct lan9645x *lan9645x = ds->priv;
 	struct skb_redundancy_info *sred = skb_redinfo(skb);
 
 	if (sred && REDINFO_T(skb) == DIRECTED_TX)
-		return lan9645x_ptp_hsr_egress_port(dp, REDINFO_PORTS(skb));
+		return lan9645x_ptp_hsr_egress_port(lan9645x,
+						    REDINFO_PORTS(skb));
 
 	/* CPU port */
-	return dp->ds->num_ports;
+	return ds->num_ports;
 }
 
-static u32 lan9645x_ptp_hsr_dp2ioport(struct dsa_port *dp)
+static u32 lan9645x_ptp_hsr_port2ioport(struct lan9645x *lan9645x, int port)
 {
-	struct lan9645x *lan9645x;
-
-	lan9645x = dp->ds->priv;
-
-	if (!lan9645x_port_is_hsr(lan9645x_to_port(lan9645x, dp->index)))
+	if (!lan9645x_port_is_hsr(lan9645x_to_port(lan9645x, port)))
 		return 0;
 
-	if (lan9645x->hsr.port_a == dp->index)
+	if (lan9645x->hsr.port_a == port)
 		return BIT(0);
 
-	if (lan9645x->hsr.port_b == dp->index)
+	if (lan9645x->hsr.port_b == port)
 		return BIT(1);
 
 	return 0;
 }
 
-/* Called in atomic context. Used in tag_lan9645x.c */
-void lan964x5_set_redundancy_info(struct sk_buff *skb, int rtagd,
-				  struct dsa_port *dp)
+/* ds->ops->port_set_rcv_redundancy_info. Called in atomic context from the
+ * tag driver.
+ */
+void lan9645x_port_set_rcv_redundancy_info(struct dsa_switch *ds, int port,
+					   struct sk_buff *skb)
 {
+	struct lan9645x *lan9645x = ds->priv;
 	struct skb_redundancy_info *sred;
-
-	/* No HSR tag in frame */
-	if (rtagd == 0)
-		return;
 
 	/* Only this field is used. The others can be read in the hsr tag
 	 * fragment if necessary.
 	 */
 	sred = skb_redinfo(skb);
-	sred->io_port = PTP_MSG_IN | lan9645x_ptp_hsr_dp2ioport(dp);
+	sred->io_port = PTP_MSG_IN | lan9645x_ptp_hsr_port2ioport(lan9645x,
+								  port);
 }
 
 void lan9645x_ptp_hsr_flush_tx_skbs(struct lan9645x_port *port)

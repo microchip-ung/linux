@@ -226,7 +226,7 @@ static struct sk_buff *lan9645x_xmit(struct sk_buff *skb, struct net_device *nde
 		 * However, a few fields get speciel treatment by the port, and
 		 * are passed to the IFH created in the analyzer.
 		 */
-		src_port = lan9645x_ptp_hsr_xmit_masq_port(skb, dp);
+		src_port = dsa_port_xmit_redundancy_src(dp, skb);
 		LAN9645X_IFH_SET(ifh, IFH_MASQ, 1);
 		LAN9645X_IFH_SET(ifh, IFH_MASQ_PORT, src_port);
 		LAN9645X_IFH_SET(ifh, IFH_SRCPORT, src_port);
@@ -237,13 +237,7 @@ static struct sk_buff *lan9645x_xmit(struct sk_buff *skb, struct net_device *nde
 		LAN9645X_IFH_SET(ifh, IFH_QOS_CLASS, qos_class);
 		LAN9645X_IFH_SET(ifh, IFH_TCI, vlan_tci);
 		LAN9645X_IFH_SET(ifh, IFH_TAG_TYPE, tag_type);
-		/* Mirroring is calculated by the forwarding engine, which
-		 * we are bypassing. To implement egress mirroring of standalone
-		 * ports, we need to query mirroring state from switch driver.
-		 */
-		LAN9645X_IFH_SET(ifh, IFH_DSTS,
-				 BIT_ULL(dp->index) |
-				 (u64)lan9645x_emirror_get_dst(dp));
+		LAN9645X_IFH_SET(ifh, IFH_DSTS, BIT_ULL(dp->index));
 	}
 
 	lan9645x_xmit_ptp(skb, ifh);
@@ -316,8 +310,8 @@ static struct sk_buff *lan9645x_rcv(struct sk_buff *skb, struct net_device *ndev
 	}
 
 	if (rtagd > 0) {
-		lan964x5_set_redundancy_info(skb, rtagd,
-					     dsa_user_to_port(skb->dev));
+		dsa_port_set_rcv_redundancy_info(dsa_user_to_port(skb->dev),
+						 skb);
 		skb_push_rcsum(skb, ETH_HLEN);
 		err = lan9645x_pop_hsr_tag(skb, rtagd);
 		if (err) {
