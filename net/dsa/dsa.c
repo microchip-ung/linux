@@ -1769,8 +1769,20 @@ bool dsa_mdb_present_in_other_db(struct dsa_switch *ds, int port,
 }
 EXPORT_SYMBOL_GPL(dsa_mdb_present_in_other_db);
 
+static bool __dsa_lower_is_conduit(struct net_device *dev,
+				   struct net_device *lower_dev)
+{
+	struct dsa_port *dp = dsa_port_from_netdev(dev);
+
+	if (IS_ERR_OR_NULL(dp))
+		return false;
+
+	return dsa_port_to_conduit(dp) == lower_dev;
+}
+
 static const struct dsa_stubs __dsa_stubs = {
 	.conduit_hwtstamp_validate = __dsa_conduit_hwtstamp_validate,
+	.lower_is_conduit = __dsa_lower_is_conduit,
 };
 
 static void dsa_register_stubs(void)
