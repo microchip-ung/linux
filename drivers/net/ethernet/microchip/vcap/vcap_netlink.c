@@ -2291,6 +2291,7 @@ int vcap_netlink_init_from_priv(void *priv,
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(vcap_netlink_init_from_priv);
 
 int vcap_netlink_init(struct vcap_control *ctrl, struct net_device *ndev)
 {
@@ -2320,3 +2321,4 @@ void vcap_netlink_uninit(struct vcap_control *vctrl)
 out:
 	mutex_unlock(&vcap_nl_lock);
 }
+EXPORT_SYMBOL_GPL(vcap_netlink_uninit);
