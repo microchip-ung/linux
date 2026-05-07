@@ -24,7 +24,6 @@
 
 static const u8 mrp_test_dmac[ETH_ALEN] = { 0x1, 0x15, 0x4e, 0x0, 0x0, 0x1 };
 static const u8 mrp_in_test_dmac[ETH_ALEN] = { 0x1, 0x15, 0x4e, 0x0, 0x0, 0x3 };
-static const u8 mrp_dmac_mask[ETH_ALEN] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xf8 };
 
 void lan9645x_mrp_ring_open(struct lan9645x *lan9645x)
 {
@@ -419,10 +418,7 @@ static int lan9645x_mrp_port_hijack_test(struct mrp_port *mrp_port,
 {
 	struct lan9645x_port *port = mrp_port->priv;
 	u8 ifh[LAN9645X_IFH_LEN];
-	struct net_device *dev;
 	u64 seq_num;
-
-	dev = lan9645x_port_to_ndev(port);
 
 	/* The AFI can not inject frames via the NPI port, unless frame aging is
 	 * disabled on frontports, so we use manual injection for AFI frames.
