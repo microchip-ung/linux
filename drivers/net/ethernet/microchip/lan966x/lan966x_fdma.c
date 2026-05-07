@@ -330,13 +330,12 @@ static void lan966x_fdma_tx_clear_buf(struct lan966x *lan966x, int weight)
 	struct fdma *fdma = tx->fdma;
 	struct xdp_frame_bulk bq;
 	struct fdma_db *db;
-	unsigned long flags;
 	bool clear = false;
 	int i;
 
 	xdp_frame_bulk_init(&bq);
 
-	spin_lock_irqsave(&lan966x->tx_lock, flags);
+	spin_lock(&lan966x->tx_lock);
 	for (i = 0; i < fdma->n_dcbs; ++i) {
 		dcb_buf = &tx->dcbs_buf[i];
 
@@ -381,7 +380,7 @@ static void lan966x_fdma_tx_clear_buf(struct lan966x *lan966x, int weight)
 	if (clear)
 		lan966x_fdma_wakeup_netdev(lan966x);
 
-	spin_unlock_irqrestore(&lan966x->tx_lock, flags);
+	spin_unlock(&lan966x->tx_lock);
 }
 
 static int lan966x_fdma_rx_check_frame(struct lan966x_rx *rx, u64 *src_port)
