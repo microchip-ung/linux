@@ -301,10 +301,7 @@ static int __lan9645x_mdb_del(struct lan9645x *lan9645x, int chip_port,
 	int err;
 
 	mdb_entry = lan9645x_mdb_entry_lookup(lan9645x, addr, vid);
-	if (!mdb_entry)
-		return -ENOENT;
-
-	if (!(mdb_entry->ports & BIT(chip_port)))
+	if (!mdb_entry || !(mdb_entry->ports & BIT(chip_port)))
 		return 0;
 
 	mdb_entry->ports &= ~BIT(chip_port);
