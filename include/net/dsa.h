@@ -9,6 +9,7 @@
 
 #include <linux/if.h>
 #include <linux/if_ether.h>
+#include <linux/if_hsr.h>
 #include <linux/list.h>
 #include <linux/notifier.h>
 #include <linux/timer.h>
@@ -306,6 +307,7 @@ struct dsa_port {
 	netdevice_tracker	conduit_tracker;
 	struct dsa_lag		*lag;
 	struct net_device	*hsr_dev;
+	u8			hsr_port_type;
 
 	struct list_head list;
 
@@ -750,6 +752,11 @@ static inline struct net_device *dsa_port_to_conduit(const struct dsa_port *dp)
 		return dsa_port_lag_dev_get(dp->cpu_dp);
 
 	return dp->cpu_dp->conduit;
+}
+
+static inline bool dsa_port_is_hsr_interlink(const struct dsa_port *dp)
+{
+	return dp->hsr_dev && dp->hsr_port_type == HSR_PT_INTERLINK;
 }
 
 static inline

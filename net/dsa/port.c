@@ -2074,10 +2074,19 @@ int dsa_port_hsr_join(struct dsa_port *dp, struct net_device *hsr,
 		return -EOPNOTSUPP;
 
 	dp->hsr_dev = hsr;
+	dp->hsr_port_type = HSR_PT_NONE;
+	if (dp->user) {
+		enum hsr_port_type t;
+
+		if (!hsr_get_port_type(hsr, dp->user, &t))
+			dp->hsr_port_type = t;
+	}
 
 	err = ds->ops->port_hsr_join(ds, dp->index, hsr, extack);
-	if (err)
+	if (err) {
 		dp->hsr_dev = NULL;
+		dp->hsr_port_type = HSR_PT_NONE;
+	}
 
 	return err;
 }
@@ -2088,6 +2097,7 @@ void dsa_port_hsr_leave(struct dsa_port *dp, struct net_device *hsr)
 	int err;
 
 	dp->hsr_dev = NULL;
+	dp->hsr_port_type = HSR_PT_NONE;
 
 	if (ds->ops->port_hsr_leave) {
 		err = ds->ops->port_hsr_leave(ds, dp->index, hsr);
