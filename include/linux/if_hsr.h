@@ -46,6 +46,9 @@ struct net_device *hsr_get_port_ndev(struct net_device *ndev,
 				     enum hsr_port_type pt);
 int hsr_get_port_type(struct net_device *hsr_dev, struct net_device *dev,
 		      enum hsr_port_type *type);
+int hsr_proxy_node_refresh(struct net_device *hsr_dev,
+			   const unsigned char *addr);
+int hsr_get_supervision_addr(struct net_device *hsr_dev, unsigned char *addr);
 #else
 static inline bool is_hsr_master(struct net_device *dev)
 {
@@ -70,6 +73,18 @@ static inline struct net_device *hsr_get_port_ndev(struct net_device *ndev,
 static inline int hsr_get_port_type(struct net_device *hsr_dev,
 				    struct net_device *dev,
 				    enum hsr_port_type *type)
+{
+	return -EINVAL;
+}
+
+static inline int hsr_proxy_node_refresh(struct net_device *hsr_dev,
+					 const unsigned char *addr)
+{
+	return -EINVAL;
+}
+
+static inline int hsr_get_supervision_addr(struct net_device *hsr_dev,
+					   unsigned char *addr)
 {
 	return -EINVAL;
 }

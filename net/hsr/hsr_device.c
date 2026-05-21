@@ -824,6 +824,36 @@ int hsr_get_port_type(struct net_device *hsr_dev, struct net_device *dev,
 }
 EXPORT_SYMBOL(hsr_get_port_type);
 
+int hsr_proxy_node_refresh(struct net_device *hsr_dev,
+			   const unsigned char *addr)
+{
+	struct hsr_priv *hsr = netdev_priv(hsr_dev);
+	struct hsr_node *node;
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(node, &hsr->proxy_node_db, mac_list) {
+		if (ether_addr_equal(node->macaddress_A, addr)) {
+			node->time_in[HSR_PT_INTERLINK] = jiffies;
+			node->time_in_stale[HSR_PT_INTERLINK] = false;
+			rcu_read_unlock();
+			return 0;
+		}
+	}
+	rcu_read_unlock();
+
+	return -ENOENT;
+}
+EXPORT_SYMBOL(hsr_proxy_node_refresh);
+
+int hsr_get_supervision_addr(struct net_device *hsr_dev, unsigned char *addr)
+{
+	struct hsr_priv *hsr = netdev_priv(hsr_dev);
+
+	ether_addr_copy(addr, hsr->sup_multicast_addr);
+	return 0;
+}
+EXPORT_SYMBOL(hsr_get_supervision_addr);
+
 /* Default multicast address for HSR Supervision frames */
 static const unsigned char def_multicast_addr[ETH_ALEN] __aligned(2) = {
 	0x01, 0x15, 0x4e, 0x00, 0x01, 0x00

@@ -262,9 +262,11 @@ struct hsr_node *hsr_get_node(struct hsr_port *port, struct list_head *node_db,
 	/* Everyone may create a node entry, connected node to a HSR/PRP
 	 * device.
 	 */
-	if (port->dev->features & NETIF_F_HW_HSR_TAG_RM)
-		return hsr_add_node(hsr, node_db, ethhdr->h_source, seq_out,
+	if (port->dev->features & NETIF_F_HW_HSR_TAG_RM) {
+		node = hsr_add_node(hsr, node_db, ethhdr->h_source, seq_out,
 				    san, rx_port);
+		goto notify;
+	}
 
 	if (ethhdr->h_proto == htons(ETH_P_HSR)) {
 		/* Check if skb contains hsr_ethhdr */
@@ -285,8 +287,20 @@ struct hsr_node *hsr_get_node(struct hsr_port *port, struct list_head *node_db,
 		}
 	}
 
-	return hsr_add_node(hsr, node_db, ethhdr->h_source, seq_out,
+	node = hsr_add_node(hsr, node_db, ethhdr->h_source, seq_out,
 			    san, rx_port);
+notify:
+	/* Don't notify the driver about the redbox itself. It can land in
+	 * proxy_node_db via the hsr_proxy_announce -> hsr_forward_skb path
+	 * where hsr_xmit replaces SMAC with macaddress_redbox before the
+	 * frame is processed as an interlink-rx event.
+	 */
+	if (node && node_db == &hsr->proxy_node_db && !node->proxy_notified &&
+	    !hsr_addr_is_self(hsr, node->macaddress_A)) {
+		node->proxy_notified = true;
+		hsr_proxy_node_switchdev_add(hsr, node);
+	}
+	return node;
 }
 
 /* Use the Supervision frame's info about an eventual macaddress_B for merging
@@ -716,6 +730,10 @@ void hsr_prune_proxy_nodes(struct timer_list *t)
 		if (time_is_before_jiffies(timestamp +
 				msecs_to_jiffies(HSR_PROXY_NODE_FORGET_TIME))) {
 			hsr_nl_nodedown(hsr, node->macaddress_A);
+			if (node->proxy_notified) {
+				node->proxy_notified = false;
+				hsr_proxy_node_switchdev_del(hsr, node);
+			}
 			if (!node->removed) {
 				list_del_rcu(&node->mac_list);
 				node->removed = true;

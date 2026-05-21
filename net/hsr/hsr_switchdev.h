@@ -8,6 +8,8 @@
 #ifdef CONFIG_NET_SWITCHDEV
 int hsr_node_switchdev_add(struct hsr_priv *hsr, struct hsr_node *node);
 int hsr_node_switchdev_del(struct hsr_priv *hsr, struct hsr_node *node);
+int hsr_proxy_node_switchdev_add(struct hsr_priv *hsr, struct hsr_node *node);
+int hsr_proxy_node_switchdev_del(struct hsr_priv *hsr, struct hsr_node *node);
 #else
 static int hsr_node_switchdev_add(struct hsr_priv *hsr, struct hsr_node *node)
 {
@@ -15,6 +17,18 @@ static int hsr_node_switchdev_add(struct hsr_priv *hsr, struct hsr_node *node)
 }
 
 static int hsr_node_switchdev_del(struct hsr_priv *hsr, struct hsr_node *node)
+{
+	return 0;
+}
+
+static int hsr_proxy_node_switchdev_add(struct hsr_priv *hsr,
+					struct hsr_node *node)
+{
+	return 0;
+}
+
+static int hsr_proxy_node_switchdev_del(struct hsr_priv *hsr,
+					struct hsr_node *node)
 {
 	return 0;
 }

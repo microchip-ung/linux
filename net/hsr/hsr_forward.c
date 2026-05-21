@@ -501,15 +501,55 @@ bool hsr_drop_frame(struct hsr_frame_info *frame, struct hsr_port *port)
 {
 	struct sk_buff *skb;
 
-	if (port->dev->features & NETIF_F_HW_HSR_FWD)
-		return prp_drop_frame(frame, port);
-
-	/* RedBox specific frames dropping policies
-	 *
-	 * Do not send HSR supervisory frames to SAN devices
+	/* HSR control frames must not leak to the SAN side, regardless of
+	 * whether the destination port has HW forwarding offload.
 	 */
 	if (frame->is_supervision && port->type == HSR_PT_INTERLINK)
 		return true;
+
+	/* Ring -> interlink forwarding offload: the datapath autonomously
+	 * forwards ring-ingress frames to the interlink, so a software
+	 * dispatch on top would put a second copy on the SAN side.
+	 */
+	if (port->type == HSR_PT_INTERLINK &&
+	    port->dev->features & NETIF_F_HW_HSR_FWD &&
+	    (frame->port_rcv->type == HSR_PT_SLAVE_A ||
+	     frame->port_rcv->type == HSR_PT_SLAVE_B))
+		return true;
+
+	/* CPU -> interlink replication offload: NETIF_F_HW_HSR_DUP on the
+	 * interlink port indicates the datapath also replicates locally
+	 * originated frames to the interlink as part of its CPU-side
+	 * dispatch path (the flag's usual meaning - HW duplicates a single
+	 * CPU-injected copy to both ring legs - extended to the interlink
+	 * leg). When set, kernel-side dispatch to the interlink slave is
+	 * suppressed to avoid a second copy. Hardware that offloads
+	 * ring<->interlink forwarding but not the CPU->interlink path may
+	 * set HW_HSR_FWD without HW_HSR_DUP.
+	 */
+	if (port->type == HSR_PT_INTERLINK &&
+	    port->dev->features & NETIF_F_HW_HSR_DUP &&
+	    frame->port_rcv->type == HSR_PT_MASTER)
+		return true;
+
+	/* Symmetric to the slave->interlink case: when the interlink offloads
+	 * forwarding, the datapath autonomously turns SAN-ingress frames into
+	 * tagged ring-egress frames, so suppress the software dispatch to the
+	 * ring slaves.
+	 *
+	 * Supervision frames are exempt because the kernel's proxy-announce
+	 * path constructs them with port_rcv = HSR_PT_INTERLINK and relies on
+	 * this path reaching the slave-side dev_queue_xmit to actually emit
+	 * them on the ring.
+	 */
+	if (frame->port_rcv->type == HSR_PT_INTERLINK &&
+	    frame->port_rcv->dev->features & NETIF_F_HW_HSR_FWD &&
+	    !frame->is_supervision &&
+	    (port->type == HSR_PT_SLAVE_A || port->type == HSR_PT_SLAVE_B))
+		return true;
+
+	if (port->dev->features & NETIF_F_HW_HSR_FWD)
+		return prp_drop_frame(frame, port);
 
 	/* Do not forward to other HSR port (A or B) unicast frames which
 	 * are addressed to interlink port (and are in the ProxyNodeTable).
