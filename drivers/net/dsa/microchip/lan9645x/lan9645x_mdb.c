@@ -245,9 +245,9 @@ lan9645x_mdb_pgid_entry_get(struct lan9645x *lan9645x,
  * entries, where the portmask can be encoded directly in the mac, instead of
  * using the (limited) PGIDS for egress port masks.
  */
-static int __lan9645x_mdb_add(struct lan9645x *lan9645x, int chip_port,
-			      const unsigned char addr[ETH_ALEN], u16 vid,
-			      enum macaccess_entry_type type)
+int __lan9645x_mdb_add(struct lan9645x *lan9645x, int chip_port,
+		       const unsigned char addr[ETH_ALEN], u16 vid,
+		       enum macaccess_entry_type type)
 {
 	struct lan9645x_pgid_entry *old_pgid, *new_pgid;
 	struct lan9645x_mdb_entry *mdb_entry;
@@ -291,9 +291,9 @@ static int __lan9645x_mdb_add(struct lan9645x *lan9645x, int chip_port,
 	return err;
 }
 
-static int __lan9645x_mdb_del(struct lan9645x *lan9645x, int chip_port,
-			      const unsigned char addr[ETH_ALEN], u16 vid,
-			      enum macaccess_entry_type type)
+int __lan9645x_mdb_del(struct lan9645x *lan9645x, int chip_port,
+		       const unsigned char addr[ETH_ALEN], u16 vid,
+		       enum macaccess_entry_type type)
 {
 	struct lan9645x_pgid_entry *old_pgid, *new_pgid;
 	struct lan9645x_mdb_entry *mdb_entry;

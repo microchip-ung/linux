@@ -41,6 +41,31 @@
  *   the htag etype in the tag, for alignment reasons. Our tag driver must take
  *   care to pop the remaining htag fragment.
  *
+ *
+ * VCAP / lookup and ISDX usage overview:
+ *
+ * IS1 (ingress stage 1):
+ * - LAN9645X_VCAP_CID_IS1_L1 (lookup 1), NORMAL keyset: per-SAN classification
+ *   rules and the shared catch-all rule. Both key on the SAN SMAC (the catch-all
+ *   keys on the interlink ingress port mask instead) and their action assigns an
+ *   ISDX, which selects the stream-table entry that does PRP/HSR sequence
+ *   generation.
+ * - LAN9645X_VCAP_CID_IS1_L2 (lookup 2), DMAC_VID keyset: pair/local-ring rules.
+ * - Per-port S1 keyset selection is done in apply_*_port_cfg() via
+ *   ANA_VCAP_CFG.S1_SMAC_ENA and ANA_VCAP_S1_CFG. The user can not currently
+ *   reconfigure these (no tc template support yet), so the driver owns them.
+ *
+ * IS2 (ingress stage 2):
+ * - VCAP_CID_INGRESS_STAGE2_L1 (lookup 1), MAC_ETYPE keyset: the SMAC-kill rule
+ *   that discards the redbox's own frames so they are not looped back onto the
+ *   ring. Per-port the S2 lookup is set to mac_etype_llc.
+ *
+ * Stream table / ISDX:
+ * - Each ISDX entry enables sequence generation (seq_gen_ena). One ISDX is
+ *   allocated per offloaded SAN proxy node, plus one shared catch-all ISDX for
+ *   deferred / not-yet-classified SAN traffic. The per-ISDX packet counters are
+ *   polled to refresh proxy-node liveness (see proxy_refresh_work).
+ *
  */
 #define LAN9645X_SUPPORTED_PRP_FEATURES					\
 	(NETIF_F_HW_HSR_TAG_RM | NETIF_F_HW_HSR_FWD | NETIF_F_HW_HSR_DUP)
@@ -49,16 +74,14 @@
 	(NETIF_F_HW_HSR_TAG_INS | NETIF_F_HW_HSR_TAG_RM | NETIF_F_HW_HSR_FWD | \
 	 NETIF_F_HW_HSR_DUP)
 
-#define for_each_hsr_port(_lan_id, _port, _porta, _portb)	\
-	for ((_lan_id) = 0, (_port) = (_porta); (_lan_id) < 2;	\
-	     _lan_id++, (_port) = (_portb))
-
 #define PORT_CPU_A_B 0x7
 #define PORT_CPU 0x4
 
 #define HSR_ASIC_KHZ 165625
 #define DD_TBL_NUM_ROWS (8 * 64)
 #define DD_AUTOAGE_UNITSIZE 1
+
+#define PROXY_REFRESH_PERIOD_MS 5000
 
 struct lan9645x_hsr_prp_node_counters {
 	u32 time_last_seen_a;
@@ -436,6 +459,185 @@ void lan9645x_hsr_prp_dan_node_del(struct lan9645x *lan9645x,
 	lan9645x_hsr_prp_dan_node_dealloc(lan9645x, dev, n);
 }
 
+static void
+lan9645x_hsr_prp_proxy_node_dealloc(struct lan9645x *lan9645x,
+				    struct net_device *dev,
+				    struct lan9645x_hsr_prp_proxy_node *n)
+{
+	if (!n)
+		return;
+
+	dev_dbg(lan9645x->dev, "ndev=%s smac=%pM last_rx=%llu\n",
+		netdev_name(dev), n->smac, n->last_rx_pkts);
+
+	vcap_del_rule(lan9645x->vcap_ctrl, dev, n->vrule_id);
+	lan9645x_streamt_del(lan9645x, n->isdx);
+	lan9645x_stream_isdx_free(lan9645x, n->isdx);
+	kfree(n);
+}
+
+static void lan9645x_hsr_prp_proxy_nodes_flush(struct lan9645x *lan9645x)
+{
+	struct lan9645x_hsr_prp_proxy_node *n, *tmp;
+	struct lan9645x_hsr_prp *h = &lan9645x->hsr;
+	struct net_device *dev;
+
+	lockdep_assert_held(&h->lock);
+
+	if (h->port_c < 0)
+		return;
+
+	dev = lan9645x_chipport_to_ndev(lan9645x, h->port_c);
+
+	list_for_each_entry_safe(n, tmp, &h->proxy_nodes, list) {
+		list_del(&n->list);
+		lan9645x_hsr_prp_proxy_node_dealloc(lan9645x, dev, n);
+	}
+}
+
+static void lan9645x_hsr_prp_proxy_refresh_work(struct work_struct *work)
+{
+	struct lan9645x_hsr_prp *h = container_of(to_delayed_work(work),
+						  struct lan9645x_hsr_prp,
+						  proxy_refresh_work);
+	struct lan9645x *lan9645x = container_of(h, struct lan9645x, hsr);
+	struct lan9645x_hsr_prp_proxy_node *n;
+	u64 *isdx_cnt, pkts;
+
+	mutex_lock(&h->lock);
+
+	if (!h->interlink_enabled || !h->hsr_dev)
+		goto unlock;
+
+	list_for_each_entry(n, &h->proxy_nodes, list) {
+		mutex_lock(&lan9645x->stats->hw_lock);
+		isdx_cnt = STAT_COUNTERS(lan9645x, LAN9645X_STAT_ISDX, n->isdx);
+		pkts = isdx_cnt[SCNT_ISDX_GREEN_PKT] +
+		       isdx_cnt[SCNT_ISDX_YELLOW_PKT] +
+		       isdx_cnt[SCNT_ISDX_RED_PKT];
+		mutex_unlock(&lan9645x->stats->hw_lock);
+
+		if (pkts != n->last_rx_pkts) {
+			n->last_rx_pkts = pkts;
+			/* Refresh the proxy node in the HSR driver, if we have
+			 * seen frames from it. Since interlink forwarding is
+			 * offloaded the HSR driver does not see frames from
+			 * proxy nodes. We have to make sure it does not age out
+			 * the entries from its proxy nodes table.
+			 */
+			hsr_proxy_node_refresh(h->hsr_dev, n->smac);
+		}
+	}
+
+	schedule_delayed_work(&h->proxy_refresh_work,
+			      msecs_to_jiffies(PROXY_REFRESH_PERIOD_MS));
+
+unlock:
+	mutex_unlock(&h->lock);
+}
+
+int lan9645x_hsr_prp_proxy_node_add(struct lan9645x *lan9645x, int port,
+				    struct net_device *hsr,
+				    const unsigned char *smac)
+{
+	struct lan9645x_hsr_prp *h = &lan9645x->hsr;
+	struct lan9645x_hsr_prp_proxy_node *n, *tmp;
+	struct lan9645x_streamt_entry entry = { };
+	struct net_device *dev;
+	int isdx;
+	int err;
+
+	dev_dbg(lan9645x->dev, "port=%d ndev=%s smac=%pM\n",
+		port, netdev_name(hsr), smac);
+
+	mutex_lock(&h->lock);
+
+	if (!h->interlink_enabled || port != h->port_c) {
+		err = -EOPNOTSUPP;
+		goto unlock;
+	}
+
+	list_for_each_entry(tmp, &h->proxy_nodes, list)
+		if (ether_addr_equal(tmp->smac, smac))
+			goto unlock;
+
+	dev = lan9645x_chipport_to_ndev(lan9645x, port);
+
+	n = kzalloc(sizeof(*n), GFP_KERNEL);
+	if (!n) {
+		err = -ENOMEM;
+		goto unlock;
+	}
+
+	isdx = lan9645x_stream_isdx_alloc(lan9645x);
+	if (isdx < 0) {
+		err = isdx;
+		goto free_n;
+	}
+
+	entry.input_port_mask = BIT(port);
+	entry.seq_gen_ena = true;
+	err = lan9645x_streamt_write(lan9645x, isdx, &entry);
+	if (err)
+		goto free_isdx;
+
+	ether_addr_copy(n->smac, smac);
+	n->isdx = isdx;
+
+	/* Add isdx classification rule for traffic from proxy node.  */
+	err = lan9645x_vcap_s1_normal_isdx_clf(lan9645x, n->smac, BIT(port),
+					       isdx, VLAN_HSR_PRP, false, dev,
+					       &n->vrule_id);
+	if (err)
+		goto free_streamt;
+
+	list_add_tail(&n->list, &h->proxy_nodes);
+	mutex_unlock(&h->lock);
+
+	return 0;
+
+free_streamt:
+	lan9645x_streamt_del(lan9645x, isdx);
+free_isdx:
+	lan9645x_stream_isdx_free(lan9645x, isdx);
+free_n:
+	kfree(n);
+unlock:
+	mutex_unlock(&h->lock);
+	return err;
+}
+
+void lan9645x_hsr_prp_proxy_node_del(struct lan9645x *lan9645x, int port,
+				     struct net_device *hsr,
+				     const unsigned char *smac)
+{
+	struct lan9645x_hsr_prp_proxy_node *tmp, *n = NULL;
+	struct lan9645x_hsr_prp *h = &lan9645x->hsr;
+	struct net_device *dev;
+
+	dev_dbg(lan9645x->dev, "port=%d ndev=%s smac=%pM\n", port, netdev_name(hsr), smac);
+
+	mutex_lock(&h->lock);
+
+	if (!h->interlink_enabled || port != h->port_c) {
+		mutex_unlock(&h->lock);
+		return;
+	}
+
+	dev = lan9645x_chipport_to_ndev(lan9645x, port);
+
+	list_for_each_entry(tmp, &h->proxy_nodes, list) {
+		if (ether_addr_equal(tmp->smac, smac)) {
+			n = tmp;
+			list_del(&n->list);
+			break;
+		}
+	}
+	mutex_unlock(&h->lock);
+
+	lan9645x_hsr_prp_proxy_node_dealloc(lan9645x, dev, n);
+}
+
 static netdev_features_t
 lan9645x_hsr_get_features(enum lan9645x_hsr_type if_type)
 {
@@ -516,10 +718,12 @@ static void lan9645x_hsr_ddiscard_autoage(struct lan9645x *lan9645x,
 }
 
 int lan9645x_hsr_prp_prepare(struct lan9645x *lan9645x, int port,
-			     struct net_device *hsr, enum lan9645x_hsr_type type,
+			     struct net_device *hsr,
+			     enum lan9645x_hsr_type type,
 			     struct netlink_ext_ack *extack)
 {
-	/* TODO: Do not accept interlink. */
+	struct dsa_port *dp = dsa_to_port(lan9645x->ds, port);
+	bool is_interlink = dp && dp->hsr_port_type == HSR_PT_INTERLINK;
 
 	if (lan9645x->npi == port) {
 		NL_SET_ERR_MSG_MOD(extack,
@@ -527,7 +731,7 @@ int lan9645x_hsr_prp_prepare(struct lan9645x *lan9645x, int port,
 		return -EOPNOTSUPP;
 	}
 
-	if (lan9645x->hsr.enabled) {
+	if (!is_interlink && lan9645x->hsr.enabled) {
 		NL_SET_ERR_MSG_MOD(extack,
 				   "Can only offload one pair of HSR/PRP ports");
 		return -ENOSPC;
@@ -557,16 +761,458 @@ static u32 lan9645x_hsr_shadow_mask(struct lan9645x *lan9645x)
 	return mask;
 }
 
+static void apply_ring_port_cfg(struct lan9645x *lan9645x, int port, int lan_id,
+				int lrea_port, u32 port_ab_mask, int net_id,
+				enum lan9645x_hsr_type type)
+{
+	struct lan9645x_port *p = lan9645x_to_port(lan9645x, port);
+
+	/* Classify ingress on this ring port into the reserved HSR/PRP VLAN. */
+	lan_rmw(ANA_VLAN_CFG_VLAN_VID_SET(VLAN_HSR_PRP),
+		ANA_VLAN_CFG_VLAN_VID,
+		lan9645x, ANA_VLAN_CFG(port));
+
+	/* Egress port VID, same reserved HSR/PRP VLAN. */
+	lan_rmw(REW_PORT_VLAN_CFG_PORT_VID_SET(VLAN_HSR_PRP),
+		REW_PORT_VLAN_CFG_PORT_VID,
+		lan9645x, REW_PORT_VLAN_CFG(port));
+
+	/* Do not push a VLAN tag on egress (internal VLAN only). */
+	lan_rmw(REW_TAG_CFG_TAG_TPID_CFG_SET(0) |
+		REW_TAG_CFG_TAG_CFG_SET(LAN9645X_TAG_NO_PVID_NO_UNAWARE),
+		REW_TAG_CFG_TAG_TPID_CFG |
+		REW_TAG_CFG_TAG_CFG,
+		lan9645x, REW_TAG_CFG(port));
+
+	/* Enable MAC learning on the ring port. */
+	p->learn_ena = true;
+	lan_rmw(ANA_PORT_CFG_LEARN_ENA_SET(true),
+		ANA_PORT_CFG_LEARN_ENA,
+		lan9645x, ANA_PORT_CFG(port));
+
+	/* Ingress redundancy-tag awareness: PRP or HSR, plus LAN-id / NET-id. */
+	lan_rmw(ANA_RED_CFG_PRP_AWARE_ENA_SET(type == LAN9645X_PRP) |
+		ANA_RED_CFG_HSR_AWARE_ENA_SET(type == LAN9645X_HSR) |
+		ANA_RED_CFG_LANID_SET(!lan_id) |
+		ANA_RED_CFG_NETID_SET(net_id),
+		ANA_RED_CFG_PRP_AWARE_ENA |
+		ANA_RED_CFG_HSR_AWARE_ENA |
+		ANA_RED_CFG_LANID |
+		ANA_RED_CFG_NETID,
+		lan9645x, ANA_RED_CFG(port));
+
+	/* Egress redundancy-tag insertion: HSR tag for HSR, RCT for PRP. */
+	lan_rmw(REW_RED_TAG_CFG_HSR_TAG_ENA_SET(type == LAN9645X_HSR) |
+		REW_RED_TAG_CFG_NETID_SET(net_id) |
+		REW_RED_TAG_CFG_LANID_SET(lan_id) |
+		REW_RED_TAG_CFG_RED_TAG_CFG_SET(type == LAN9645X_HSR) |
+		REW_RED_TAG_CFG_PRP_RCT_TAG_ENA_SET(type == LAN9645X_PRP),
+		REW_RED_TAG_CFG_HSR_TAG_ENA |
+		REW_RED_TAG_CFG_NETID |
+		REW_RED_TAG_CFG_LANID |
+		REW_RED_TAG_CFG_RED_TAG_CFG |
+		REW_RED_TAG_CFG_PRP_RCT_TAG_ENA,
+		lan9645x, REW_RED_TAG_CFG(port));
+
+	/* Use SMAC in S1 keyset S1_DMAC_VID instead of DMAC in lookup 3. */
+	lan_rmw(ANA_VCAP_CFG_S1_SMAC_ENA_SET(S1_LOOKUP3),
+		ANA_VCAP_CFG_S1_SMAC_ENA,
+		lan9645x, ANA_VCAP_CFG(port));
+
+	/* Classify every frame type as DMAC_VID keyset on lookup 3. */
+	lan_rmw(ANA_VCAP_S1_CFG_KEY_IP6_CFG_SET(6) |
+		ANA_VCAP_S1_CFG_KEY_IP4_CFG_SET(4) |
+		ANA_VCAP_S1_CFG_KEY_OTHER_CFG_SET(3),
+		ANA_VCAP_S1_CFG_KEY_IP6_CFG |
+		ANA_VCAP_S1_CFG_KEY_IP4_CFG |
+		ANA_VCAP_S1_CFG_KEY_OTHER_CFG,
+		 lan9645x, ANA_VCAP_S1_CFG(port, 2));
+
+	if (type == LAN9645X_HSR) {
+		/* Set this port's IS2 lookup 2 keyset to MAC_ETYPE/LLC for all
+		 * frames.
+		 */
+		lan9645x_is2_only_mac_etype_llc(lan9645x, S2_LOOKUP2, port);
+
+		/* Strip the 48-bit RTAG ETYPE on ingress / restore on egress,
+		 * matching the HSR RTAG EtherType (0x892F).
+		 */
+		lan_rmw(DEV_PORT_MISC_RTAG48_ENA_SET(1) |
+			DEV_PORT_MISC_RTAG_TYPE_SET(1),
+			DEV_PORT_MISC_RTAG48_ENA |
+			DEV_PORT_MISC_RTAG_TYPE,
+			lan9645x, DEV_PORT_MISC(port));
+
+		/* Enable redundancy-tag parsing in the analyzer. */
+		lan_rmw(ANA_PORT_MODE_REDTAG_PARSE_CFG_SET(1),
+			ANA_PORT_MODE_REDTAG_PARSE_CFG,
+			lan9645x, ANA_PORT_MODE(port));
+
+		/* Redirect frames without an HSR tag to the CPU. */
+		lan_rmw(ANA_CPU_FWD_CFG_NO_HSR_REDIR_ENA_SET(1),
+			ANA_CPU_FWD_CFG_NO_HSR_REDIR_ENA,
+			lan9645x, ANA_CPU_FWD_CFG(port));
+	} else {
+		/* PRP: enable PRP handling and set this port's LAN id. */
+		lan_rmw(SYS_PORT_MODE_PRP_LANID_SET(lan_id) |
+			SYS_PORT_MODE_PRP_ENA_SET(1),
+			SYS_PORT_MODE_PRP_LANID |
+			SYS_PORT_MODE_PRP_ENA,
+			lan9645x, SYS_PORT_MODE(port));
+	}
+
+	/* Give both ring ports the same logical (LAG-style) port id. The same
+	 * SMAC can be seen on A and B; without a shared id the MAC table entry
+	 * would thrash between the two ports as frames arrive. Pinning learned
+	 * MACs to one id keeps them stable.
+	 */
+	lan_rmw(ANA_PORT_CFG_PORTID_VAL_SET(lrea_port),
+		ANA_PORT_CFG_PORTID_VAL,
+		lan9645x, ANA_PORT_CFG(port));
+
+	/* Destination mask for the shared port id = A | B, so frames for it
+	 * egress on both ring ports.
+	 */
+	lan_wr(port_ab_mask, lan9645x, ANA_PGID(port));
+	lan9645x_hsr_features_set(lan9645x, port, type);
+}
+
+static void apply_interlink_port_cfg(struct lan9645x *lan9645x, int port)
+{
+	struct lan9645x_port *p = lan9645x_to_port(lan9645x, port);
+
+	/* Select the NORMAL IS1 keysets for this port's SMAC lookup. */
+	lan_rmw(ANA_VCAP_S1_CFG_KEY_IP6_CFG_SET(VCAP_IS1_PS_IPV6_NORMAL) |
+		ANA_VCAP_S1_CFG_KEY_IP4_CFG_SET(VCAP_IS1_PS_IPV4_NORMAL) |
+		ANA_VCAP_S1_CFG_KEY_OTHER_CFG_SET(VCAP_IS1_PS_OTHER_NORMAL),
+		ANA_VCAP_S1_CFG_KEY_IP6_CFG |
+		ANA_VCAP_S1_CFG_KEY_IP4_CFG |
+		ANA_VCAP_S1_CFG_KEY_OTHER_CFG,
+		lan9645x, ANA_VCAP_S1_CFG(port, 1));
+
+	/* Use the MAC/ETYPE/LLC keyset in IS2 for the SMAC-kill rule. */
+	lan9645x_is2_only_mac_etype_llc(lan9645x, S2_LOOKUP2, port);
+
+	/* Classify ingress on the interlink into the reserved HSR/PRP VLAN. */
+	lan_rmw(ANA_VLAN_CFG_VLAN_VID_SET(VLAN_HSR_PRP),
+		ANA_VLAN_CFG_VLAN_VID,
+		lan9645x, ANA_VLAN_CFG(port));
+
+	/* Egress port VID, same reserved HSR/PRP VLAN. */
+	lan_rmw(REW_PORT_VLAN_CFG_PORT_VID_SET(VLAN_HSR_PRP),
+		REW_PORT_VLAN_CFG_PORT_VID,
+		lan9645x, REW_PORT_VLAN_CFG(port));
+
+	/* Do not push a VLAN tag on egress (internal VLAN only). */
+	lan_rmw(REW_TAG_CFG_TAG_TPID_CFG_SET(0) |
+		REW_TAG_CFG_TAG_CFG_SET(LAN9645X_TAG_NO_PVID_NO_UNAWARE),
+		REW_TAG_CFG_TAG_TPID_CFG |
+		REW_TAG_CFG_TAG_CFG,
+		lan9645x, REW_TAG_CFG(port));
+
+	p->learn_ena = true;
+	/* LEARNCPU: copy each new-MAC-learn event on this port to the CPU. The
+	 * kernel HSR core uses the resulting frame to populate proxy_node_db and
+	 * fire a switchdev event that installs the per-SAN VCAP rule.
+	 */
+	lan_rmw(ANA_PORT_CFG_LEARN_ENA_SET(true) |
+		ANA_PORT_CFG_LEARNCPU_SET(true),
+		ANA_PORT_CFG_LEARN_ENA |
+		ANA_PORT_CFG_LEARNCPU,
+		lan9645x, ANA_PORT_CFG(port));
+
+	/* Interlink faces the SAN side: HSR-aware, not PRP-aware. */
+	lan_rmw(ANA_RED_CFG_PRP_AWARE_ENA_SET(false) |
+		ANA_RED_CFG_HSR_AWARE_ENA_SET(true),
+		ANA_RED_CFG_HSR_AWARE_ENA |
+		ANA_RED_CFG_PRP_AWARE_ENA,
+		lan9645x, ANA_RED_CFG(port));
+
+	/* RTAG pop on egress, no HSR tag insertion. */
+	lan_rmw(REW_RED_TAG_CFG_HSR_TAG_ENA_SET(false) |
+		REW_RED_TAG_CFG_RED_TAG_CFG_SET(false),
+		REW_RED_TAG_CFG_HSR_TAG_ENA |
+		REW_RED_TAG_CFG_RED_TAG_CFG,
+		lan9645x, REW_RED_TAG_CFG(port));
+
+	/* No 48-bit RTAG ETYPE translation on the SAN-facing interlink. */
+	lan_rmw(DEV_PORT_MISC_RTAG48_ENA_SET(0) |
+		DEV_PORT_MISC_RTAG_TYPE_SET(0),
+		DEV_PORT_MISC_RTAG48_ENA |
+		DEV_PORT_MISC_RTAG_TYPE,
+		lan9645x, DEV_PORT_MISC(port));
+
+	/* Always update the egress FCS (the RTAG pop changes the frame). */
+	lan_rmw(REW_PORT_CFG_FCS_UPDATE_NONCPU_CFG_SET(2),
+		REW_PORT_CFG_FCS_UPDATE_NONCPU_CFG,
+		lan9645x, REW_PORT_CFG(port));
+
+	/* Forward only to the interlink port itself. */
+	lan_wr(BIT(port), lan9645x, ANA_PGID(port));
+}
+
+static void revert_interlink_port_cfg(struct lan9645x *lan9645x, int port)
+{
+	struct lan9645x_port *p = lan9645x_to_port(lan9645x, port);
+
+	p->learn_ena = false;
+
+	/* Restore the default IS2 keyset on this port. */
+	lan9645x_is2_default_conf(lan9645x, S2_LOOKUP2, port);
+
+	/* Clear all redundancy-tag awareness. */
+	lan_wr(0, lan9645x, ANA_RED_CFG(port));
+
+	/* Restore the default egress redundancy-tag config. */
+	lan_rmw(REW_RED_TAG_CFG_HSR_TAG_ENA_SET(false) |
+		REW_RED_TAG_CFG_RED_TAG_CFG_SET(true),
+		REW_RED_TAG_CFG_HSR_TAG_ENA |
+		REW_RED_TAG_CFG_RED_TAG_CFG,
+		lan9645x, REW_RED_TAG_CFG(port));
+
+	/* Disable the 48-bit RTAG ETYPE translation. */
+	lan_rmw(DEV_PORT_MISC_RTAG48_ENA_SET(false) |
+		DEV_PORT_MISC_RTAG_TYPE_SET(0),
+		DEV_PORT_MISC_RTAG48_ENA |
+		DEV_PORT_MISC_RTAG_TYPE,
+		lan9645x, DEV_PORT_MISC(port));
+
+	/* Restore default egress FCS update (only when frame data changed). */
+	lan_rmw(REW_PORT_CFG_FCS_UPDATE_NONCPU_CFG_SET(0),
+		REW_PORT_CFG_FCS_UPDATE_NONCPU_CFG,
+		lan9645x, REW_PORT_CFG(port));
+
+	/* Disable MAC learning and the LEARNCPU copy. */
+	lan_rmw(ANA_PORT_CFG_LEARN_ENA_SET(false) |
+		ANA_PORT_CFG_LEARNCPU_SET(false),
+		ANA_PORT_CFG_LEARN_ENA |
+		ANA_PORT_CFG_LEARNCPU,
+		lan9645x, ANA_PORT_CFG(port));
+
+	/* Forward only to the port itself. */
+	lan_wr(BIT(port), lan9645x, ANA_PGID(port));
+}
+
+static int lan9645x_vcap_s1_normal_catch_all(struct lan9645x *lan9645x,
+					     u32 igr_pmsk, u32 isdx,
+					     u16 vid,
+					     struct net_device *dev,
+					     u32 *vrule_id)
+{
+	struct vcap_control *vctrl = lan9645x->vcap_ctrl;
+	struct vcap_rule *rule;
+	int err;
+
+	rule = vcap_alloc_rule(vctrl, dev, LAN9645X_VCAP_CID_IS1_L1,
+			       VCAP_USER_HSR_PRP, 1, 0);
+	if (IS_ERR(rule))
+		return PTR_ERR(rule);
+
+	if (vrule_id)
+		*vrule_id = rule->id;
+
+	err = vcap_set_rule_set_keyset(rule, VCAP_KFS_NORMAL);
+	err |= vcap_rule_add_key_u32(rule, VCAP_KF_IF_IGR_PORT_MASK,
+				     igr_pmsk, ~igr_pmsk);
+	err |= vcap_rule_add_action_bit(rule, VCAP_AF_ISDX_REPLACE_ENA,
+					VCAP_BIT_1);
+	err |= vcap_rule_add_action_u32(rule, VCAP_AF_ISDX_ADD_VAL, isdx);
+	err |= vcap_rule_add_action_bit(rule, VCAP_AF_VID_REPLACE_ENA,
+					VCAP_BIT_1);
+	err |= vcap_rule_add_action_u32(rule, VCAP_AF_VID_VAL, vid);
+	err = err ? -EINVAL : lan9645x_vcap_rule_val_add(rule, ETH_P_ALL);
+	vcap_free_rule(rule);
+	return err;
+}
+
+int lan9645x_hsr_prp_interlink_add(struct lan9645x *lan9645x,
+				   struct lan9645x_port *interlink,
+				   struct net_device *hsr)
+{
+	struct lan9645x_hsr_prp *h = &lan9645x->hsr;
+	struct lan9645x_streamt_entry entry = { };
+	u32 new_smac_kill_vrule_id = 0;
+	struct net_device *dev;
+	u32 port_abc_mask;
+	int catch_all_isdx;
+	int port_c;
+	int err = 0;
+
+	mutex_lock(&h->lock);
+
+	if (!h->enabled) {
+		err = -ENODEV;
+		goto unlock;
+	}
+
+	if (h->interlink_enabled) {
+		err = -EBUSY;
+		goto unlock;
+	}
+
+	if (h->type != LAN9645X_HSR) {
+		err = -EOPNOTSUPP;
+		goto unlock;
+	}
+
+	port_c = interlink->chip_port;
+	dev = lan9645x_chipport_to_ndev(lan9645x, port_c);
+
+	h->port_c = port_c;
+	port_abc_mask = BIT(h->port_a) | BIT(h->port_b) | BIT(port_c);
+
+	catch_all_isdx = lan9645x_stream_isdx_alloc(lan9645x);
+	if (catch_all_isdx < 0) {
+		err = catch_all_isdx;
+		goto fail;
+	}
+
+	entry.input_port_mask = BIT(port_c);
+	entry.seq_gen_ena = true;
+	err = lan9645x_streamt_write(lan9645x, catch_all_isdx, &entry);
+	if (err)
+		goto free_isdx;
+
+	h->catch_all_isdx = catch_all_isdx;
+
+	apply_interlink_port_cfg(lan9645x, port_c);
+
+	lan_rmw(QSYS_DD_CFG_DUPL_DISC_MASK_SET(0xf) |
+		QSYS_DD_CFG_UPD_DISC_TBL_MASK_SET(0xf) |
+		QSYS_DD_CFG_INTERLINK_ENA_SET(1),
+		QSYS_DD_CFG_DUPL_DISC_MASK |
+		QSYS_DD_CFG_UPD_DISC_TBL_MASK |
+		QSYS_DD_CFG_INTERLINK_ENA,
+		lan9645x, QSYS_DD_CFG);
+
+	err = lan9645x_vcap_s1_normal_catch_all(lan9645x, BIT(port_c),
+						catch_all_isdx, VLAN_HSR_PRP,
+						dev, &h->catch_all_vrule_id);
+	if (err)
+		goto revert_port;
+
+	/* Install the wider A|B|C smac-kill rule first; only on success
+	 * tear down the existing pair-only rule. If the install fails (e.g.
+	 * VCAP pressure), the original narrow rule stays in place and the
+	 * pair keeps its own-frame discard while interlink_add returns the
+	 * error.
+	 */
+	err = lan9645x_vcap_s2_hsr_smac_kill(lan9645x, port_abc_mask, h->mac,
+					     lan9645x_chipport_to_ndev(lan9645x,
+								       h->port_a),
+					     &new_smac_kill_vrule_id);
+	if (err)
+		goto del_catch_all;
+
+	vcap_del_rule(lan9645x->vcap_ctrl, hsr, h->local_ring_vrule_id);
+	h->local_ring_vrule_id = new_smac_kill_vrule_id;
+
+	h->hsr_dev = hsr;
+	h->interlink_enabled = true;
+
+	/* HW_HSR_FWD: chip autonomously forwards ring<->interlink.
+	 * HW_HSR_DUP: chip's CPU-side dispatch path also replicates to the
+	 * interlink (via PGID_BC/mc_flood for BC/MC and the mac-table for
+	 * known unicast), so the kernel HSR core's master->interlink
+	 * dispatch is suppressed to avoid double delivery.
+	 */
+	dev->features |= NETIF_F_HW_HSR_FWD | NETIF_F_HW_HSR_DUP;
+
+	mutex_lock(&lan9645x->fwd_domain_lock);
+	interlink->hsr = hsr;
+	lan9645x_vlan_set_port_mask(lan9645x, VLAN_HSR_PRP,
+				    lan9645x->vlans[VLAN_HSR_PRP].portmask |
+				    BIT(port_c));
+	lan9645x->mc_flood_mask |= BIT(port_c);
+	lan9645x->mrouter_mask |= BIT(port_c);
+	__lan9645x_pgid_mc_update(lan9645x);
+	lan9645x_update_fwd_mask(lan9645x, true);
+	mutex_unlock(&lan9645x->fwd_domain_lock);
+
+	schedule_delayed_work(&h->proxy_refresh_work,
+			      msecs_to_jiffies(PROXY_REFRESH_PERIOD_MS));
+	mutex_unlock(&h->lock);
+	return 0;
+
+del_catch_all:
+	vcap_del_rule(lan9645x->vcap_ctrl, dev, h->catch_all_vrule_id);
+revert_port:
+	revert_interlink_port_cfg(lan9645x, port_c);
+	lan9645x_streamt_del(lan9645x, catch_all_isdx);
+free_isdx:
+	lan9645x_stream_isdx_free(lan9645x, catch_all_isdx);
+fail:
+	h->port_c = -1;
+unlock:
+	mutex_unlock(&h->lock);
+	return err;
+}
+
+int lan9645x_hsr_prp_interlink_del(struct lan9645x *lan9645x, int port,
+				   struct net_device *hsr)
+{
+	struct lan9645x_hsr_prp *h = &lan9645x->hsr;
+	struct lan9645x_port *p;
+	struct net_device *dev;
+	int err = 0;
+
+	/* HSR core only invokes port_hsr_leave on the interlink as part of
+	 * full hsr0 deletion, after pair_del has already run. SMAC-kill rule
+	 * and QSYS_DD_CFG are owned by pair_del; this function only undoes
+	 * the interlink-specific state.
+	 */
+
+	mutex_lock(&h->lock);
+
+	if (!h->interlink_enabled || port != h->port_c)
+		goto unlock;
+
+	p = lan9645x_to_port(lan9645x, port);
+	dev = lan9645x_chipport_to_ndev(lan9645x, port);
+
+	h->interlink_enabled = false;
+	mutex_unlock(&h->lock);
+	cancel_delayed_work_sync(&h->proxy_refresh_work);
+	mutex_lock(&h->lock);
+
+	lan9645x_hsr_prp_proxy_nodes_flush(lan9645x);
+
+	mutex_lock(&lan9645x->fwd_domain_lock);
+	p->hsr = NULL;
+	lan9645x->mc_flood_mask &= ~BIT(port);
+	lan9645x->mrouter_mask &= ~BIT(port);
+	lan9645x_vlan_set_port_mask(lan9645x, VLAN_HSR_PRP,
+				    lan9645x->vlans[VLAN_HSR_PRP].portmask &
+				    ~BIT(port));
+	__lan9645x_pgid_mc_update(lan9645x);
+	lan9645x_update_fwd_mask(lan9645x, false);
+	lan9645x_vlan_set_hostmode(p);
+	mutex_unlock(&lan9645x->fwd_domain_lock);
+
+	vcap_del_rule(lan9645x->vcap_ctrl, dev, h->catch_all_vrule_id);
+
+	revert_interlink_port_cfg(lan9645x, port);
+
+	lan9645x_streamt_del(lan9645x, h->catch_all_isdx);
+	lan9645x_stream_isdx_free(lan9645x, h->catch_all_isdx);
+
+	dev->features &= ~(NETIF_F_HW_HSR_FWD | NETIF_F_HW_HSR_DUP);
+
+	h->hsr_dev = NULL;
+	h->port_c = -1;
+unlock:
+	mutex_unlock(&h->lock);
+	return err;
+}
+
 int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *lrea,
 			      struct lan9645x_port *lreb,
 			      struct net_device *lrea_dev, struct net_device *hsr,
 			      enum lan9645x_hsr_type type)
 {
 	struct lan9645x_hsr_prp *h = &lan9645x->hsr;
-	struct lan9645x_streamt_entry entry = { 0 };
-	unsigned char mac[ETH_ALEN];
-	int port, lan_id, net_id;
-	int lrea_port, lreb_port;
+	struct lan9645x_streamt_entry entry = { };
+	int lrea_port, lreb_port, net_id;
 	u32 port_ab_mask;
 	int isdx, err;
 	bool rtagged;
@@ -588,7 +1234,7 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 	lreb_port = lreb->chip_port;
 	port_ab_mask = BIT(lrea_port) | BIT(lreb_port);
 
-	ether_addr_copy(mac, hsr->dev_addr);
+	ether_addr_copy(h->mac, hsr->dev_addr);
 
 	isdx = lan9645x_stream_isdx_alloc(lan9645x);
 	if (isdx < 0) {
@@ -619,7 +1265,7 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 	 */
 
 	rtagged = h->type == LAN9645X_PRP;
-	err = lan9645x_vcap_s1_normal_isdx_clf(lan9645x, mac,
+	err = lan9645x_vcap_s1_normal_isdx_clf(lan9645x, h->mac,
 					       entry.input_port_mask, isdx,
 					       VLAN_HSR_PRP, rtagged, lrea_dev,
 					       &h->isdx_vrule_id);
@@ -629,7 +1275,7 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 	/* TODO: Add supervision frame addr data to if_hsr.h then learn
 	 * supervision frame mc addr here, to avoid the flood.
 	 */
-	err = lan9645x_mact_learn(lan9645x, PGID_CPU, mac, VLAN_HSR_PRP,
+	err = lan9645x_mact_learn(lan9645x, PGID_CPU, h->mac, VLAN_HSR_PRP,
 				  ENTRYTYPE_LOCKED);
 	if (err)
 		goto s1_normal_del;
@@ -643,142 +1289,16 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 		 * We leave lookup 1 to the user, where they can operate as
 		 * normal.
 		 */
-		err = lan9645x_vcap_s2_hsr_smac_kill(lan9645x, port_ab_mask, mac, lrea_dev,
+		err = lan9645x_vcap_s2_hsr_smac_kill(lan9645x, port_ab_mask, h->mac, lrea_dev,
 						     &h->local_ring_vrule_id);
 		if (err)
 			goto mac_forget;
 	}
 
-	for_each_hsr_port(lan_id, port, lrea_port, lreb_port) {
-		/* Set PVID to reserved for port AB (rx pid) */
-		lan_rmw(ANA_VLAN_CFG_VLAN_VID_SET(VLAN_HSR_PRP),
-			ANA_VLAN_CFG_VLAN_VID,
-			lan9645x, ANA_VLAN_CFG(port));
-
-		/* Set PVID in rewriter, to enable no-tagging for PVID */
-		lan_rmw(REW_PORT_VLAN_CFG_PORT_VID_SET(VLAN_HSR_PRP),
-			REW_PORT_VLAN_CFG_PORT_VID,
-			lan9645x, REW_PORT_VLAN_CFG(port));
-
-		/* Use TPID=0x8100 and disable egress tagging for vid=0 and
-		 * vid=VLAN_HSR_PRP
-		 */
-		lan_rmw(REW_TAG_CFG_TAG_TPID_CFG_SET(0) |
-			REW_TAG_CFG_TAG_CFG_SET(LAN9645X_TAG_NO_PVID_NO_UNAWARE),
-			REW_TAG_CFG_TAG_TPID_CFG |
-			REW_TAG_CFG_TAG_CFG,
-			lan9645x, REW_TAG_CFG(port));
-
-		lan_rmw(ANA_PORT_CFG_LEARN_ENA_SET(true),
-			ANA_PORT_CFG_LEARN_ENA,
-			lan9645x, ANA_PORT_CFG(port));
-
-		lan_rmw(ANA_RED_CFG_PRP_AWARE_ENA_SET(type == LAN9645X_PRP) |
-			ANA_RED_CFG_HSR_AWARE_ENA_SET(type == LAN9645X_HSR) |
-			ANA_RED_CFG_LANID_SET(!lan_id) |
-			ANA_RED_CFG_NETID_SET(net_id),
-			ANA_RED_CFG_PRP_AWARE_ENA |
-			ANA_RED_CFG_HSR_AWARE_ENA |
-			ANA_RED_CFG_LANID |
-			ANA_RED_CFG_NETID,
-			lan9645x, ANA_RED_CFG(port));
-
-		/* HSR specific. */
-		lan_rmw(REW_RED_TAG_CFG_HSR_TAG_ENA_SET(type == LAN9645X_HSR) |
-			REW_RED_TAG_CFG_NETID_SET(net_id) |
-			REW_RED_TAG_CFG_LANID_SET(lan_id) |
-			REW_RED_TAG_CFG_RED_TAG_CFG_SET(type == LAN9645X_HSR) |
-			/* is this rct_ena field not used by hw? */
-			REW_RED_TAG_CFG_PRP_RCT_TAG_ENA_SET(type == LAN9645X_PRP),
-			REW_RED_TAG_CFG_HSR_TAG_ENA |
-			REW_RED_TAG_CFG_NETID |
-			REW_RED_TAG_CFG_LANID |
-			REW_RED_TAG_CFG_RED_TAG_CFG |
-			REW_RED_TAG_CFG_PRP_RCT_TAG_ENA,
-			lan9645x, REW_RED_TAG_CFG(port));
-
-		/* Use IS1 lookup 3 for node table entry isdx classification.
-		 * We configure S1_DMAC_VID to use SMAC instead.
-		 */
-		lan_rmw(ANA_VCAP_CFG_S1_SMAC_ENA_SET(S1_LOOKUP3),
-			ANA_VCAP_CFG_S1_SMAC_ENA,
-			lan9645x, ANA_VCAP_CFG(port));
-
-		/* Use S1_DMAC_VID for all frame types in IS1 Lookup 3. */
-		lan_rmw(ANA_VCAP_S1_CFG_KEY_IP6_CFG_SET(6) |
-			ANA_VCAP_S1_CFG_KEY_IP4_CFG_SET(4) |
-			ANA_VCAP_S1_CFG_KEY_OTHER_CFG_SET(3),
-			ANA_VCAP_S1_CFG_KEY_IP6_CFG |
-			ANA_VCAP_S1_CFG_KEY_IP4_CFG |
-			ANA_VCAP_S1_CFG_KEY_OTHER_CFG,
-			 lan9645x, ANA_VCAP_S1_CFG(port, 2));
-
-		if (type == LAN9645X_HSR) {
-			/* HSR only: Treat the frame types
-			 *
-			 * - ARP
-			 * - IPv4 TCP/UDP
-			 * - IPv4 non-tcp/udp
-			 * - OAM
-			 * - IP6
-			 *
-			 * as MAC_ETYPE in S2 second lookup. This will ensure our
-			 * SMAC kill rule, discards all frames. The downside is
-			 * this keyset selection configuration is global for S2
-			 * lookup2. But it is the only way to discard all frames
-			 * based on ingress/smac.
-			 */
-			lan9645x_is2_only_mac_etype_llc(lan9645x, S2_LOOKUP2,
-							port);
-
-			/* Enable ETYPE hiding/extension. HW requires HSR header
-			 * to be aligned on a 32bit boundary. On ingress it will
-			 * remove etype, and on egress it will add it.
-			 */
-			lan_rmw(DEV_PORT_MISC_RTAG48_ENA_SET(1) |
-				DEV_PORT_MISC_RTAG_TYPE_SET(1), // 0x892F HSR
-				DEV_PORT_MISC_RTAG48_ENA |
-				DEV_PORT_MISC_RTAG_TYPE,
-				lan9645x, DEV_PORT_MISC(port));
-
-			lan_rmw(ANA_PORT_MODE_REDTAG_PARSE_CFG_SET(1),
-				ANA_PORT_MODE_REDTAG_PARSE_CFG,
-				lan9645x, ANA_PORT_MODE(port));
-
-			/* Redir tagless frames to CPU */
-			lan_rmw(ANA_CPU_FWD_CFG_NO_HSR_REDIR_ENA_SET(1),
-				ANA_CPU_FWD_CFG_NO_HSR_REDIR_ENA,
-				lan9645x, ANA_CPU_FWD_CFG(port));
-		} else {
-			/* RCT rewrite seqnum and lanID. Software must add
-			 * trailer to frame with LSDU size and PRP suffix.
-			 */
-			lan_rmw(SYS_PORT_MODE_PRP_LANID_SET(lan_id) |
-				SYS_PORT_MODE_PRP_ENA_SET(1),
-				SYS_PORT_MODE_PRP_LANID |
-				SYS_PORT_MODE_PRP_ENA,
-				lan9645x, SYS_PORT_MODE(port));
-		}
-
-		/* Piggyback on LAG functionality to pick a port to use
-		 * as representant for mac table purposes. This avoids
-		 * mac table thrashing when the same MAC arrives on both A and
-		 * B.
-		 */
-		lan_rmw(ANA_PORT_CFG_PORTID_VAL_SET(lrea_port),
-			ANA_PORT_CFG_PORTID_VAL,
-			lan9645x,
-			ANA_PORT_CFG(port));
-
-		/* Trap BPDU frames. Is this required? */
-		lan_rmw(ANA_CPU_FWD_BPDU_CFG_BPDU_REDIR_ENA_SET(0xffff),
-			ANA_CPU_FWD_BPDU_CFG_BPDU_REDIR_ENA,
-			lan9645x, ANA_CPU_FWD_BPDU_CFG(port));
-
-		/* MAC lookup hit for port A/B adds both ports to dest mask */
-		lan_wr(port_ab_mask, lan9645x, ANA_PGID(port));
-		lan9645x_hsr_features_set(lan9645x, port, type);
-	}
+	apply_ring_port_cfg(lan9645x, lrea_port, 0, lrea_port, port_ab_mask,
+			    net_id, type);
+	apply_ring_port_cfg(lan9645x, lreb_port, 1, lrea_port, port_ab_mask,
+			    net_id, type);
 
 	if (type == LAN9645X_PRP) {
 		lan_rmw(ANA_PORT_CFG_LEARN_ENA_SET(0),
@@ -786,6 +1306,16 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 			lan9645x,
 			ANA_PORT_CFG(CPU_PORT));
 	}
+
+	/* Suppress HSR tag push toward NPI on CPU-bound copies. Ring frames
+	 * already carry the tag in the frame data, so the rewriter never
+	 * needs to push one for them. The catch-all classifies untagged
+	 * SAN frames into a seqgen ISDX which would otherwise push a tag
+	 * toward NPI and trigger the IFH/DMAC overlap quirk.
+	 */
+	lan_rmw(REW_RED_TAG_CFG_RED_TAG_CFG_SET(0),
+		REW_RED_TAG_CFG_RED_TAG_CFG,
+		lan9645x, REW_RED_TAG_CFG(lan9645x->npi));
 
 	/* Setup duplicate discard in queue system */
 	lan_wr(QSYS_MISC_DROP_CFG_FRER_ENA_SET(true),
@@ -819,6 +1349,14 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 		ANA_RED_MISC_CFG_PRP_ENA,
 		lan9645x, ANA_RED_MISC_CFG);
 
+	hsr_get_supervision_addr(hsr, h->sup_addr);
+
+	mutex_lock(&lan9645x->mdb_lock);
+	__lan9645x_mdb_add(lan9645x, lrea_port, h->sup_addr, VLAN_HSR_PRP, ENTRYTYPE_LOCKED);
+	__lan9645x_mdb_add(lan9645x, lreb_port, h->sup_addr, VLAN_HSR_PRP, ENTRYTYPE_LOCKED);
+	__lan9645x_mdb_add(lan9645x, CPU_PORT, h->sup_addr, VLAN_HSR_PRP, ENTRYTYPE_LOCKED);
+	mutex_unlock(&lan9645x->mdb_lock);
+
 	mutex_lock(&lan9645x->fwd_domain_lock);
 	lan9645x_vlan_set_port_mask(lan9645x, HOST_PVID,
 				    lan9645x->vlans[HOST_PVID].portmask &
@@ -840,7 +1378,7 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 	return 0;
 
 mac_forget:
-	lan9645x_mact_forget(lan9645x, mac, VLAN_HSR_PRP, ENTRYTYPE_LOCKED);
+	lan9645x_mact_forget(lan9645x, h->mac, VLAN_HSR_PRP, ENTRYTYPE_LOCKED);
 s1_normal_del:
 	vcap_del_rule(lan9645x->vcap_ctrl, lrea_dev, h->isdx_vrule_id);
 free_isdx:
@@ -850,6 +1388,60 @@ mutex_unlock:
 	return err;
 }
 
+static void revert_ring_port_cfg(struct lan9645x *lan9645x, int port,
+				 enum lan9645x_hsr_type type)
+{
+	struct lan9645x_port *p = lan9645x_to_port(lan9645x, port);
+
+	p->learn_ena = false;
+
+	/* Clear all redundancy-tag awareness. */
+	lan_wr(0, lan9645x, ANA_RED_CFG(port));
+
+	/* Disable PRP handling on the port. */
+	lan_rmw(SYS_PORT_MODE_PRP_ENA_SET(false),
+		SYS_PORT_MODE_PRP_ENA,
+		lan9645x, SYS_PORT_MODE(port));
+
+	/* Restore the default egress redundancy-tag config. */
+	lan_rmw(REW_RED_TAG_CFG_HSR_TAG_ENA_SET(false) |
+		REW_RED_TAG_CFG_RED_TAG_CFG_SET(true),
+		REW_RED_TAG_CFG_HSR_TAG_ENA |
+		REW_RED_TAG_CFG_RED_TAG_CFG,
+		lan9645x, REW_RED_TAG_CFG(port));
+
+	/* Restore the default IS2 keyset on this port. */
+	lan9645x_is2_default_conf(lan9645x, S2_LOOKUP2, port);
+
+	/* Disable the 48-bit RTAG ETYPE translation. */
+	lan_rmw(DEV_PORT_MISC_RTAG48_ENA_SET(false) |
+		DEV_PORT_MISC_RTAG_TYPE_SET(0),
+		DEV_PORT_MISC_RTAG48_ENA |
+		DEV_PORT_MISC_RTAG_TYPE,
+		lan9645x, DEV_PORT_MISC(port));
+
+	/* Disable redundancy-tag parsing in the analyzer. */
+	lan_rmw(ANA_PORT_MODE_REDTAG_PARSE_CFG_SET(0),
+		ANA_PORT_MODE_REDTAG_PARSE_CFG,
+		lan9645x, ANA_PORT_MODE(port));
+
+	/* PRP: restore the port's own logical port id. */
+	if (type == LAN9645X_PRP) {
+		lan_rmw(ANA_PORT_CFG_PORTID_VAL_SET(port),
+			ANA_PORT_CFG_PORTID_VAL, lan9645x,
+			ANA_PORT_CFG(port));
+	}
+
+	/* Disable MAC learning. */
+	lan_rmw(ANA_PORT_CFG_LEARN_ENA_SET(false),
+		ANA_PORT_CFG_LEARN_ENA,
+		lan9645x, ANA_PORT_CFG(port));
+
+	/* Forward only to the port itself and drop the netdev feature flags. */
+	lan_wr(BIT(port), lan9645x, ANA_PGID(port));
+	lan9645x_hsr_features_del(lan9645x, port, type);
+}
+
 int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 			      struct net_device *hsr)
 {
@@ -857,7 +1449,6 @@ int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 	struct lan9645x_port *lrea, *lreb;
 	enum lan9645x_hsr_type type;
 	int lrea_port, lreb_port;
-	int lan_id;
 	int err = 0;
 
 	err = lan9645x_hsr2type(hsr, &type);
@@ -920,13 +1511,18 @@ int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 
 	lan9645x_mact_forget(lan9645x, h->mac, VLAN_HSR_PRP, ENTRYTYPE_LOCKED);
 
-	if (type == LAN9645X_HSR && h->local_ring_vrule_id) {
-		err = vcap_del_rule(lan9645x->vcap_ctrl, hsr,
-				    h->local_ring_vrule_id);
-		if (err)
-			dev_err(lan9645x->dev,
-				"hsr remove vcap rule: %u err: %d\n",
-				h->local_ring_vrule_id, err);
+	if (type == LAN9645X_HSR) {
+		if (h->local_ring_vrule_id) {
+			err = vcap_del_rule(lan9645x->vcap_ctrl, hsr,
+					    h->local_ring_vrule_id);
+			if (err)
+				dev_err(lan9645x->dev,
+					"hsr remove vcap rule: %u err: %d\n",
+					h->local_ring_vrule_id, err);
+			h->local_ring_vrule_id = 0;
+		}
+
+		err = 0;
 	}
 
 	lan9645x_hsr_prp_nodestable_flush(lan9645x);
@@ -936,6 +1532,10 @@ int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 	lan_wr(QSYS_MISC_DROP_CFG_FRER_ENA_SET(false),
 	       lan9645x, QSYS_MISC_DROP_CFG);
 
+	lan_rmw(REW_RED_TAG_CFG_RED_TAG_CFG_SET(1),
+		REW_RED_TAG_CFG_RED_TAG_CFG,
+		lan9645x, REW_RED_TAG_CFG(lan9645x->npi));
+
 	lan_rmw(ANA_RED_MISC_CFG_CHK_LANID_ENA_SET(false) |
 		ANA_RED_MISC_CFG_DUPL_DISC_ENA_SET(false) |
 		ANA_RED_MISC_CFG_PRP_ENA_SET(false),
@@ -944,65 +1544,17 @@ int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 		ANA_RED_MISC_CFG_PRP_ENA,
 		lan9645x, ANA_RED_MISC_CFG);
 
-	for_each_hsr_port(lan_id, port, h->port_a, h->port_b) {
-		lan_wr(0, lan9645x, ANA_RED_CFG(port));
-
-		/* Disable PRP trailer rewrites */
-		lan_rmw(SYS_PORT_MODE_PRP_ENA_SET(false),
-			SYS_PORT_MODE_PRP_ENA,
-			lan9645x, SYS_PORT_MODE(port));
-
-		lan_rmw(REW_RED_TAG_CFG_RED_TAG_CFG_SET(1),
-			REW_RED_TAG_CFG_RED_TAG_CFG,
-			lan9645x, REW_RED_TAG_CFG(port));
-
-		lan_rmw(REW_RED_TAG_CFG_HSR_TAG_ENA_SET(false) |
-			REW_RED_TAG_CFG_RED_TAG_CFG_SET(true),
-			REW_RED_TAG_CFG_HSR_TAG_ENA |
-			REW_RED_TAG_CFG_RED_TAG_CFG,
-			lan9645x, REW_RED_TAG_CFG(port));
-
-		lan9645x_is2_default_conf(lan9645x, S2_LOOKUP2, port);
-
-		lan_rmw(DEV_PORT_MISC_RTAG48_ENA_SET(false) |
-			DEV_PORT_MISC_RTAG_TYPE_SET(0), // 0xf1c1 freer
-			DEV_PORT_MISC_RTAG48_ENA |
-			DEV_PORT_MISC_RTAG_TYPE,
-			lan9645x, DEV_PORT_MISC(port));
-
-		lan_rmw(ANA_PORT_MODE_REDTAG_PARSE_CFG_SET(0),
-			ANA_PORT_MODE_REDTAG_PARSE_CFG,
-			lan9645x, ANA_PORT_MODE(port));
-
-		lan_rmw(SYS_PORT_MODE_PRP_ENA_SET(false),
-			SYS_PORT_MODE_PRP_ENA,
-			lan9645x, SYS_PORT_MODE(port));
-
-		lan_rmw(ANA_CPU_FWD_BPDU_CFG_BPDU_REDIR_ENA_SET(0),
-			ANA_CPU_FWD_BPDU_CFG_BPDU_REDIR_ENA,
-			lan9645x, ANA_CPU_FWD_BPDU_CFG(port));
-
-		if (type == LAN9645X_PRP) {
-			lan_rmw(ANA_PORT_CFG_PORTID_VAL_SET(port),
-				ANA_PORT_CFG_PORTID_VAL, lan9645x,
-				ANA_PORT_CFG(port));
-		}
-
-		lan_rmw(ANA_PORT_CFG_LEARN_ENA_SET(false),
-			ANA_PORT_CFG_LEARN_ENA,
-			lan9645x, ANA_PORT_CFG(port));
-
-		lan_wr(BIT(port), lan9645x, ANA_PGID(port));
-		lan9645x_hsr_features_del(lan9645x, port, type);
-	}
+	revert_ring_port_cfg(lan9645x, h->port_a, type);
+	revert_ring_port_cfg(lan9645x, h->port_b, type);
 
 	lan_wr(QSYS_DISC_AUTOAGE_CFG_1_AUTOAGE_INTERVAL_ENA_SET(false),
 	       lan9645x, QSYS_DISC_AUTOAGE_CFG_1);
 
-	lan_rmw(ANA_PORT_CFG_LEARN_ENA_SET(true),
-		ANA_PORT_CFG_LEARN_ENA,
-		lan9645x,
-		ANA_PORT_CFG(CPU_PORT));
+	mutex_lock(&lan9645x->mdb_lock);
+	__lan9645x_mdb_del(lan9645x, lrea_port, h->sup_addr, VLAN_HSR_PRP, ENTRYTYPE_LOCKED);
+	__lan9645x_mdb_del(lan9645x, lreb_port, h->sup_addr, VLAN_HSR_PRP, ENTRYTYPE_LOCKED);
+	__lan9645x_mdb_del(lan9645x, CPU_PORT, h->sup_addr, VLAN_HSR_PRP, ENTRYTYPE_LOCKED);
+	mutex_unlock(&lan9645x->mdb_lock);
 
 	h->enabled = false;
 unlock:
@@ -1043,8 +1595,11 @@ static int lan9645x_hsr_prp_nodestable_show(struct seq_file *m,
 {
 	struct lan9645x_hsr_prp_node_counters ncnt = { 0 };
 	struct lan9645x *lan9645x = m->private;
+	struct lan9645x_hsr_prp_proxy_node *p;
 	struct lan9645x_hsr_prp_dan_node *n;
 	struct lan9645x_hsr_prp *h;
+	u64 *isdx_cnt;
+	u32 rx;
 	int i = 0;
 
 	h = &lan9645x->hsr;
@@ -1072,6 +1627,20 @@ static int lan9645x_hsr_prp_nodestable_show(struct seq_file *m,
 		i++;
 	}
 
+	mutex_lock(&h->lock);
+	list_for_each_entry(p, &h->proxy_nodes, list) {
+		isdx_cnt = STAT_COUNTERS(lan9645x, LAN9645X_STAT_ISDX, p->isdx);
+		rx = isdx_cnt[SCNT_ISDX_GREEN_PKT] +
+		     isdx_cnt[SCNT_ISDX_YELLOW_PKT] +
+		     isdx_cnt[SCNT_ISDX_RED_PKT];
+
+		seq_printf(m, "%4u %pM %-11s %10u %10s %10s %10s %10s %10s\n",
+			   i, p->smac, "PROXY",
+			   rx, "-", "-", "-", "-", "-");
+		i++;
+	}
+	mutex_unlock(&h->lock);
+
 	return 0;
 }
 DEFINE_SHOW_ATTRIBUTE(lan9645x_hsr_prp_nodestable);
@@ -1083,6 +1652,10 @@ int lan9645x_hsr_prp_init(struct lan9645x *lan9645x)
 
 	mutex_init(&lan9645x->hsr.lock);
 	INIT_LIST_HEAD(&lan9645x->hsr.nodes);
+	INIT_LIST_HEAD(&lan9645x->hsr.proxy_nodes);
+	INIT_DELAYED_WORK(&lan9645x->hsr.proxy_refresh_work,
+			  lan9645x_hsr_prp_proxy_refresh_work);
+	lan9645x->hsr.port_c = -1;
 
 	err = lan9645x_ptp_hsr_init(lan9645x);
 	if (err)
@@ -1100,5 +1673,6 @@ int lan9645x_hsr_prp_init(struct lan9645x *lan9645x)
 
 void lan9645x_hsr_prp_deinit(struct lan9645x *lan9645x)
 {
+	cancel_delayed_work_sync(&lan9645x->hsr.proxy_refresh_work);
 	mutex_destroy(&lan9645x->hsr.lock);
 }

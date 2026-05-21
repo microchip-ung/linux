@@ -426,18 +426,34 @@ enum lan9645x_hsr_type {
 	LAN9645X_PRP,
 };
 
+struct lan9645x_hsr_prp_proxy_node {
+	struct list_head list;
+	unsigned char smac[ETH_ALEN];
+	int isdx;
+	u32 vrule_id;
+	u64 last_rx_pkts;
+};
+
 struct lan9645x_hsr_prp {
 	unsigned char mac[ETH_ALEN];
 	struct mutex lock; /* Lock HSR/PRP management. */
 	u32 isdx_vrule_id; /* TX isdx classification for seqnum generation */
 	u32 local_ring_vrule_id; /* HSR only: kill own frames on ring */
+	u32 catch_all_vrule_id; /* interlink: classify unknown UC to seqgen ISDX */
 	u16 isdx; /* Allocated ISDX for tx stream */
+	u16 catch_all_isdx; /* interlink: seqgen ISDX for catch-all rule */
 	int port_a;
 	int port_b;
+	int port_c; /* interlink chip port, -1 when none */
 	int shadow_ports[2];
 	bool enabled;
+	bool interlink_enabled;
 	enum lan9645x_hsr_type type; /* HSR or PRP */
+	struct net_device *hsr_dev; /* HSR master, used for proxy refresh */
+	unsigned char sup_addr[ETH_ALEN]; /* HSR supervision multicast addr */
 	struct list_head nodes;
+	struct list_head proxy_nodes;
+	struct delayed_work proxy_refresh_work;
 	u16 ptp_ports;
 };
 
@@ -833,6 +849,14 @@ static inline bool lan9645x_port_is_hsr(struct lan9645x_port *p)
 		 lan9645x->hsr.port_b == p->chip_port);
 }
 
+static inline bool lan9645x_port_is_hsr_interlink(struct lan9645x_port *p)
+{
+	struct lan9645x *lan9645x = p->lan9645x;
+
+	return lan9645x->hsr.interlink_enabled &&
+	       lan9645x->hsr.port_c == p->chip_port;
+}
+
 static inline struct lan9645x_port *
 lan9645x_port_shadow_of(struct lan9645x_port *p)
 {
@@ -1040,6 +1064,12 @@ void lan9645x_mdb_init(struct lan9645x *lan9645x);
 void lan9645x_mdb_deinit(struct lan9645x *lan9645x);
 int lan9645x_mdb_port_mrouter_set(struct lan9645x *lan9645x, int port,
 				  bool enable);
+int __lan9645x_mdb_del(struct lan9645x *lan9645x, int chip_port,
+		       const unsigned char addr[ETH_ALEN], u16 vid,
+		       enum macaccess_entry_type type);
+int __lan9645x_mdb_add(struct lan9645x *lan9645x, int chip_port,
+		       const unsigned char addr[ETH_ALEN], u16 vid,
+		       enum macaccess_entry_type type);
 
 /* VCAP */
 int lan9645x_vcap_init(struct lan9645x *lan9645x);
@@ -1084,6 +1114,11 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 			      enum lan9645x_hsr_type type);
 int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 			      struct net_device *hsr);
+int lan9645x_hsr_prp_interlink_add(struct lan9645x *lan9645x,
+				   struct lan9645x_port *interlink,
+				   struct net_device *hsr);
+int lan9645x_hsr_prp_interlink_del(struct lan9645x *lan9645x, int port,
+				   struct net_device *hsr);
 u32 lan9645x_hsr_prp_dev_get_mask(struct lan9645x *lan9645x,
 				  struct net_device *hsr);
 enum lan9645x_hsr_type lan9645x_hsr_prp_ver_to_type(enum hsr_version ver);
@@ -1091,6 +1126,12 @@ int lan9645x_hsr_prp_prepare(struct lan9645x *lan9645x, int port,
 			     struct net_device *hsr, enum lan9645x_hsr_type type,
 			     struct netlink_ext_ack *extack);
 int lan9645x_hsr2type(struct net_device *hsr, enum lan9645x_hsr_type *type);
+int lan9645x_hsr_prp_proxy_node_add(struct lan9645x *lan9645x, int port,
+				    struct net_device *hsr,
+				    const unsigned char *smac);
+void lan9645x_hsr_prp_proxy_node_del(struct lan9645x *lan9645x, int port,
+				     struct net_device *hsr,
+				     const unsigned char *smac);
 int lan9645x_hsr_prp_dan_node_add(struct lan9645x *lan9645x, int port,
 				  struct net_device *hsr,
 				  const unsigned char *smac);

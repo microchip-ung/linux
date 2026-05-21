@@ -1140,7 +1140,8 @@ void lan9645x_update_fwd_mask(struct lan9645x *lan9645x, bool joining)
 			if (p->bond)
 				mask &= ~lan9645x_lag_dev_get_mask(lan9645x,
 								   p->bond);
-		} else if (lan9645x_port_is_hsr(p)) {
+		} else if (lan9645x_port_is_hsr(p) ||
+			   lan9645x_port_is_hsr_interlink(p)) {
 			mask = lan9645x_hsr_prp_dev_get_mask(lan9645x, p->hsr) &
 			       ~BIT(p->chip_port);
 		} else if (shadow_of) {
@@ -1705,13 +1706,55 @@ lan9645x_get_eth_ctrl_stats(struct dsa_switch *ds, int port,
 	lan9645x_stats_get_eth_ctrl_stats(lan9645x, port, ctrl_stats);
 }
 
+static int lan9645x_port_hsr_join_pair(struct dsa_switch *ds, int port,
+				       struct net_device *hsr,
+				       enum lan9645x_hsr_type type,
+				       struct netlink_ext_ack *extack)
+{
+	struct dsa_port *dslrea = NULL, *dslreb, *dp;
+	struct lan9645x *lan9645x = ds->priv;
+	int err;
+
+	dslreb = dsa_to_port(ds, port);
+	if (!dslreb)
+		return -EOPNOTSUPP;
+
+	dsa_hsr_foreach_port(dp, ds, hsr) {
+		if (dp->index != port &&
+		    dp->hsr_port_type != HSR_PT_INTERLINK) {
+			dslrea = dp;
+			break;
+		}
+	}
+
+	if (!dslrea)
+		return 0;
+
+	if (!ether_addr_equal(dslrea->mac, dslreb->mac)) {
+		NL_SET_ERR_MSG_FMT_MOD(extack,
+				       "MAC on Slave 1 (Port A) and Slave 2 (Port B) must be equal. MAC_A=%pM MAC_B=%pM",
+				       dslrea->mac, dslreb->mac);
+		return -EINVAL;
+	}
+
+	err = lan9645x_hsr_prp_pair_add(lan9645x, lan9645x->ports[dslrea->index],
+					lan9645x->ports[dslreb->index],
+					dslrea->user, hsr, type);
+	if (err)
+		dev_err(lan9645x->dev,
+			"HSR/PRP pair add err=%d ds_a=%p ds_b=%p\n", err,
+			dslrea->user, dslreb->user);
+
+	return err;
+}
+
 static int lan9645x_port_hsr_join(struct dsa_switch *ds, int port,
 				  struct net_device *hsr,
 				  struct netlink_ext_ack *extack)
 {
-	struct dsa_port *dslrea = NULL, *dslreb, *dp;
 	struct lan9645x *lan9645x = ds->priv;
 	enum lan9645x_hsr_type type;
+	struct dsa_port *dp;
 	int err;
 
 	if (lan9645x->dd_dis)
@@ -1727,45 +1770,24 @@ static int lan9645x_port_hsr_join(struct dsa_switch *ds, int port,
 	if (err)
 		return err;
 
-	dslreb = dsa_to_port(ds, port);
-	if (!dslreb)
-		return -EOPNOTSUPP;
+	dp = dsa_to_port(ds, port);
 
-	dsa_hsr_foreach_port(dp, ds, hsr)
-	{
-		if (dp->index != port) {
-			dslrea = dp;
-			break;
+	switch (dp->hsr_port_type) {
+	case HSR_PT_SLAVE_A:
+	case HSR_PT_SLAVE_B:
+		return lan9645x_port_hsr_join_pair(ds, port, hsr, type, extack);
+	case HSR_PT_INTERLINK:
+		if (type != LAN9645X_HSR) {
+			NL_SET_ERR_MSG_MOD(extack,
+					   "Interlink only supported for HSR");
+			return -EOPNOTSUPP;
 		}
+		return lan9645x_hsr_prp_interlink_add(lan9645x,
+						      lan9645x->ports[port],
+						      hsr);
+	default:
+		return -EOPNOTSUPP;
 	}
-
-	/* We must match port A/B in HW, and rely on the order of calls to
-	 * identify which dsa interface is A and B.
-	 */
-	if (!dslrea)
-		return 0;
-
-	if (!ether_addr_equal(dslrea->mac, dslreb->mac)) {
-		NL_SET_ERR_MSG_FMT_MOD(extack,
-				       "MAC on Slave 1 (Port A) and Slave 2 (Port B) must be equal. MAC_A=%pM MAC_B=%pM",
-				       dslrea->mac, dslreb->mac);
-		return -EINVAL;
-	}
-
-	dev_dbg(lan9645x->dev, "lan_a=%d lan_b=%d type=%d\n", dslrea->index,
-		dslreb->index, type);
-
-	err = lan9645x_hsr_prp_pair_add(lan9645x, lan9645x->ports[dslrea->index],
-					lan9645x->ports[dslreb->index],
-					dslrea->user, hsr, type);
-	if (err) {
-		dev_err(lan9645x->dev,
-			"HSR/PRP pair add err=%d ds_a=%p ds_b=%p\n", err,
-			dslrea->user, dslreb->user);
-		return err;
-	}
-
-	return 0;
 }
 
 static int lan9645x_port_hsr_leave(struct dsa_switch *ds, int port,
@@ -1777,6 +1799,12 @@ static int lan9645x_port_hsr_leave(struct dsa_switch *ds, int port,
 		return -EOPNOTSUPP;
 
 	dev_dbg(lan9645x->dev, "port=%d", port);
+
+	/* DSA core clears dp->hsr_port_type before invoking us, so dispatch
+	 * by chip-port match against the HSR state we own.
+	 */
+	if (lan9645x->hsr.interlink_enabled && port == lan9645x->hsr.port_c)
+		return lan9645x_hsr_prp_interlink_del(lan9645x, port, hsr);
 
 	return lan9645x_hsr_prp_pair_del(lan9645x, port, hsr);
 }
@@ -2215,12 +2243,19 @@ lan9645x_port_hsr_node_add(struct dsa_switch *ds, int port,
 			   const struct switchdev_obj_node_hsr *hsr_node)
 {
 	struct lan9645x *lan9645x = ds->priv;
+	struct dsa_port *dp;
 
 	if (lan9645x->dd_dis)
 		return -EOPNOTSUPP;
 
 	dev_dbg(lan9645x->dev, "port=%d addrA=%pM\n",
 		port, hsr_node->addr_A);
+
+	dp = dsa_to_port(ds, port);
+	if (dp && dp->hsr_port_type == HSR_PT_INTERLINK)
+		return lan9645x_hsr_prp_proxy_node_add(lan9645x, port,
+						       hsr_node->hsr,
+						       hsr_node->addr_A);
 
 	return lan9645x_hsr_prp_dan_node_add(lan9645x, port,
 					     hsr_node->hsr,
@@ -2232,12 +2267,20 @@ lan9645x_port_hsr_node_del(struct dsa_switch *ds, int port,
 			   const struct switchdev_obj_node_hsr *hsr_node)
 {
 	struct lan9645x *lan9645x = ds->priv;
+	struct dsa_port *dp;
 
 	if (lan9645x->dd_dis)
 		return -EOPNOTSUPP;
 
 	dev_dbg(lan9645x->dev, "port=%d addrA=%pM\n",
 		 port, hsr_node->addr_A);
+
+	dp = dsa_to_port(ds, port);
+	if (dp && dp->hsr_port_type == HSR_PT_INTERLINK) {
+		lan9645x_hsr_prp_proxy_node_del(lan9645x, port, hsr_node->hsr,
+						hsr_node->addr_A);
+		return 0;
+	}
 
 	lan9645x_hsr_prp_dan_node_del(lan9645x, port, hsr_node->hsr,
 				      hsr_node->addr_A);
