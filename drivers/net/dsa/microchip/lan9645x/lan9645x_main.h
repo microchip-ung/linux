@@ -453,6 +453,13 @@ struct lan9645x_hsr_prp {
 	unsigned char sup_addr[ETH_ALEN]; /* HSR supervision multicast addr */
 	struct list_head nodes;
 	struct list_head proxy_nodes;
+	/* Proxy nodes whose per-MAC VCAP rule could not be installed
+	 * (typically VCAP exhaustion). They are kept in proxy_node_db on
+	 * the kernel side and the catch-all rule still forwards their
+	 * traffic; only the per-MAC seqgen ISDX is missing. Promoted FIFO
+	 * to proxy_nodes when a slot frees in proxy_node_del.
+	 */
+	struct list_head deferred_proxy_nodes;
 	struct delayed_work proxy_refresh_work;
 	u16 ptp_ports;
 };

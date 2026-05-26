@@ -493,6 +493,11 @@ static void lan9645x_hsr_prp_proxy_nodes_flush(struct lan9645x *lan9645x)
 		list_del(&n->list);
 		lan9645x_hsr_prp_proxy_node_dealloc(lan9645x, dev, n);
 	}
+
+	list_for_each_entry_safe(n, tmp, &h->deferred_proxy_nodes, list) {
+		list_del(&n->list);
+		kfree(n);
+	}
 }
 
 static void lan9645x_hsr_prp_proxy_refresh_work(struct work_struct *work)
@@ -536,16 +541,58 @@ unlock:
 	mutex_unlock(&h->lock);
 }
 
+/* Try to install a per-MAC seqgen ISDX + IS1 NORMAL classification rule
+ * for n. On VCAP / streamtable exhaustion, n stays on the deferred list
+ * (caller's responsibility) and the catch-all rule keeps the SAN's
+ * traffic flowing on a shared seqgen.
+ */
+static int
+lan9645x_hsr_prp_proxy_node_install(struct lan9645x *lan9645x,
+				    struct lan9645x_hsr_prp_proxy_node *n)
+{
+	struct lan9645x_hsr_prp *h = &lan9645x->hsr;
+	struct lan9645x_streamt_entry entry = {};
+	struct net_device *dev;
+	int isdx, err;
+
+	lockdep_assert_held(&h->lock);
+
+	dev = lan9645x_chipport_to_ndev(lan9645x, h->port_c);
+
+	isdx = lan9645x_stream_isdx_alloc(lan9645x);
+	if (isdx < 0)
+		return isdx;
+
+	entry.input_port_mask = BIT(h->port_c);
+	entry.seq_gen_ena = true;
+	err = lan9645x_streamt_write(lan9645x, isdx, &entry);
+	if (err)
+		goto free_isdx;
+
+	err = lan9645x_vcap_s1_normal_isdx_clf(lan9645x, n->smac,
+					       BIT(h->port_c), isdx,
+					       VLAN_HSR_PRP, false, dev,
+					       &n->vrule_id);
+	if (err)
+		goto free_streamt;
+
+	n->isdx = isdx;
+	return 0;
+
+free_streamt:
+	lan9645x_streamt_del(lan9645x, isdx);
+free_isdx:
+	lan9645x_stream_isdx_free(lan9645x, isdx);
+	return err;
+}
+
 int lan9645x_hsr_prp_proxy_node_add(struct lan9645x *lan9645x, int port,
 				    struct net_device *hsr,
 				    const unsigned char *smac)
 {
 	struct lan9645x_hsr_prp *h = &lan9645x->hsr;
 	struct lan9645x_hsr_prp_proxy_node *n, *tmp;
-	struct lan9645x_streamt_entry entry = { };
-	struct net_device *dev;
-	int isdx;
-	int err;
+	int err = 0;
 
 	dev_dbg(lan9645x->dev, "port=%d ndev=%s smac=%pM\n",
 		port, netdev_name(hsr), smac);
@@ -561,47 +608,33 @@ int lan9645x_hsr_prp_proxy_node_add(struct lan9645x *lan9645x, int port,
 		if (ether_addr_equal(tmp->smac, smac))
 			goto unlock;
 
-	dev = lan9645x_chipport_to_ndev(lan9645x, port);
+	list_for_each_entry(tmp, &h->deferred_proxy_nodes, list)
+		if (ether_addr_equal(tmp->smac, smac))
+			goto unlock;
 
 	n = kzalloc(sizeof(*n), GFP_KERNEL);
 	if (!n) {
 		err = -ENOMEM;
 		goto unlock;
 	}
+	ether_addr_copy(n->smac, smac);
 
-	isdx = lan9645x_stream_isdx_alloc(lan9645x);
-	if (isdx < 0) {
-		err = isdx;
-		goto free_n;
+	err = lan9645x_hsr_prp_proxy_node_install(lan9645x, n);
+	if (err) {
+		/* VCAP / streamtable full. Park the node on the deferred
+		 * list; the catch-all rule keeps it forwarded on a shared
+		 * seqgen until a slot frees in proxy_node_del.
+		 */
+		list_add_tail(&n->list, &h->deferred_proxy_nodes);
+		dev_warn_ratelimited(lan9645x->dev,
+				     "proxy %pM deferred (err=%d): per-MAC VCAP unavailable, using shared catch-all seqgen\n",
+				     smac, err);
+		err = 0;
+		goto unlock;
 	}
 
-	entry.input_port_mask = BIT(port);
-	entry.seq_gen_ena = true;
-	err = lan9645x_streamt_write(lan9645x, isdx, &entry);
-	if (err)
-		goto free_isdx;
-
-	ether_addr_copy(n->smac, smac);
-	n->isdx = isdx;
-
-	/* Add isdx classification rule for traffic from proxy node.  */
-	err = lan9645x_vcap_s1_normal_isdx_clf(lan9645x, n->smac, BIT(port),
-					       isdx, VLAN_HSR_PRP, false, dev,
-					       &n->vrule_id);
-	if (err)
-		goto free_streamt;
-
 	list_add_tail(&n->list, &h->proxy_nodes);
-	mutex_unlock(&h->lock);
 
-	return 0;
-
-free_streamt:
-	lan9645x_streamt_del(lan9645x, isdx);
-free_isdx:
-	lan9645x_stream_isdx_free(lan9645x, isdx);
-free_n:
-	kfree(n);
 unlock:
 	mutex_unlock(&h->lock);
 	return err;
@@ -611,20 +644,31 @@ void lan9645x_hsr_prp_proxy_node_del(struct lan9645x *lan9645x, int port,
 				     struct net_device *hsr,
 				     const unsigned char *smac)
 {
-	struct lan9645x_hsr_prp_proxy_node *tmp, *n = NULL;
+	struct lan9645x_hsr_prp_proxy_node *tmp, *n = NULL, *promote = NULL;
 	struct lan9645x_hsr_prp *h = &lan9645x->hsr;
-	struct net_device *dev;
+	struct net_device *dev = NULL;
 
-	dev_dbg(lan9645x->dev, "port=%d ndev=%s smac=%pM\n", port, netdev_name(hsr), smac);
+	dev_dbg(lan9645x->dev, "port=%d ndev=%s smac=%pM\n", port,
+		netdev_name(hsr), smac);
 
 	mutex_lock(&h->lock);
 
-	if (!h->interlink_enabled || port != h->port_c) {
-		mutex_unlock(&h->lock);
-		return;
-	}
+	if (!h->interlink_enabled || port != h->port_c)
+		goto unlock;
 
 	dev = lan9645x_chipport_to_ndev(lan9645x, port);
+
+	/* The node may have been deferred (VCAP exhaustion). Drop it from
+	 * the deferred list without touching VCAP/streamtable, since none
+	 * was ever allocated for it.
+	 */
+	list_for_each_entry(tmp, &h->deferred_proxy_nodes, list) {
+		if (ether_addr_equal(tmp->smac, smac)) {
+			list_del(&tmp->list);
+			kfree(tmp);
+			goto unlock;
+		}
+	}
 
 	list_for_each_entry(tmp, &h->proxy_nodes, list) {
 		if (ether_addr_equal(tmp->smac, smac)) {
@@ -633,9 +677,25 @@ void lan9645x_hsr_prp_proxy_node_del(struct lan9645x *lan9645x, int port,
 			break;
 		}
 	}
+
+	/* A per-MAC slot just freed; promote the longest-deferred entry. */
+	promote = list_first_entry_or_null(&h->deferred_proxy_nodes,
+					   struct lan9645x_hsr_prp_proxy_node,
+					   list);
+	if (promote) {
+		if (lan9645x_hsr_prp_proxy_node_install(lan9645x, promote) == 0) {
+			list_move_tail(&promote->list, &h->proxy_nodes);
+			dev_dbg_ratelimited(lan9645x->dev,
+					    "proxy %pM promoted from deferred list\n",
+					    promote->smac);
+		}
+	}
+
+unlock:
 	mutex_unlock(&h->lock);
 
-	lan9645x_hsr_prp_proxy_node_dealloc(lan9645x, dev, n);
+	if (n)
+		lan9645x_hsr_prp_proxy_node_dealloc(lan9645x, dev, n);
 }
 
 static netdev_features_t
@@ -1639,6 +1699,13 @@ static int lan9645x_hsr_prp_nodestable_show(struct seq_file *m,
 			   rx, "-", "-", "-", "-", "-");
 		i++;
 	}
+
+	list_for_each_entry(p, &h->deferred_proxy_nodes, list) {
+		seq_printf(m, "%4u %pM %-11s %10s %10s %10s %10s %10s %10s\n",
+			   i, p->smac, "PROXY-DFRD",
+			   "-", "-", "-", "-", "-", "-");
+		i++;
+	}
 	mutex_unlock(&h->lock);
 
 	return 0;
@@ -1653,6 +1720,7 @@ int lan9645x_hsr_prp_init(struct lan9645x *lan9645x)
 	mutex_init(&lan9645x->hsr.lock);
 	INIT_LIST_HEAD(&lan9645x->hsr.nodes);
 	INIT_LIST_HEAD(&lan9645x->hsr.proxy_nodes);
+	INIT_LIST_HEAD(&lan9645x->hsr.deferred_proxy_nodes);
 	INIT_DELAYED_WORK(&lan9645x->hsr.proxy_refresh_work,
 			  lan9645x_hsr_prp_proxy_refresh_work);
 	lan9645x->hsr.port_c = -1;
