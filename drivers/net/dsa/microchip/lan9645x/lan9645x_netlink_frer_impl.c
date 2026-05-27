@@ -186,14 +186,14 @@ static int get_port_mask(struct net_device *dev1, struct net_device *dev2,
 	if (dev1) {
 		p1 = lan9645x_port_from_netdev(dev1);
 		if (IS_ERR_OR_NULL(p1))
-			return -ENOTSUPP;
+			return -EOPNOTSUPP;
 		*port_mask |= BIT(p1->chip_port);
 	}
 
 	if (dev2) {
 		p2 = lan9645x_port_from_netdev(dev2);
 		if (IS_ERR_OR_NULL(p2))
-			return -ENOTSUPP;
+			return -EOPNOTSUPP;
 		*port_mask |= BIT(p2->chip_port);
 	}
 
@@ -503,7 +503,7 @@ int lan9645x_frer_ms_cfg_get(struct lan9645x_nl_frer *frer,
 
 	p = lan9645x_port_from_netdev(dev);
 	if (!p)
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
 
 	i = lan9645x_frer_ms_check(frer, p, ms_id);
 	if (i < 0)
@@ -530,7 +530,7 @@ int lan9645x_frer_ms_cfg_set(struct lan9645x_nl_frer *frer,
 
 	p = lan9645x_port_from_netdev(dev);
 	if (!p)
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
 
 	if (cfg->alg != MCHP_FRER_REC_ALG_VECTOR &&
 	    cfg->alg != MCHP_FRER_REC_ALG_MATCH) {
@@ -608,7 +608,7 @@ int lan9645x_frer_ms_cnt_get(struct lan9645x_nl_frer *frer,
 
 	p = lan9645x_port_from_netdev(dev);
 	if (!p)
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
 
 	i = lan9645x_frer_ms_check(frer, p, ms_id);
 	if (i < 0)
@@ -635,7 +635,7 @@ int lan9645x_frer_ms_cnt_clear(struct lan9645x_nl_frer *frer,
 
 	p = lan9645x_port_from_netdev(dev);
 	if (!p)
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
 
 	i = lan9645x_frer_ms_check(frer, p, ms_id);
 	if (i < 0)

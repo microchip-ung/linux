@@ -524,7 +524,7 @@ int lan9645x_hsr_prp_prepare(struct lan9645x *lan9645x, int port,
 	if (lan9645x->npi == port) {
 		NL_SET_ERR_MSG_MOD(extack,
 				   "CPU port can not be part of HSR/PRP pair");
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
 	}
 
 	if (lan9645x->hsr.enabled) {
@@ -536,7 +536,7 @@ int lan9645x_hsr_prp_prepare(struct lan9645x *lan9645x, int port,
 	if (type == LAN9645X_HSR_UNSUPPORTED) {
 		NL_SET_ERR_MSG_MOD(extack,
 				   "Only HSR v1 and PRP v1 can be offloaded");
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
 	}
 
 	return 0;
@@ -874,7 +874,7 @@ int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 
 	if (h->type != type) {
 		dev_err(lan9645x->dev, "HSR deleting unexpected HSR type\n");
-		err = -ENOTSUPP;
+		err = -EOPNOTSUPP;
 		goto unlock;
 	}
 

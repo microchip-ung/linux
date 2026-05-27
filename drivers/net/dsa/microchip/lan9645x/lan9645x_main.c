@@ -1728,7 +1728,7 @@ static int lan9645x_port_hsr_join(struct dsa_switch *ds, int port,
 
 	dslreb = dsa_to_port(ds, port);
 	if (!dslreb)
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
 
 	dsa_hsr_foreach_port(dp, ds, hsr)
 	{
@@ -2044,7 +2044,7 @@ static int lan9645x_port_setup_tc(struct dsa_switch *ds, int port,
 		return lan9645x_port_setup_ets(ds, port, type_data);
 	case TC_SETUP_QDISC_TAPRIO:
 		if (lan9645x->tsn_dis)
-			return -ENOTSUPP;
+			return -EOPNOTSUPP;
 		return lan9645x_tc_setup_qdisc_taprio(ds, port, type_data);
 	case TC_QUERY_CAPS: {
 		struct tc_query_caps_base *base = type_data;
@@ -2059,7 +2059,7 @@ static int lan9645x_port_setup_tc(struct dsa_switch *ds, int port,
 	}
 	/* BLOCK and FT handled by dsa */
 	default:
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
 	}
 }
 
@@ -2237,7 +2237,7 @@ static int lan9645x_get_mm(struct dsa_switch *ds, int port,
 	struct lan9645x *lan9645x = ds->priv;
 
 	if (lan9645x->tsn_dis)
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
 
 	return lan9645x_fp_ethtool_get_mm(lan9645x, port, state);
 }
@@ -2249,7 +2249,7 @@ static int lan9645x_set_mm(struct dsa_switch *ds, int port,
 	struct lan9645x *lan9645x = ds->priv;
 
 	if (lan9645x->tsn_dis)
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
 
 	return lan9645x_fp_ethtool_set_mm(lan9645x, port, cfg, extack);
 }

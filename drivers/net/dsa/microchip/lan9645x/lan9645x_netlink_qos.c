@@ -151,7 +151,7 @@ static int lan9645x_qos_port_conf_set(struct lan9645x_netlink_qos *q,
 
 	p = lan9645x_port_from_netdev(dev);
 	if (IS_ERR_OR_NULL(p))
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
 
 	dev_dbg(lan9645x->dev, "port=%d", p->chip_port);
 
@@ -171,7 +171,7 @@ static int lan9645x_qos_port_conf_get(struct lan9645x_netlink_qos *q,
 
 	p = lan9645x_port_from_netdev(dev);
 	if (IS_ERR_OR_NULL(p))
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
 
 	dev_dbg(q->lan9645x->dev, "port=%d", p->chip_port);
 
