@@ -732,33 +732,32 @@ static int sparx5_tas_gcl_setup(struct sparx5_port *port, int list,
 	netdev_dbg(port->ndev, "gcl setup list %d, base %d num_free %d\n",
 		   list, base, num_free);
 
-	for (i = 0; i < SPX5_TAS_ENTRIES_PER_PORT; i++) {
-		spx5_rmw(HSCH_TAS_CFG_CTRL_LIST_NUM_SET(list + i),
-			 HSCH_TAS_CFG_CTRL_LIST_NUM,
-			 sparx5,
-			 HSCH_TAS_CFG_CTRL);
+	/* Program only the chosen list; the sibling slot stays in ADMIN. */
+	spx5_rmw(HSCH_TAS_CFG_CTRL_LIST_NUM_SET(list),
+		 HSCH_TAS_CFG_CTRL_LIST_NUM,
+		 sparx5,
+		 HSCH_TAS_CFG_CTRL);
 
-		spx5_rmw(HSCH_TAS_LIST_CFG_LIST_BASE_ADDR_SET(base),
-			 HSCH_TAS_LIST_CFG_LIST_BASE_ADDR,
+	spx5_rmw(HSCH_TAS_LIST_CFG_LIST_BASE_ADDR_SET(base),
+		 HSCH_TAS_LIST_CFG_LIST_BASE_ADDR,
+		 sparx5,
+		 HSCH_TAS_LIST_CFG);
+
+	if (is_sparx5(sparx5)) {
+		spx5_rmw(HSCH_TAS_LIST_CFG_LIST_LENGTH_SET(qopt->num_entries),
+			 HSCH_TAS_LIST_CFG_LIST_LENGTH,
 			 sparx5,
 			 HSCH_TAS_LIST_CFG);
-
-		if (is_sparx5(sparx5)) {
-			spx5_rmw(HSCH_TAS_LIST_CFG_LIST_LENGTH_SET(qopt->num_entries),
-				 HSCH_TAS_LIST_CFG_LIST_LENGTH,
-				 sparx5,
-				 HSCH_TAS_LIST_CFG);
-		} else {
-			/* Associate TAS list with physical port number and
-			 * scheduler element.
-			 */
-			spx5_rmw(HSCH_TAS_LIST_CFG_LIST_PORT_NUM_SET(port->portno),
-				 HSCH_TAS_LIST_CFG_LIST_PORT_NUM, sparx5,
-				 HSCH_TAS_LIST_CFG);
-			spx5_rmw(HSCH_TAS_LIST_CFG_LIST_HSCH_POS_SET(sched),
-				 HSCH_TAS_LIST_CFG_LIST_HSCH_POS, sparx5,
-				 HSCH_TAS_LIST_CFG);
-		}
+	} else {
+		/* Associate TAS list with physical port number and
+		 * scheduler element.
+		 */
+		spx5_rmw(HSCH_TAS_LIST_CFG_LIST_PORT_NUM_SET(port->portno),
+			 HSCH_TAS_LIST_CFG_LIST_PORT_NUM, sparx5,
+			 HSCH_TAS_LIST_CFG);
+		spx5_rmw(HSCH_TAS_LIST_CFG_LIST_HSCH_POS_SET(sched),
+			 HSCH_TAS_LIST_CFG_LIST_HSCH_POS, sparx5,
+			 HSCH_TAS_LIST_CFG);
 	}
 
 	for (i = 0; i < qopt->num_entries; i++) {
