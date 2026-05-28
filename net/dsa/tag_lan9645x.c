@@ -129,8 +129,8 @@ static void lan9645x_offload_fwd_mark(struct sk_buff *skb, u32 rtagd,
 		return;
 	}
 
-	/* Is port bridged? */
-	return dsa_default_offload_fwd_mark(skb);
+	if (likely(!is_link_local_ether_addr(eth_hdr(skb)->h_dest)))
+		dsa_default_offload_fwd_mark(skb);
 }
 
 static void lan9645x_xmit_ptp(struct sk_buff *skb, void *ifh)
