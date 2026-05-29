@@ -292,6 +292,20 @@ int lan9645x_port_hwtstamp_set(struct dsa_switch *ds, int port,
 		p->ptp_tx_cmd = IFH_REW_OP_TWO_STEP_PTP;
 		break;
 	case HWTSTAMP_TX_ONESTEP_SYNC:
+		/* The rewriter applies REW_OP uniformly to all egress
+		 * copies of a frame, including the CPU trap copy taken
+		 * from the IS2 hit. Under HSR Hybrid Clock every Sync is
+		 * trapped to the CPU for software forwarding to the
+		 * opposite ring leg, so a 1-step originTimestamp/cF
+		 * update on the line side would also corrupt the trapped
+		 * copy that ptp4l forwards. Reject 1-step on HSR ports
+		 * up front instead of producing silently broken Syncs.
+		 */
+		if (lan9645x_port_is_hsr(p)) {
+			NL_SET_ERR_MSG_MOD(extack,
+					   "1-step Sync not supported on HSR ports; use HWTSTAMP_TX_ON");
+			return -EOPNOTSUPP;
+		}
 		p->ptp_tx_cmd = IFH_REW_OP_ONE_STEP_PTP;
 		break;
 	case HWTSTAMP_TX_OFF:
