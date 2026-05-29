@@ -429,7 +429,6 @@ struct lan9645x_hsr_prp {
 	struct mutex lock; /* Lock HSR/PRP management. */
 	u32 isdx_vrule_id; /* TX isdx classification for seqnum generation */
 	u32 local_ring_vrule_id; /* HSR only: kill own frames on ring */
-	u32 ptp_dd_vrule_id; /* HSR only: disable DD for ptp */
 	u16 isdx; /* Allocated ISDX for tx stream */
 	int port_a;
 	int port_b;

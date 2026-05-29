@@ -909,26 +909,24 @@ int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 	lan9645x_stream_isdx_free(lan9645x, h->isdx);
 
 	/* NOTE: need some non-NULL net_device for the vcap_api. */
-	err = vcap_del_rule(lan9645x->vcap_ctrl, hsr, h->isdx_vrule_id);
-	if (err)
-		dev_err(lan9645x->dev, "hsr remove vcap rule: %u err: %d\n",
-			h->isdx_vrule_id, err);
+	if (h->isdx_vrule_id) {
+		err = vcap_del_rule(lan9645x->vcap_ctrl, hsr,
+				    h->isdx_vrule_id);
+		if (err)
+			dev_err(lan9645x->dev,
+				"hsr remove vcap rule: %u err: %d\n",
+				h->isdx_vrule_id, err);
+	}
 
 	lan9645x_mact_forget(lan9645x, h->mac, VLAN_HSR_PRP, ENTRYTYPE_LOCKED);
 
-	if (type == LAN9645X_HSR) {
+	if (type == LAN9645X_HSR && h->local_ring_vrule_id) {
 		err = vcap_del_rule(lan9645x->vcap_ctrl, hsr,
 				    h->local_ring_vrule_id);
 		if (err)
 			dev_err(lan9645x->dev,
 				"hsr remove vcap rule: %u err: %d\n",
 				h->local_ring_vrule_id, err);
-		err = vcap_del_rule(lan9645x->vcap_ctrl, hsr,
-				    h->ptp_dd_vrule_id);
-		if (err)
-			dev_err(lan9645x->dev,
-				"hsr remove vcap rule: %u err: %d\n",
-				h->ptp_dd_vrule_id, err);
 	}
 
 	lan9645x_hsr_prp_nodestable_flush(lan9645x);
