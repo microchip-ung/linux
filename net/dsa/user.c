@@ -1754,6 +1754,34 @@ static int dsa_user_stats_cls_flower(struct net_device *dev,
 	return ds->ops->cls_flower_stats(ds, port, cls, ingress);
 }
 
+static int dsa_user_tmplt_create_cls_flower(struct net_device *dev,
+					    struct flow_cls_offload *cls,
+					    bool ingress)
+{
+	struct dsa_port *dp = dsa_user_to_port(dev);
+	struct dsa_switch *ds = dp->ds;
+	int port = dp->index;
+
+	if (!ds->ops->cls_flower_tmplt_create)
+		return -EOPNOTSUPP;
+
+	return ds->ops->cls_flower_tmplt_create(ds, port, cls, ingress);
+}
+
+static int dsa_user_tmplt_destroy_cls_flower(struct net_device *dev,
+					     struct flow_cls_offload *cls,
+					     bool ingress)
+{
+	struct dsa_port *dp = dsa_user_to_port(dev);
+	struct dsa_switch *ds = dp->ds;
+	int port = dp->index;
+
+	if (!ds->ops->cls_flower_tmplt_destroy)
+		return -EOPNOTSUPP;
+
+	return ds->ops->cls_flower_tmplt_destroy(ds, port, cls, ingress);
+}
+
 static int dsa_user_setup_tc_cls_flower(struct net_device *dev,
 					struct flow_cls_offload *cls,
 					bool ingress)
@@ -1765,6 +1793,10 @@ static int dsa_user_setup_tc_cls_flower(struct net_device *dev,
 		return dsa_user_del_cls_flower(dev, cls, ingress);
 	case FLOW_CLS_STATS:
 		return dsa_user_stats_cls_flower(dev, cls, ingress);
+	case FLOW_CLS_TMPLT_CREATE:
+		return dsa_user_tmplt_create_cls_flower(dev, cls, ingress);
+	case FLOW_CLS_TMPLT_DESTROY:
+		return dsa_user_tmplt_destroy_cls_flower(dev, cls, ingress);
 	default:
 		return -EOPNOTSUPP;
 	}

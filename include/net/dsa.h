@@ -1127,6 +1127,12 @@ struct dsa_switch_ops {
 				  struct flow_cls_offload *cls, bool ingress);
 	int	(*cls_flower_stats)(struct dsa_switch *ds, int port,
 				    struct flow_cls_offload *cls, bool ingress);
+	int	(*cls_flower_tmplt_create)(struct dsa_switch *ds, int port,
+					   struct flow_cls_offload *cls,
+					   bool ingress);
+	int	(*cls_flower_tmplt_destroy)(struct dsa_switch *ds, int port,
+					    struct flow_cls_offload *cls,
+					    bool ingress);
 	int	(*port_mirror_add)(struct dsa_switch *ds, int port,
 				   struct dsa_mall_mirror_tc_entry *mirror,
 				   bool ingress, struct netlink_ext_ack *extack);
