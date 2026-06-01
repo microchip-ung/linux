@@ -2198,6 +2198,31 @@ static bool lan9645x_tc_flower_use_template(struct lan9645x_port *port,
 	return false;
 }
 
+/* Return true if a template on a *different* chain already pins the keyset of
+ * the (vcap, lookup) that cid maps to on this port. The port keyset selection
+ * is per (port, lookup), shared by every chain in that lookup, so:
+ *
+ *  - a dynamic (non-template) filter must not be added to a lookup a template
+ *    owns: it would be built against the template keyset and then silently
+ *    corrupted when the template, and with it the keyset selection, is removed;
+ *  - a second template must not claim a lookup another template already owns.
+ */
+static bool lan9645x_tc_lookup_templated(struct lan9645x_port *port,
+					 struct vcap_admin *admin, int cid)
+{
+	int lookup = vcap_chain_id_to_lookup(admin, cid);
+	struct lan9645x_tc_flower_template *ftp;
+
+	list_for_each_entry(ftp, &port->tc_templates, list) {
+		if (ftp->cid == cid)
+			continue;
+		if (vcap_find_admin(port->lan9645x->vcap_ctrl, ftp->cid) == admin &&
+		    vcap_chain_id_to_lookup(admin, ftp->cid) == lookup)
+			return true;
+	}
+	return false;
+}
+
 static int lan9645x_tc_flower_template_create(struct lan9645x_port *port,
 					      struct flow_cls_offload *fco,
 					      struct vcap_admin *admin)
@@ -2225,6 +2250,12 @@ static int lan9645x_tc_flower_template_create(struct lan9645x_port *port,
 	if (vcap_admin_rule_count(admin, fco->common.chain_index)) {
 		NL_SET_ERR_MSG_MOD(fco->common.extack,
 				   "Filters are already present");
+		return -EBUSY;
+	}
+
+	if (lan9645x_tc_lookup_templated(port, admin, fco->common.chain_index)) {
+		NL_SET_ERR_MSG_MOD(fco->common.extack,
+				   "A template already controls this lookup");
 		return -EBUSY;
 	}
 
@@ -2418,6 +2449,15 @@ int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,
 		multi.rule[0][0].kset = vrule->keyset;
 		multi.rule[0][0].tid = (u8)-1;
 		multi.rule[0][0].tid_mask = 0xff;
+	} else if (lan9645x_tc_lookup_templated(p, admin, fcid)) {
+		/* The lookup's keyset is pinned by a template on another chain;
+		 * a dynamically-keyed filter here would be corrupted when that
+		 * template is removed.
+		 */
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Lookup keyset is controlled by a template on another chain");
+		err = -EBUSY;
+		goto out;
 	} else {
 		err = lan9645x_tc_select_protocol_keyset(p, vrule, admin, &state,
 							 &multi);
