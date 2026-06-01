@@ -718,6 +718,9 @@ struct lan9645x_port {
 
 	struct mrp_port *mrp_port;
 	int mrp_is1_p_port_rule_id;
+
+	/* tc flower chain templates active on this port */
+	struct list_head tc_templates;
 };
 
 struct lan9645x_path_delay {
@@ -1096,6 +1099,26 @@ int lan9645x_vcap_get_port_keyset(struct net_device *ndev,
 				  struct vcap_admin *admin, int cid,
 				  u16 l3_proto,
 				  struct vcap_keyset_list *keysetlist);
+void lan9645x_vcap_set_port_keyset(struct net_device *ndev,
+				   struct vcap_admin *admin, int cid,
+				   u16 l3_proto, enum vcap_keyfield_set keyset);
+
+/* Snapshot of the per-port keyset-selection registers for one VCAP lookup.
+ * A template may reprogram several frame-type selectors at once, so the only
+ * way to restore the previous state exactly is to save and replay the raw
+ * register contents.
+ */
+struct lan9645x_port_keyset_snapshot {
+	u32 cfg;  /* ANA_VCAP_S1_CFG(port, lookup) (IS1) or S2_CFG(port) (IS2) */
+	u32 dmac; /* ANA_VCAP_CFG(port) DMAC-DIP enable (IS1 only) */
+};
+
+void lan9645x_vcap_save_port_keyset(struct net_device *ndev,
+				    struct vcap_admin *admin, int cid,
+				    struct lan9645x_port_keyset_snapshot *snap);
+void lan9645x_vcap_restore_port_keyset(struct net_device *ndev,
+				       struct vcap_admin *admin, int cid,
+				       const struct lan9645x_port_keyset_snapshot *snap);
 const char *lan9645x_vcap_keyset_name(struct lan9645x *lan9645x,
 				      enum vcap_keyfield_set keyset);
 const char *lan9645x_vcap_keyset_name_short(struct lan9645x *lan9645x,
@@ -1219,6 +1242,11 @@ int lan9645x_tc_flower_del(struct lan9645x_port *p, struct flow_cls_offload *f,
 			   bool ingress);
 int lan9645x_tc_flower_stats(struct lan9645x_port *p,
 			     struct flow_cls_offload *f);
+int lan9645x_tc_flower_template_add(struct lan9645x_port *p,
+				    struct flow_cls_offload *f);
+int lan9645x_tc_flower_template_del(struct lan9645x_port *p,
+				    struct flow_cls_offload *f);
+void lan9645x_tc_flower_templates_free(struct lan9645x_port *p);
 
 /* Credit Based Shaping CBS: lan9645x_cbs.c */
 int lan9645x_cbs_del(struct lan9645x *lan9645x, int port,

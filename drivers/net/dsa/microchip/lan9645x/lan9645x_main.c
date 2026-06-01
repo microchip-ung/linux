@@ -124,6 +124,9 @@ static void lan9645x_teardown(struct dsa_switch *ds)
 {
 	struct lan9645x *lan9645x = ds->priv;
 
+	for (int port = 0; port < lan9645x->num_phys_ports; port++)
+		lan9645x_tc_flower_templates_free(lan9645x->ports[port]);
+
 	debugfs_remove_recursive(lan9645x->debugfs_root);
 	lan9645x_afi_deinit(lan9645x);
 	lan9645x_mrp_uninit(lan9645x);
@@ -523,6 +526,7 @@ static int lan9645x_setup(struct dsa_switch *ds)
 		p->bridge_num = -1;
 		p->phylink_pcs.poll = true;
 		p->phylink_pcs.ops = &lan9645x_phylink_pcs_ops;
+		INIT_LIST_HEAD(&p->tc_templates);
 		lan9645x->ports[port] = p;
 	}
 
@@ -1981,6 +1985,36 @@ static int lan9645x_cls_flower_stats(struct dsa_switch *ds, int port,
 	return lan9645x_tc_flower_stats(p, cls);
 }
 
+static int lan9645x_cls_flower_tmplt_create(struct dsa_switch *ds, int port,
+					    struct flow_cls_offload *cls,
+					    bool ingress)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	struct lan9645x_port *p = lan9645x_to_port(lan9645x, port);
+
+	dev_dbg(lan9645x->dev,
+		"port=%d ingress=%u cmd=%d chain=%u prio=%u proto=%x",
+		port, ingress, cls->command, cls->common.chain_index,
+		cls->common.prio, ntohs(cls->common.protocol));
+
+	return lan9645x_tc_flower_template_add(p, cls);
+}
+
+static int lan9645x_cls_flower_tmplt_destroy(struct dsa_switch *ds, int port,
+					     struct flow_cls_offload *cls,
+					     bool ingress)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	struct lan9645x_port *p = lan9645x_to_port(lan9645x, port);
+
+	dev_dbg(lan9645x->dev,
+		"port=%d ingress=%u cmd=%d chain=%u prio=%u proto=%x",
+		port, ingress, cls->command, cls->common.chain_index,
+		cls->common.prio, ntohs(cls->common.protocol));
+
+	return lan9645x_tc_flower_template_del(p, cls);
+}
+
 static int lan9645x_port_setup_cbs(struct dsa_switch *ds, int port,
 				   struct tc_cbs_qopt_offload *cbs_qopt)
 {
@@ -2497,6 +2531,8 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.cls_flower_add			= lan9645x_cls_flower_add,
 	.cls_flower_del			= lan9645x_cls_flower_del,
 	.cls_flower_stats		= lan9645x_cls_flower_stats,
+	.cls_flower_tmplt_create	= lan9645x_cls_flower_tmplt_create,
+	.cls_flower_tmplt_destroy	= lan9645x_cls_flower_tmplt_destroy,
 	.port_setup_tc			= lan9645x_port_setup_tc,
 
 	/* DCB integration */

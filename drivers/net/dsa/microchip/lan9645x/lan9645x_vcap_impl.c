@@ -880,6 +880,296 @@ int lan9645x_vcap_get_port_keyset(struct net_device *ndev,
 	return err;
 }
 
+/* The keyset_to_*_ps() helpers are the inverse of the decoding done in
+ * lan9645x_vcap_is1/is2_get_port_keysets(): they map a chosen keyset back to
+ * the port-keyset-selection value programmed into the hardware registers.
+ */
+static u32 lan9645x_vcap_is1_keyset_to_ipv4_ps(enum vcap_keyfield_set keyset)
+{
+	switch (keyset) {
+	case VCAP_KFS_7TUPLE:
+		return VCAP_IS1_PS_IPV4_7TUPLE;
+	case VCAP_KFS_5TUPLE_IP4:
+		return VCAP_IS1_PS_IPV4_5TUPLE_IP4;
+	case VCAP_KFS_NORMAL:
+	case VCAP_KFS_NORMAL_DMAC:
+		return VCAP_IS1_PS_IPV4_NORMAL;
+	case VCAP_KFS_DBL_VID:
+		return VCAP_IS1_PS_IPV4_DBL_VID;
+	case VCAP_KFS_DMAC_VID:
+		return VCAP_IS1_PS_IPV4_DMAC_VID;
+	default:
+		return VCAP_IS1_PS_IPV4_7TUPLE;
+	}
+}
+
+static u32 lan9645x_vcap_is1_keyset_to_ipv6_ps(enum vcap_keyfield_set keyset)
+{
+	switch (keyset) {
+	case VCAP_KFS_NORMAL:
+		return VCAP_IS1_PS_IPV6_NORMAL;
+	case VCAP_KFS_NORMAL_IP6:
+	case VCAP_KFS_NORMAL_IP6_DMAC:
+		return VCAP_IS1_PS_IPV6_NORMAL_IP6;
+	case VCAP_KFS_5TUPLE_IP6:
+		return VCAP_IS1_PS_IPV6_5TUPLE_IP6;
+	case VCAP_KFS_7TUPLE:
+		return VCAP_IS1_PS_IPV6_7TUPLE;
+	case VCAP_KFS_5TUPLE_IP4:
+		return VCAP_IS1_PS_IPV6_5TUPLE_IP4;
+	case VCAP_KFS_DMAC_VID:
+		return VCAP_IS1_PS_IPV6_DMAC_VID;
+	case VCAP_KFS_DBL_VID:
+		return VCAP_IS1_PS_IPV6_DBL_VID;
+	default:
+		return VCAP_IS1_PS_IPV6_7TUPLE;
+	}
+}
+
+static u32 lan9645x_vcap_is1_keyset_to_other_ps(enum vcap_keyfield_set keyset)
+{
+	switch (keyset) {
+	case VCAP_KFS_7TUPLE:
+		return VCAP_IS1_PS_OTHER_7TUPLE;
+	case VCAP_KFS_NORMAL:
+	case VCAP_KFS_NORMAL_DMAC:
+		return VCAP_IS1_PS_OTHER_NORMAL;
+	case VCAP_KFS_DBL_VID:
+		return VCAP_IS1_PS_OTHER_DBL_VID;
+	case VCAP_KFS_DMAC_VID:
+		return VCAP_IS1_PS_OTHER_DMAC_VID;
+	default:
+		return VCAP_IS1_PS_OTHER_NORMAL;
+	}
+}
+
+static void lan9645x_vcap_is1_dmac_enable(struct lan9645x_port *port, int lookup,
+					  bool enable)
+{
+	struct lan9645x *lan9645x = port->lan9645x;
+	u32 val = enable ? BIT(lookup) : 0;
+
+	lan_rmw(ANA_VCAP_CFG_S1_DMAC_DIP_ENA_SET(val),
+		ANA_VCAP_CFG_S1_DMAC_DIP_ENA_SET(BIT(lookup)),
+		lan9645x, ANA_VCAP_CFG(port->chip_port));
+}
+
+static void lan9645x_vcap_is1_set_ipv4(struct lan9645x_port *port, int lookup,
+				       enum vcap_keyfield_set keyset)
+{
+	lan_rmw(ANA_VCAP_S1_CFG_KEY_IP4_CFG_SET(lan9645x_vcap_is1_keyset_to_ipv4_ps(keyset)),
+		ANA_VCAP_S1_CFG_KEY_IP4_CFG, port->lan9645x,
+		ANA_VCAP_S1_CFG(port->chip_port, lookup));
+
+	lan9645x_vcap_is1_dmac_enable(port, lookup,
+				      keyset == VCAP_KFS_NORMAL_DMAC);
+}
+
+static void lan9645x_vcap_is1_set_ipv6(struct lan9645x_port *port, int lookup,
+				       enum vcap_keyfield_set keyset)
+{
+	lan_rmw(ANA_VCAP_S1_CFG_KEY_IP6_CFG_SET(lan9645x_vcap_is1_keyset_to_ipv6_ps(keyset)),
+		ANA_VCAP_S1_CFG_KEY_IP6_CFG, port->lan9645x,
+		ANA_VCAP_S1_CFG(port->chip_port, lookup));
+
+	lan9645x_vcap_is1_dmac_enable(port, lookup,
+				      keyset == VCAP_KFS_NORMAL_IP6_DMAC);
+}
+
+static void lan9645x_vcap_is1_set_other(struct lan9645x_port *port, int lookup,
+					enum vcap_keyfield_set keyset)
+{
+	lan_rmw(ANA_VCAP_S1_CFG_KEY_OTHER_CFG_SET(lan9645x_vcap_is1_keyset_to_other_ps(keyset)),
+		ANA_VCAP_S1_CFG_KEY_OTHER_CFG, port->lan9645x,
+		ANA_VCAP_S1_CFG(port->chip_port, lookup));
+
+	lan9645x_vcap_is1_dmac_enable(port, lookup,
+				      keyset == VCAP_KFS_NORMAL_DMAC);
+}
+
+static void lan9645x_vcap_is1_set_port_keyset(struct net_device *ndev, int lookup,
+					      enum vcap_keyfield_set keyset,
+					      u16 l3_proto)
+{
+	struct lan9645x_port *port = lan9645x_port_from_netdev(ndev);
+
+	switch (l3_proto) {
+	case ETH_P_IP:
+		lan9645x_vcap_is1_set_ipv4(port, lookup, keyset);
+		break;
+	case ETH_P_IPV6:
+		lan9645x_vcap_is1_set_ipv6(port, lookup, keyset);
+		break;
+	case ETH_P_ALL:
+		lan9645x_vcap_is1_set_ipv4(port, lookup, keyset);
+		lan9645x_vcap_is1_set_ipv6(port, lookup, keyset);
+		lan9645x_vcap_is1_set_other(port, lookup, keyset);
+		break;
+	default:
+		lan9645x_vcap_is1_set_other(port, lookup, keyset);
+		break;
+	}
+}
+
+static u32 lan9645x_vcap_is2_keyset_to_ip6_ps(enum vcap_keyfield_set keyset)
+{
+	switch (keyset) {
+	case VCAP_KFS_IP6_OTHER:
+	case VCAP_KFS_IP6_TCP_UDP:
+		return VCAP_IS2_PS_IPV6_TCPUDP_OTHER;
+	case VCAP_KFS_IP6_STD:
+		return VCAP_IS2_PS_IPV6_STD;
+	case VCAP_KFS_IP4_OTHER:
+	case VCAP_KFS_IP4_TCP_UDP:
+		return VCAP_IS2_PS_IPV6_IP4_TCPUDP_IP4_OTHER;
+	default:
+		return VCAP_IS2_PS_IPV6_MAC_ETYPE;
+	}
+}
+
+static void lan9645x_vcap_is2_set_ip6(struct lan9645x *lan9645x, int portno,
+				      int lookup, u32 ps)
+{
+	u32 val, mask;
+
+	if (lookup == 0) {
+		val = ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP1_SET(ps);
+		mask = ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP1;
+	} else {
+		val = ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP2_SET(ps);
+		mask = ANA_VCAP_S2_CFG_IP6_CFG_LOOKUP2;
+	}
+
+	lan_rmw(val, mask, lan9645x, ANA_VCAP_S2_CFG(portno));
+}
+
+static void lan9645x_vcap_is2_set_port_keyset(struct net_device *ndev, int lookup,
+					      enum vcap_keyfield_set keyset,
+					      u16 l3_proto)
+{
+	struct lan9645x_port *port = lan9645x_port_from_netdev(ndev);
+	struct lan9645x *lan9645x = port->lan9645x;
+	int portno = port->chip_port;
+	u32 lk_bit = BIT(lookup);
+	u32 dis, val, mask;
+
+	switch (l3_proto) {
+	case ETH_P_ARP:
+		dis = keyset == VCAP_KFS_MAC_ETYPE ? lk_bit : 0;
+		lan_rmw(ANA_VCAP_S2_CFG_ARP_DIS_SET(dis),
+			ANA_VCAP_S2_CFG_ARP_DIS_SET(lk_bit),
+			lan9645x, ANA_VCAP_S2_CFG(portno));
+		break;
+	case ETH_P_IP:
+		dis = keyset == VCAP_KFS_MAC_ETYPE ? lk_bit : 0;
+		lan_rmw(ANA_VCAP_S2_CFG_IP_TCPUDP_DIS_SET(dis) |
+			ANA_VCAP_S2_CFG_IP_OTHER_DIS_SET(dis),
+			ANA_VCAP_S2_CFG_IP_TCPUDP_DIS_SET(lk_bit) |
+			ANA_VCAP_S2_CFG_IP_OTHER_DIS_SET(lk_bit),
+			lan9645x, ANA_VCAP_S2_CFG(portno));
+		break;
+	case ETH_P_IPV6:
+		lan9645x_vcap_is2_set_ip6(lan9645x, portno, lookup,
+					  lan9645x_vcap_is2_keyset_to_ip6_ps(keyset));
+		break;
+	default:
+		/* ETH_P_ALL and unhandled protocols: classify everything as
+		 * MAC_ETYPE (SNAP/LLC frames keep their MAC_LLC/MAC_SNAP type).
+		 */
+		val = ANA_VCAP_S2_CFG_ARP_DIS_SET(lk_bit) |
+		      ANA_VCAP_S2_CFG_IP_TCPUDP_DIS_SET(lk_bit) |
+		      ANA_VCAP_S2_CFG_IP_OTHER_DIS_SET(lk_bit) |
+		      ANA_VCAP_S2_CFG_OAM_DIS_SET(lk_bit);
+		mask = val;
+		lan_rmw(val, mask, lan9645x, ANA_VCAP_S2_CFG(portno));
+		lan9645x_vcap_is2_set_ip6(lan9645x, portno, lookup,
+					  VCAP_IS2_PS_IPV6_MAC_ETYPE);
+		break;
+	}
+}
+
+/* Set the port keyset for the vcap lookup. */
+void lan9645x_vcap_set_port_keyset(struct net_device *ndev,
+				   struct vcap_admin *admin, int cid,
+				   u16 l3_proto, enum vcap_keyfield_set keyset)
+{
+	int lookup;
+
+	switch (admin->vtype) {
+	case VCAP_TYPE_IS1:
+		lookup = lan9645x_vcap_is1_cid_to_lookup(cid);
+		lan9645x_vcap_is1_set_port_keyset(ndev, lookup, keyset, l3_proto);
+		break;
+	case VCAP_TYPE_IS2:
+		lookup = lan9645x_vcap_is2_cid_to_lookup(cid);
+		lan9645x_vcap_is2_set_port_keyset(ndev, lookup, keyset, l3_proto);
+		break;
+	case VCAP_TYPE_ES0:
+		/* No keyset selection */
+		break;
+	default:
+		pr_err("%s:%d: vcap type: %d not supported\n", __func__,
+		       __LINE__, admin->vtype);
+		break;
+	}
+}
+
+/* Snapshot the raw port keyset-selection registers for the lookup that cid
+ * maps to. Setting a template keyset can reprogram several frame-type
+ * selectors at once (e.g. forcing the whole lookup to MAC_ETYPE), which a
+ * per-keyset restore cannot undo, so save and replay the registers verbatim.
+ */
+void lan9645x_vcap_save_port_keyset(struct net_device *ndev,
+				    struct vcap_admin *admin, int cid,
+				    struct lan9645x_port_keyset_snapshot *snap)
+{
+	struct lan9645x_port *port = lan9645x_port_from_netdev(ndev);
+	struct lan9645x *lan9645x = port->lan9645x;
+	int portno = port->chip_port;
+	int lookup;
+
+	switch (admin->vtype) {
+	case VCAP_TYPE_IS1:
+		lookup = lan9645x_vcap_is1_cid_to_lookup(cid);
+		snap->cfg = lan_rd(lan9645x, ANA_VCAP_S1_CFG(portno, lookup));
+		snap->dmac = lan_rd(lan9645x, ANA_VCAP_CFG(portno));
+		break;
+	case VCAP_TYPE_IS2:
+		snap->cfg = lan_rd(lan9645x, ANA_VCAP_S2_CFG(portno));
+		break;
+	default:
+		break;
+	}
+}
+
+void lan9645x_vcap_restore_port_keyset(struct net_device *ndev,
+				       struct vcap_admin *admin, int cid,
+				       const struct lan9645x_port_keyset_snapshot *snap)
+{
+	struct lan9645x_port *port = lan9645x_port_from_netdev(ndev);
+	struct lan9645x *lan9645x = port->lan9645x;
+	int portno = port->chip_port;
+	int lookup;
+
+	switch (admin->vtype) {
+	case VCAP_TYPE_IS1:
+		lookup = lan9645x_vcap_is1_cid_to_lookup(cid);
+		lan_wr(snap->cfg, lan9645x, ANA_VCAP_S1_CFG(portno, lookup));
+		/* Restore only S1_DMAC_DIP_ENA - the only ANA_VCAP_CFG field the
+		 * keyset path changes. S1_SMAC_ENA and the rest are owned by
+		 * other features (e.g. HSR/PRP) and must be left untouched.
+		 */
+		lan_rmw(snap->dmac, ANA_VCAP_CFG_S1_DMAC_DIP_ENA, lan9645x,
+			ANA_VCAP_CFG(portno));
+		break;
+	case VCAP_TYPE_IS2:
+		lan_wr(snap->cfg, lan9645x, ANA_VCAP_S2_CFG(portno));
+		break;
+	default:
+		break;
+	}
+}
+
 static struct net_device *nl_to_ndev(void *priv)
 {
 	struct lan9645x *lan9645x = priv;
