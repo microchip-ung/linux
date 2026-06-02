@@ -797,7 +797,7 @@ static void lan9645x_tc_flower_merge_types(struct lan9645x *lan9645x,
 {
 	struct vcap_control *vctrl = lan9645x->vcap_ctrl;
 	int num_types_total, num_types_matched, rsize;
-	const struct vcap_info *vinfo;
+
 	/* multi now contains, for each keyset type size, all the keyset types
 	 * which contain all the keyfields passed from tc dissectors.
 	 *
@@ -839,8 +839,6 @@ static void lan9645x_tc_flower_merge_types(struct lan9645x *lan9645x,
 	 * We could check this by introducing additional state to
 	 * struct lan9645x_polymorphic_rule
 	 */
-
-	vinfo = &lan9645x->vcap_ctrl->vcaps[admin->vtype];
 
 	for (rsize = 1; rsize < LAN9645X_MAX_RULE_SIZE; ++rsize) {
 		num_types_total =
@@ -2456,7 +2454,7 @@ int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,
 	struct vcap_admin *admin;
 	struct vcap_rule *vrule;
 	struct net_device *ndev;
-	int err, lookup, fcid;
+	int err, fcid;
 
 	err = lan9645x_tc_flower_action_check(lan9645x->vcap_ctrl, f, ingress);
 	if (err)
@@ -2472,7 +2470,6 @@ int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,
 		return -EINVAL;
 	}
 
-	lookup = vcap_chain_id_to_lookup(admin, fcid);
 	state.admin = admin;
 	ndev = lan9645x_port_to_ndev(p);
 
