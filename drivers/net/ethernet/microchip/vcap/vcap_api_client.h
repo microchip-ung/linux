@@ -362,4 +362,6 @@ vcap_select_min_rule_keyset(struct vcap_control *vctrl, enum vcap_type vtype,
 
 struct vcap_client_actionfield *
 vcap_find_actionfield(struct vcap_rule *rule, enum vcap_action_field act);
+
+const char *vcap_type_name(struct vcap_control *vctrl, enum vcap_type vt);
 #endif /* __VCAP_API_CLIENT__ */

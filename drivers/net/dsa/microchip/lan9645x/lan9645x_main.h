@@ -1119,6 +1119,23 @@ void lan9645x_vcap_save_port_keyset(struct net_device *ndev,
 void lan9645x_vcap_restore_port_keyset(struct net_device *ndev,
 				       struct vcap_admin *admin, int cid,
 				       const struct lan9645x_port_keyset_snapshot *snap);
+
+/* Who controls the keyset selection of a (port, vcap, lookup). Tracked per port
+ * on lan9645x_port.tc_templates; at most one owner per (vcap, lookup).
+ */
+enum lan9645x_keyset_owner {
+	LAN9645X_KEYSET_OWNER_TEMPLATE = 1, /* tc chain template */
+	LAN9645X_KEYSET_OWNER_HSR,	    /* HSR/PRP and friends */
+};
+
+int lan9645x_vcap_keyset_claim(struct lan9645x_port *port, enum vcap_type vtype,
+			       int lookup, enum lan9645x_keyset_owner owner,
+			       struct netlink_ext_ack *extack);
+void lan9645x_vcap_keyset_release(struct lan9645x_port *port,
+				  enum vcap_type vtype, int lookup,
+				  enum lan9645x_keyset_owner owner);
+bool lan9645x_vcap_keyset_claimed(struct lan9645x_port *port,
+				  enum vcap_type vtype, int lookup);
 const char *lan9645x_vcap_keyset_name(struct lan9645x *lan9645x,
 				      enum vcap_keyfield_set keyset);
 const char *lan9645x_vcap_keyset_name_short(struct lan9645x *lan9645x,
@@ -1162,6 +1179,11 @@ int lan9645x_hsr_prp_proxy_node_add(struct lan9645x *lan9645x, int port,
 void lan9645x_hsr_prp_proxy_node_del(struct lan9645x *lan9645x, int port,
 				     struct net_device *hsr,
 				     const unsigned char *smac);
+int lan9645x_hsr_keyset_claim(struct lan9645x_port *port,
+			      enum lan9645x_hsr_type type,
+			      struct netlink_ext_ack *extack);
+void lan9645x_hsr_keyset_release(struct lan9645x_port *port,
+				 enum lan9645x_hsr_type type);
 int lan9645x_hsr_prp_dan_node_add(struct lan9645x *lan9645x, int port,
 				  struct net_device *hsr,
 				  const unsigned char *smac);

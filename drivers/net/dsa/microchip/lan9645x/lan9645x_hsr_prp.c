@@ -821,6 +821,78 @@ static u32 lan9645x_hsr_shadow_mask(struct lan9645x *lan9645x)
 	return mask;
 }
 
+/* HSR/PRP reprograms the per-port VCAP keyset selection on each ring port:
+ *
+ * node-table classification: IS1 lookup 2 (S1_DMAC_VID)
+ * smac kill: IS2 lookup 1 (forced MAC_ETYPE)
+ *
+ */
+static int lan9645x_hsr_lookup_check_empty(struct lan9645x *lan9645x, int cid,
+					   struct netlink_ext_ack *extack)
+{
+	struct vcap_admin *admin;
+
+	admin = vcap_find_admin(lan9645x->vcap_ctrl, cid);
+	if (admin && vcap_admin_rule_count(admin, cid)) {
+		NL_SET_ERR_MSG_FMT_MOD(extack,
+				       "VCAP %s lookup %d has filters; remove them before enabling HSR/PRP",
+				       vcap_type_name(lan9645x->vcap_ctrl, admin->vtype),
+				       vcap_chain_id_to_lookup(admin, cid));
+		return -EBUSY;
+	}
+	return 0;
+}
+
+int lan9645x_hsr_keyset_claim(struct lan9645x_port *port,
+			      enum lan9645x_hsr_type type,
+			      struct netlink_ext_ack *extack)
+{
+	struct lan9645x *lan9645x = port->lan9645x;
+	int err;
+
+	err = lan9645x_hsr_lookup_check_empty(lan9645x,
+					      LAN9645X_VCAP_CID_IS1_L2,
+					      extack);
+	if (err)
+		return err;
+
+	if (type == LAN9645X_HSR) {
+		err = lan9645x_hsr_lookup_check_empty(lan9645x,
+						      LAN9645X_VCAP_CID_IS2_L1,
+						      extack);
+		if (err)
+			return err;
+	}
+
+	err = lan9645x_vcap_keyset_claim(port, VCAP_TYPE_IS1, 2,
+					 LAN9645X_KEYSET_OWNER_HSR, extack);
+	if (err)
+		return err;
+
+	if (type == LAN9645X_HSR) {
+		err = lan9645x_vcap_keyset_claim(port, VCAP_TYPE_IS2, 1,
+						 LAN9645X_KEYSET_OWNER_HSR,
+						 extack);
+		if (err) {
+			lan9645x_vcap_keyset_release(port, VCAP_TYPE_IS1, 2,
+						     LAN9645X_KEYSET_OWNER_HSR);
+			return err;
+		}
+	}
+
+	return 0;
+}
+
+void lan9645x_hsr_keyset_release(struct lan9645x_port *port,
+				 enum lan9645x_hsr_type type)
+{
+	lan9645x_vcap_keyset_release(port, VCAP_TYPE_IS1, 2,
+				     LAN9645X_KEYSET_OWNER_HSR);
+	if (type == LAN9645X_HSR)
+		lan9645x_vcap_keyset_release(port, VCAP_TYPE_IS2, 1,
+					     LAN9645X_KEYSET_OWNER_HSR);
+}
+
 static void apply_ring_port_cfg(struct lan9645x *lan9645x, int port, int lan_id,
 				int lrea_port, u32 port_ab_mask, int net_id,
 				enum lan9645x_hsr_type type)
@@ -1019,6 +1091,7 @@ static void revert_interlink_port_cfg(struct lan9645x *lan9645x, int port)
 
 	/* Restore the default IS2 keyset on this port. */
 	lan9645x_is2_default_conf(lan9645x, S2_LOOKUP2, port);
+	lan9645x_hsr_keyset_release(lan9645x->ports[port], LAN9645X_HSR);
 
 	/* Clear all redundancy-tag awareness. */
 	lan_wr(0, lan9645x, ANA_RED_CFG(port));
@@ -1472,6 +1545,7 @@ static void revert_ring_port_cfg(struct lan9645x *lan9645x, int port,
 
 	/* Restore the default IS2 keyset on this port. */
 	lan9645x_is2_default_conf(lan9645x, S2_LOOKUP2, port);
+	lan9645x_hsr_keyset_release(lan9645x->ports[port], type);
 
 	/* Disable the 48-bit RTAG ETYPE translation. */
 	lan_rmw(DEV_PORT_MISC_RTAG48_ENA_SET(false) |

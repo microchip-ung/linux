@@ -1731,6 +1731,9 @@ static int lan9645x_port_hsr_join_pair(struct dsa_switch *ds, int port,
 		}
 	}
 
+	/* We must match port A/B in HW, and rely on the order of calls to
+	 * identify which dsa interface is A and B.
+	 */
 	if (!dslrea)
 		return 0;
 
@@ -1741,13 +1744,36 @@ static int lan9645x_port_hsr_join_pair(struct dsa_switch *ds, int port,
 		return -EINVAL;
 	}
 
+	dev_dbg(lan9645x->dev, "lan_a=%d lan_b=%d type=%d\n", dslrea->index,
+		dslreb->index, type);
+
+	/* Take ownership of the ring ports' VCAP keyset selection before
+	 * configuring it, so HSR fails cleanly (rather than clobbering) if a tc
+	 * chain template already controls those lookups.
+	 */
+	err = lan9645x_hsr_keyset_claim(lan9645x->ports[dslrea->index], type,
+					extack);
+	if (err)
+		return err;
+
+	err = lan9645x_hsr_keyset_claim(lan9645x->ports[dslreb->index], type,
+					extack);
+	if (err) {
+		lan9645x_hsr_keyset_release(lan9645x->ports[dslrea->index], type);
+		return err;
+	}
+
 	err = lan9645x_hsr_prp_pair_add(lan9645x, lan9645x->ports[dslrea->index],
 					lan9645x->ports[dslreb->index],
 					dslrea->user, hsr, type);
-	if (err)
+	if (err) {
 		dev_err(lan9645x->dev,
 			"HSR/PRP pair add err=%d ds_a=%p ds_b=%p\n", err,
 			dslrea->user, dslreb->user);
+		lan9645x_hsr_keyset_release(lan9645x->ports[dslrea->index], type);
+		lan9645x_hsr_keyset_release(lan9645x->ports[dslreb->index], type);
+		return err;
+	}
 
 	return err;
 }

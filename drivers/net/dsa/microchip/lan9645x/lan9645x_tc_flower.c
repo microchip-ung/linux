@@ -43,11 +43,96 @@ struct lan9645x_multi_rules {
  */
 struct lan9645x_tc_flower_template {
 	struct list_head list;		/* on lan9645x_port.tc_templates */
-	int cid;			/* chain id */
+	enum lan9645x_keyset_owner owner;
+	enum vcap_type vtype;
+	int lookup;
+	int cid;			/* chain id (template owner only) */
 	enum vcap_keyfield_set keyset;	/* keyset selected by the template */
 	u16 l3_proto;			/* protocol specified in the template */
 	struct lan9645x_port_keyset_snapshot orig; /* port cfg before template */
 };
+
+static const char *lan9645x_keyset_owner_name(enum lan9645x_keyset_owner owner)
+{
+	switch (owner) {
+	case LAN9645X_KEYSET_OWNER_TEMPLATE:
+		return "tc chain template";
+	case LAN9645X_KEYSET_OWNER_HSR:
+		return "HSR/PRP";
+	default:
+		return "N/A";
+	}
+}
+
+static struct lan9645x_tc_flower_template *
+lan9645x_keyset_find(struct lan9645x_port *port, enum vcap_type vtype,
+		     int lookup)
+{
+	struct lan9645x_tc_flower_template *e;
+
+	list_for_each_entry(e, &port->tc_templates, list)
+		if (e->vtype == vtype && e->lookup == lookup)
+			return e;
+	return NULL;
+}
+
+static struct lan9645x_tc_flower_template *
+__lan9645x_keyset_claim(struct lan9645x_port *port, enum vcap_type vtype,
+			int lookup, enum lan9645x_keyset_owner owner,
+			struct netlink_ext_ack *extack)
+{
+	struct lan9645x_tc_flower_template *e;
+
+	e = lan9645x_keyset_find(port, vtype, lookup);
+	if (e) {
+		NL_SET_ERR_MSG_FMT_MOD(extack,
+				       "port %d VCAP %s lookup %d keyset is controlled by %s",
+				       port->chip_port,
+				       vcap_type_name(port->lan9645x->vcap_ctrl, vtype),
+				       lookup,
+				       lan9645x_keyset_owner_name(e->owner));
+		return ERR_PTR(-EBUSY);
+	}
+
+	e = kzalloc(sizeof(*e), GFP_KERNEL);
+	if (!e)
+		return ERR_PTR(-ENOMEM);
+
+	e->owner = owner;
+	e->vtype = vtype;
+	e->lookup = lookup;
+	list_add_tail(&e->list, &port->tc_templates);
+	return e;
+}
+
+int lan9645x_vcap_keyset_claim(struct lan9645x_port *port, enum vcap_type vtype,
+			       int lookup, enum lan9645x_keyset_owner owner,
+			       struct netlink_ext_ack *extack)
+{
+	struct lan9645x_tc_flower_template *e;
+
+	e = __lan9645x_keyset_claim(port, vtype, lookup, owner, extack);
+	return IS_ERR(e) ? PTR_ERR(e) : 0;
+}
+
+void lan9645x_vcap_keyset_release(struct lan9645x_port *port,
+				  enum vcap_type vtype, int lookup,
+				  enum lan9645x_keyset_owner owner)
+{
+	struct lan9645x_tc_flower_template *e;
+
+	e = lan9645x_keyset_find(port, vtype, lookup);
+	if (e && e->owner == owner) {
+		list_del(&e->list);
+		kfree(e);
+	}
+}
+
+bool lan9645x_vcap_keyset_claimed(struct lan9645x_port *port,
+				  enum vcap_type vtype, int lookup)
+{
+	return lan9645x_keyset_find(port, vtype, lookup);
+}
 
 /* ISDXes are used by several features such as:
  *
@@ -2188,37 +2273,13 @@ static bool lan9645x_tc_flower_use_template(struct lan9645x_port *port,
 	struct lan9645x_tc_flower_template *ftp;
 
 	list_for_each_entry(ftp, &port->tc_templates, list) {
-		if (ftp->cid != fco->common.chain_index)
+		if (ftp->owner != LAN9645X_KEYSET_OWNER_TEMPLATE ||
+		    ftp->cid != fco->common.chain_index)
 			continue;
 
 		vcap_set_rule_set_keyset(vrule, ftp->keyset);
 		lan9645x_tc_flower_simplify_rule(admin, vrule, ftp->l3_proto);
 		return true;
-	}
-	return false;
-}
-
-/* Return true if a template on a *different* chain already pins the keyset of
- * the (vcap, lookup) that cid maps to on this port. The port keyset selection
- * is per (port, lookup), shared by every chain in that lookup, so:
- *
- *  - a dynamic (non-template) filter must not be added to a lookup a template
- *    owns: it would be built against the template keyset and then silently
- *    corrupted when the template, and with it the keyset selection, is removed;
- *  - a second template must not claim a lookup another template already owns.
- */
-static bool lan9645x_tc_lookup_templated(struct lan9645x_port *port,
-					 struct vcap_admin *admin, int cid)
-{
-	int lookup = vcap_chain_id_to_lookup(admin, cid);
-	struct lan9645x_tc_flower_template *ftp;
-
-	list_for_each_entry(ftp, &port->tc_templates, list) {
-		if (ftp->cid == cid)
-			continue;
-		if (vcap_find_admin(port->lan9645x->vcap_ctrl, ftp->cid) == admin &&
-		    vcap_chain_id_to_lookup(admin, ftp->cid) == lookup)
-			return true;
 	}
 	return false;
 }
@@ -2239,7 +2300,7 @@ static int lan9645x_tc_flower_template_create(struct lan9645x_port *port,
 	enum vcap_keyfield_set keysets[10];
 	struct vcap_control *vctrl;
 	struct vcap_rule *vrule;
-	int err;
+	int err, lookup;
 
 	if (admin->vtype == VCAP_TYPE_ES0) {
 		NL_SET_ERR_MSG_MOD(fco->common.extack,
@@ -2253,15 +2314,15 @@ static int lan9645x_tc_flower_template_create(struct lan9645x_port *port,
 		return -EBUSY;
 	}
 
-	if (lan9645x_tc_lookup_templated(port, admin, fco->common.chain_index)) {
-		NL_SET_ERR_MSG_MOD(fco->common.extack,
-				   "A template already controls this lookup");
-		return -EBUSY;
-	}
-
-	ftp = kzalloc(sizeof(*ftp), GFP_KERNEL);
-	if (!ftp)
-		return -ENOMEM;
+	/* Take ownership of the (port, lookup) keyset selection. Fails if a
+	 * sibling template or a system feature (HSR/PRP) already controls it.
+	 */
+	lookup = vcap_chain_id_to_lookup(admin, fco->common.chain_index);
+	ftp = __lan9645x_keyset_claim(port, admin->vtype, lookup,
+				      LAN9645X_KEYSET_OWNER_TEMPLATE,
+				      fco->common.extack);
+	if (IS_ERR(ftp))
+		return PTR_ERR(ftp);
 
 	ftp->cid = fco->common.chain_index;
 	ftp->keyset = VCAP_KFS_NO_VALUE;
@@ -2271,7 +2332,7 @@ static int lan9645x_tc_flower_template_create(struct lan9645x_port *port,
 				VCAP_USER_TC, fco->common.prio, 0);
 	if (IS_ERR(vrule)) {
 		err = PTR_ERR(vrule);
-		goto err_rule;
+		goto out;
 	}
 
 	state.vrule = vrule;
@@ -2304,14 +2365,14 @@ static int lan9645x_tc_flower_template_create(struct lan9645x_port *port,
 	lan9645x_vcap_set_port_keyset(ndev, admin, fco->common.chain_index,
 				      state.l3_proto, ftp->keyset);
 
-	list_add_tail(&ftp->list, &port->tc_templates);
 	vcap_free_rule(vrule);
 	return 0;
 
 out:
 	vcap_free_rule(vrule);
-err_rule:
-	kfree(ftp);
+	/* Drop the claim taken above (this also frees ftp). */
+	lan9645x_vcap_keyset_release(port, admin->vtype, lookup,
+				     LAN9645X_KEYSET_OWNER_TEMPLATE);
 	return err;
 }
 
@@ -2325,14 +2386,15 @@ static int lan9645x_tc_flower_template_destroy(struct lan9645x_port *port,
 
 	/* Rules using the template are removed by the tc framework first */
 	list_for_each_entry_safe(ftp, tmp, &port->tc_templates, list) {
-		if (ftp->cid != fco->common.chain_index)
+		if (ftp->owner != LAN9645X_KEYSET_OWNER_TEMPLATE ||
+		    ftp->cid != fco->common.chain_index)
 			continue;
 
 		lan9645x_vcap_restore_port_keyset(ndev, admin,
 						  fco->common.chain_index,
 						  &ftp->orig);
-		list_del(&ftp->list);
-		kfree(ftp);
+		lan9645x_vcap_keyset_release(port, ftp->vtype, ftp->lookup,
+					     LAN9645X_KEYSET_OWNER_TEMPLATE);
 		err = 0;
 		break;
 	}
@@ -2449,10 +2511,11 @@ int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,
 		multi.rule[0][0].kset = vrule->keyset;
 		multi.rule[0][0].tid = (u8)-1;
 		multi.rule[0][0].tid_mask = 0xff;
-	} else if (lan9645x_tc_lookup_templated(p, admin, fcid)) {
-		/* The lookup's keyset is pinned by a template on another chain;
-		 * a dynamically-keyed filter here would be corrupted when that
-		 * template is removed.
+	} else if (lan9645x_vcap_keyset_claimed(p, admin->vtype,
+						vcap_chain_id_to_lookup(admin, fcid))) {
+		/* The lookup's keyset selection is pinned by a template on
+		 * another chain or by a system feature (HSR/PRP); a
+		 * dynamically-keyed filter here would be corrupted by it.
 		 */
 		NL_SET_ERR_MSG_MOD(extack,
 				   "Lookup keyset is controlled by a template on another chain");

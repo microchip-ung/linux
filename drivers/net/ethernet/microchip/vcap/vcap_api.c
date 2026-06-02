@@ -4219,6 +4219,15 @@ int vcap_rule_get_address(struct vcap_control *vctrl, u32 id,
 }
 EXPORT_SYMBOL_GPL(vcap_rule_get_address);
 
+/* The user-friendly name of a VCAP instance, as supplied by the client model. */
+const char *vcap_type_name(struct vcap_control *vctrl, enum vcap_type vt)
+{
+	const char *name = vctrl->vcaps[vt].name;
+
+	return name ? name : "?";
+}
+EXPORT_SYMBOL_GPL(vcap_type_name);
+
 #ifdef CONFIG_VCAP_KUNIT_TEST
 #include "vcap_api_kunit.c"
 #endif
