@@ -220,28 +220,33 @@ static void lan9645x_vcap_es0_port_keys(struct lan9645x_port *port,
 int lan9645x_vcap_port_info(struct net_device *dev, struct vcap_admin *admin,
 			    struct vcap_output_print *out)
 {
-	struct lan9645x_port *port = lan9645x_port_from_netdev(dev);
-	struct lan9645x *lan9645x = port->lan9645x;
+	struct lan9645x_port *p = lan9645x_port_from_netdev(dev);
+	struct lan9645x *lan9645x = p->lan9645x;
 	const struct vcap_info *vcap;
 	struct vcap_control *vctrl;
+	struct dsa_port *dp;
 
 	vctrl = lan9645x->vcap_ctrl;
 	vcap = &vctrl->vcaps[admin->vtype];
 
 	out->prf(out->dst, "%s:\n", vcap->name);
-	switch (admin->vtype) {
-	case VCAP_TYPE_IS2:
-		lan9645x_vcap_is2_port_keys(port, admin, out);
-		break;
-	case VCAP_TYPE_IS1:
-		lan9645x_vcap_is1_port_keys(port, admin, out);
-		break;
-	case VCAP_TYPE_ES0:
-		lan9645x_vcap_es0_port_keys(port, admin, out);
-		break;
-	default:
-		out->prf(out->dst, "  no info\n");
-		break;
+	dsa_switch_for_each_user_port(dp, lan9645x->ds) {
+		p = lan9645x_to_port(lan9645x, dp->index);
+
+		switch (admin->vtype) {
+		case VCAP_TYPE_IS2:
+			lan9645x_vcap_is2_port_keys(p, admin, out);
+			break;
+		case VCAP_TYPE_IS1:
+			lan9645x_vcap_is1_port_keys(p, admin, out);
+			break;
+		case VCAP_TYPE_ES0:
+			lan9645x_vcap_es0_port_keys(p, admin, out);
+			break;
+		default:
+			out->prf(out->dst, "  no info\n");
+			return 0;
+		}
 	}
 
 	return 0;
