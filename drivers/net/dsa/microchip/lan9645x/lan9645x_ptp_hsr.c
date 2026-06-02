@@ -15,7 +15,6 @@ static int lan9645x_ptp_hsr_forwarding(struct lan9645x *lan9645x, int shadow,
 {
 	struct vcap_control *vctrl = lan9645x->vcap_ctrl;
 	struct lan9645x_hsr_prp *hsr;
-	struct lan9645x_port *p;
 	struct net_device *ndev;
 	struct vcap_rule *rule;
 	int err, isdx;
@@ -24,7 +23,6 @@ static int lan9645x_ptp_hsr_forwarding(struct lan9645x *lan9645x, int shadow,
 
 	hsr = &lan9645x->hsr;
 	isdx = hsr->isdx;
-	p = lan9645x_to_port(lan9645x, port);
 	ndev = lan9645x_chipport_to_ndev(lan9645x, port);
 
 	if (vcap_rule_exists(lan9645x->vcap_ctrl, rule_id))
