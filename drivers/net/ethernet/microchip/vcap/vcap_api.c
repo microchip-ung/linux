@@ -2628,7 +2628,7 @@ struct vcap_rule *vcap_alloc_rule(struct vcap_control *vctrl,
 	mutex_lock(&admin->lock);
 	/* Check if a rule with this id already exists */
 	if (vcap_rule_exists(vctrl, id)) {
-		err = -EINVAL;
+		err = -EEXIST;
 		goto out_unlock;
 	}
 
