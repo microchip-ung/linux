@@ -401,10 +401,13 @@ int sparx5_ptp_del_traps(struct sparx5_port *port)
 
 int sparx5_ptp_setup_traps(struct sparx5_port *port, struct kernel_hwtstamp_config *cfg)
 {
-	if (cfg->rx_filter == HWTSTAMP_FILTER_NONE)
-		return sparx5_ptp_del_traps(port);
-	else
-		return sparx5_ptp_add_traps(port);
+	if (cfg->rx_filter == HWTSTAMP_FILTER_NONE) {
+		/* Try to delete any traps, and this is always successful */
+		sparx5_ptp_del_traps(port);
+		return 0;
+	}
+
+	return sparx5_ptp_add_traps(port);
 }
 
 int sparx5_ptp_hwtstamp_set(struct sparx5_port *port,
