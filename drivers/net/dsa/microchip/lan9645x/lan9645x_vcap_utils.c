@@ -10,6 +10,16 @@
 
 #define LAN9645X_MRP_RULE_ID_OFFSET	512
 
+/* Deterministic ES0 rule id (one per chip port) for the reserved-VID untag
+ * rule, so it can be removed without tracking per-port state.
+ */
+#define LAN9645X_ES0_RSV_UNTAG_RID_BASE	1024
+
+/* PUSH_OUTER_TAG action encoding (REW, datasheet "Tagging combinations"):
+ * value 3 pushes no tag and overrules the port's REW TAG_CFG.
+ */
+#define LAN9645X_ES0_PUSH_OUTER_NO_TAG	3
+
 static const u8 prio_oui_mrp[ETH_ALEN] = { 0x1, 0x15, 0x4e, 0x0, 0x0, 0x0 };
 static const u8 prio_oui_mask[ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0x0, 0x0, 0x0 };
 
@@ -164,6 +174,59 @@ void lan9645x_is2_only_mac_etype_llc(struct lan9645x *lan9645x, u32 lookup,
 	}
 
 	lan_rmw(val, mask, lan9645x, ANA_VCAP_S2_CFG(port));
+}
+
+/* Reserved VIDs (VLAN_RSV_RANGE_START..VLAN_N_VID-1) are internal only: the
+ * per-bridge VLAN-unaware PVIDs and the HSR/PRP VID. They must never leave the
+ * switch as a wire tag.
+ */
+int lan9645x_es0_add_reserved_vid_untag(struct lan9645x *lan9645x, int port)
+{
+	struct net_device *dev;
+	struct vcap_rule *rule;
+	u32 rule_id, vid_mask;
+	int err;
+
+	/* The reserved range is matched with a single VID value/mask pair, which
+	 * is only exact if [VLAN_RSV_RANGE_START, VLAN_N_VID) is a power-of-two
+	 * block aligned to its own size.
+	 */
+	BUILD_BUG_ON((VLAN_N_VID - VLAN_RSV_RANGE_START) &
+		     (VLAN_N_VID - VLAN_RSV_RANGE_START - 1));
+	BUILD_BUG_ON(VLAN_RSV_RANGE_START &
+		     (VLAN_N_VID - VLAN_RSV_RANGE_START - 1));
+
+	/* care bits = the fixed prefix of the aligned reserved block */
+	vid_mask = (VLAN_N_VID - 1) & ~(VLAN_N_VID - VLAN_RSV_RANGE_START - 1);
+
+	dev = lan9645x_chipport_to_ndev(lan9645x, port);
+	rule_id = LAN9645X_ES0_RSV_UNTAG_RID_BASE + port;
+
+	rule = vcap_alloc_rule(lan9645x->vcap_ctrl, dev,
+			       LAN9645X_VCAP_CID_ES0_L0, VCAP_USER_SYS_LOW_PRIO,
+			       0, rule_id);
+	if (IS_ERR(rule))
+		return PTR_ERR(rule);
+
+	err = vcap_set_rule_set_actionset(rule, VCAP_AFS_VID);
+	/* The egress-port key (VCAP_KF_IF_EGR_PORT_NO) is added by
+	 * lan9645x_vcap_es0_add_default_fields().
+	 */
+	err |= vcap_rule_add_key_u32(rule, VCAP_KF_8021Q_VID_CLS,
+				     VLAN_RSV_RANGE_START, vid_mask);
+	err |= vcap_rule_add_action_u32(rule, VCAP_AF_PUSH_OUTER_TAG,
+					LAN9645X_ES0_PUSH_OUTER_NO_TAG);
+	err = err ? -EINVAL : 0;
+	if (!err)
+		err = lan9645x_vcap_rule_val_add(rule, ETH_P_ALL);
+	vcap_free_rule(rule);
+	return err;
+}
+
+void lan9645x_es0_del_reserved_vid_untag(struct lan9645x *lan9645x, int port)
+{
+	vcap_del_rule(lan9645x->vcap_ctrl, lan9645x_chipport_to_ndev(lan9645x, port),
+		      LAN9645X_ES0_RSV_UNTAG_RID_BASE + port);
 }
 
 void lan9645x_is2_default_conf(struct lan9645x *lan9645x, u32 lookup,

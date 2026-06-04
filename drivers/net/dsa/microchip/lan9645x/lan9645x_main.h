@@ -72,11 +72,13 @@
  * and (mac, per-bridge-vid) entries isolate the MAC table across
  * bridges.
  *
- * VIDs 4000..4095 are reserved from userspace by VLAN_RSV_RANGE_START.
+ * VIDs 4032..4095 are reserved from userspace by VLAN_RSV_RANGE_START.
+ * The range is a power-of-two aligned block so it can be matched in VCAP
+ * with a single VID value/mask pair (see lan9645x_es0_add_reserved_vid_untag).
  */
 #define HOST_PVID			0
 #define VLAN_HSR_PRP			4095
-#define VLAN_RSV_RANGE_START		4000
+#define VLAN_RSV_RANGE_START		4032
 #define VLAN_MAX			(VLAN_RSV_RANGE_START - 1)
 
 #define VLAN_N_VID 4096

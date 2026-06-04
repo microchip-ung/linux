@@ -13,6 +13,7 @@
 #include "lan9645x_netlink_frer.h"
 #include "lan9645x_netlink_fp.h"
 #include "lan9645x_mrp.h"
+#include "lan9645x_vcap_utils.h"
 
 static const char *lan9645x_resource_names[NUM_TARGETS] = {
 	[TARGET_ORG]          = "org",
@@ -2148,12 +2149,21 @@ static int lan9645x_port_enable(struct dsa_switch *ds, int port, struct phy_devi
 {
 	struct lan9645x *lan9645x = ds->priv;
 	struct lan9645x_port *p;
+	int err;
 
 	p = lan9645x_to_port(lan9645x, port);
 
 	dev_dbg(lan9645x->dev, "port=%d", port);
 
 	phy_power_on(p->serdes);
+
+	if (dsa_is_user_port(ds, port)) {
+		err = lan9645x_es0_add_reserved_vid_untag(lan9645x, port);
+		if (err)
+			dev_warn(lan9645x->dev,
+				 "port %d: failed to add reserved-VID untag rule: %d\n",
+				 port, err);
+	}
 
 	return 0;
 }
@@ -2166,6 +2176,9 @@ static void lan9645x_port_disable(struct dsa_switch *ds, int port)
 	p = lan9645x_to_port(lan9645x, port);
 
 	dev_dbg(lan9645x->dev, "port=%d", port);
+
+	if (dsa_is_user_port(ds, port))
+		lan9645x_es0_del_reserved_vid_untag(lan9645x, port);
 
 	phy_power_off(p->serdes);
 }

@@ -137,18 +137,13 @@ static u16 lan9645x_vlan_port_get_pvid(struct lan9645x_port *port)
 
 /* Dynamically choose the egress tagging mode based on the port vlan state:
  *
- * Standalone:
- * TAG_NO_PVID_NO_UNAWARE with PORT_VID=HOST_PVID. This avoids
- * leaking the internal HOST_PVID tag on ingress mirrored frames
- * while leaving normal egress frames untagged.
+ * Standalone and VLAN-unaware bridged:
+ * TAG_NO_PVID_NO_UNAWARE
  *
  * Bridged, VLAN-aware:
  *  - N untagged, 0 tagged: TAG_DISABLED
  *  - 1 untagged, N tagged: TAG_NO_PVID_NO_UNAWARE
  *  - 0 untagged, N tagged: TAG_ALL
- *
- * Bridged, VLAN-unaware:
- *   TAG_DISABLED
  */
 static void
 lan9645x_vlan_port_apply_egress(struct lan9645x_port *p,
@@ -179,7 +174,8 @@ lan9645x_vlan_port_apply_egress(struct lan9645x_port *p,
 			tag_cfg = LAN9645X_TAG_ALL;
 		}
 	} else {
-		tag_cfg = LAN9645X_TAG_DISABLED;
+		tag_cfg = LAN9645X_TAG_NO_PVID_NO_UNAWARE;
+		port_vid = lan9645x_vlan_unaware_pvid(p->bridge_num);
 	}
 
 	/* TAG_TPID_CFG encoding:
