@@ -2535,6 +2535,11 @@ static bool vcap_path_exist(struct vcap_control *vctrl, struct net_device *ndev,
 	return !!tmp;
 }
 
+static bool vcap_permanent_user(enum vcap_user user)
+{
+	return user < VCAP_USER_TC || user == VCAP_USER_SYS_LOW_PRIO;
+}
+
 /* Internal clients can always store their rules in HW
  * External clients can store their rules if the chain is enabled all
  * the way from chain 0, otherwise the rule will be cached until
@@ -2542,7 +2547,7 @@ static bool vcap_path_exist(struct vcap_control *vctrl, struct net_device *ndev,
  */
 static void vcap_rule_set_state(struct vcap_rule_internal *ri)
 {
-	if (ri->data.user <= VCAP_USER_VCAP_UTIL)
+	if (vcap_permanent_user(ri->data.user))
 		ri->state = VCAP_RS_PERMANENT;
 	else if (vcap_path_exist(ri->vctrl, ri->ndev, ri->data.vcap_chain_id))
 		ri->state = VCAP_RS_ENABLED;
