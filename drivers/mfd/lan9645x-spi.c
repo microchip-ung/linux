@@ -381,7 +381,8 @@ static int lan9645x_spi_chip_reset(struct device *dev)
 	ddata->spi_padding_bytes = LAN9645X_SPI_DEFAULT_PADDING_BYTES;
 
 	return regmap_read_poll_timeout(ddata->gcb, DEVCPU_GCB_SOFT_RST, val,
-					!val, LAN9645X_GCB_RST_SLEEP_US,
+					!(val & SOFT_SWC_RST),
+					LAN9645X_GCB_RST_SLEEP_US,
 					LAN9645X_GCB_RST_TIMEOUT_US);
 }
 
