@@ -1210,6 +1210,9 @@ void lan9645x_police_del(struct lan9645x *lan9645x, u16 pol_idx);
 void lan9645x_police_port_init(struct lan9645x_port *p);
 
 /* TC matchall lan9645x_tc_matchall.c */
+int lan9645x_tc_enable_lookups(struct lan9645x_port *p, int from_cid,
+			       int to_cid, unsigned long cookie,
+			       struct netlink_ext_ack *extack, bool enable);
 int lan9645x_tc_matchall_goto_add(struct lan9645x_port *p,
 				  struct tc_cls_matchall_offload *f);
 int lan9645x_tc_matchall_goto_del(struct lan9645x_port *p,
