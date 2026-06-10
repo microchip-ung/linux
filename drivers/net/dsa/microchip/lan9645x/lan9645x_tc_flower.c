@@ -1501,6 +1501,13 @@ int lan9645x_tc_flower_del(struct lan9645x_port *p, struct flow_cls_offload *f,
 	ndev = lan9645x_port_to_ndev(p);
 	vctrl = p->lan9645x->vcap_ctrl;
 
+	/* If this filter enabled a lookup path, disable it. Otherwise -ENOENT
+	 * and we fall through to delete the backing rule(s).
+	 */
+	if (lan9645x_tc_enable_lookups(p, 0, 0, f->cookie, f->common.extack,
+				       false) == 0)
+		return 0;
+
 	admin = vcap_find_admin(vctrl, f->common.chain_index);
 	if (!admin) {
 		NL_SET_ERR_MSG_MOD(f->common.extack, "Invalid chain");
@@ -2440,6 +2447,45 @@ void lan9645x_tc_flower_templates_free(struct lan9645x_port *p)
 	}
 }
 
+/* A no-key flower with a single goto is equivalent to a matchall goto.
+ * cls_flower always reports CONTROL and BASIC in used_keys, so a real "no
+ * keys" filter is one with no other dissector and with empty CONTROL/BASIC
+ * masks.
+ */
+static bool lan9645x_tc_flower_is_goto_only(struct flow_rule *frule,
+					    int *to_cid)
+{
+	struct flow_match_control control;
+	struct flow_match_basic basic;
+
+	if (!frule->match.dissector)
+		return false;
+
+	if (frule->match.dissector->used_keys &
+	    ~(BIT_ULL(FLOW_DISSECTOR_KEY_CONTROL) |
+	      BIT_ULL(FLOW_DISSECTOR_KEY_BASIC)))
+		return false;
+
+	if (flow_rule_match_key(frule, FLOW_DISSECTOR_KEY_BASIC)) {
+		flow_rule_match_basic(frule, &basic);
+		if (basic.mask->n_proto || basic.mask->ip_proto)
+			return false;
+	}
+
+	if (flow_rule_match_key(frule, FLOW_DISSECTOR_KEY_CONTROL)) {
+		flow_rule_match_control(frule, &control);
+		if (control.mask->flags || control.mask->addr_type)
+			return false;
+	}
+
+	if (!(flow_offload_has_one_action(&frule->action) &&
+	      frule->action.entries[0].id == FLOW_ACTION_GOTO))
+		return false;
+
+	*to_cid = frule->action.entries[0].chain_index;
+	return true;
+}
+
 int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,
 			   bool ingress)
 {
@@ -2454,7 +2500,8 @@ int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,
 	struct vcap_admin *admin;
 	struct vcap_rule *vrule;
 	struct net_device *ndev;
-	int err, fcid;
+	struct flow_rule *frule;
+	int err, fcid, to_cid;
 
 	err = lan9645x_tc_flower_action_check(lan9645x->vcap_ctrl, f, ingress);
 	if (err)
@@ -2462,8 +2509,18 @@ int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,
 
 	fcid = f->common.chain_index;
 	extack = f->common.extack;
+	frule = flow_cls_offload_flow_rule(f);
 
-	/* TODO: handle the empty flower with goto as matchall goto */
+	/* Enabling a lookup path only makes sense between the first chains of
+	 * two lookups, so both chain ids must be a multiple of the per-lookup
+	 * chain range. Any other chain falls through to the rule-writing path.
+	 */
+	if (f->common.protocol == htons(ETH_P_ALL) &&
+	    lan9645x_tc_flower_is_goto_only(frule, &to_cid) &&
+	    !(fcid % VCAP_CID_LOOKUP_SIZE) && !(to_cid % VCAP_CID_LOOKUP_SIZE))
+		return lan9645x_tc_enable_lookups(p, fcid, to_cid, f->cookie,
+						  extack, true);
+
 	admin = vcap_find_admin(lan9645x->vcap_ctrl, fcid);
 	if (!admin) {
 		NL_SET_ERR_MSG_MOD(extack, "Invalid chain");
@@ -2480,7 +2537,7 @@ int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,
 
 	vrule->cookie = f->cookie;
 	state.vrule = vrule;
-	state.frule = flow_cls_offload_flow_rule(f);
+	state.frule = frule;
 
 	/* Parse dissectors/keys given by user */
 	err = lan9645x_tc_flower_use_dissectors(&state, admin, vrule);
