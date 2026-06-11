@@ -46,12 +46,23 @@ static bool lan9645x_fp_ena(struct lan9645x_port *p, bool link)
 
 static void __lan9645x_fp_commit_pqueues(struct lan9645x_port *p, bool fp_ena)
 {
-	u32 mask = fp_ena ? p->fp.admin_status : 0;
+	u32 status, mask;
+	bool active;
+
+	status = lan_rd(p->lan9645x, DEV_MM_STATUS(p->chip_port));
+	active = DEV_MM_STATUS_PRMPT_ACTIVE_STATUS_GET(status);
+
+	mask = (fp_ena && active) ? p->fp.admin_status : 0;
 
 	lan_rmw(QSYS_PREEMPT_CFG_P_QUEUES_SET(mask),
 		QSYS_PREEMPT_CFG_P_QUEUES,
 		p->lan9645x,
 		QSYS_PREEMPT_CFG(p->chip_port));
+}
+
+static void lan9645x_fp_recheck(struct lan9645x_port *p)
+{
+	mod_delayed_work(p->lan9645x->queue, &p->lan9645x->fp_work, 0);
 }
 
 static int __lan9645x_fp_set(struct lan9645x_port *p,
@@ -112,21 +123,21 @@ int lan9645x_fp_set(struct lan9645x_port *p,
 	mutex_lock(&p->fp_lock);
 	err = __lan9645x_fp_set(p, c, link);
 	mutex_unlock(&p->fp_lock);
+
+	if (!err)
+		lan9645x_fp_recheck(p);
+
 	return err;
 }
 
 void lan9645x_fp_change_preemptable_tcs(struct lan9645x_port *p,
 					unsigned long preemptible_tcs)
 {
-	struct lan9645x_fp_port_conf c = {};
-	struct net_device *dev;
-
-	dev = lan9645x_port_to_ndev(p);
+	struct net_device *dev = lan9645x_port_to_ndev(p);
 
 	mutex_lock(&p->fp_lock);
-	c = p->fp;
-	c.admin_status = preemptible_tcs;
-	__lan9645x_fp_set(p, &c, netif_carrier_ok(dev));
+	p->fp.admin_status = preemptible_tcs;
+	__lan9645x_fp_commit_pqueues(p, lan9645x_fp_ena(p, netif_carrier_ok(dev)));
 	mutex_unlock(&p->fp_lock);
 
 	/* Recalculate TAS guard bands: preemptible TCs use MAC HOLD
@@ -134,6 +145,8 @@ void lan9645x_fp_change_preemptable_tcs(struct lan9645x_port *p,
 	 * changes when the preemptible TC set changes.
 	 */
 	lan9645x_taprio_guard_bands_recalc(p);
+
+	lan9645x_fp_recheck(p);
 }
 
 int lan9645x_fp_status(struct lan9645x_port *p,
@@ -206,20 +219,23 @@ static void lan9645x_fp_check_port(struct lan9645x_port *p)
 
 	mutex_lock(&p->fp_lock);
 
-	if (!p->fp.enable_tx || p->fp.verify_disable_tx ||
-	    (dev && !netif_carrier_ok(dev)))
+	if (!p->fp.enable_tx || (dev && !netif_carrier_ok(dev)))
 		goto unlock;
 
 	status = lan_rd(lan9645x, DEV_MM_STATUS(p->chip_port));
 	verify_state = DEV_MM_STATUS_PRMPT_VERIFY_STATE_GET(status);
 	act_sticky = DEV_MM_STATUS_PRMPT_ACTIVE_STICKY_GET(status);
 
-	if (act_sticky)
+	if (act_sticky) {
 		lan_rmw(DEV_MM_STATUS_PRMPT_ACTIVE_STICKY_SET(0),
 			DEV_MM_STATUS_PRMPT_ACTIVE_STICKY,
 			lan9645x, DEV_MM_STATUS(p->chip_port));
 
-	if (verify_state != FP_STATUS_VERIFY_FAILED)
+		__lan9645x_fp_commit_pqueues(p,
+			lan9645x_fp_ena(p, dev && netif_carrier_ok(dev)));
+	}
+
+	if (p->fp.verify_disable_tx || verify_state != FP_STATUS_VERIFY_FAILED)
 		goto unlock;
 
 	/* Restart verification after fail. */
