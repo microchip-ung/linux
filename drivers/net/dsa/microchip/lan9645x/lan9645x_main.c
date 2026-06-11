@@ -2044,12 +2044,24 @@ static int lan9645x_tc_setup_qdisc_taprio(struct dsa_switch *ds, int port,
 					  struct tc_taprio_qopt_offload *taprio)
 {
 	struct lan9645x *lan9645x = ds->priv;
+	int err;
 
 	switch (taprio->cmd) {
 	case TAPRIO_CMD_REPLACE:
-		return lan9645x_taprio_add(lan9645x, port, taprio);
+		err = lan9645x_port_setup_mqprio(ds, port, &taprio->mqprio);
+		if (err)
+			return err;
+
+		err = lan9645x_taprio_add(lan9645x, port, taprio);
+		if (err) {
+			taprio->mqprio.qopt.num_tc = 0;
+			lan9645x_port_setup_mqprio(ds, port, &taprio->mqprio);
+		}
+		return err;
 	case TAPRIO_CMD_DESTROY:
-		return lan9645x_taprio_del(lan9645x, port);
+		err = lan9645x_taprio_del(lan9645x, port);
+		lan9645x_port_setup_mqprio(ds, port, &taprio->mqprio);
+		return err;
 	default:
 		return -EOPNOTSUPP;
 	}
