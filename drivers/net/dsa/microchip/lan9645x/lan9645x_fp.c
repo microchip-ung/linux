@@ -36,12 +36,29 @@ int lan9645x_fp_get(struct lan9645x_port *p,
 	return 0;
 }
 
+static bool lan9645x_fp_ena(struct lan9645x_port *p, bool link)
+{
+	bool capable = p->duplex == DUPLEX_FULL &&
+		       p->speed >= LAN9645X_SPEED_100;
+
+	return capable && link && p->fp.enable_tx;
+}
+
+static void __lan9645x_fp_commit_pqueues(struct lan9645x_port *p, bool fp_ena)
+{
+	u32 mask = fp_ena ? p->fp.admin_status : 0;
+
+	lan_rmw(QSYS_PREEMPT_CFG_P_QUEUES_SET(mask),
+		QSYS_PREEMPT_CFG_P_QUEUES,
+		p->lan9645x,
+		QSYS_PREEMPT_CFG(p->chip_port));
+}
+
 static int __lan9645x_fp_set(struct lan9645x_port *p,
 			     struct lan9645x_fp_port_conf *c, bool link)
 {
-	bool verify_dis, capable, fp_ena;
+	bool verify_dis, fp_ena;
 	struct net_device *dev;
-	u32 mask;
 
 	dev = lan9645x_port_to_ndev(p);
 
@@ -61,10 +78,10 @@ static int __lan9645x_fp_set(struct lan9645x_port *p,
 		return -EINVAL;
 	}
 
-	capable = p->duplex == DUPLEX_FULL && p->speed >= LAN9645X_SPEED_100;
-	fp_ena = capable && link && c->enable_tx;
-	verify_dis = !(fp_ena && !c->verify_disable_tx);
-	mask = fp_ena ? c->admin_status : 0;
+	p->fp = *c;
+
+	fp_ena = lan9645x_fp_ena(p, link);
+	verify_dis = !(fp_ena && !p->fp.verify_disable_tx);
 
 	/* Toggle verification state machine on reconfiguration. */
 	lan_rmw(DEV_VERIF_CONFIG_PRM_VERIFY_DIS_SET(1),
@@ -72,22 +89,18 @@ static int __lan9645x_fp_set(struct lan9645x_port *p,
 		p->lan9645x, DEV_VERIF_CONFIG(p->chip_port));
 
 	lan_wr(DEV_VERIF_CONFIG_PRM_VERIFY_DIS_SET(verify_dis) |
-	       DEV_VERIF_CONFIG_PRM_VERIFY_TIME_SET(c->verify_time) |
+	       DEV_VERIF_CONFIG_PRM_VERIFY_TIME_SET(p->fp.verify_time) |
 	       DEV_VERIF_CONFIG_VERIF_TIMER_UNITS_SET(
 			p->speed == LAN9645X_SPEED_2500 ? 2 : 0),
 		p->lan9645x, DEV_VERIF_CONFIG(p->chip_port));
 
-	lan_rmw(SYS_FRONT_PORT_MODE_ADD_FRAG_SIZE_SET(c->add_frag_size),
+	lan_rmw(SYS_FRONT_PORT_MODE_ADD_FRAG_SIZE_SET(p->fp.add_frag_size),
 		SYS_FRONT_PORT_MODE_ADD_FRAG_SIZE,
 		p->lan9645x,
 		SYS_FRONT_PORT_MODE(p->chip_port));
 
-	lan_rmw(QSYS_PREEMPT_CFG_P_QUEUES_SET(mask),
-		QSYS_PREEMPT_CFG_P_QUEUES,
-		p->lan9645x,
-		QSYS_PREEMPT_CFG(p->chip_port));
+	__lan9645x_fp_commit_pqueues(p, fp_ena);
 
-	p->fp = *c;
 	return 0;
 }
 
