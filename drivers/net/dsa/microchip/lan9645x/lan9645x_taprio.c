@@ -78,6 +78,23 @@ enum lan9645x_taprio_state {
 	NUM_TAS_STATE,
 };
 
+/* SetGateStates: The state of queues are updated according to GATE_STATE.
+ *
+ * Set-And-Release-MAC: The state of queues are updated according to GATE_STATE.
+ * The MAC is signaled to release any hold of preemptable frames set by
+ * Set-And-Hold-MAC.
+ *
+ * Set-And-Hold-MAC: The state of queues are updated according to GATE_STATE.
+ * The MAC is signaled to stop allowing the transmission of preemptable
+ * frames, and any currently transmitting preemptable frame is preempted if
+ * possible.
+ */
+enum lan9645x_taprio_op_type {
+	TAS_OP_SET_GATE_STATES = 0,
+	TAS_OP_SET_AND_RELEASE_MAC = 2,
+	TAS_OP_SET_AND_HOLD_MAC = 3,
+};
+
 void lan9645x_new_base_time(struct lan9645x *lan9645x, const u32 cycle_time,
 			    const ktime_t org_base_time, ktime_t *new_base_time)
 {
@@ -267,6 +284,10 @@ static int lan9645x_taprio_shutdown_operating(struct lan9645x_port *p)
 	       lan9645x,
 	       TAS_TAS_GATE_STATE);
 
+	lan_rmw(SYS_FPORT_STATE_MAC_HOLD_SET(0),
+		SYS_FPORT_STATE_MAC_HOLD,
+		lan9645x, SYS_FPORT_STATE(p->chip_port));
+
 	return 0;
 }
 
@@ -298,6 +319,7 @@ static int lan9645x_taprio_gcl_setup(struct lan9645x_port *port, int list,
 				     struct tc_taprio_qopt_offload *qopt)
 {
 	struct lan9645x *lan9645x = port->lan9645x;
+	u8 preemptible_tcs;
 	u32 gcl_next;
 	int i, state;
 
@@ -325,11 +347,23 @@ static int lan9645x_taprio_gcl_setup(struct lan9645x_port *port, int list,
 	       TAS_TAS_LIST_CFG_LIST_TOD_DOM_SET(0),
 	       lan9645x, TAS_TAS_LIST_CFG);
 
+	preemptible_tcs = port->fp.admin_status;
+
 	/* Program each GCL entry as a circular linked list */
 	gcl_next = gcl_base;
 	for (i = 0; i < qopt->num_entries; i++) {
+		u8 gate_mask = qopt->entries[i].gate_mask;
+		u32 op_type;
+
 		if (qopt->entries[i].command != TC_TAPRIO_CMD_SET_GATES)
 			return -EINVAL;
+
+		if (!preemptible_tcs)
+			op_type = TAS_OP_SET_GATE_STATES;
+		else if (gate_mask & preemptible_tcs)
+			op_type = TAS_OP_SET_AND_RELEASE_MAC;
+		else
+			op_type = TAS_OP_SET_AND_HOLD_MAC;
 
 		lan_rmw(TAS_TAS_CFG_CTRL_GCL_ENTRY_NUM_SET(gcl_next),
 			TAS_TAS_CFG_CTRL_GCL_ENTRY_NUM, lan9645x,
@@ -338,7 +372,8 @@ static int lan9645x_taprio_gcl_setup(struct lan9645x_port *port, int list,
 		gcl_next = (i >= qopt->num_entries - 1) ?
 			   gcl_base : gcl_base + i + 1;
 
-		lan_wr(TAS_TAS_GCL_CTRL_CFG_GATE_STATE_SET(qopt->entries[i].gate_mask),
+		lan_wr(TAS_TAS_GCL_CTRL_CFG_GATE_STATE_SET(gate_mask) |
+		       TAS_TAS_GCL_CTRL_CFG_OP_TYPE_SET(op_type),
 		       lan9645x, TAS_TAS_GCL_CTRL_CFG);
 
 		lan_wr(TAS_TAS_GCL_CTRL_CFG2_NEXT_GCL_SET(gcl_next), lan9645x,

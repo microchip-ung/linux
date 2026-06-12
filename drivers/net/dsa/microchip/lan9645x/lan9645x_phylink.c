@@ -440,6 +440,11 @@ void lan9645x_phylink_port_down(struct lan9645x *lan9645x, int port)
 		SYS_FRONT_PORT_MODE_HDX_MODE,
 		lan9645x, SYS_FRONT_PORT_MODE(p->chip_port));
 
+	/* 7.1: Release any MAC HOLD before flushing */
+	lan_rmw(SYS_FPORT_STATE_MAC_HOLD_SET(0),
+		SYS_FPORT_STATE_MAC_HOLD,
+		lan9645x, SYS_FPORT_STATE(p->chip_port));
+
 	/* 8: Flush the queues accociated with the port */
 	lan_rmw(QSYS_SW_PORT_MODE_AGING_MODE_SET(3),
 		QSYS_SW_PORT_MODE_AGING_MODE,
