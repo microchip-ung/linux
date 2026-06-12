@@ -656,6 +656,11 @@ static int vsc8531_pre_init_seq_set(struct phy_device *phydev)
 	for (i = 0; i < ARRAY_SIZE(init_seq); i++)
 		vsc85xx_tr_write(phydev, init_seq[i].reg, init_seq[i].val);
 
+	rc = phy_modify_paged(phydev, MSCC_PHY_PAGE_TEST,
+			      MSCC_PHY_TEST_PAGE_8, TR_CLK_DISABLE, 0);
+	if (rc < 0)
+		goto out_unlock;
+
 out_unlock:
 	oldpage = phy_restore_page(phydev, oldpage, oldpage);
 	mutex_unlock(&phydev->lock);
