@@ -10,7 +10,12 @@
 
 #define LAN9645X_AFI_SLOW_INJ_CNT		128
 #define LAN9645X_AFI_FRM_CNT			128
+#define LAN9645X_AFI_DTI_CNT			4
 #define LAN9645X_PRIO_SUPER			8
+
+/* Fast-injection (DTI) requested-rate bounds in bits/s (layer 1). */
+#define LAN9645X_AFI_FAST_INJ_BPS_MIN		1000ULL
+#define LAN9645X_AFI_FAST_INJ_BPS_MAX		10000000000ULL
 
 /* FRM_INFO field layout */
 #define LAN9645X_AFI_FRM_INFO_FP		GENMASK(11, 0)
@@ -40,6 +45,11 @@
 #define LAN9645X_AFI_FRM_PART0_INJ_CNT		GENMASK(23, 16)
 #define LAN9645X_AFI_FRM_PART0_INJ_CNT_SET(x) \
 	FIELD_PREP(LAN9645X_AFI_FRM_PART0_INJ_CNT, x)
+
+/* For a delay entry the whole PART0 register holds the delay in clock cycles */
+#define LAN9645X_AFI_FRM_PART0_DELAY		GENMASK(29, 0)
+#define LAN9645X_AFI_FRM_PART0_DELAY_SET(x) \
+	FIELD_PREP(LAN9645X_AFI_FRM_PART0_DELAY, x)
 
 /* FRM_INFO fields in FRM_ENTRY_PART1 register */
 #define LAN9645X_AFI_FRM_PART1_FSHORT		GENMASK(0, 0)
@@ -416,10 +426,207 @@ static int lan9645x_afi_tti_stop(struct afi_control *afi, u32 tti_idx)
 	return 0;
 }
 
+/* Transmit a frame towards a port with the AFI inject marker set so the AFI
+ * block can hijack it. Manual injection is required on lan9645x: the AFI
+ * cannot inject via the NPI port unless frame aging is disabled on front
+ * ports, so this mirrors the MRP injection path.
+ */
+static int lan9645x_afi_frm_inject(struct afi_control *afi, u32 port_no,
+				   u32 prio, struct sk_buff *skb)
+{
+	struct lan9645x *lan9645x = afi->priv;
+	struct lan9645x_port *port;
+	u8 ifh[LAN9645X_IFH_LEN];
+
+	if (port_no >= NUM_PHYS_PORTS)
+		return -EINVAL;
+
+	port = lan9645x_to_port(lan9645x, port_no);
+	if (!port)
+		return -EINVAL;
+
+	memset(ifh, 0, LAN9645X_IFH_LEN);
+	LAN9645X_IFH_SET(ifh, IFH_BYPASS, 1);
+	LAN9645X_IFH_SET(ifh, IFH_DSTS, port->chip_port);
+	LAN9645X_IFH_SET(ifh, IFH_AFI, 1);
+	LAN9645X_IFH_SET(ifh, IFH_QOS_CLASS, prio);
+
+	return lan9645x_inj_xmit(port, skb, (__be32 *)ifh);
+}
+
+/* Capture a previously injected frame into the given frame table entry. The
+ * DTI-specific fields (INJ_CNT, NEXT_PTR) are written later by dti_start.
+ */
+static int lan9645x_afi_dti_frm_hijack(struct afi_control *afi, u32 frm_idx)
+{
+	struct lan9645x *lan9645x = afi->priv;
+
+	return lan9645x_afi_frm_hijack(lan9645x, frm_idx);
+}
+
+/* Write a frame table entry (frame or delay) and its sequence link. */
+static void lan9645x_afi_dti_frm_entry_write(struct lan9645x *lan9645x,
+					     struct afi_frm *frm, u32 frm_idx)
+{
+	if (frm->entry_type) {
+		/* Delay entry: PART0 holds the delay. */
+		lan_wr(LAN9645X_AFI_FRM_PART0_DELAY_SET(frm->delay),
+		       lan9645x, AFI_FRM_ENTRY_PART0(frm_idx));
+	} else {
+		/* Frame entry: only update INJ_CNT, keep FP/DSTP from hijack. */
+		lan_rmw(LAN9645X_AFI_FRM_PART0_INJ_CNT_SET(frm->inj_cnt),
+			LAN9645X_AFI_FRM_PART0_INJ_CNT,
+			lan9645x, AFI_FRM_ENTRY_PART0(frm_idx));
+	}
+
+	lan_wr(AFI_FRM_NXT_AND_TYPE_NEXT_PTR_SET(frm->next_idx) |
+	       AFI_FRM_NXT_AND_TYPE_ENTRY_TYPE_SET(frm->entry_type),
+	       lan9645x, AFI_FRM_NXT_AND_TYPE(frm_idx));
+}
+
+static void lan9645x_afi_dti_qu_ref_update(struct lan9645x *lan9645x,
+					   u32 dti_idx)
+{
+	struct afi_dti *dti = &lan9645x->afi_ctrl->dti_tbl[dti_idx];
+	struct lan9645x_afi_qu_ref qu_ref;
+
+	lan9645x_afi_port_prio_2_qu_ref(dti->port_no, dti->prio, &qu_ref);
+
+	lan_wr(AFI_DTI_PORT_QU_PORT_NUM_SET(qu_ref.chip_port) |
+	       AFI_DTI_PORT_QU_QU_NUM_SET(qu_ref.qu_num),
+	       lan9645x, AFI_DTI_PORT_QU(dti_idx));
+}
+
+static int lan9645x_afi_dti_start(struct afi_control *afi, u32 dti_idx,
+				  bool do_frm_cfg, bool do_dti_cfg, bool start)
+{
+	struct afi_dti *dti = &afi->dti_tbl[dti_idx];
+	struct lan9645x *lan9645x = afi->priv;
+	u32 frm_idx;
+
+	if (do_frm_cfg) {
+		/* (Re)write the frame/delay sequence. */
+		frm_idx = dti->first_frm_idx;
+		while (frm_idx) {
+			struct afi_frm *frm = &afi->frm_tbl[frm_idx];
+
+			lan9645x_afi_dti_frm_entry_write(lan9645x, frm, frm_idx);
+			frm_idx = frm->next_idx;
+		}
+	}
+
+	if (do_dti_cfg) {
+		lan_wr(AFI_DTI_MODE_MODE_SET(dti->mode) |
+		       AFI_DTI_MODE_TRAILING_DELAY_SEQ_CNT_SET(dti->trailing_delay_seq_cnt) |
+		       AFI_DTI_MODE_FRM_INJ_CNT_SET(0) |
+		       AFI_DTI_MODE_DTI_NEXT_SET(dti->dti_next),
+		       lan9645x, AFI_DTI_MODE(dti_idx));
+
+		lan9645x_afi_dti_qu_ref_update(lan9645x, dti_idx);
+	}
+
+	/* Settings needed on every (re)start. */
+	lan_wr(AFI_DTI_FRM_FIRST_FRM_PTR_SET(dti->first_frm_idx) |
+	       AFI_DTI_FRM_NEXT_FRM_PTR_SET(dti->first_frm_idx),
+	       lan9645x, AFI_DTI_FRM(dti_idx));
+
+	lan_wr(AFI_DTI_CNT_CNT_SET(dti->mode == 1 ? 0 : dti->frm_inj_cnt),
+	       lan9645x, AFI_DTI_CNT(dti_idx));
+
+	lan_wr(0, lan9645x, AFI_DTI_CNT_DOWN(dti_idx));
+	lan_wr(0, lan9645x, AFI_DTI_DURATION(dti_idx));
+
+	lan_wr(AFI_DTI_CTRL_ENA_SET(start ? 1 : 0) |
+	       AFI_DTI_CTRL_BW_SET(dti->bw),
+	       lan9645x, AFI_DTI_CTRL(dti_idx));
+
+	return 0;
+}
+
+static int lan9645x_afi_dti_stop(struct afi_control *afi, u32 dti_idx)
+{
+	struct lan9645x *lan9645x = afi->priv;
+
+	lan_rmw(AFI_DTI_CTRL_ENA_SET(0), AFI_DTI_CTRL_ENA,
+		lan9645x, AFI_DTI_CTRL(dti_idx));
+
+	return 0;
+}
+
+/* To remove the frames of a DTI from buffer memory, inject the sequence one
+ * last time with the FRM_RM bit set and all delays zeroed. No frame egresses.
+ */
+static int lan9645x_afi_dti_frm_rm_inj(struct afi_control *afi, u32 dti_idx)
+{
+	struct afi_dti *dti = &afi->dti_tbl[dti_idx];
+	struct lan9645x *lan9645x = afi->priv;
+	s32 frm_idx, last_frm_idx = 0;
+	int ret;
+
+	if (dti->state != AFI_ENTRY_STATE_STOPPED) {
+		pr_info("ID = %u: Injection must be stopped before rm injection\n",
+			dti_idx);
+		return -EINVAL;
+	}
+
+	/* Set the FRM_RM bit for each frame entry to be removed. */
+	for (frm_idx = dti->first_frm_idx; frm_idx > 0;
+	     frm_idx = afi->frm_tbl[frm_idx].next_idx) {
+		if (afi->frm_tbl[frm_idx].entry_type == 0) {
+			ret = lan9645x_afi_frm_set_rm(lan9645x, frm_idx);
+			if (ret)
+				return ret;
+			last_frm_idx = frm_idx;
+		}
+	}
+
+	lan_rmw(AFI_DTI_FRM_NEXT_FRM_PTR_SET(dti->first_frm_idx),
+		AFI_DTI_FRM_NEXT_FRM_PTR, lan9645x, AFI_DTI_FRM(dti_idx));
+
+	if (dti->mode != 0)
+		lan_rmw(AFI_DTI_MODE_MODE_SET(0) | AFI_DTI_MODE_FRM_INJ_CNT_SET(0),
+			AFI_DTI_MODE_MODE | AFI_DTI_MODE_FRM_INJ_CNT,
+			lan9645x, AFI_DTI_MODE(dti_idx));
+
+	lan_rmw(AFI_DTI_CNT_CNT_SET(1), AFI_DTI_CNT_CNT,
+		lan9645x, AFI_DTI_CNT(dti_idx));
+
+	/* Zero all delays to speed up the removal. */
+	for (frm_idx = dti->first_frm_idx; frm_idx > 0;
+	     frm_idx = afi->frm_tbl[frm_idx].next_idx) {
+		if (afi->frm_tbl[frm_idx].entry_type == 1)
+			lan_wr(0, lan9645x, AFI_FRM_ENTRY_PART0(frm_idx));
+	}
+
+	lan_wr(0, lan9645x, AFI_DTI_CNT_DOWN(dti_idx));
+
+	/* Start the removal injection. */
+	lan_wr(AFI_DTI_CTRL_ENA_SET(1) | AFI_DTI_CTRL_BW_SET(0),
+	       lan9645x, AFI_DTI_CTRL(dti_idx));
+
+	if (last_frm_idx)
+		lan9645x_afi_frm_gone_wait(lan9645x, last_frm_idx);
+
+	return 0;
+}
+
+static int lan9645x_afi_dti_seq_cnt_get(struct afi_control *afi, u32 dti_idx,
+					u32 *seq_cnt)
+{
+	struct lan9645x *lan9645x = afi->priv;
+
+	*seq_cnt = AFI_DTI_CNT_CNT_GET(lan_rd(lan9645x, AFI_DTI_CNT(dti_idx)));
+
+	return 0;
+}
+
 struct afi_consts lan9645x_afi_consts = {
 	.frm_cnt = LAN9645X_AFI_FRM_CNT,
 	.slow_inj_cnt = LAN9645X_AFI_SLOW_INJ_CNT,
+	.dti_cnt = LAN9645X_AFI_DTI_CNT,
 	.prio_super = LAN9645X_PRIO_SUPER,
+	.fast_inj_bps_min = LAN9645X_AFI_FAST_INJ_BPS_MIN,
+	.fast_inj_bps_max = LAN9645X_AFI_FAST_INJ_BPS_MAX,
 };
 
 struct afi_operations lan9645x_afi_operations = {
@@ -430,6 +637,12 @@ struct afi_operations lan9645x_afi_operations = {
 	.tti_frm_rm_inj = lan9645x_afi_tti_frm_rm_inj,
 	.tti_start = lan9645x_afi_tti_start,
 	.tti_stop = lan9645x_afi_tti_stop,
+	.frm_inject = lan9645x_afi_frm_inject,
+	.dti_frm_hijack = lan9645x_afi_dti_frm_hijack,
+	.dti_frm_rm_inj = lan9645x_afi_dti_frm_rm_inj,
+	.dti_start = lan9645x_afi_dti_start,
+	.dti_stop = lan9645x_afi_dti_stop,
+	.dti_seq_cnt_get = lan9645x_afi_dti_seq_cnt_get,
 };
 
 void lan9645x_afi_deinit(struct lan9645x *lan9645x)
