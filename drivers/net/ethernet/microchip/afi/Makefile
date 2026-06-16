@@ -6,3 +6,4 @@
 obj-$(CONFIG_AFI) += afi.o
 
 afi-y += afi_api.o
+afi-y += afi_netlink.o
