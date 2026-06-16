@@ -7,6 +7,7 @@
 #include "lan9645x_main.h"
 
 #include "afi_api.h"
+#include "afi_netlink.h"
 
 #define LAN9645X_AFI_SLOW_INJ_CNT		128
 #define LAN9645X_AFI_FRM_CNT			128
@@ -645,8 +646,27 @@ struct afi_operations lan9645x_afi_operations = {
 	.dti_seq_cnt_get = lan9645x_afi_dti_seq_cnt_get,
 };
 
+/* Resolve a net device to its chip port, but only for ports of this switch. */
+static int lan9645x_afi_nl_port_of(void *priv, struct net_device *ndev)
+{
+	struct lan9645x *lan9645x = priv;
+	struct dsa_port *dp;
+
+	dp = dsa_port_from_netdev(ndev);
+	if (IS_ERR_OR_NULL(dp) || dp->ds != lan9645x->ds)
+		return -ENODEV;
+
+	return lan9645x->ports[dp->index]->chip_port;
+}
+
+static const struct afi_nl_ops lan9645x_afi_nl_ops = {
+	.port_of = lan9645x_afi_nl_port_of,
+};
+
 void lan9645x_afi_deinit(struct lan9645x *lan9645x)
 {
+	afi_netlink_unregister(lan9645x->afi_ctrl);
+
 	afi_deinit(lan9645x->afi_ctrl);
 
 	kfree(lan9645x->afi_ctrl);
@@ -655,6 +675,7 @@ void lan9645x_afi_deinit(struct lan9645x *lan9645x)
 int lan9645x_afi_init(struct lan9645x *lan9645x)
 {
 	struct afi_control *afi_ctrl;
+	int ret;
 
 	afi_ctrl = kzalloc(sizeof(*afi_ctrl), GFP_KERNEL);
 	if (!afi_ctrl)
@@ -665,5 +686,20 @@ int lan9645x_afi_init(struct lan9645x *lan9645x)
 	afi_ctrl->priv = lan9645x;
 	lan9645x->afi_ctrl = afi_ctrl;
 
-	return afi_init(afi_ctrl);
+	ret = afi_init(afi_ctrl);
+	if (ret)
+		goto err_free;
+
+	ret = afi_netlink_register(afi_ctrl, lan9645x, &lan9645x_afi_nl_ops);
+	if (ret)
+		goto err_deinit;
+
+	return 0;
+
+err_deinit:
+	afi_deinit(afi_ctrl);
+err_free:
+	kfree(afi_ctrl);
+	lan9645x->afi_ctrl = NULL;
+	return ret;
 }
