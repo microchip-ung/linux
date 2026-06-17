@@ -598,6 +598,11 @@ static const struct sfp_quirk sfp_quirks[] = {
 	SFP_QUIRK("Lantech", "8330-265D", sfp_quirk_2500basex,
 		  sfp_fixup_ignore_los),
 
+	// Sopto SPT-SFP+C1 and SPT-SFP+C2 can operate at 1000/2500base-X, but
+	// only report 10GbaseSR in their EEPROM
+	SFP_QUIRK_S("Sopto", "SPT-SFP+C1", sfp_quirk_1000_2500_basex),
+	SFP_QUIRK_S("Sopto", "SPT-SFP+C2", sfp_quirk_1000_2500_basex),
+
 	SFP_QUIRK_S("UBNT", "UF-INSTANT", sfp_quirk_ubnt_uf_instant),
 
 	// Walsun HXSX-ATR[CI]-1 don't identify as copper, and use the
