@@ -24,6 +24,8 @@
 };
 
 &mux {
+	microchip,si2_interface;
+
 	mux@0 {
 		reg = <0>;
 		microchip,bus-interface = <0>;
@@ -44,7 +46,7 @@
 	/delete-node/ i2cmux-1;
 	i2cmux_pins_edsx: i2cmux-pins-edsx {
 		pins = "GPIO_50", "GPIO_51";
-		function = "twi_scl_m";
+		function = "gpio";
 		output-low;
 	};
 	i2cmux_edsx_0: i2cmux-edsx-0 {
@@ -73,25 +75,34 @@
 &spi0 {
 	mux-controls = <&mux>;
 	pinctrl-names = "default";
+
+	/delete-node/ spi@0;
+
+	flash@0 {
+		compatible = "jedec,spi-nor";
+		spi-max-frequency = <8000000>;
+		reg = <0>;
+	};
+
 	spi@1 {
-			compatible = "spidev";
-			mux-controls = <&mux>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-			reg = <1>;
-			pinctrl-0 = <&cs1_pins>;
-			pinctrl-names = "default";
-			spi-max-frequency = <8000000>;
+		compatible = "spidev";
+		mux-controls = <&mux>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <1>;
+		pinctrl-0 = <&cs1_pins>;
+		pinctrl-names = "default";
+		spi-max-frequency = <8000000>;
 	};
 	spi@2 {
-			compatible = "spidev";
-			mux-controls = <&mux>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-			reg = <2>;
-			pinctrl-0 = <&cs2_pins>;
-			pinctrl-names = "default";
-			spi-max-frequency = <8000000>;
+		compatible = "spidev";
+		mux-controls = <&mux>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <2>;
+		pinctrl-0 = <&cs2_pins>;
+		pinctrl-names = "default";
+		spi-max-frequency = <8000000>;
 	};
 };
 
@@ -136,18 +147,29 @@
 };
 
 &i2c0_edsx_imux {
-	pinctrl-names = "i2c_temp_sensor" , "i2c_eeprom";
+	pinctrl-names = "mux0" , "mux1", "idle";
 	pinctrl-0 = <&i2cmux_edsx_0>;
 	pinctrl-1 = <&i2cmux_edsx_1>;
-	i2c_temp_sensor: i2c_temp_sensor {
-		reg = <0x4c>;
+	pinctrl-2 = <&i2cmux_pins_edsx>;
+	mux@0{
 		#address-cells = <1>;
 		#size-cells = <0>;
+		reg = <0>;
+
+		eeprom@57 {
+			compatible = "atmel,24c01";
+			reg = <0x57>;
+		};
 	};
-	i2c_eeprom: i2c_eeprom {
-		reg = <0x57>;
+	mux@1 {
 		#address-cells = <1>;
 		#size-cells = <0>;
+		reg = <1>;
+
+		eeprom@57 {
+			compatible = "atmel,24c01";
+			reg = <0x57>;
+		};
 	};
 };
 

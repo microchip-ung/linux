@@ -105,7 +105,7 @@ int hsr_get_max_mtu(struct hsr_priv *hsr)
 	unsigned int mtu_max;
 	struct hsr_port *port;
 
-	mtu_max = ETH_DATA_LEN;
+	mtu_max = ETH_MAX_MTU;
 	hsr_for_each_port_rtnl(hsr, port)
 		if (port->type != HSR_PT_MASTER)
 			mtu_max = min(port->dev->mtu, mtu_max);
@@ -749,6 +749,7 @@ void hsr_dev_setup(struct net_device *dev)
 
 	ether_setup(dev);
 	dev->min_mtu = 0;
+	dev->max_mtu = ETH_MAX_MTU;
 	dev->header_ops = &hsr_header_ops;
 	dev->netdev_ops = &hsr_device_ops;
 	SET_NETDEV_DEVTYPE(dev, &hsr_type);

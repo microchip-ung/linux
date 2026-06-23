@@ -154,6 +154,18 @@ static int sparx5_policer_bum_conf_set(struct sparx5 *sparx5,
 	bool enable = !!(pol->rate > 0);
 	int selector = -1;
 
+	/* Clear the per-ISDX BUM enable and idx fields and return.
+	 * The stale HW state must not survive into the next allocator user.
+	 */
+	if (!enable) {
+		spx5_rmw(ANA_L2_MISC_CFG_BUM_SLB_ENA_SET(0) |
+			 ANA_L2_MISC_CFG_BUM_SLB_IDX_SET(0),
+			 ANA_L2_MISC_CFG_BUM_SLB_ENA |
+			 ANA_L2_MISC_CFG_BUM_SLB_IDX,
+			 sparx5, ANA_L2_MISC_CFG(isdx));
+		return 0;
+	}
+
 	/* Is the requested rate lower than the lowest rate granularity? */
 	if (pol->rate < bum_rate_granularities[BUM_GRANULARITY_3])
 		return -ERANGE;

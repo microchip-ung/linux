@@ -1,0 +1,73 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2026 Microchip Technology Inc. and its subsidiaries.
+ * This provides support for the older revision 1, 2 and 3 boards
+ */
+
+/dts-v1/;
+#include "sparx5_pcb135_board.dtsi"
+#include "sparx5_nand.dtsi"
+
+/ {
+	model = "Sparx5 PCB135 Rev 1-3 Reference Board (NAND)";
+	compatible = "microchip,sparx5-pcb135", "microchip,sparx5";
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x00000000 0x00000000 0x10000000>;
+	};
+};
+
+/*
+ * The rev 1-3 boards use the Elise PHY, not the INDY PHY, and GPIO 16 is
+ * the SPI NOR chip select on these boards. Drop the COMA mode GPIO so it
+ * is not asserted.
+ */
+&phy0 { /delete-property/ coma-mode-gpios; };
+&phy1 { /delete-property/ coma-mode-gpios; };
+&phy2 { /delete-property/ coma-mode-gpios; };
+&phy3 { /delete-property/ coma-mode-gpios; };
+&phy4 { /delete-property/ coma-mode-gpios; };
+&phy5 { /delete-property/ coma-mode-gpios; };
+&phy6 { /delete-property/ coma-mode-gpios; };
+&phy7 { /delete-property/ coma-mode-gpios; };
+&phy8 { /delete-property/ coma-mode-gpios; };
+&phy9 { /delete-property/ coma-mode-gpios; };
+&phy10 { /delete-property/ coma-mode-gpios; };
+&phy11 { /delete-property/ coma-mode-gpios; };
+&phy12 { /delete-property/ coma-mode-gpios; };
+&phy13 { /delete-property/ coma-mode-gpios; };
+&phy14 { /delete-property/ coma-mode-gpios; };
+&phy15 { /delete-property/ coma-mode-gpios; };
+&phy16 { /delete-property/ coma-mode-gpios; };
+&phy17 { /delete-property/ coma-mode-gpios; };
+&phy18 { /delete-property/ coma-mode-gpios; };
+&phy19 { /delete-property/ coma-mode-gpios; };
+&phy20 { /delete-property/ coma-mode-gpios; };
+&phy21 { /delete-property/ coma-mode-gpios; };
+&phy22 { /delete-property/ coma-mode-gpios; };
+&phy23 { /delete-property/ coma-mode-gpios; };
+&phy24 { /delete-property/ coma-mode-gpios; };
+&phy25 { /delete-property/ coma-mode-gpios; };
+&phy26 { /delete-property/ coma-mode-gpios; };
+&phy27 { /delete-property/ coma-mode-gpios; };
+&phy28 { /delete-property/ coma-mode-gpios; };
+&phy29 { /delete-property/ coma-mode-gpios; };
+&phy30 { /delete-property/ coma-mode-gpios; };
+&phy31 { /delete-property/ coma-mode-gpios; };
+&phy32 { /delete-property/ coma-mode-gpios; };
+&phy33 { /delete-property/ coma-mode-gpios; };
+&phy34 { /delete-property/ coma-mode-gpios; };
+&phy35 { /delete-property/ coma-mode-gpios; };
+&phy36 { /delete-property/ coma-mode-gpios; };
+&phy37 { /delete-property/ coma-mode-gpios; };
+&phy38 { /delete-property/ coma-mode-gpios; };
+&phy39 { /delete-property/ coma-mode-gpios; };
+&phy40 { /delete-property/ coma-mode-gpios; };
+&phy41 { /delete-property/ coma-mode-gpios; };
+&phy42 { /delete-property/ coma-mode-gpios; };
+&phy43 { /delete-property/ coma-mode-gpios; };
+&phy44 { /delete-property/ coma-mode-gpios; };
+&phy45 { /delete-property/ coma-mode-gpios; };
+&phy46 { /delete-property/ coma-mode-gpios; };
+&phy47 { /delete-property/ coma-mode-gpios; };

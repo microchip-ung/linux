@@ -16,6 +16,8 @@ struct dsa_stubs {
 	int (*conduit_hwtstamp_validate)(struct net_device *dev,
 					 const struct kernel_hwtstamp_config *config,
 					 struct netlink_ext_ack *extack);
+	bool (*lower_is_conduit)(struct net_device *dev,
+				 struct net_device *lower_dev);
 };
 
 static inline int dsa_conduit_hwtstamp_validate(struct net_device *dev,
@@ -36,6 +38,18 @@ static inline int dsa_conduit_hwtstamp_validate(struct net_device *dev,
 	return dsa_stubs->conduit_hwtstamp_validate(dev, config, extack);
 }
 
+static inline bool dsa_lower_is_conduit(struct net_device *dev,
+					struct net_device *lower_dev)
+{
+	if (!netdev_uses_dsa(lower_dev))
+		return false;
+
+	/* Same rtnl_lock() guarantee as dsa_conduit_hwtstamp_validate(). */
+	ASSERT_RTNL();
+
+	return dsa_stubs->lower_is_conduit(dev, lower_dev);
+}
+
 #else
 
 static inline int dsa_conduit_hwtstamp_validate(struct net_device *dev,
@@ -43,6 +57,12 @@ static inline int dsa_conduit_hwtstamp_validate(struct net_device *dev,
 						struct netlink_ext_ack *extack)
 {
 	return 0;
+}
+
+static inline bool dsa_lower_is_conduit(struct net_device *dev,
+					struct net_device *lower_dev)
+{
+	return false;
 }
 
 #endif

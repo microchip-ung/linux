@@ -139,12 +139,6 @@ enum {
 	LAN9645X_CPUQ_IPMC_CTRL = 3,
 };
 
-/* Get mask of ports which mirror traffic egressing dp */
-u32 lan9645x_emirror_get_dst(struct dsa_port *dp);
-int lan9645x_ptp_hsr_xmit_masq_port(struct sk_buff *skb, struct dsa_port *dp);
-void lan964x5_set_redundancy_info(struct sk_buff *skb, int rtagd,
-				  struct dsa_port *dp);
-
 static inline u8 merge_mask(u8 on_zero, u8 on_one, u8 mask)
 {
 	return on_zero ^ ((on_zero ^ on_one) & mask);

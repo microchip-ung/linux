@@ -3,9 +3,12 @@ config NET_DSA_MICROCHIP_LAN9645X
 	tristate "Microchip Lan9645x switch support"
 	depends on NET_DSA
 	depends on NET_VENDOR_MICROCHIP
+	depends on MFD_MICROCHIP_LAN9645X_SPI
 	select NET_DSA_TAG_LAN9645X
 	select REGMAP_SPI
-    select VCAP
+	select VCAP
+	select AFI
+	select MCHP_MRP
 	help
 	  This driver adds support for Microchip Lan9645x switch chips, configured
 	  through SPI.

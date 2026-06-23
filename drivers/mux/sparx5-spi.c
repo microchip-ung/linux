@@ -26,27 +26,33 @@
 #define SPARX5_CPU_SYSTEM_CTRL_GENERAL_CTRL	0x88
 #define SPARX5_IF_SI_OWNER			GENMASK(7, 6)
 #define SPARX5_IF_SI2_OWNER			GENMASK(5, 4)
+#define SPARX5_IF_SI2_ENA			BIT(2)
 
 #define SPARX5_MAX_CS	16
 
 struct mux_sparx5 {
 	struct regmap *syscon;
 	u8 bus[SPARX5_MAX_CS];
+	bool si2_interface;
 	int cur_bus;
 };
 
 /*
  * Set the owner of the SPI interfaces
  */
-static void mux_sparx5_set_owner(struct regmap *syscon,
+static void mux_sparx5_set_owner(struct mux_sparx5 *mux_sparx5,
 				 u8 owner, u8 owner2)
 {
 	u32 val, msk;
 
 	val = FIELD_PREP(SPARX5_IF_SI_OWNER, owner) |
 		FIELD_PREP(SPARX5_IF_SI2_OWNER, owner2);
-	msk = SPARX5_IF_SI_OWNER | SPARX5_IF_SI2_OWNER;
-	regmap_update_bits(syscon,
+	msk = SPARX5_IF_SI_OWNER | SPARX5_IF_SI2_OWNER | SPARX5_IF_SI2_ENA;
+
+	if (mux_sparx5->si2_interface)
+		val |= SPARX5_IF_SI2_ENA;
+
+	regmap_update_bits(mux_sparx5->syscon,
 			   SPARX5_CPU_SYSTEM_CTRL_GENERAL_CTRL,
 			   msk, val);
 }
@@ -58,10 +64,10 @@ static void mux_sparx5_set_cs_owner(struct mux_sparx5 *mux_sparx5,
 		    MSCC_IF_SI_OWNER_SIMC : MSCC_IF_SI_OWNER_SIBM);
 	if (mux_sparx5->bus[cs])
 		/* SPI2 */
-		mux_sparx5_set_owner(mux_sparx5->syscon, other, owner);
+		mux_sparx5_set_owner(mux_sparx5, other, owner);
 	else
 		/* SPI1 */
-		mux_sparx5_set_owner(mux_sparx5->syscon, owner, other);
+		mux_sparx5_set_owner(mux_sparx5, owner, other);
 }
 
 static int mux_sparx5_set(struct mux_control *mux, int state)
@@ -116,6 +122,9 @@ static int mux_sparx5_probe(struct platform_device *pdev)
 					 &bus) == 0)
 			mux_sparx5->bus[cs] = bus;
 	}
+
+	if (of_property_read_bool(dev->of_node, "microchip,si2_interface"))
+		mux_sparx5->si2_interface = true;
 
 	mux_chip->mux->states = SPARX5_MAX_CS;
 

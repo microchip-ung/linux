@@ -650,6 +650,19 @@ static int dsa_user_port_attr_set(struct net_device *dev, const void *ctx,
 
 		ret = dsa_port_mrouter(dp, attr->u.mrouter);
 		break;
+	case SWITCHDEV_ATTR_ID_BRIDGE_MROUTER:
+		if (!dsa_port_offloads_bridge_dev(dp, attr->orig_dev))
+			return -EOPNOTSUPP;
+
+		ret = dsa_port_bridge_mrouter(dp, attr->u.mrouter);
+		break;
+	case SWITCHDEV_ATTR_ID_BRIDGE_MC_DISABLED:
+		if (!dsa_port_offloads_bridge_dev(dp, attr->orig_dev) &&
+		    !dsa_port_offloads_bridge_port(dp, attr->orig_dev))
+			return -EOPNOTSUPP;
+
+		ret = dsa_port_bridge_mc_disabled(dp, attr->u.mc_disabled);
+		break;
 	case SWITCHDEV_ATTR_ID_MRP_PORT_ROLE:
 		if (!dsa_port_offloads_bridge_port(dp, attr->orig_dev))
 			return -EOPNOTSUPP;

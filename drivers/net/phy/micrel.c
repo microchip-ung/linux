@@ -2600,11 +2600,21 @@ static int kszphy_probe(struct phy_device *phydev)
 
 	kszphy_parse_led_mode(phydev);
 
-	clk = devm_clk_get_optional_enabled(&phydev->mdio.dev, "rmii-ref");
+	clk = devm_clk_get_optional(&phydev->mdio.dev, "rmii-ref");
 	/* NOTE: clk may be NULL if building without CONFIG_HAVE_CLK */
 	if (!IS_ERR_OR_NULL(clk)) {
-		unsigned long rate = clk_get_rate(clk);
 		bool rmii_ref_clk_sel_25_mhz;
+		unsigned long rate;
+		int err;
+
+		err = clk_prepare_enable(clk);
+		if (err) {
+			phydev_err(phydev, "Failed to enable rmii-ref clock\n");
+			return err;
+		}
+
+		rate = clk_get_rate(clk);
+		clk_disable_unprepare(clk);
 
 		if (type)
 			priv->rmii_ref_clk_sel = type->has_rmii_ref_clk_sel;
@@ -2622,13 +2632,12 @@ static int kszphy_probe(struct phy_device *phydev)
 		}
 	} else if (!clk) {
 		/* unnamed clock from the generic ethernet-phy binding */
-		clk = devm_clk_get_optional_enabled(&phydev->mdio.dev, NULL);
+		clk = devm_clk_get_optional(&phydev->mdio.dev, NULL);
 	}
 
 	if (IS_ERR(clk))
 		return PTR_ERR(clk);
 
-	clk_disable_unprepare(clk);
 	priv->clk = clk;
 
 	if (ksz8041_fiber_mode(phydev))
@@ -7012,6 +7021,8 @@ static void lan8842_get_phy_stats(struct phy_device *phydev,
 #define LAN9645X_TX_LOW_I_CH_B_POWER_MGMT	0x44
 #define LAN9645X_TX_LOW_I_CH_A_POWER_MGMT	0x43
 
+#define LAN9645X_STRAP_LOW_OVERRIDE_CR_DEBUG	0x8
+
 static const struct lanphy_reg_data force_dac_tx_errata[] = {
 	/* Force channel A/B/C/D TX on */
 	{ LAN8814_PAGE_POWER_REGS,
@@ -7038,6 +7049,16 @@ static const struct lanphy_reg_data force_dac_tx_errata[] = {
 static int lan9645x_config_init(struct phy_device *phydev)
 {
 	int ret;
+
+	/* Enable Cr_debug_mode OPERATION_MODE_STRAP_LOW, to keep clock to MAC
+	 * up on link down.
+	 */
+	ret = lanphy_modify_page_reg(phydev, 2,
+				     LAN8814_OPERATION_MODE_STRAP_LOW,
+				     LAN9645X_STRAP_LOW_OVERRIDE_CR_DEBUG,
+				     LAN9645X_STRAP_LOW_OVERRIDE_CR_DEBUG);
+	if (ret < 0)
+		return ret;
 
 	/* Apply erratas from previous generations.  */
 	ret = lan8842_erratas(phydev);

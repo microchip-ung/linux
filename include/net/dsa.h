@@ -237,6 +237,7 @@ struct dsa_bridge {
 	struct net_device *dev;
 	unsigned int num;
 	bool tx_fwd_offload;
+	bool mrouter;
 	refcount_t refcount;
 };
 
@@ -302,6 +303,7 @@ struct dsa_port {
 	struct devlink_port	devlink_port;
 	struct phylink		*pl;
 	struct phylink_config	pl_config;
+	netdevice_tracker	conduit_tracker;
 	struct dsa_lag		*lag;
 	struct net_device	*hsr_dev;
 
@@ -1097,7 +1099,10 @@ struct dsa_switch_ops {
 				const struct switchdev_obj_port_mdb *mdb,
 				struct dsa_db db);
 	int	(*port_mrouter_set)(struct dsa_switch *ds, int port,
-				    bool enable);
+				    bool mrouter, struct dsa_db db);
+	int	(*port_mc_disabled_set)(struct dsa_switch *ds, int port,
+				       bool mc_disabled, struct dsa_db db);
+
 	/*
 	 * RXNFC
 	 */
@@ -1242,6 +1247,11 @@ struct dsa_switch_ops {
 	int	(*port_hsr_dan_node_del)(struct dsa_switch *ds, int port,
 					 const struct switchdev_obj_node_hsr *hsr_node);
 
+	int	(*port_xmit_redundancy_src)(struct dsa_switch *ds, int port,
+					    struct sk_buff *skb);
+	void	(*port_set_rcv_redundancy_info)(struct dsa_switch *ds, int port,
+						struct sk_buff *skb);
+
 	/*
 	 * MRP integration
 	 */
@@ -1287,6 +1297,24 @@ struct dsa_switch_ops {
 					const struct net_device *conduit,
 					bool operational);
 };
+
+static inline int dsa_port_xmit_redundancy_src(struct dsa_port *dp,
+					       struct sk_buff *skb)
+{
+	if (dp->ds->ops->port_xmit_redundancy_src)
+		return dp->ds->ops->port_xmit_redundancy_src(dp->ds, dp->index,
+							     skb);
+
+	return dp->ds->num_ports;
+}
+
+static inline void dsa_port_set_rcv_redundancy_info(struct dsa_port *dp,
+						    struct sk_buff *skb)
+{
+	if (dp->ds->ops->port_set_rcv_redundancy_info)
+		dp->ds->ops->port_set_rcv_redundancy_info(dp->ds, dp->index,
+							  skb);
+}
 
 #define DSA_DEVLINK_PARAM_DRIVER(_id, _name, _type, _cmodes)		\
 	DEVLINK_PARAM_DRIVER(_id, _name, _type, _cmodes,		\

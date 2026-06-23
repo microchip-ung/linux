@@ -301,10 +301,7 @@ static int __lan9645x_mdb_del(struct lan9645x *lan9645x, int chip_port,
 	int err;
 
 	mdb_entry = lan9645x_mdb_entry_lookup(lan9645x, addr, vid);
-	if (!mdb_entry)
-		return -ENOENT;
-
-	if (!(mdb_entry->ports & BIT(chip_port)))
+	if (!mdb_entry || !(mdb_entry->ports & BIT(chip_port)))
 		return 0;
 
 	mdb_entry->ports &= ~BIT(chip_port);
@@ -363,7 +360,7 @@ static int lan9645x_mdb_del(struct lan9645x *lan9645x, int chip_port,
 
 int lan9645x_mdb_port_add(struct lan9645x *lan9645x, int port,
 			  const struct switchdev_obj_port_mdb *mdb,
-			  struct net_device *bridge)
+			  int bridge_num)
 {
 	enum macaccess_entry_type type;
 	u16 vid = mdb->vid;
@@ -371,14 +368,14 @@ int lan9645x_mdb_port_add(struct lan9645x *lan9645x, int port,
 	type = lan9645x_mdb_classify(mdb->addr);
 
 	if (!vid)
-		vid = lan9645x_vlan_unaware_pvid(lan9645x, bridge);
+		vid = lan9645x_vlan_unaware_pvid(bridge_num);
 
 	return lan9645x_mdb_add(lan9645x, port, mdb->addr, vid, type);
 }
 
 int lan9645x_mdb_port_del(struct lan9645x *lan9645x, int port,
 			  const struct switchdev_obj_port_mdb *mdb,
-			  struct net_device *bridge)
+			  int bridge_num)
 {
 	enum macaccess_entry_type type;
 	u16 vid = mdb->vid;
@@ -386,7 +383,7 @@ int lan9645x_mdb_port_del(struct lan9645x *lan9645x, int port,
 	type = lan9645x_mdb_classify(mdb->addr);
 
 	if (!vid)
-		vid = lan9645x_vlan_unaware_pvid(lan9645x, bridge);
+		vid = lan9645x_vlan_unaware_pvid(bridge_num);
 
 	return lan9645x_mdb_del(lan9645x, port, mdb->addr, vid, type);
 }
@@ -402,18 +399,19 @@ int lan9645x_mdb_port_mrouter_set(struct lan9645x *lan9645x, int port,
 	dev_dbg(lan9645x->dev, "port=%d enable=%d", port, enable);
 
 	mutex_lock(&lan9645x->mdb_lock);
-	if (enable)
-		lan9645x->mrouter_mask |= BIT(port);
-	else
-		lan9645x->mrouter_mask &= ~BIT(port);
 
 	/* In the control path we need to forward reports to router ports, and
 	 * this is handled by the kernel.
 	 *
 	 * Unknown IP mc in data-path is forwarded to router ports.
 	 */
-	lan9645x_port_pgid_set(lan9645x, PGID_MCIPV4, port, enable);
-	lan9645x_port_pgid_set(lan9645x, PGID_MCIPV6, port, enable);
+	mutex_lock(&lan9645x->fwd_domain_lock);
+	if (enable)
+		lan9645x->mrouter_mask |= BIT(port);
+	else
+		lan9645x->mrouter_mask &= ~BIT(port);
+	__lan9645x_pgid_mc_update(lan9645x);
+	mutex_unlock(&lan9645x->fwd_domain_lock);
 
 	/* Known IP mc in data-path is forwarded to router ports by merging the
 	 * mdb port group mask with the mrouter mask.

@@ -51,7 +51,11 @@ static irqreturn_t ocelot_xtr_irq_handler(int irq, void *arg)
 	struct ocelot *ocelot = arg;
 	int grp = 0, err;
 
-	ocelot_lock_xtr_grp(ocelot, grp);
+	/* VSC7514 is single-core, so no need for the injection/extraction
+	 * group lock here. Taking it causes lock contention with the TX
+	 * path (which also holds inj_lock), leading to the RT threaded IRQ
+	 * handler starving all other tasks.
+	 */
 
 	while (ocelot_read(ocelot, QS_XTR_DATA_PRESENT) & BIT(grp)) {
 		struct sk_buff *skb;
@@ -68,10 +72,10 @@ static irqreturn_t ocelot_xtr_irq_handler(int irq, void *arg)
 	}
 
 out:
-	if (err < 0)
-		ocelot_drain_cpu_queue(ocelot, 0);
-
-	ocelot_unlock_xtr_grp(ocelot, grp);
+	if (err < 0) {
+		while (ocelot_read(ocelot, QS_XTR_DATA_PRESENT) & BIT(grp))
+			ocelot_read_rix(ocelot, QS_XTR_RD, grp);
+	}
 
 	return IRQ_HANDLED;
 }
@@ -320,24 +324,7 @@ static int mscc_ocelot_probe(struct platform_device *pdev)
 		goto out_free_devlink;
 	}
 
-	err = devm_request_threaded_irq(&pdev->dev, irq_xtr, NULL,
-					ocelot_xtr_irq_handler, IRQF_ONESHOT,
-					"frame extraction", ocelot);
-	if (err)
-		goto out_free_devlink;
-
 	irq_ptp_rdy = platform_get_irq_byname(pdev, "ptp_rdy");
-	if (irq_ptp_rdy > 0 && ocelot->targets[PTP]) {
-		err = devm_request_threaded_irq(&pdev->dev, irq_ptp_rdy, NULL,
-						ocelot_ptp_rdy_irq_handler,
-						IRQF_ONESHOT, "ptp ready",
-						ocelot);
-		if (err)
-			goto out_free_devlink;
-
-		/* Both the PTP interrupt and the PTP bank are available */
-		ocelot->ptp = 1;
-	}
 
 	ports = of_get_child_by_name(np, "ethernet-ports");
 	if (!ports) {
@@ -359,6 +346,35 @@ static int mscc_ocelot_probe(struct platform_device *pdev)
 	err = ocelot_init(ocelot);
 	if (err)
 		goto out_put_ports;
+
+	/* Flush any stale frames from the extraction queue before enabling
+	 * the IRQ. The xtr interrupt is level-triggered and will fire
+	 * continuously if the queue is not empty.
+	 */
+	/* Drain before IRQ is registered — no contention possible,
+	 * take xtr_lock to satisfy lockdep assertion in drain function.
+	 */
+	spin_lock(&ocelot->xtr_lock);
+	ocelot_drain_cpu_queue(ocelot, 0);
+	spin_unlock(&ocelot->xtr_lock);
+
+	err = devm_request_threaded_irq(&pdev->dev, irq_xtr, NULL,
+					ocelot_xtr_irq_handler, IRQF_ONESHOT,
+					"frame extraction", ocelot);
+	if (err)
+		goto out_ocelot_deinit;
+
+	if (irq_ptp_rdy > 0 && ocelot->targets[PTP]) {
+		err = devm_request_threaded_irq(&pdev->dev, irq_ptp_rdy, NULL,
+						ocelot_ptp_rdy_irq_handler,
+						IRQF_ONESHOT, "ptp ready",
+						ocelot);
+		if (err)
+			goto out_ocelot_deinit;
+
+		/* Both the PTP interrupt and the PTP bank are available */
+		ocelot->ptp = 1;
+	}
 
 	err = mscc_ocelot_init_ports(pdev, ports);
 	if (err)
@@ -395,6 +411,7 @@ out_ocelot_release_ports:
 	mscc_ocelot_release_ports(ocelot);
 	mscc_ocelot_teardown_devlink_ports(ocelot);
 out_ocelot_devlink_unregister:
+out_ocelot_deinit:
 	ocelot_deinit(ocelot);
 out_put_ports:
 	of_node_put(ports);

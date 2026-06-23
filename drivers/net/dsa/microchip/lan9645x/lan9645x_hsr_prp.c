@@ -524,7 +524,7 @@ int lan9645x_hsr_prp_prepare(struct lan9645x *lan9645x, int port,
 	if (lan9645x->npi == port) {
 		NL_SET_ERR_MSG_MOD(extack,
 				   "CPU port can not be part of HSR/PRP pair");
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
 	}
 
 	if (lan9645x->hsr.enabled) {
@@ -536,7 +536,7 @@ int lan9645x_hsr_prp_prepare(struct lan9645x *lan9645x, int port,
 	if (type == LAN9645X_HSR_UNSUPPORTED) {
 		NL_SET_ERR_MSG_MOD(extack,
 				   "Only HSR v1 and PRP v1 can be offloaded");
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
 	}
 
 	return 0;
@@ -649,12 +649,6 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 			goto mac_forget;
 	}
 
-	lan9645x->vlan_mask[VLAN_HSR_PRP] = port_ab_mask |
-		BIT(CPU_PORT) |
-		lan9645x_hsr_shadow_mask(lan9645x);
-
-	lan9645x_vlan_set_mask(lan9645x, VLAN_HSR_PRP);
-
 	for_each_hsr_port(lan_id, port, lrea_port, lreb_port) {
 		/* Set PVID to reserved for port AB (rx pid) */
 		lan_rmw(ANA_VLAN_CFG_VLAN_VID_SET(VLAN_HSR_PRP),
@@ -675,11 +669,13 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 			REW_TAG_CFG_TAG_CFG,
 			lan9645x, REW_TAG_CFG(port));
 
-		lan9645x_port_set_learning(lan9645x, port, true);
+		lan_rmw(ANA_PORT_CFG_LEARN_ENA_SET(true),
+			ANA_PORT_CFG_LEARN_ENA,
+			lan9645x, ANA_PORT_CFG(port));
 
 		lan_rmw(ANA_RED_CFG_PRP_AWARE_ENA_SET(type == LAN9645X_PRP) |
 			ANA_RED_CFG_HSR_AWARE_ENA_SET(type == LAN9645X_HSR) |
-			ANA_RED_CFG_LANID_SET(lan_id) |
+			ANA_RED_CFG_LANID_SET(!lan_id) |
 			ANA_RED_CFG_NETID_SET(net_id),
 			ANA_RED_CFG_PRP_AWARE_ENA |
 			ANA_RED_CFG_HSR_AWARE_ENA |
@@ -824,8 +820,18 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 		lan9645x, ANA_RED_MISC_CFG);
 
 	mutex_lock(&lan9645x->fwd_domain_lock);
+	lan9645x_vlan_set_port_mask(lan9645x, HOST_PVID,
+				    lan9645x->vlans[HOST_PVID].portmask &
+				    ~BIT(lrea->chip_port) &
+				    ~BIT(lreb->chip_port));
+	lan9645x_vlan_set_port_mask(lan9645x, VLAN_HSR_PRP,
+				    port_ab_mask | BIT(CPU_PORT) |
+				    lan9645x_hsr_shadow_mask(lan9645x));
 	lrea->hsr = hsr;
 	lreb->hsr = hsr;
+	lan9645x->mc_flood_mask |= port_ab_mask;
+	lan9645x->mrouter_mask |= port_ab_mask;
+	__lan9645x_pgid_mc_update(lan9645x);
 	lan9645x_update_fwd_mask(lan9645x, true);
 	mutex_unlock(&lan9645x->fwd_domain_lock);
 
@@ -868,7 +874,7 @@ int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 
 	if (h->type != type) {
 		dev_err(lan9645x->dev, "HSR deleting unexpected HSR type\n");
-		err = -ENOTSUPP;
+		err = -EOPNOTSUPP;
 		goto unlock;
 	}
 
@@ -890,36 +896,37 @@ int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 	mutex_lock(&lan9645x->fwd_domain_lock);
 	lrea->hsr = NULL;
 	lreb->hsr = NULL;
+	lan9645x->mc_flood_mask &= ~(BIT(lrea_port) | BIT(lreb_port));
+	lan9645x->mrouter_mask &= ~(BIT(lrea_port) | BIT(lreb_port));
+	__lan9645x_pgid_mc_update(lan9645x);
 	lan9645x_update_fwd_mask(lan9645x, false);
+	lan9645x_vlan_set_hostmode(lrea);
+	lan9645x_vlan_set_hostmode(lreb);
+	lan9645x_vlan_set_port_mask(lan9645x, VLAN_HSR_PRP, 0);
 	mutex_unlock(&lan9645x->fwd_domain_lock);
-
-	lan9645x->vlan_mask[VLAN_HSR_PRP] = 0;
-	lan9645x_vlan_set_mask(lan9645x, VLAN_HSR_PRP);
 
 	lan9645x_streamt_del(lan9645x, h->isdx);
 	lan9645x_stream_isdx_free(lan9645x, h->isdx);
 
 	/* NOTE: need some non-NULL net_device for the vcap_api. */
-	err = vcap_del_rule(lan9645x->vcap_ctrl, hsr, h->isdx_vrule_id);
-	if (err)
-		dev_err(lan9645x->dev, "hsr remove vcap rule: %u err: %d\n",
-			h->isdx_vrule_id, err);
+	if (h->isdx_vrule_id) {
+		err = vcap_del_rule(lan9645x->vcap_ctrl, hsr,
+				    h->isdx_vrule_id);
+		if (err)
+			dev_err(lan9645x->dev,
+				"hsr remove vcap rule: %u err: %d\n",
+				h->isdx_vrule_id, err);
+	}
 
 	lan9645x_mact_forget(lan9645x, h->mac, VLAN_HSR_PRP, ENTRYTYPE_LOCKED);
 
-	if (type == LAN9645X_HSR) {
+	if (type == LAN9645X_HSR && h->local_ring_vrule_id) {
 		err = vcap_del_rule(lan9645x->vcap_ctrl, hsr,
 				    h->local_ring_vrule_id);
 		if (err)
 			dev_err(lan9645x->dev,
 				"hsr remove vcap rule: %u err: %d\n",
 				h->local_ring_vrule_id, err);
-		err = vcap_del_rule(lan9645x->vcap_ctrl, hsr,
-				    h->ptp_dd_vrule_id);
-		if (err)
-			dev_err(lan9645x->dev,
-				"hsr remove vcap rule: %u err: %d\n",
-				h->ptp_dd_vrule_id, err);
 	}
 
 	lan9645x_hsr_prp_nodestable_flush(lan9645x);
@@ -981,7 +988,9 @@ int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 				ANA_PORT_CFG(port));
 		}
 
-		lan9645x_port_set_learning(lan9645x, port, false);
+		lan_rmw(ANA_PORT_CFG_LEARN_ENA_SET(false),
+			ANA_PORT_CFG_LEARN_ENA,
+			lan9645x, ANA_PORT_CFG(port));
 
 		lan_wr(BIT(port), lan9645x, ANA_PGID(port));
 		lan9645x_hsr_features_del(lan9645x, port, type);
@@ -994,9 +1003,6 @@ int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 		ANA_PORT_CFG_LEARN_ENA,
 		lan9645x,
 		ANA_PORT_CFG(CPU_PORT));
-
-	lan9645x_vlan_set_hostmode(lrea);
-	lan9645x_vlan_set_hostmode(lreb);
 
 	h->enabled = false;
 unlock:

@@ -4,14 +4,6 @@
 
 #include "lan9645x_main.h"
 
-u32 lan9645x_emirror_get_dst(struct dsa_port *dp)
-{
-	struct lan9645x *lan9645x = dp->ds->priv;
-	u32 emm = lan9645x->emirror_map;
-
-	return BIT(dp->index) & emm ? (emm >> 16) : 0x0;
-}
-
 struct lan9645x_mirror *lan9645x_mirror_get(struct lan9645x *lan9645x, int to,
 					    struct netlink_ext_ack *extack)
 {
@@ -35,7 +27,6 @@ struct lan9645x_mirror *lan9645x_mirror_get(struct lan9645x *lan9645x, int to,
 	m->to = to;
 	refcount_set(&m->refcount, 1);
 	lan9645x->mirror = m;
-	lan9645x->emirror_map = BIT(to) << 16;
 
 	lan_wr(BIT(to), lan9645x, ANA_MIRRORPORTS);
 
@@ -51,7 +42,6 @@ void lan9645x_mirror_put(struct lan9645x *lan9645x)
 
 	lan_wr(0, lan9645x, ANA_MIRRORPORTS);
 	lan9645x->mirror = NULL;
-	lan9645x->emirror_map = 0x0;
 	kfree(m);
 }
 
@@ -70,7 +60,6 @@ int lan9645x_mirror_port_add(struct lan9645x *lan9645x, int from, int to,
 			ANA_PORT_CFG_SRC_MIRROR_ENA, lan9645x,
 			ANA_PORT_CFG(from));
 	} else {
-		lan9645x->emirror_map |= BIT(from);
 		lan_rmw(BIT(from), BIT(from), lan9645x, ANA_EMIRRORPORTS);
 	}
 
@@ -86,7 +75,6 @@ void lan9645x_mirror_port_del(struct lan9645x *lan9645x, int from, bool ingress)
 			ANA_PORT_CFG_SRC_MIRROR_ENA, lan9645x,
 			ANA_PORT_CFG(from));
 	} else {
-		lan9645x->emirror_map &= ~BIT(from);
 		lan_rmw(0, BIT(from), lan9645x, ANA_EMIRRORPORTS);
 	}
 

@@ -47,6 +47,7 @@ enum vcap_user {
 	VCAP_USER_VCAP_UTIL,
 	VCAP_USER_TC,
 	VCAP_USER_TC_EXTRA,
+	VCAP_USER_SYS_LOW_PRIO,
 
 	/* add new users above here */
 

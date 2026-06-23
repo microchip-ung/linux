@@ -58,13 +58,12 @@ static void lan969x_fdma_tx_clear_buf(struct sparx5 *sparx5, int weight)
 	struct fdma *fdma = &sparx5->tx.fdma;
 	struct xdp_frame_bulk bq;
 	struct sparx5_tx_buf *db;
-	unsigned long flags;
 	bool clear = false;
 	int i;
 
 	xdp_frame_bulk_init(&bq);
 
-	spin_lock_irqsave(&sparx5->tx_lock, flags);
+	spin_lock(&sparx5->tx_lock);
 
 	for (i = 0; i < fdma->n_dcbs; ++i) {
 		db = &sparx5->tx.dbs[i];
@@ -122,7 +121,7 @@ break;
 	if (clear && netif_queue_stopped(ndev))
 		netif_wake_queue(ndev);
 
-	spin_unlock_irqrestore(&sparx5->tx_lock, flags);
+	spin_unlock(&sparx5->tx_lock);
 }
 
 static void lan969x_fdma_free_page(struct sparx5_rx *rx)

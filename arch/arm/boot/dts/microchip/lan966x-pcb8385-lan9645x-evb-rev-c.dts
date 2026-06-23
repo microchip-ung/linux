@@ -223,7 +223,7 @@
 
 		lan9645x_soc: soc@0 {
 			compatible = "microchip,lan9645x-spi";
-			spi-max-frequency = <35000000>;
+			spi-max-frequency = <25000000>;
 			reg = <0>;
 			#address-cells = <1>;
 			#size-cells = <0>;

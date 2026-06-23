@@ -18,7 +18,7 @@
 #include <linux/if_vlan.h>
 #include <linux/rtnetlink.h>
 #include <net/switchdev.h>
-#include <net/dsa.h>
+#include <net/dsa_stubs.h>
 
 static bool switchdev_obj_eq(const struct switchdev_obj *a,
 			     const struct switchdev_obj *b)
@@ -742,21 +742,7 @@ EXPORT_SYMBOL_GPL(switchdev_handle_fdb_event_to_device);
 static bool switchdev_lower_is_dsa_conduit(struct net_device *dev,
 					   struct net_device *lower_dev)
 {
-#if IS_ENABLED(CONFIG_NET_DSA)
-	struct dsa_port *dp;
-
-	if (!netdev_uses_dsa(lower_dev))
-		return false;
-
-	dp = dsa_port_from_netdev(dev);
-
-	if (IS_ERR_OR_NULL(dp))
-		return false;
-
-	return dsa_port_to_conduit(dp) == lower_dev;
-#else
-	return false;
-#endif
+	return dsa_lower_is_conduit(dev, lower_dev);
 }
 
 static int __switchdev_handle_port_obj_add(struct net_device *dev,

@@ -19,50 +19,6 @@
 
 #include "lan969x/lan969x.h"
 
-static void sparx5_mirror_probe_debugfs_show_probe(struct seq_file *m, int idx)
-{
-	struct sparx5 *sparx5 = m->private;
-	const struct sparx5_consts *consts;
-	u32 monitor_port;
-	u64 src_ports;
-
-	monitor_port = sparx5_mirror_monitor_get(sparx5, idx);
-	src_ports = sparx5_mirror_port_get(sparx5, idx);
-	consts = sparx5->data->consts;
-
-	seq_printf(m, "%d: monitor: %s, %s, sources: ", idx,
-		   netdev_name(sparx5->ports[monitor_port]->ndev),
-		   sparx5_mirror_dir_get(sparx5, idx) ? "ingress" : "egress");
-
-	for (int port = 0; port < consts->n_ports; ++port)
-		if (src_ports & (1 << port))
-			seq_printf(m, "%s ",
-				   netdev_name(sparx5->ports[port]->ndev));
-
-	seq_printf(m, "\n");
-}
-
-static int sparx5_mirror_probe_debugfs_show(struct seq_file *m, void *unused)
-{
-	struct sparx5 *sparx5 = m->private;
-	struct sparx5_mall_entry *entry;
-	int idx;
-
-	list_for_each_entry(entry, &sparx5->mall_entries, list) {
-		if (entry->type == FLOW_ACTION_POLICE)
-			sparx5_mirror_probe_debugfs_show_probe(m, idx);
-	}
-
-	return 0;
-}
-DEFINE_SHOW_ATTRIBUTE(sparx5_mirror_probe_debugfs); /* sparx5_mirror_probe_debugfs_fops */
-
-void sparx5_mirror_probe_debugfs(struct sparx5 *sparx5)
-{
-	debugfs_create_file("mirrorprobes", 0444, sparx5->debugfs_root, sparx5,
-			    &sparx5_mirror_probe_debugfs_fops);
-}
-
 static int sparx5_mactable_debugfs_show(struct seq_file *m, void *unused)
 {
 	struct sparx5 *sparx5 = m->private;
@@ -248,7 +204,6 @@ void sparx5_debugfs(struct sparx5 *sparx5)
 					    sparx5->ports[portno],
 					    &sparx5_portstat_debugfs_fops);
 		}
-	sparx5_mirror_probe_debugfs(sparx5);
 
 #ifdef CONFIG_LAN969X_SWITCH
 	if (!is_sparx5(sparx5))

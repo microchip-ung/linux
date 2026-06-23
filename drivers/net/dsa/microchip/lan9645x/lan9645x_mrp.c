@@ -24,7 +24,6 @@
 
 static const u8 mrp_test_dmac[ETH_ALEN] = { 0x1, 0x15, 0x4e, 0x0, 0x0, 0x1 };
 static const u8 mrp_in_test_dmac[ETH_ALEN] = { 0x1, 0x15, 0x4e, 0x0, 0x0, 0x3 };
-static const u8 mrp_dmac_mask[ETH_ALEN] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xf8 };
 
 void lan9645x_mrp_ring_open(struct lan9645x *lan9645x)
 {
@@ -293,17 +292,22 @@ static int lan9645x_mrp_port_update_mac(struct mrp_port *mrp_port)
 {
 	struct lan9645x_port *port = mrp_port->priv;
 	struct lan9645x *lan9645x = port->lan9645x;
+	const u8 *addr;
 	u32 macl, mach;
 
-	dev_dbg(lan9645x->dev, "port=%d addr=%pM\n",
-		port->chip_port, lan9645x->bridge->dev_addr);
+	if (WARN_ON(!port->bridge))
+		return -ENODEV;
 
-	mach = lan9645x->bridge->dev_addr[0] << 8;
-	mach |= lan9645x->bridge->dev_addr[1] << 0;
-	macl = lan9645x->bridge->dev_addr[2] << 24;
-	macl |= lan9645x->bridge->dev_addr[3] << 16;
-	macl |= lan9645x->bridge->dev_addr[4] << 8;
-	macl |= lan9645x->bridge->dev_addr[5] << 0;
+	addr = port->bridge->dev_addr;
+
+	dev_dbg(lan9645x->dev, "port=%d addr=%pM\n", port->chip_port, addr);
+
+	mach = addr[0] << 8;
+	mach |= addr[1] << 0;
+	macl = addr[2] << 24;
+	macl |= addr[3] << 16;
+	macl |= addr[4] << 8;
+	macl |= addr[5] << 0;
 
 	lan_wr(macl, lan9645x, MEP_MRP_MAC_LSB(port->chip_port));
 	lan_wr(mach, lan9645x, MEP_MRP_MAC_MSB(port->chip_port));
@@ -419,10 +423,7 @@ static int lan9645x_mrp_port_hijack_test(struct mrp_port *mrp_port,
 {
 	struct lan9645x_port *port = mrp_port->priv;
 	u8 ifh[LAN9645X_IFH_LEN];
-	struct net_device *dev;
 	u64 seq_num;
-
-	dev = lan9645x_port_to_ndev(port);
 
 	/* The AFI can not inject frames via the NPI port, unless frame aging is
 	 * disabled on frontports, so we use manual injection for AFI frames.
@@ -645,14 +646,9 @@ static enum mrp_interrupt_status lan9645x_mrp_port_get_ring_intr_status(struct m
 	val = lan_rd(lan9645x, MEP_TST_CFG(port->chip_port));
 	val = MEP_TST_CFG_MISS_CNT_GET(val);
 
-	if (val == mrp_port->ring_max_miss) {
-		lan9645x_port_stp_state_set(lan9645x, port->chip_port,
-					    BR_STATE_FORWARDING);
+	if (val == mrp_port->ring_max_miss)
 		return MRP_INTERRUPT_STATUS_OPEN;
-	}
 
-	lan9645x_port_stp_state_set(lan9645x, port->chip_port,
-				    BR_STATE_BLOCKING);
 	return MRP_INTERRUPT_STATUS_CLOSED;
 }
 
@@ -848,14 +844,9 @@ static enum mrp_interrupt_status lan9645x_mrp_port_get_in_intr_status(struct mrp
 	val = lan_rd(lan9645x, MEP_ITST_CFG(port->chip_port));
 	val = MEP_ITST_CFG_ITST_MISS_CNT_GET(val);
 
-	if (val == mrp_port->in_max_miss) {
-		lan9645x_port_stp_state_set(lan9645x, port->chip_port,
-					    BR_STATE_FORWARDING);
+	if (val == mrp_port->in_max_miss)
 		return MRP_INTERRUPT_STATUS_OPEN;
-	}
 
-	lan9645x_port_stp_state_set(lan9645x, port->chip_port,
-				    BR_STATE_BLOCKING);
 	return MRP_INTERRUPT_STATUS_CLOSED;
 }
 

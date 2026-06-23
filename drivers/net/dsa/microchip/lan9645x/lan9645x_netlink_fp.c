@@ -41,7 +41,7 @@ static struct lan9645x_port *to_switch_port(struct sk_buff *skb,
 
 	p = lan9645x_port_from_netdev(dev);
 	if (IS_ERR_OR_NULL(p))
-		return ERR_PTR(-ENOTSUPP);
+		return ERR_PTR(-EOPNOTSUPP);
 
 	return p;
 }

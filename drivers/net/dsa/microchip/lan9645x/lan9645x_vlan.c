@@ -4,31 +4,44 @@
 
 #include "lan9645x_main.h"
 
-#define VLANACCESS_CMD_IDLE 0
-#define VLANACCESS_CMD_READ 1
-#define VLANACCESS_CMD_WRITE 2
-#define VLANACCESS_CMD_INIT 3
+#define VLANACCESS_CMD_IDLE		0
+#define VLANACCESS_CMD_READ		1
+#define VLANACCESS_CMD_WRITE		2
+#define VLANACCESS_CMD_INIT		3
 
-int lan9645x_port_vlan_prepare(struct lan9645x_port *p, u16 vid, bool pvid,
-			       bool untagged, struct netlink_ext_ack *extack)
+struct lan9645x_vlan_port_info {
+	int untagged;
+	int tagged;
+	u16 untagged_vid;
+};
+
+/* Calculate VLAN state of a port, across all VLANS. */
+static void lan9645x_vlan_port_get_info(struct lan9645x *lan9645x, int port,
+					struct lan9645x_vlan_port_info *info)
 {
-	struct lan9645x *lan9645x = p->lan9645x;
+	u16 vid;
 
-	if (p->chip_port == lan9645x->npi)
-		return 0;
+	info->untagged = 0;
+	info->tagged = 0;
+	info->untagged_vid = 0;
 
-	if (untagged && p->untagged_vid != vid && p->untagged_vid) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "Port with egress-tagged VLANs cannot have more than one egress-untagged (native) VLAN");
-		return -EBUSY;
+	for (vid = 1; vid <= VLAN_MAX; vid++) {
+		struct lan9645x_vlan *v = &lan9645x->vlans[vid];
+
+		if (!(v->portmask & BIT(port)))
+			continue;
+
+		if (v->untagged & BIT(port)) {
+			info->untagged++;
+			info->untagged_vid = vid;
+		} else {
+			info->tagged++;
+		}
+
+		/* VLAN composition is invalid, so break early. */
+		if (info->untagged > 1 && info->tagged)
+			break;
 	}
-
-	if (vid > VLAN_MAX) {
-		NL_SET_ERR_MSG_MOD(extack, "VLAN range 4094-4095 reserved.");
-		return -EBUSY;
-	}
-
-	return 0;
 }
 
 static int lan9645x_vlan_wait_for_completion(struct lan9645x *lan9645x)
@@ -40,82 +53,77 @@ static int lan9645x_vlan_wait_for_completion(struct lan9645x *lan9645x)
 					VLANACCESS_CMD_IDLE);
 }
 
-void lan9645x_vlan_set_mask(struct lan9645x *lan9645x, u16 vid)
+int lan9645x_vlan_hw_wr(struct lan9645x *lan9645x, u16 vid)
 {
-	u8 flags = lan9645x->vlan_flags[vid];
-	u16 mask = lan9645x->vlan_mask[vid];
-	bool cpu_dis;
+	struct lan9645x_vlan *v = &lan9645x->vlans[vid];
+	bool cpu_dis = !(v->portmask & BIT(CPU_PORT));
+	u32 val;
+	int err;
 
-	cpu_dis = !(mask & BIT(CPU_PORT));
+	val = ANA_VLANTIDX_VLAN_PGID_CPU_DIS_SET(cpu_dis) |
+	      ANA_VLANTIDX_V_INDEX_SET(vid) |
+	      ANA_VLANTIDX_VLAN_SEC_FWD_ENA_SET(v->s_fwd_ena) |
+	      ANA_VLANTIDX_VLAN_FLOOD_DIS_SET(v->fld_dis) |
+	      ANA_VLANTIDX_VLAN_PRIV_VLAN_SET(v->prv_vlan) |
+	      ANA_VLANTIDX_VLAN_LEARN_DISABLED_SET(v->lrn_dis) |
+	      ANA_VLANTIDX_VLAN_MIRROR_SET(v->mir) |
+	      ANA_VLANTIDX_VLAN_SRC_CHK_SET(v->src_chk);
 
-	/* Set flags and the VID to configure */
-	lan_wr(ANA_VLANTIDX_VLAN_PGID_CPU_DIS_SET(cpu_dis) |
-	       ANA_VLANTIDX_V_INDEX_SET(vid) |
-	       ANA_VLANTIDX_VLAN_SEC_FWD_ENA_SET(!!(flags & LAN9645X_VLAN_SEC_FWD_ENA)) |
-	       ANA_VLANTIDX_VLAN_FLOOD_DIS_SET(!!(flags & LAN9645X_VLAN_FLOOD_DIS)) |
-	       ANA_VLANTIDX_VLAN_PRIV_VLAN_SET(!!(flags & LAN9645X_VLAN_PRIV_VLAN)) |
-	       ANA_VLANTIDX_VLAN_LEARN_DISABLED_SET(!!(flags & LAN9645X_VLAN_LEARN_DISABLED)) |
-	       ANA_VLANTIDX_VLAN_MIRROR_SET(!!(flags & LAN9645X_VLAN_MIRROR)) |
-	       ANA_VLANTIDX_VLAN_SRC_CHK_SET(!!(flags & LAN9645X_VLAN_SRC_CHK)),
-	       lan9645x, ANA_VLANTIDX);
+	lan_wr(val, lan9645x, ANA_VLANTIDX);
+	lan_wr(ANA_VLAN_PORT_MASK_VLAN_PORT_MASK_SET(v->portmask),
+	       lan9645x, ANA_VLAN_PORT_MASK);
+	lan_wr(ANA_VLANACCESS_VLAN_TBL_CMD_SET(VLANACCESS_CMD_WRITE),
+	       lan9645x, ANA_VLANACCESS);
 
-	/* Set the vlan port members mask, which enables ingress filtering */
-	lan_wr(mask, lan9645x, ANA_VLAN_PORT_MASK);
-
-	/* Issue a write command */
-	lan_wr(VLANACCESS_CMD_WRITE, lan9645x, ANA_VLANACCESS);
-
-	if (lan9645x_vlan_wait_for_completion(lan9645x))
+	/* The VLAN access engine completes in a fixed ~1us vs the polling
+	 * timeout of 100_000 us. A timeout here therefore likely means the
+	 * register bus itself is dead, not that the VLAN op failed. There is no
+	 * meaningful recovery at runtime, so this function logs via dev_err()
+	 * and runtime callers discard the return value. Only
+	 * lan9645x_vlan_init() treats this as fatal so that probe fails early
+	 * on a broken bus.
+	 */
+	err = lan9645x_vlan_wait_for_completion(lan9645x);
+	if (err)
 		dev_err(lan9645x->dev, "Vlan set mask failed\n");
+
+	return err;
 }
 
-static void lan9645x_vlan_port_add_vlan_mask(struct lan9645x_port *p, u16 vid)
+static int lan9645x_vlan_commit_port_mask(struct lan9645x *lan9645x, u16 vid,
+					  u16 old_mask)
 {
-	struct lan9645x *lan9645x = p->lan9645x;
+	bool had = !!(old_mask & ~BIT(CPU_PORT));
+	bool has = !!(lan9645x->vlans[vid].portmask & ~BIT(CPU_PORT));
+	int err;
 
-	lan9645x->vlan_mask[vid] |= BIT(p->chip_port);
-	lan9645x_vlan_set_mask(lan9645x, vid);
+	err = lan9645x_vlan_hw_wr(lan9645x, vid);
+	if (err)
+		return err;
+
+	if (!had && has)
+		lan9645x_mac_bc_flood_add(lan9645x, vid);
+	else if (had && !has)
+		lan9645x_mac_bc_flood_del(lan9645x, vid);
+
+	return 0;
 }
 
-static void lan9645x_vlan_port_del_vlan_mask(struct lan9645x_port *p, u16 vid)
+int lan9645x_vlan_set_port_mask(struct lan9645x *lan9645x, u16 vid,
+				u16 new_mask)
 {
-	struct lan9645x *lan9645x = p->lan9645x;
+	u16 old_mask = lan9645x->vlans[vid].portmask;
 
-	lan9645x->vlan_mask[vid] &= ~BIT(p->chip_port);
-	lan9645x_vlan_set_mask(lan9645x, vid);
+	lan9645x->vlans[vid].portmask = new_mask;
+	return lan9645x_vlan_commit_port_mask(lan9645x, vid, old_mask);
 }
 
-static void lan9645x_vlan_cpu_add_vlan_mask(struct lan9645x *lan9645x, u16 vid)
+u16 lan9645x_vlan_unaware_pvid(int bridge_num)
 {
-	lan9645x->vlan_mask[vid] |= BIT(CPU_PORT);
-	lan9645x_vlan_set_mask(lan9645x, vid);
-}
+	if (bridge_num <= 0)
+		return HOST_PVID;
 
-static void lan9645x_vlan_cpu_del_vlan_mask(struct lan9645x *lan9645x, u16 vid)
-{
-	lan9645x->vlan_mask[vid] &= ~BIT(CPU_PORT);
-	lan9645x_vlan_set_mask(lan9645x, vid);
-}
-
-static bool lan9645x_vlan_port_any_vlan_mask(struct lan9645x *lan9645x, u16 vid)
-{
-	return !!(lan9645x->vlan_mask[vid] & ~BIT(CPU_PORT));
-}
-
-void lan9645x_vlan_cpu_set_vlan(struct lan9645x *lan9645x, u16 vid)
-{
-	__set_bit(vid, lan9645x->cpu_vlan_mask);
-}
-
-void lan9645x_vlan_cpu_clear_vlan(struct lan9645x *lan9645x, u16 vid)
-{
-	__clear_bit(vid, lan9645x->cpu_vlan_mask);
-}
-
-static bool lan9645x_vlan_cpu_member_cpu_vlan_mask(struct lan9645x *lan9645x,
-						   u16 vid)
-{
-	return test_bit(vid, lan9645x->cpu_vlan_mask);
+	return VLAN_N_VID - bridge_num - 1;
 }
 
 static u16 lan9645x_vlan_port_get_pvid(struct lan9645x_port *port)
@@ -123,39 +131,78 @@ static u16 lan9645x_vlan_port_get_pvid(struct lan9645x_port *port)
 	if (!lan9645x_port_is_bridged(port))
 		return HOST_PVID;
 
-	return port->vlan_aware ? port->pvid : UNAWARE_PVID;
+	return port->vlan_aware ? port->pvid :
+		lan9645x_vlan_unaware_pvid(port->bridge_num);
 }
 
-void lan9645x_vlan_port_set_vid(struct lan9645x_port *p, u16 vid, bool pvid,
-				bool untagged)
+/* Dynamically choose the egress tagging mode based on the port vlan state:
+ *
+ * Standalone and VLAN-unaware bridged:
+ * TAG_NO_PVID_NO_UNAWARE
+ *
+ * Bridged, VLAN-aware:
+ *  - N untagged, 0 tagged: TAG_DISABLED
+ *  - 1 untagged, N tagged: TAG_NO_PVID_NO_UNAWARE
+ *  - 0 untagged, N tagged: TAG_ALL
+ */
+static void
+lan9645x_vlan_port_apply_egress(struct lan9645x_port *p,
+				struct lan9645x_vlan_port_info *info)
 {
-	if (untagged)
-		p->untagged_vid = vid;
-	else if (p->untagged_vid == vid)
-		p->untagged_vid = 0;
+	struct lan9645x *lan9645x = p->lan9645x;
+	enum lan9645x_vlan_port_tag tag_cfg;
+	u16 port_vid = HOST_PVID;
 
-	if (pvid)
-		p->pvid = vid;
-	else if (p->pvid == vid)
-		p->pvid = 0;
+	if (!lan9645x_port_is_bridged(p)) {
+		tag_cfg = LAN9645X_TAG_NO_PVID_NO_UNAWARE;
+		port_vid = HOST_PVID;
+	} else if (p->vlan_aware) {
+		struct lan9645x_vlan_port_info _info;
+
+		if (!info) {
+			lan9645x_vlan_port_get_info(lan9645x, p->chip_port,
+						    &_info);
+			info = &_info;
+		}
+
+		if (info->untagged == 1 && info->tagged) {
+			tag_cfg = LAN9645X_TAG_NO_PVID_NO_UNAWARE;
+			port_vid = info->untagged_vid;
+		} else if (info->untagged) {
+			tag_cfg = LAN9645X_TAG_DISABLED;
+		} else {
+			tag_cfg = LAN9645X_TAG_ALL;
+		}
+	} else {
+		tag_cfg = LAN9645X_TAG_NO_PVID_NO_UNAWARE;
+		port_vid = lan9645x_vlan_unaware_pvid(p->bridge_num);
+	}
+
+	/* TAG_TPID_CFG encoding:
+	 *
+	 * 0: Use 0x8100.
+	 * 1: Use 0x88A8.
+	 * 2: Use custom value from PORT_VLAN_CFG.PORT_TPID.
+	 * 3: Use PORT_VLAN_CFG.PORT_TPID, unless ingress tag was a C-tag
+	 *    (EtherType = 0x8100)
+	 *
+	 * Use 3 and PORT_VLAN_CFG.PORT_TPID=0x88a8 to ensure stags are not
+	 * rewritten to ctags on egress.
+	 */
+	lan_rmw(REW_TAG_CFG_TAG_TPID_CFG_SET(3) |
+		REW_TAG_CFG_TAG_CFG_SET(tag_cfg),
+		REW_TAG_CFG_TAG_TPID_CFG |
+		REW_TAG_CFG_TAG_CFG,
+		lan9645x, REW_TAG_CFG(p->chip_port));
+
+	lan_rmw(REW_PORT_VLAN_CFG_PORT_TPID_SET(ETH_P_8021AD) |
+		REW_PORT_VLAN_CFG_PORT_VID_SET(port_vid),
+		REW_PORT_VLAN_CFG_PORT_TPID |
+		REW_PORT_VLAN_CFG_PORT_VID,
+		lan9645x, REW_PORT_VLAN_CFG(p->chip_port));
 }
 
-static void lan9645x_vlan_port_remove_vid(struct lan9645x_port *p, u16 vid)
-{
-	if (p->pvid == vid)
-		p->pvid = 0;
-
-	if (p->untagged_vid == vid)
-		p->untagged_vid = 0;
-}
-
-void lan9645x_vlan_port_set_vlan_aware(struct lan9645x_port *p,
-				       bool vlan_aware)
-{
-	p->vlan_aware = vlan_aware;
-}
-
-void lan9645x_vlan_port_apply(struct lan9645x_port *p)
+static void lan9645x_vlan_port_apply_ingress(struct lan9645x_port *p)
 {
 	struct lan9645x *lan9645x = p->lan9645x;
 	u16 pvid;
@@ -163,24 +210,17 @@ void lan9645x_vlan_port_apply(struct lan9645x_port *p)
 
 	pvid = lan9645x_vlan_port_get_pvid(p);
 
-	/* Ingress clasification (ANA_PORT_VLAN_CFG) */
 	/* Default vlan to classify for untagged frames (may be zero) */
 	val = ANA_VLAN_CFG_VLAN_VID_SET(pvid);
 	if (p->vlan_aware)
 		val |= ANA_VLAN_CFG_VLAN_AWARE_ENA_SET(1) |
-			ANA_VLAN_CFG_VLAN_POP_CNT_SET(1);
+		       ANA_VLAN_CFG_VLAN_POP_CNT_SET(1);
 
 	lan_rmw(val,
 		ANA_VLAN_CFG_VLAN_VID |
 		ANA_VLAN_CFG_VLAN_AWARE_ENA |
 		ANA_VLAN_CFG_VLAN_POP_CNT,
 		lan9645x, ANA_VLAN_CFG(p->chip_port));
-
-	lan_rmw(DEV_MAC_TAGS_CFG_VLAN_AWR_ENA_SET(p->vlan_aware) |
-		DEV_MAC_TAGS_CFG_PB_ENA_SET(p->vlan_aware),
-		DEV_MAC_TAGS_CFG_VLAN_AWR_ENA |
-		DEV_MAC_TAGS_CFG_PB_ENA,
-		lan9645x, DEV_MAC_TAGS_CFG(p->chip_port));
 
 	/* Drop frames with multicast source address */
 	val = ANA_DROP_CFG_DROP_MC_SMAC_ENA_SET(1);
@@ -189,118 +229,170 @@ void lan9645x_vlan_port_apply(struct lan9645x_port *p)
 		 * tagged frames.
 		 */
 		val |= ANA_DROP_CFG_DROP_UNTAGGED_ENA_SET(1) |
-			ANA_DROP_CFG_DROP_PRIO_S_TAGGED_ENA_SET(1) |
-			ANA_DROP_CFG_DROP_PRIO_C_TAGGED_ENA_SET(1);
+		       ANA_DROP_CFG_DROP_PRIO_S_TAGGED_ENA_SET(1) |
+		       ANA_DROP_CFG_DROP_PRIO_C_TAGGED_ENA_SET(1);
 
 	lan_wr(val, lan9645x, ANA_DROP_CFG(p->chip_port));
-
-	/* TAG_TPID_CFG encoding:
-	 *
-	 * 0: Use 0x8100.
-	 * 1: Use 0x88A8.
-	 * 2: Use custom value from PORT_VLAN_CFG.PORT_TPID.
-	 * 3: Use PORT_VLAN_CFG.PORT_TPID, unless ingress tag was a C-tag (EtherType = 0x8100)
-	 *
-	 * Use 3 and PORT_VLAN_CFG.PORT_TPID=0x88a8 to ensure stags are not
-	 * rewritten to ctags on egress.
-	 */
-	val = REW_TAG_CFG_TAG_TPID_CFG_SET(3);
-	if (p->vlan_aware) {
-		if (p->untagged_vid)
-			/* Tag all except when VID == DEFAULT_VLAN or VID == p->vid */
-			val |= REW_TAG_CFG_TAG_CFG_SET(LAN9645X_TAG_NO_PVID_NO_UNAWARE);
-		else
-			val |= REW_TAG_CFG_TAG_CFG_SET(LAN9645X_TAG_ALL);
-	} /* else LAN9645X_TAG_DISABLED */
-
-	lan_rmw(val,
-		REW_TAG_CFG_TAG_TPID_CFG |
-		REW_TAG_CFG_TAG_CFG,
-		lan9645x, REW_TAG_CFG(p->chip_port));
-
-	/* Set default VLAN and tag type to 8021Q */
-
-	lan_rmw(REW_PORT_VLAN_CFG_PORT_TPID_SET(ETH_P_8021AD) |
-		REW_PORT_VLAN_CFG_PORT_VID_SET(p->untagged_vid),
-		REW_PORT_VLAN_CFG_PORT_TPID |
-		REW_PORT_VLAN_CFG_PORT_VID,
-		lan9645x, REW_PORT_VLAN_CFG(p->chip_port));
 }
 
-void lan9645x_vlan_port_add_vlan(struct lan9645x_port *p, u16 vid, bool pvid,
+void lan9645x_vlan_port_apply(struct lan9645x_port *p)
+{
+	lan9645x_vlan_port_apply_ingress(p);
+	lan9645x_vlan_port_apply_egress(p, NULL);
+}
+
+static struct lan9645x_vlan *lan9645x_vlan_port_modify(struct lan9645x_port *p,
+						       u16 vid, bool pvid,
+						       bool untagged)
+{
+	struct lan9645x_vlan *v = &p->lan9645x->vlans[vid];
+
+	if (untagged)
+		v->untagged |= BIT(p->chip_port);
+	else
+		v->untagged &= ~BIT(p->chip_port);
+
+	if (pvid)
+		p->pvid = vid;
+	else if (p->pvid == vid)
+		p->pvid = 0;
+
+	return v;
+}
+
+static int lan9645x_vlan_cpu_add(struct lan9645x_port *p, u16 vid, bool pvid,
 				 bool untagged)
 {
+	struct lan9645x_vlan *v;
+
+	v = lan9645x_vlan_port_modify(p, vid, pvid, untagged);
+	lan9645x_vlan_set_port_mask(p->lan9645x, vid,
+				    v->portmask | BIT(CPU_PORT) |
+				    BIT(p->chip_port));
+	lan9645x_vlan_port_apply_ingress(p);
+
+	return 0;
+}
+
+int lan9645x_vlan_port_add_vlan(struct lan9645x_port *p, u16 vid, bool pvid,
+				bool untagged, struct netlink_ext_ack *extack)
+{
 	struct lan9645x *lan9645x = p->lan9645x;
+	struct lan9645x_vlan_port_info info;
+	struct lan9645x_vlan old_vlan;
+	struct lan9645x_vlan *v;
+	u16 old_pvid;
 
-	if (lan9645x_vlan_cpu_member_cpu_vlan_mask(lan9645x, vid))
-		lan9645x_vlan_cpu_add_vlan_mask(lan9645x, vid);
+	/* Kernel VLAN core adds vid 0, which collides with HOST_PVID.
+	 * We handle priority tagged frames by other means.
+	 */
+	if (!vid)
+		return 0;
 
-	lan9645x_vlan_port_set_vid(p, vid, pvid, untagged);
-	lan9645x_vlan_port_add_vlan_mask(p, vid);
+	if (vid >= VLAN_RSV_RANGE_START) {
+		NL_SET_ERR_MSG_MOD(extack, "VLAN range 4000-4095 reserved.");
+		return -EBUSY;
+	}
+
+	if (p->chip_port == lan9645x->npi)
+		return lan9645x_vlan_cpu_add(p, vid, pvid, untagged);
+
+	old_vlan = lan9645x->vlans[vid];
+	old_pvid = p->pvid;
+
+	v = lan9645x_vlan_port_modify(p, vid, pvid, untagged);
+	v->portmask |= BIT(p->chip_port);
+
+	lan9645x_vlan_port_get_info(lan9645x, p->chip_port, &info);
+
+	if (info.untagged > 1 && info.tagged) {
+		*v = old_vlan;
+		p->pvid = old_pvid;
+		NL_SET_ERR_MSG_MOD(extack, "Only support 1 untagged port VLAN");
+		return -EBUSY;
+	}
+
+	lan9645x_vlan_commit_port_mask(lan9645x, vid, old_vlan.portmask);
+	lan9645x_vlan_port_apply_ingress(p);
+	lan9645x_vlan_port_apply_egress(p, &info);
+
+	return 0;
+}
+
+static int lan9645x_vlan_cpu_del(struct lan9645x_port *p, u16 vid)
+{
+	struct lan9645x_vlan *v;
+
+	v = lan9645x_vlan_port_modify(p, vid, false, false);
+	lan9645x_vlan_set_port_mask(p->lan9645x, vid,
+				    v->portmask & ~BIT(CPU_PORT) &
+				    ~BIT(p->chip_port));
+	lan9645x_vlan_port_apply_ingress(p);
+
+	return 0;
+}
+
+int lan9645x_vlan_port_del_vlan(struct lan9645x_port *p, u16 vid)
+{
+	struct lan9645x *lan9645x = p->lan9645x;
+	struct lan9645x_vlan *v;
+
+	if (!vid)
+		return 0;
+
+	if (vid >= VLAN_RSV_RANGE_START)
+		return -EBUSY;
+
+	if (p->chip_port == lan9645x->npi)
+		return lan9645x_vlan_cpu_del(p, vid);
+
+	v = lan9645x_vlan_port_modify(p, vid, false, false);
+	lan9645x_vlan_set_port_mask(lan9645x, vid,
+				    v->portmask & ~BIT(p->chip_port));
 	lan9645x_vlan_port_apply(p);
-}
 
-void lan9645x_vlan_port_del_vlan(struct lan9645x_port *port, u16 vid)
-{
-	struct lan9645x *lan9645x = port->lan9645x;
-
-	lan9645x_vlan_port_remove_vid(port, vid);
-	lan9645x_vlan_port_del_vlan_mask(port, vid);
-	lan9645x_vlan_port_apply(port);
-
-	if (!lan9645x_vlan_port_any_vlan_mask(lan9645x, vid))
-		lan9645x_vlan_cpu_del_vlan_mask(lan9645x, vid);
-}
-
-/* When the interface is in host mode, the interface should not be vlan aware
- * but it should insert all the tags that it gets from the network stack.
- * The tags are no in the data of the frame but actually in the skb and the ifh
- * is confiured already to get this tag. So what we need to do is to update the
- * rewriter to insert the vlan tag for all frames which have a vlan tag
- * different than 0.
- */
-void lan9645x_vlan_port_rew_host(struct lan9645x_port *port)
-{
-	struct lan9645x *lan9645x = port->lan9645x;
-
-	/* TODO: vlan_port_apply handles standalone mode incorrectly. These two
-	 * calls correct the configuration. Consider refactoring.
-	 */
-	lan_rmw(REW_TAG_CFG_TAG_CFG_SET(LAN9645X_TAG_NO_PVID_NO_UNAWARE) |
-		REW_TAG_CFG_TAG_TPID_CFG_SET(3),
-		REW_TAG_CFG_TAG_CFG |
-		REW_TAG_CFG_TAG_TPID_CFG,
-		lan9645x, REW_TAG_CFG(port->chip_port));
-
-	/* Standalone ports must have the reserved VID set in the rewriter,
-	 * because the TAG_CFG used above acts on this PORT_VID value.
-	 *
-	 * Otherwise untagged frames are tagged with HOST_PVID.
-	 *
-	 * Usually frames leaving the switch from standalone ports go to the CPU,
-	 * where tagging is disabled.
-	 *
-	 * But if we mirror a standalone port, the problem becomes apparant.
-	 */
-	lan_rmw(REW_PORT_VLAN_CFG_PORT_TPID_SET(ETH_P_8021AD) |
-		REW_PORT_VLAN_CFG_PORT_VID_SET(HOST_PVID),
-		REW_PORT_VLAN_CFG_PORT_TPID |
-		REW_PORT_VLAN_CFG_PORT_VID,
-		lan9645x, REW_PORT_VLAN_CFG(port->chip_port));
+	return 0;
 }
 
 void lan9645x_vlan_set_hostmode(struct lan9645x_port *p)
 {
-	lan9645x_vlan_port_set_vlan_aware(p, false);
-	lan9645x_vlan_port_set_vid(p, HOST_PVID, false, false);
+	struct lan9645x *lan9645x = p->lan9645x;
+
+	p->vlan_aware = false;
+	lan9645x_vlan_set_port_mask(lan9645x, HOST_PVID,
+				    lan9645x->vlans[HOST_PVID].portmask |
+				    BIT(p->chip_port));
 	lan9645x_vlan_port_apply(p);
-	lan9645x_vlan_port_rew_host(p);
 }
 
-void lan9645x_vlan_init(struct lan9645x *lan9645x)
+void lan9645x_vlan_add_unaware_pvid(struct lan9645x_port *p)
+{
+	struct lan9645x *lan9645x = p->lan9645x;
+	u16 vid = lan9645x_vlan_unaware_pvid(p->bridge_num);
+
+	lan9645x_vlan_set_port_mask(lan9645x, vid,
+				    lan9645x->vlans[vid].portmask |
+				    BIT(p->chip_port) | BIT(CPU_PORT));
+}
+
+void lan9645x_vlan_del_unaware_pvid(struct lan9645x_port *p)
+{
+	struct lan9645x *lan9645x = p->lan9645x;
+	u16 vid = lan9645x_vlan_unaware_pvid(p->bridge_num);
+	u16 new_mask = lan9645x->vlans[vid].portmask & ~BIT(p->chip_port);
+
+	/* Drop CPU membership when no other port remains in this bridge. */
+	if (!(new_mask & ~BIT(CPU_PORT)))
+		new_mask &= ~BIT(CPU_PORT);
+
+	lan9645x_vlan_set_port_mask(lan9645x, vid, new_mask);
+}
+
+int lan9645x_vlan_init(struct lan9645x *lan9645x)
 {
 	u32 all_phys_ports, all_ports;
 	u16 port, vid;
+	int err;
 
 	all_phys_ports = GENMASK(lan9645x->num_phys_ports - 1, 0);
 	all_ports = all_phys_ports | BIT(CPU_PORT);
@@ -309,25 +401,24 @@ void lan9645x_vlan_init(struct lan9645x *lan9645x)
 	lan_wr(ANA_VLANACCESS_VLAN_TBL_CMD_SET(VLANACCESS_CMD_INIT),
 	       lan9645x, ANA_VLANACCESS);
 
-	if (lan9645x_vlan_wait_for_completion(lan9645x))
+	err = lan9645x_vlan_wait_for_completion(lan9645x);
+	if (err) {
 		dev_err(lan9645x->dev, "Vlan clear table failed\n");
-
-	for (vid = 1; vid < VLAN_N_VID; vid++) {
-		lan9645x->vlan_mask[vid] = 0;
-		lan9645x_vlan_set_mask(lan9645x, vid);
+		return err;
 	}
 
-	/* Set all the ports + cpu to be part of HOST_PVID and UNAWARE_PVID */
-	lan9645x->vlan_mask[HOST_PVID] = all_ports;
-	lan9645x_vlan_set_mask(lan9645x, HOST_PVID);
+	for (vid = 1; vid < VLAN_N_VID; vid++) {
+		err = lan9645x_vlan_hw_wr(lan9645x, vid);
+		if (err)
+			return err;
+	}
 
-	lan9645x->vlan_mask[UNAWARE_PVID] = all_ports;
-	lan9645x_vlan_set_mask(lan9645x, UNAWARE_PVID);
-
-	lan9645x_vlan_cpu_set_vlan(lan9645x, UNAWARE_PVID);
+	err = lan9645x_vlan_set_port_mask(lan9645x, HOST_PVID, all_ports);
+	if (err)
+		return err;
 
 	/* Configure the CPU port to be vlan aware */
-	lan_wr(ANA_VLAN_CFG_VLAN_VID_SET(UNAWARE_PVID) |
+	lan_wr(ANA_VLAN_CFG_VLAN_VID_SET(HOST_PVID) |
 	       ANA_VLAN_CFG_VLAN_AWARE_ENA_SET(1) |
 	       ANA_VLAN_CFG_VLAN_POP_CNT_SET(1),
 	       lan9645x, ANA_VLAN_CFG(CPU_PORT));
@@ -339,4 +430,6 @@ void lan9645x_vlan_init(struct lan9645x *lan9645x)
 		lan_wr(0, lan9645x, REW_PORT_VLAN_CFG(port));
 		lan_wr(0, lan9645x, REW_TAG_CFG(port));
 	}
+
+	return 0;
 }

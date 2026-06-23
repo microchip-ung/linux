@@ -963,14 +963,51 @@ int dsa_port_vlan_msti(struct dsa_port *dp,
 	return ds->ops->vlan_msti_set(ds, *dp->bridge, msti);
 }
 
-int dsa_port_mrouter(struct dsa_port *dp, bool enable)
+int dsa_port_mrouter(struct dsa_port *dp, bool mrouter)
 {
-	struct dsa_switch *ds = dp->ds;
+	struct dsa_notifier_mrouter_info info = {
+		.dp = dp,
+		.mrouter = mrouter,
+		.db = {
+			.type = DSA_DB_BRIDGE,
+			.bridge = *dp->bridge,
+		},
+	};
 
-	if (!ds->ops->port_mrouter_set)
-		return -EOPNOTSUPP;
+	return dsa_port_notify(dp, DSA_NOTIFIER_MROUTER, &info);
+}
 
-	return ds->ops->port_mrouter_set(ds, dp->index, enable);
+int dsa_port_bridge_mrouter(struct dsa_port *dp, bool mrouter)
+{
+	struct dsa_notifier_mrouter_info info = {
+		.dp = dp,
+		.mrouter = mrouter,
+		.db = {
+			.type = DSA_DB_BRIDGE,
+			.bridge = *dp->bridge,
+		},
+	};
+
+	if (!dp->bridge || dp->bridge->mrouter == mrouter)
+		return 0;
+
+	dp->bridge->mrouter = mrouter;
+
+	return dsa_port_notify(dp, DSA_NOTIFIER_BRIDGE_MROUTER, &info);
+}
+
+int dsa_port_bridge_mc_disabled(struct dsa_port *dp, bool mc_disabled)
+{
+	struct dsa_notifier_mc_disabled_info info = {
+		.dp = dp,
+		.mc_disabled = mc_disabled,
+		.db = {
+			.type = DSA_DB_BRIDGE,
+			.bridge = *dp->bridge,
+		},
+	};
+
+	return dsa_port_notify(dp, DSA_NOTIFIER_BRIDGE_MC_DISABLED, &info);
 }
 
 int dsa_port_mrp_role(struct dsa_port *dp, u8 mrp_port_role)

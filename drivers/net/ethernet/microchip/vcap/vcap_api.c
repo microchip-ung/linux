@@ -175,17 +175,19 @@ static void vcap_encode_typegroups(u32 *stream, int sw_width,
 
 static bool vcap_bitarray_zero(int width, u8 *value)
 {
-	int bytes = DIV_ROUND_UP(width, BITS_PER_BYTE);
-	u8 total = 0, bmask = 0xff;
-	int rwidth = width;
+	int remain = width % BITS_PER_BYTE;
+	int bytes = width / BITS_PER_BYTE;
 	int idx;
 
-	for (idx = 0; idx < bytes; ++idx, rwidth -= BITS_PER_BYTE) {
-		if (rwidth && rwidth < BITS_PER_BYTE)
-			bmask = (1 << rwidth) - 1;
-		total += value[idx] & bmask;
+	for (idx = 0; idx < bytes; ++idx) {
+		if (value[idx])
+			return false;
 	}
-	return total == 0;
+
+	if (remain && (value[idx] & ((1 << remain) - 1)))
+		return false;
+
+	return true;
 }
 
 static bool vcap_get_bit(u32 *stream, struct vcap_stream_iter *itr)
@@ -2533,6 +2535,11 @@ static bool vcap_path_exist(struct vcap_control *vctrl, struct net_device *ndev,
 	return !!tmp;
 }
 
+static bool vcap_permanent_user(enum vcap_user user)
+{
+	return user < VCAP_USER_TC || user == VCAP_USER_SYS_LOW_PRIO;
+}
+
 /* Internal clients can always store their rules in HW
  * External clients can store their rules if the chain is enabled all
  * the way from chain 0, otherwise the rule will be cached until
@@ -2540,7 +2547,7 @@ static bool vcap_path_exist(struct vcap_control *vctrl, struct net_device *ndev,
  */
 static void vcap_rule_set_state(struct vcap_rule_internal *ri)
 {
-	if (ri->data.user <= VCAP_USER_VCAP_UTIL)
+	if (vcap_permanent_user(ri->data.user))
 		ri->state = VCAP_RS_PERMANENT;
 	else if (vcap_path_exist(ri->vctrl, ri->ndev, ri->data.vcap_chain_id))
 		ri->state = VCAP_RS_ENABLED;
@@ -2626,7 +2633,7 @@ struct vcap_rule *vcap_alloc_rule(struct vcap_control *vctrl,
 	mutex_lock(&admin->lock);
 	/* Check if a rule with this id already exists */
 	if (vcap_rule_exists(vctrl, id)) {
-		err = -EINVAL;
+		err = -EEXIST;
 		goto out_unlock;
 	}
 

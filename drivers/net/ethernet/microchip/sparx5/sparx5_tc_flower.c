@@ -1381,16 +1381,20 @@ static int sparx5_tc_flower_replace(struct net_device *ndev,
 				goto out;
 			break;
 		case FLOW_ACTION_DROP:
-			if (admin->vtype != VCAP_TYPE_IS2) {
+			if (admin->vtype != VCAP_TYPE_IS2 &&
+			    admin->vtype != VCAP_TYPE_ES2) {
 				NL_SET_ERR_MSG_MOD(fco->common.extack,
 						   "Drop action not supported in this VCAP");
 				err = -EOPNOTSUPP;
 				goto out;
 			}
-			/* VCAP_AF_MASK_MODE: sparx5 is0 W3, sparx5 is2 W3 */
-			err = vcap_rule_add_action_u32(vrule, VCAP_AF_MASK_MODE, SPX5_PMM_REPLACE_ALL);
-			if (err)
-				goto out;
+			if (admin->vtype == VCAP_TYPE_IS2) {
+				/* VCAP_AF_MASK_MODE: sparx5 is0 W3, sparx5 is2 W3 */
+				err = vcap_rule_add_action_u32(vrule, VCAP_AF_MASK_MODE,
+							       SPX5_PMM_REPLACE_ALL);
+				if (err)
+					goto out;
+			}
 			/* VCAP_AF_POLICE_ENA: W1, sparx5: is2/es2 */
 			err = vcap_rule_add_action_bit(vrule, VCAP_AF_POLICE_ENA, VCAP_BIT_1);
 			if (err)

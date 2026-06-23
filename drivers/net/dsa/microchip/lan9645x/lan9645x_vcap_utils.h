@@ -50,5 +50,7 @@ void lan9645x_is2_only_mac_etype_llc(struct lan9645x *lan9645x, u32 lookup,
 				     int port);
 void lan9645x_is2_default_conf(struct lan9645x *lan9645x, u32 lookup,
 			       int port);
+int lan9645x_es0_add_reserved_vid_untag(struct lan9645x *lan9645x, int port);
+void lan9645x_es0_del_reserved_vid_untag(struct lan9645x *lan9645x, int port);
 
 #endif

@@ -34,6 +34,9 @@ enum {
 	DSA_NOTIFIER_TAG_PROTO_DISCONNECT,
 	DSA_NOTIFIER_TAG_8021Q_VLAN_ADD,
 	DSA_NOTIFIER_TAG_8021Q_VLAN_DEL,
+	DSA_NOTIFIER_MROUTER,
+	DSA_NOTIFIER_BRIDGE_MROUTER,
+	DSA_NOTIFIER_BRIDGE_MC_DISABLED,
 	DSA_NOTIFIER_CONDUIT_STATE_CHANGE,
 };
 
@@ -103,6 +106,20 @@ struct dsa_notifier_tag_proto_info {
 struct dsa_notifier_tag_8021q_vlan_info {
 	const struct dsa_port *dp;
 	u16 vid;
+};
+
+/* DSA_NOTIFIER_MROUTER, DSA_NOTIFIER_BRIDGE_MROUTER */
+struct dsa_notifier_mrouter_info {
+	const struct dsa_port *dp;
+	struct dsa_db db;
+	bool mrouter;
+};
+
+/* DSA_NOTIFIER_BRIDGE_MC_DISABLED */
+struct dsa_notifier_mc_disabled_info {
+	const struct dsa_port *dp;
+	struct dsa_db db;
+	bool mc_disabled;
 };
 
 /* DSA_NOTIFIER_CONDUIT_STATE_CHANGE */
