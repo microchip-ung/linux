@@ -180,7 +180,11 @@ static void lan966x_rescan_cb(struct work_struct *work)
 	bridge = bus->self;
 	pci_stop_and_remove_bus_device(pdev);
 	pci_scan_child_bus(bus);
-	pci_assign_unassigned_bridge_resources(bridge);
+	/* Reassign at bridge level (BAR fix); fall back to bus level on the root bus. */
+	if (bridge)
+		pci_assign_unassigned_bridge_resources(bridge);
+	else
+		pci_assign_unassigned_bus_resources(bus);
 	pci_bus_add_devices(bus);
 	pci_unlock_rescan_remove();
 	put_device(&pdev->dev);
