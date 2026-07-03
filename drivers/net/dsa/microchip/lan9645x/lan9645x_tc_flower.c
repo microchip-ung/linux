@@ -2267,26 +2267,61 @@ static void lan9645x_tc_flower_simplify_rule(struct vcap_admin *admin,
 	}
 }
 
-/* If a template exists for the rule's chain, pin the rule to the template's
- * keyset (bypassing the dynamic keyset selection and the polymorphic merge).
+/* If a chain template pins the keyset for the rule's chain, apply it to the rule
+ * (bypassing the dynamic keyset selection and the polymorphic merge).
+ * Returns: 1 if a template was applied, 0 if no template owns this chain, or a
+ * negative errno if a template exists but the filter's declared keys do not fit
+ * its keyset.
  */
-static bool lan9645x_tc_flower_use_template(struct lan9645x_port *port,
-					    struct flow_cls_offload *fco,
-					    struct vcap_admin *admin,
-					    struct vcap_rule *vrule)
+static int lan9645x_tc_flower_use_template(struct lan9645x_port *port,
+					   struct flow_cls_offload *fco,
+					   struct vcap_admin *admin,
+					   struct vcap_rule *vrule)
 {
 	struct lan9645x_tc_flower_template *ftp;
+	struct vcap_keyset_list matches = {};
+	enum vcap_keyfield_set keysets[10];
+	bool fits = false;
+	int i;
 
 	list_for_each_entry(ftp, &port->tc_templates, list) {
 		if (ftp->owner != LAN9645X_KEYSET_OWNER_TEMPLATE ||
 		    ftp->cid != fco->common.chain_index)
 			continue;
 
-		vcap_set_rule_set_keyset(vrule, ftp->keyset);
+		/* Order matters: simplify first so the fit check sees the same
+		 * keys the template selection did.
+		 */
 		lan9645x_tc_flower_simplify_rule(admin, vrule, ftp->l3_proto);
-		return true;
+
+		/* The template pins a single keyset. Reject a filter whose keys
+		 * cannot be represented in that keyset instead of silently
+		 * folding/dropping keys (e.g. matching only one of a declared
+		 * SMAC/DMAC or SIP/DIP pair): vcap_rule_find_keysets() lists the
+		 * keysets that hold ALL the rule's keys; the template's keyset
+		 * must be one of them.
+		 */
+		matches.keysets = keysets;
+		matches.max = ARRAY_SIZE(keysets);
+		if (vcap_rule_find_keysets(vrule, &matches))
+			for (i = 0; i < matches.cnt; ++i)
+				if (matches.keysets[i] == ftp->keyset) {
+					fits = true;
+					break;
+				}
+
+		if (!fits) {
+			NL_SET_ERR_MSG_FMT_MOD(fco->common.extack,
+					       "filter keys do not fit the chain template keyset %s",
+					       lan9645x_vcap_keyset_name(port->lan9645x,
+									 ftp->keyset));
+			return -EINVAL;
+		}
+
+		vcap_set_rule_set_keyset(vrule, ftp->keyset);
+		return 1;
 	}
-	return false;
+	return 0;
 }
 
 static int lan9645x_tc_flower_template_create(struct lan9645x_port *port,
@@ -2558,7 +2593,10 @@ int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,
 	if (err)
 		goto out;
 
-	if (lan9645x_tc_flower_use_template(p, f, admin, vrule)) {
+	err = lan9645x_tc_flower_use_template(p, f, admin, vrule);
+	if (err < 0)
+		goto out;
+	if (err > 0) {
 		/* A template pins a single keyset: add exactly one rule and
 		 * skip the dynamic keyset selection / polymorphic merge.
 		 */
