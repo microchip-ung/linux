@@ -163,6 +163,7 @@ int lan9645x_frer_cs_cnt_clear(struct lan9645x_nl_frer *frer,
 	}
 
 	/* mutex_lock(&lan9645x->stats_lock); */
+	lan9645x_frer_update_cs_stats(frer, cs_id);
 	cnt = &frer->cs_cnt[cs_id];
 	/* memset(cnt, 0x00, sizeof(*cnt)); */
 	cnt->out_of_order_packets = 0;
@@ -643,6 +644,7 @@ int lan9645x_frer_ms_cnt_clear(struct lan9645x_nl_frer *frer,
 
 	id = ms_id + i;
 	/* mutex_lock(&lan9645x->stats_lock); */
+	lan9645x_frer_update_ms_stats(frer, id);
 	cnt = &frer->ms_cnt[id];
 	cnt->out_of_order_packets = 0;
 	cnt->rogue_packets = 0;
