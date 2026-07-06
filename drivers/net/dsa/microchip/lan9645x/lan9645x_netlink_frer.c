@@ -895,6 +895,7 @@ int lan9645x_netlink_frer_init(struct lan9645x *lan9645x)
 	if (err) {
 		dev_err(lan9645x->dev, "genl_register_family '%s' failed",
 			lan9645x_frer_genl_family.name);
+		lan9645x_frer_deinit(nl_frer);
 		return err;
 	}
 
@@ -906,6 +907,8 @@ int lan9645x_netlink_frer_init(struct lan9645x *lan9645x)
 
 void lan9645x_netlink_frer_uninit(void)
 {
+	if (nl_frer)
+		lan9645x_frer_deinit(nl_frer);
 	nl_frer = NULL;
 	genl_unregister_family(&lan9645x_frer_genl_family);
 }

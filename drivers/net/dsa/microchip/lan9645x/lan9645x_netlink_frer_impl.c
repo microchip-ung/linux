@@ -13,6 +13,8 @@
 static struct mchp_frer_stream_cfg cs_def_cfg;
 static struct mchp_frer_stream_cfg ms_def_cfg;
 
+static void lan9645x_frer_stats_work(struct work_struct *work);
+
 static int lan9645x_frer_cs_cfg_update(struct lan9645x_nl_frer *frer,
 				       const u16 cs_id)
 {
@@ -107,7 +109,7 @@ static void lan9645x_frer_update_cs_stats(struct lan9645x_nl_frer *frer,
 	struct lan9645x_frer_prev_cnt *prev = &frer->cs_prev_cnt[cs_id];
 	struct lan9645x *lan9645x = frer->lan9645x;
 
-	/* WARN_ON(!mutex_is_locked(&lan9645x->stats_lock)); */
+	lockdep_assert_held(&frer->cnt_lock);
 
 	lan9645x_upd_cnt(&cnt->out_of_order_packets, &prev->out_of_order_packets,
 			 lan_rd(lan9645x, QSYS_CNT_CMP_OO(cs_id)));
@@ -141,10 +143,10 @@ int lan9645x_frer_cs_cnt_get(struct lan9645x_nl_frer *frer,
 		return -EINVAL;
 	}
 
-	/* mutex_lock(&lan9645x->stats_lock); */
+	mutex_lock(&frer->cnt_lock);
 	lan9645x_frer_update_cs_stats(frer, cs_id);
 	*cnt = frer->cs_cnt[cs_id];
-	/* mutex_unlock(&lan9645x->stats_lock); */
+	mutex_unlock(&frer->cnt_lock);
 	return 0;
 }
 
@@ -162,7 +164,7 @@ int lan9645x_frer_cs_cnt_clear(struct lan9645x_nl_frer *frer,
 		return -EINVAL;
 	}
 
-	/* mutex_lock(&lan9645x->stats_lock); */
+	mutex_lock(&frer->cnt_lock);
 	lan9645x_frer_update_cs_stats(frer, cs_id);
 	cnt = &frer->cs_cnt[cs_id];
 	/* memset(cnt, 0x00, sizeof(*cnt)); */
@@ -173,7 +175,7 @@ int lan9645x_frer_cs_cnt_clear(struct lan9645x_nl_frer *frer,
 	cnt->lost_packets = 0;
 	cnt->tagless_packets = 0;
 	cnt->resets = 0;
-	/* mutex_unlock(&lan9645x->stats_lock); */
+	mutex_unlock(&frer->cnt_lock);
 	return 0;
 }
 
@@ -379,6 +381,8 @@ int lan9645x_frer_init(struct lan9645x_nl_frer *frer)
 	u64 val;
 	int port;
 
+	mutex_init(&frer->cnt_lock);
+
 	/* Set FRER TicksPerSecond to 1000 */
 	/* Formular: val = ClockFrequency / (TicsPerSecond * 8 * 512) */
 	val = 1000000000000;
@@ -443,7 +447,17 @@ int lan9645x_frer_init(struct lan9645x_nl_frer *frer)
 
 	debugfs_create_file("frer_show", 0444, lan9645x->debugfs_root, frer,
 			    &lan9645x_frer_fops);
+
+	INIT_DELAYED_WORK(&frer->cnt_work, lan9645x_frer_stats_work);
+	schedule_delayed_work(&frer->cnt_work, LAN9645X_FRER_STATS_DELAY);
+
 	return 0;
+}
+
+void lan9645x_frer_deinit(struct lan9645x_nl_frer *frer)
+{
+	disable_delayed_work_sync(&frer->cnt_work);
+	mutex_destroy(&frer->cnt_lock);
 }
 
 /* Check if ms_id is within limits and if port is part of member stream */
@@ -578,7 +592,7 @@ static void lan9645x_frer_update_ms_stats(struct lan9645x_nl_frer *frer,
 	struct mchp_frer_cnt *cnt = &frer->ms_cnt[ms_id];
 	struct lan9645x *lan9645x = frer->lan9645x;
 
-	/* WARN_ON(!mutex_is_locked(&lan9645x->stats_lock)); */
+	lockdep_assert_held(&frer->cnt_lock);
 
 	lan9645x_upd_cnt(&cnt->out_of_order_packets, &prev->out_of_order_packets,
 			 lan_rd(lan9645x, QSYS_CNT_MBM_OO(ms_id)));
@@ -594,6 +608,30 @@ static void lan9645x_frer_update_ms_stats(struct lan9645x_nl_frer *frer,
 			 lan_rd(lan9645x, QSYS_CNT_MBM_TL(ms_id)));
 	lan9645x_upd_cnt(&cnt->resets, &prev->resets,
 			 lan_rd(lan9645x, QSYS_CNT_MBM_RS(ms_id)));
+}
+
+static void lan9645x_frer_update_stats_all(struct lan9645x_nl_frer *frer)
+{
+	int i;
+
+	mutex_lock(&frer->cnt_lock);
+	for (i = 0; i < LAN9645X_FRER_NUM_CSI; i++)
+		if (frer->cs_cfg[i].enable)
+			lan9645x_frer_update_cs_stats(frer, i);
+	for (i = 0; i < LAN9645X_FRER_NUM_MSI; i++)
+		if (frer->ms_cfg[i].enable)
+			lan9645x_frer_update_ms_stats(frer, i);
+	mutex_unlock(&frer->cnt_lock);
+}
+
+static void lan9645x_frer_stats_work(struct work_struct *work)
+{
+	struct lan9645x_nl_frer *frer = container_of(to_delayed_work(work),
+						     struct lan9645x_nl_frer,
+						     cnt_work);
+
+	lan9645x_frer_update_stats_all(frer);
+	schedule_delayed_work(&frer->cnt_work, LAN9645X_FRER_STATS_DELAY);
 }
 
 int lan9645x_frer_ms_cnt_get(struct lan9645x_nl_frer *frer,
@@ -616,10 +654,10 @@ int lan9645x_frer_ms_cnt_get(struct lan9645x_nl_frer *frer,
 		return i;
 
 	id = ms_id + i;
-	/* mutex_lock(&lan9645x->stats_lock); */
+	mutex_lock(&frer->cnt_lock);
 	lan9645x_frer_update_ms_stats(frer, id);
 	*cnt = frer->ms_cnt[id];
-	/* mutex_unlock(&lan9645x->stats_lock); */
+	mutex_unlock(&frer->cnt_lock);
 	return 0;
 }
 
@@ -643,7 +681,7 @@ int lan9645x_frer_ms_cnt_clear(struct lan9645x_nl_frer *frer,
 		return i;
 
 	id = ms_id + i;
-	/* mutex_lock(&lan9645x->stats_lock); */
+	mutex_lock(&frer->cnt_lock);
 	lan9645x_frer_update_ms_stats(frer, id);
 	cnt = &frer->ms_cnt[id];
 	cnt->out_of_order_packets = 0;
@@ -653,7 +691,7 @@ int lan9645x_frer_ms_cnt_clear(struct lan9645x_nl_frer *frer,
 	cnt->lost_packets = 0;
 	cnt->tagless_packets = 0;
 	cnt->resets = 0;
-	/* mutex_unlock(&lan9645x->stats_lock); */
+	mutex_unlock(&frer->cnt_lock);
 	return 0;
 }
 
