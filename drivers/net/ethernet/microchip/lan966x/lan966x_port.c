@@ -623,6 +623,16 @@ void lan966x_port_init(struct lan966x_port *port)
 		ANA_PORT_CFG_LEARN_ENA,
 		lan966x, ANA_PORT_CFG(port->chip_port));
 
+	lan_rmw(DEV_MAC_TAGS_CFG_VLAN_AWR_ENA_SET(1) |
+		DEV_MAC_TAGS_CFG_VLAN_DBL_AWR_ENA_SET(1) |
+		DEV_MAC_TAGS_CFG_VLAN_LEN_AWR_ENA_SET(1) |
+		DEV_MAC_TAGS_CFG_TAG_ID_SET(ETH_P_8021AD),
+		DEV_MAC_TAGS_CFG_VLAN_AWR_ENA |
+		DEV_MAC_TAGS_CFG_VLAN_DBL_AWR_ENA |
+		DEV_MAC_TAGS_CFG_VLAN_LEN_AWR_ENA |
+		DEV_MAC_TAGS_CFG_TAG_ID,
+		lan966x, DEV_MAC_TAGS_CFG(port->chip_port));
+
 	lan966x_port_config_down(port);
 
 	if (lan966x->fdma)
