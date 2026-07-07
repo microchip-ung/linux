@@ -554,6 +554,9 @@ bool lan966x_hw_offload(struct lan966x *lan966x, u32 port, struct sk_buff *skb)
 {
 	u32 val;
 
+	if (is_link_local_ether_addr(eth_hdr(skb)->h_dest))
+		return false;
+
 	/* The IGMP and MLD frames are not forward by the HW if
 	 * multicast snooping is enabled, therefore don't mark as
 	 * offload to allow the SW to forward the frames accordingly.
