@@ -122,19 +122,25 @@ int lan966x_vlan_port_set_vid(struct lan966x_port *port, u16 vid,
 	struct lan966x *lan966x = port->lan966x;
 
 	/* Egress vlan classification */
-	if (untagged && port->vid != vid) {
-		if (port->vid) {
-			dev_err(lan966x->dev,
-				"Port already has a native VLAN: %d\n",
-				port->vid);
-			return -EBUSY;
+	if (untagged) {
+		if (port->vid != vid) {
+			if (port->vid) {
+				dev_err(lan966x->dev,
+					"Port already has a native VLAN: %d\n",
+					port->vid);
+				return -EBUSY;
+			}
+			port->vid = vid;
 		}
-		port->vid = vid;
+	} else if (port->vid == vid) {
+		port->vid = 0;
 	}
 
 	/* Default ingress vlan classification */
 	if (pvid)
 		port->pvid = vid;
+	else if (port->pvid == vid)
+		port->pvid = 0;
 
 	return 0;
 }
