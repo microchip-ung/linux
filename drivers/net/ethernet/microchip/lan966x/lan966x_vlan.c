@@ -213,8 +213,8 @@ void lan966x_vlan_port_apply(struct lan966x_port *port)
 
 	lan_wr(val, lan966x, ANA_DROP_CFG(port->chip_port));
 
-	/* Egress configuration (REW_TAG_CFG): VLAN tag type to 8021Q */
-	val = REW_TAG_CFG_TAG_TPID_CFG_SET(0);
+	/* Egress configuration (REW_TAG_CFG) */
+	val = REW_TAG_CFG_TAG_TPID_CFG_SET(3);
 	if (port->vlan_aware) {
 		if (port->vid)
 			/* Tag all frames except when VID == DEFAULT_VLAN */
@@ -228,8 +228,8 @@ void lan966x_vlan_port_apply(struct lan966x_port *port)
 		REW_TAG_CFG_TAG_TPID_CFG | REW_TAG_CFG_TAG_CFG,
 		lan966x, REW_TAG_CFG(port->chip_port));
 
-	/* Set default VLAN and tag type to 8021Q */
-	lan_rmw(REW_PORT_VLAN_CFG_PORT_TPID_SET(ETH_P_8021Q) |
+	/* Set default VLAN and port tag TPID */
+	lan_rmw(REW_PORT_VLAN_CFG_PORT_TPID_SET(ETH_P_8021AD) |
 		REW_PORT_VLAN_CFG_PORT_VID_SET(port->vid),
 		REW_PORT_VLAN_CFG_PORT_TPID |
 		REW_PORT_VLAN_CFG_PORT_VID,
