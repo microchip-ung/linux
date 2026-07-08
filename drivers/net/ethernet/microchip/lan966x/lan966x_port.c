@@ -587,8 +587,8 @@ static void lan966x_port_qos_dscp_rewr_set(struct lan966x_port *port,
 		port->lan966x, REW_DSCP_CFG(port->chip_port));
 
 	/* Map each classified Qos class and DP to classified DSCP value */
-	for (int i = 0; i < ARRAY_SIZE(qos->map); i++) {
-		dscp = qos->map[i];
+	for (int i = 0; i < 2 * NUM_PRIO_QUEUES; i++) {
+		dscp = qos->map[i % NUM_PRIO_QUEUES];
 
 		lan_rmw(ANA_DSCP_REWR_CFG_DSCP_QOS_REWR_VAL_SET(dscp),
 			ANA_DSCP_REWR_CFG_DSCP_QOS_REWR_VAL,
