@@ -669,10 +669,10 @@ int lan966x_vlan_port_set_vid(struct lan966x_port *port,
 			      u16 vid,
 			      bool pvid,
 			      bool untagged);
-void lan966x_vlan_port_add_vlan(struct lan966x_port *port,
-				u16 vid,
-				bool pvid,
-				bool untagged);
+int lan966x_vlan_port_add_vlan(struct lan966x_port *port,
+			       u16 vid,
+			       bool pvid,
+			       bool untagged);
 void lan966x_vlan_port_del_vlan(struct lan966x_port *port, u16 vid);
 void lan966x_vlan_port_add_host_vlan(struct lan966x_port *port);
 void lan966x_vlan_port_del_host_vlan(struct lan966x_port *port);

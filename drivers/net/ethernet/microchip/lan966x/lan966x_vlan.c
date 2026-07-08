@@ -236,12 +236,17 @@ void lan966x_vlan_port_apply(struct lan966x_port *port)
 		lan966x, REW_PORT_VLAN_CFG(port->chip_port));
 }
 
-void lan966x_vlan_port_add_vlan(struct lan966x_port *port,
-				u16 vid,
-				bool pvid,
-				bool untagged)
+int lan966x_vlan_port_add_vlan(struct lan966x_port *port,
+			       u16 vid,
+			       bool pvid,
+			       bool untagged)
 {
 	struct lan966x *lan966x = port->lan966x;
+	int err;
+
+	err = lan966x_vlan_port_set_vid(port, vid, pvid, untagged);
+	if (err)
+		return err;
 
 	/* If the CPU(br) is already part of the vlan then add the fdb
 	 * entries in MAC table to copy the frames to the CPU(br).
@@ -254,9 +259,10 @@ void lan966x_vlan_port_add_vlan(struct lan966x_port *port,
 		lan966x_mdb_write_entries(lan966x, vid);
 	}
 
-	lan966x_vlan_port_set_vid(port, vid, pvid, untagged);
 	lan966x_vlan_port_add_vlan_mask(port, vid);
 	lan966x_vlan_port_apply(port);
+
+	return 0;
 }
 
 void lan966x_vlan_port_add_host_vlan(struct lan966x_port *port)

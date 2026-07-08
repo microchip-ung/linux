@@ -590,19 +590,25 @@ static int lan966x_switchdev_event(struct notifier_block *nb,
 }
 
 static int lan966x_handle_port_vlan_add(struct lan966x_port *port,
-					const struct switchdev_obj *obj)
+					const struct switchdev_obj *obj,
+					struct netlink_ext_ack *extack)
 {
 	const struct switchdev_obj_port_vlan *v = SWITCHDEV_OBJ_PORT_VLAN(obj);
 	struct lan966x *lan966x = port->lan966x;
+	int err;
 
-	if (!netif_is_bridge_master(obj->orig_dev))
-		lan966x_vlan_port_add_vlan(port, v->vid,
-					   v->flags & BRIDGE_VLAN_INFO_PVID,
-					   v->flags & BRIDGE_VLAN_INFO_UNTAGGED);
-	else
+	if (netif_is_bridge_master(obj->orig_dev)) {
 		lan966x_vlan_cpu_add_vlan(lan966x, v->vid);
+		return 0;
+	}
 
-	return 0;
+	err = lan966x_vlan_port_add_vlan(port, v->vid,
+					 v->flags & BRIDGE_VLAN_INFO_PVID,
+					 v->flags & BRIDGE_VLAN_INFO_UNTAGGED);
+	if (err)
+		NL_SET_ERR_MSG_MOD(extack, "Failed to add VLAN");
+
+	return err;
 }
 
 static int lan966x_handle_port_obj_add(struct net_device *dev, const void *ctx,
@@ -617,7 +623,7 @@ static int lan966x_handle_port_obj_add(struct net_device *dev, const void *ctx,
 
 	switch (obj->id) {
 	case SWITCHDEV_OBJ_ID_PORT_VLAN:
-		err = lan966x_handle_port_vlan_add(port, obj);
+		err = lan966x_handle_port_vlan_add(port, obj, extack);
 		break;
 	case SWITCHDEV_OBJ_ID_PORT_MDB:
 	case SWITCHDEV_OBJ_ID_HOST_MDB:
