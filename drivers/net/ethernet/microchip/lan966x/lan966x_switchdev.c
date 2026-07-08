@@ -277,6 +277,8 @@ static int lan966x_port_bridge_join(struct lan966x_port *port,
 
 	lan966x->bridge_mask |= BIT(port->chip_port);
 
+	lan966x_vlan_port_del_host_vlan(port);
+
 	flags.mask = BR_LEARNING | BR_FLOOD | BR_MCAST_FLOOD | BR_BCAST_FLOOD;
 	flags.val = flags.mask;
 	lan966x_port_bridge_flags(port, flags);
@@ -300,6 +302,7 @@ static void lan966x_port_bridge_leave(struct lan966x_port *port,
 		lan966x->bridge = NULL;
 
 	/* Set the port back to host mode */
+	lan966x_vlan_port_add_host_vlan(port);
 	lan966x_vlan_port_set_vlan_aware(port, false);
 	lan966x_vlan_port_set_vid(port, HOST_PVID, false, false);
 	lan966x_vlan_port_apply(port);

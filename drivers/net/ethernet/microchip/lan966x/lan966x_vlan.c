@@ -259,6 +259,16 @@ void lan966x_vlan_port_add_vlan(struct lan966x_port *port,
 	lan966x_vlan_port_apply(port);
 }
 
+void lan966x_vlan_port_add_host_vlan(struct lan966x_port *port)
+{
+	lan966x_vlan_port_add_vlan_mask(port, HOST_PVID);
+}
+
+void lan966x_vlan_port_del_host_vlan(struct lan966x_port *port)
+{
+	lan966x_vlan_port_del_vlan_mask(port, HOST_PVID);
+}
+
 void lan966x_vlan_port_del_vlan(struct lan966x_port *port, u16 vid)
 {
 	struct lan966x *lan966x = port->lan966x;
