@@ -8,6 +8,7 @@
 #include "sparx5_main.h"
 
 #include "afi_api.h"
+#include "afi_netlink.h"
 
 #define SPARX5_AFI_SLOW_INJ_CNT			64
 #define SPARX5_AFI_FRM_CNT			64
@@ -675,9 +676,29 @@ struct afi_operations sparx5_afi_operations = {
 	.dti_seq_cnt_get = sparx5_afi_dti_seq_cnt_get,
 };
 
+static int sparx5_afi_nl_port_of(void *priv, struct net_device *ndev)
+{
+	struct sparx5 *sparx5 = priv;
+	struct sparx5_port *port;
+
+	if (!sparx5_netdevice_check(ndev))
+		return -ENODEV;
+
+	port = netdev_priv(ndev);
+	if (port->sparx5 != sparx5)
+		return -ENODEV;
+
+	return port->portno;
+}
+
+static const struct afi_nl_ops sparx5_afi_nl_ops = {
+	.port_of = sparx5_afi_nl_port_of,
+};
+
 int sparx5_afi_init(struct sparx5 *sparx5)
 {
 	struct afi_control *afi_ctrl;
+	int ret;
 
 	afi_ctrl = kzalloc(sizeof(*afi_ctrl), GFP_KERNEL);
 	if (!afi_ctrl)
@@ -697,11 +718,28 @@ int sparx5_afi_init(struct sparx5 *sparx5)
 	afi_ctrl->priv = sparx5;
 	sparx5->afi_ctrl = afi_ctrl;
 
-	return afi_init(afi_ctrl);
+	ret = afi_init(afi_ctrl);
+	if (ret)
+		goto err_free;
+
+	ret = afi_netlink_register(afi_ctrl, sparx5, &sparx5_afi_nl_ops);
+	if (ret)
+		goto err_deinit;
+
+	return 0;
+
+err_deinit:
+	afi_deinit(afi_ctrl);
+err_free:
+	kfree(afi_ctrl);
+	sparx5->afi_ctrl = NULL;
+	return ret;
 }
 
 void sparx5_afi_deinit(struct sparx5 *sparx5)
 {
+	afi_netlink_unregister(sparx5->afi_ctrl);
+
 	afi_deinit(sparx5->afi_ctrl);
 
 	kfree(sparx5->afi_ctrl);
