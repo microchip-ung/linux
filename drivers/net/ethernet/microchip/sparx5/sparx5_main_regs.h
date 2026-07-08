@@ -149,6 +149,147 @@ extern const struct sparx5_regs *regs;
 #define AFI_FRM_ENTRY_PART1_PART1_GET(x)\
 	FIELD_GET(AFI_FRM_ENTRY_PART1_PART1, x)
 
+/* AFI:DTI_TBL:DTI_MODE */
+#define AFI_DTI_MODE(g)                                                        \
+	__REG(TARGET_AFI, 0, 1, regs->gaddr[GA_AFI_DTI_TBL], g,                \
+	      regs->gcnt[GC_AFI_DTI_TBL], 32, 0, 0, 1, 4)
+
+#define AFI_DTI_MODE_MODE                        GENMASK(1, 0)
+#define AFI_DTI_MODE_MODE_SET(x)\
+	FIELD_PREP(AFI_DTI_MODE_MODE, x)
+#define AFI_DTI_MODE_MODE_GET(x)\
+	FIELD_GET(AFI_DTI_MODE_MODE, x)
+
+#define AFI_DTI_MODE_TRAILING_DELAY_SEQ_CNT      GENMASK(7, 2)
+#define AFI_DTI_MODE_TRAILING_DELAY_SEQ_CNT_SET(x)\
+	FIELD_PREP(AFI_DTI_MODE_TRAILING_DELAY_SEQ_CNT, x)
+#define AFI_DTI_MODE_TRAILING_DELAY_SEQ_CNT_GET(x)\
+	FIELD_GET(AFI_DTI_MODE_TRAILING_DELAY_SEQ_CNT, x)
+
+#define AFI_DTI_MODE_FRM_INJ_CNT                 GENMASK(15, 8)
+#define AFI_DTI_MODE_FRM_INJ_CNT_SET(x)\
+	FIELD_PREP(AFI_DTI_MODE_FRM_INJ_CNT, x)
+#define AFI_DTI_MODE_FRM_INJ_CNT_GET(x)\
+	FIELD_GET(AFI_DTI_MODE_FRM_INJ_CNT, x)
+
+#define AFI_DTI_MODE_FC_POSTPONE_LEN             GENMASK(23, 16)
+#define AFI_DTI_MODE_FC_POSTPONE_LEN_SET(x)\
+	FIELD_PREP(AFI_DTI_MODE_FC_POSTPONE_LEN, x)
+#define AFI_DTI_MODE_FC_POSTPONE_LEN_GET(x)\
+	FIELD_GET(AFI_DTI_MODE_FC_POSTPONE_LEN, x)
+
+#define AFI_DTI_MODE_DTI_NEXT\
+	GENMASK(regs->fsize[FW_AFI_DTI_MODE_DTI_NEXT] + 24 - 1, 24)
+#define AFI_DTI_MODE_DTI_NEXT_SET(x)\
+	spx5_field_prep(AFI_DTI_MODE_DTI_NEXT, x)
+#define AFI_DTI_MODE_DTI_NEXT_GET(x)\
+	spx5_field_get(AFI_DTI_MODE_DTI_NEXT, x)
+
+#define AFI_DTI_MODE_FC_POSTPONE_MODE            BIT(31)
+#define AFI_DTI_MODE_FC_POSTPONE_MODE_SET(x)\
+	FIELD_PREP(AFI_DTI_MODE_FC_POSTPONE_MODE, x)
+#define AFI_DTI_MODE_FC_POSTPONE_MODE_GET(x)\
+	FIELD_GET(AFI_DTI_MODE_FC_POSTPONE_MODE, x)
+
+/* AFI:DTI_TBL:DTI_PORT_QU */
+#define AFI_DTI_PORT_QU(g)                                                     \
+	__REG(TARGET_AFI, 0, 1, regs->gaddr[GA_AFI_DTI_TBL], g,                \
+	      regs->gcnt[GC_AFI_DTI_TBL], 32, 4, 0, 1, 4)
+
+#define AFI_DTI_PORT_QU_PORT_NUM\
+	GENMASK(regs->fsize[FW_AFI_DTI_PORT_QU_PORT_NUM] + 0 - 1, 0)
+#define AFI_DTI_PORT_QU_PORT_NUM_SET(x)\
+	spx5_field_prep(AFI_DTI_PORT_QU_PORT_NUM, x)
+#define AFI_DTI_PORT_QU_PORT_NUM_GET(x)\
+	spx5_field_get(AFI_DTI_PORT_QU_PORT_NUM, x)
+
+#define AFI_DTI_PORT_QU_QU_NUM\
+	GENMASK(regs->fsize[FW_AFI_DTI_PORT_QU_QU_NUM] + 8 - 1, 8)
+#define AFI_DTI_PORT_QU_QU_NUM_SET(x)\
+	spx5_field_prep(AFI_DTI_PORT_QU_QU_NUM, x)
+#define AFI_DTI_PORT_QU_QU_NUM_GET(x)\
+	spx5_field_get(AFI_DTI_PORT_QU_QU_NUM, x)
+
+/* AFI:DTI_TBL:DTI_FRM */
+#define AFI_DTI_FRM(g)                                                         \
+	__REG(TARGET_AFI, 0, 1, regs->gaddr[GA_AFI_DTI_TBL], g,                \
+	      regs->gcnt[GC_AFI_DTI_TBL], 32, 8, 0, 1, 4)
+
+#define AFI_DTI_FRM_FIRST_FRM_PTR\
+	GENMASK(regs->fsize[FW_AFI_DTI_FRM_FIRST_FRM_PTR] + 0 - 1, 0)
+#define AFI_DTI_FRM_FIRST_FRM_PTR_SET(x)\
+	spx5_field_prep(AFI_DTI_FRM_FIRST_FRM_PTR, x)
+#define AFI_DTI_FRM_FIRST_FRM_PTR_GET(x)\
+	spx5_field_get(AFI_DTI_FRM_FIRST_FRM_PTR, x)
+
+#define AFI_DTI_FRM_NEXT_FRM_PTR\
+	GENMASK(regs->fsize[FW_AFI_DTI_FRM_NEXT_FRM_PTR] + 16 - 1, 16)
+#define AFI_DTI_FRM_NEXT_FRM_PTR_SET(x)\
+	spx5_field_prep(AFI_DTI_FRM_NEXT_FRM_PTR, x)
+#define AFI_DTI_FRM_NEXT_FRM_PTR_GET(x)\
+	spx5_field_get(AFI_DTI_FRM_NEXT_FRM_PTR, x)
+
+/* AFI:DTI_TBL:DTI_CNT */
+#define AFI_DTI_CNT(g)                                                         \
+	__REG(TARGET_AFI, 0, 1, regs->gaddr[GA_AFI_DTI_TBL], g,                \
+	      regs->gcnt[GC_AFI_DTI_TBL], 32, 12, 0, 1, 4)
+
+#define AFI_DTI_CNT_CNT                          GENMASK(30, 0)
+#define AFI_DTI_CNT_CNT_SET(x)\
+	FIELD_PREP(AFI_DTI_CNT_CNT, x)
+#define AFI_DTI_CNT_CNT_GET(x)\
+	FIELD_GET(AFI_DTI_CNT_CNT, x)
+
+/* AFI:DTI_TBL:DTI_DURATION */
+#define AFI_DTI_DURATION(g)                                                    \
+	__REG(TARGET_AFI, 0, 1, regs->gaddr[GA_AFI_DTI_TBL], g,                \
+	      regs->gcnt[GC_AFI_DTI_TBL], 32, 16, 0, 1, 4)
+
+#define AFI_DTI_DURATION_DURATION                GENMASK(30, 0)
+#define AFI_DTI_DURATION_DURATION_SET(x)\
+	FIELD_PREP(AFI_DTI_DURATION_DURATION, x)
+#define AFI_DTI_DURATION_DURATION_GET(x)\
+	FIELD_GET(AFI_DTI_DURATION_DURATION, x)
+
+/* AFI:DTI_MISC:DTI_FC_CNT_DOWN */
+#define AFI_DTI_FC_CNT_DOWN(g)                                                 \
+	__REG(TARGET_AFI, 0, 1, regs->gaddr[GA_AFI_DTI_MISC], g,               \
+	      regs->gcnt[GC_AFI_DTI_MISC], 12, 0, 0, 1, 4)
+
+#define AFI_DTI_FC_CNT_DOWN_FC_CNT_DOWN          GENMASK(7, 0)
+#define AFI_DTI_FC_CNT_DOWN_FC_CNT_DOWN_SET(x)\
+	FIELD_PREP(AFI_DTI_FC_CNT_DOWN_FC_CNT_DOWN, x)
+#define AFI_DTI_FC_CNT_DOWN_FC_CNT_DOWN_GET(x)\
+	FIELD_GET(AFI_DTI_FC_CNT_DOWN_FC_CNT_DOWN, x)
+
+/* AFI:DTI_MISC:DTI_CNT_DOWN */
+#define AFI_DTI_CNT_DOWN(g)                                                    \
+	__REG(TARGET_AFI, 0, 1, regs->gaddr[GA_AFI_DTI_MISC], g,               \
+	      regs->gcnt[GC_AFI_DTI_MISC], 12, 4, 0, 1, 4)
+
+#define AFI_DTI_CNT_DOWN_CNT_DOWN                GENMASK(30, 0)
+#define AFI_DTI_CNT_DOWN_CNT_DOWN_SET(x)\
+	FIELD_PREP(AFI_DTI_CNT_DOWN_CNT_DOWN, x)
+#define AFI_DTI_CNT_DOWN_CNT_DOWN_GET(x)\
+	FIELD_GET(AFI_DTI_CNT_DOWN_CNT_DOWN, x)
+
+/* AFI:DTI_MISC:DTI_CTRL */
+#define AFI_DTI_CTRL(g)                                                        \
+	__REG(TARGET_AFI, 0, 1, regs->gaddr[GA_AFI_DTI_MISC], g,               \
+	      regs->gcnt[GC_AFI_DTI_MISC], 12, 8, 0, 1, 4)
+
+#define AFI_DTI_CTRL_ENA                         BIT(0)
+#define AFI_DTI_CTRL_ENA_SET(x)\
+	FIELD_PREP(AFI_DTI_CTRL_ENA, x)
+#define AFI_DTI_CTRL_ENA_GET(x)\
+	FIELD_GET(AFI_DTI_CTRL_ENA, x)
+
+#define AFI_DTI_CTRL_BW                          BIT(1)
+#define AFI_DTI_CTRL_BW_SET(x)\
+	FIELD_PREP(AFI_DTI_CTRL_BW, x)
+#define AFI_DTI_CTRL_BW_GET(x)\
+	FIELD_GET(AFI_DTI_CTRL_BW, x)
+
 /* AFI:TTI_TBL:TTI_PORT_QU */
 #define AFI_TTI_PORT_QU(g)                                                     \
 	__REG(TARGET_AFI, 0, 1, 0, g, regs->gcnt[GC_AFI_TTI_TBL], 32, 0, 0, 1, 4)
