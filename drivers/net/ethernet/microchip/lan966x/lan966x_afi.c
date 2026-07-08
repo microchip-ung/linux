@@ -7,6 +7,7 @@
 #include "lan966x_main.h"
 
 #include "afi_api.h"
+#include "afi_netlink.h"
 
 #define LAN966X_AFI_SLOW_INJ_CNT		64
 #define LAN966X_AFI_FRM_CNT			64
@@ -624,9 +625,29 @@ struct afi_operations lan966x_afi_operations = {
 	.dti_seq_cnt_get = lan966x_afi_dti_seq_cnt_get,
 };
 
+static int lan966x_afi_nl_port_of(void *priv, struct net_device *ndev)
+{
+	struct lan966x *lan966x = priv;
+	struct lan966x_port *port;
+
+	if (!lan966x_netdevice_check(ndev))
+		return -ENODEV;
+
+	port = netdev_priv(ndev);
+	if (port->lan966x != lan966x)
+		return -ENODEV;
+
+	return port->chip_port;
+}
+
+static const struct afi_nl_ops lan966x_afi_nl_ops = {
+	.port_of = lan966x_afi_nl_port_of,
+};
+
 int lan966x_afi_init(struct lan966x *lan966x)
 {
 	struct afi_control *afi_ctrl;
+	int ret;
 
 	afi_ctrl = kzalloc(sizeof(*afi_ctrl), GFP_KERNEL);
 	if (!afi_ctrl)
@@ -637,11 +658,28 @@ int lan966x_afi_init(struct lan966x *lan966x)
 	afi_ctrl->priv = lan966x;
 	lan966x->afi_ctrl = afi_ctrl;
 
-	return afi_init(afi_ctrl);
+	ret = afi_init(afi_ctrl);
+	if (ret)
+		goto err_free;
+
+	ret = afi_netlink_register(afi_ctrl, lan966x, &lan966x_afi_nl_ops);
+	if (ret)
+		goto err_deinit;
+
+	return 0;
+
+err_deinit:
+	afi_deinit(afi_ctrl);
+err_free:
+	kfree(afi_ctrl);
+	lan966x->afi_ctrl = NULL;
+	return ret;
 }
 
 void lan966x_afi_deinit(struct lan966x *lan966x)
 {
+	afi_netlink_unregister(lan966x->afi_ctrl);
+
 	afi_deinit(lan966x->afi_ctrl);
 
 	kfree(lan966x->afi_ctrl);
