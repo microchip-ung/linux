@@ -57,7 +57,7 @@ static void lan9645x_qos_port_init(struct lan9645x_port *p)
 	mutex_init(&p->qos_lock);
 
 	p->qos.pfc_enable = 0;
-	p->qos.i_mode.tag_map_enable = false;
+	p->qos.i_mode.tag_map_enable = true;
 	p->qos.i_mode.dscp_map_enable = false;
 	/* Setup ingress 1:1 mapping between tag [PCP,DEI] and [PRIO,DPL].
 	 * PCP determines the priority (0..7) of the frame and
