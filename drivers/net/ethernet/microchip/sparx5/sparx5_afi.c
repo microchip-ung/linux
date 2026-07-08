@@ -14,27 +14,29 @@
 #define SPARX5_PRIO_SUPER			8
 
 #define SPARX5_AFI_FRM_PART0_FP_POS		0
-#define SPARX5_AFI_FRM_PART0_DSTP_POS		14
+#define SPARX5_AFI_FRM_PART0_DSTP_POS		15
 #define SPARX5_AFI_FRM_PART1_FSHORT_POS		0
 #define SPARX5_AFI_FRM_PART1_EPRIO_POS		1
 
 #define SPARX5_AFI_FRM_INFO_FP_MASK		GENMASK(14, 0)
-#define SPARX5_AFI_FRM_INFO_DSTP_MASK		GENMASK(20, 14)
-#define SPARX5_AFI_FRM_INFO_FSHORT_MASK		GENMASK(23, 20)
+#define SPARX5_AFI_FRM_INFO_DSTP_MASK		GENMASK(21, 15)
+#define SPARX5_AFI_FRM_INFO_EPRIO_MASK		GENMASK(24, 22)
+#define SPARX5_AFI_FRM_INFO_FSHORT_MASK		GENMASK(25, 25)
 
 #define LAN969X_AFI_FRM_PART0_FP_POS		0
 #define LAN969X_AFI_FRM_PART0_DSTP_POS		14
 #define LAN969X_AFI_FRM_PART1_FSHORT_POS	0
 #define LAN969X_AFI_FRM_PART1_EPRIO_POS		1
 
-#define LAN969X_AFI_FRM_INFO_FP_MASK		GENMASK(14, 0)
-#define LAN969X_AFI_FRM_INFO_DSTP_MASK		GENMASK(20, 14)
-#define LAN969X_AFI_FRM_INFO_FSHORT_MASK	GENMASK(23, 20)
+#define LAN969X_AFI_FRM_INFO_FP_MASK		GENMASK(13, 0)
+#define LAN969X_AFI_FRM_INFO_DSTP_MASK		GENMASK(19, 14)
+#define LAN969X_AFI_FRM_INFO_EPRIO_MASK		GENMASK(22, 20)
+#define LAN969X_AFI_FRM_INFO_FSHORT_MASK	GENMASK(23, 23)
 
 #define SPARX5_AFI_FRM_TBL_PART1_RM_POS		4
 
-#define SPARX5_AFI_FRM_TBL_PART1_RM_MASK	GENMASK(5, 4)
-#define SPARX5_AFI_FRM_TBL_PART1_GONE_MASK	GENMASK(6, 5)
+#define SPARX5_AFI_FRM_TBL_PART1_RM_MASK	GENMASK(4, 4)
+#define SPARX5_AFI_FRM_TBL_PART1_GONE_MASK	GENMASK(5, 5)
 
 #define SPARX5_AFI_TTI_TBL_TIMER_LEN_WID	9
 
@@ -271,8 +273,7 @@ static inline int sparx5_afi_frm_get_ctrl(struct sparx5 *sparx5)
 }
 
 static bool sparx5_afi_frm_hijack(struct sparx5 *sparx5,
-				  s32 frm_idx,
-				  uint32_t prio)
+				  s32 frm_idx)
 {
 	struct afi_frm *frm = &sparx5->afi_ctrl->frm_tbl[frm_idx];
 	u32 frm_info, ret, val;
@@ -304,7 +305,8 @@ static bool sparx5_afi_frm_hijack(struct sparx5 *sparx5,
 					       frm_info);
 		frm->frm_info.fshort = FIELD_GET(SPARX5_AFI_FRM_INFO_FSHORT_MASK,
 						 frm_info);
-		frm->frm_info.eprio = prio;
+		frm->frm_info.eprio = FIELD_GET(SPARX5_AFI_FRM_INFO_EPRIO_MASK,
+						frm_info);
 
 		/* Setup FRM_TBL entry */
 		spx5_rmw(AFI_FRM_NXT_AND_TYPE_ENTRY_TYPE_SET(0),
@@ -324,7 +326,8 @@ static bool sparx5_afi_frm_hijack(struct sparx5 *sparx5,
 					       frm_info);
 		frm->frm_info.fshort = FIELD_GET(LAN969X_AFI_FRM_INFO_FSHORT_MASK,
 						 frm_info);
-		frm->frm_info.eprio = prio;
+		frm->frm_info.eprio = FIELD_GET(LAN969X_AFI_FRM_INFO_EPRIO_MASK,
+						frm_info);
 
 		/* Setup FRM_TBL entry */
 		spx5_rmw(AFI_FRM_NXT_AND_TYPE_ENTRY_TYPE_SET(0),
@@ -350,8 +353,7 @@ static int sparx5_afi_tti_frm_hijack(struct afi_control *afi, u32 tti_idx)
 	struct sparx5 *sparx5 = afi->priv;
 
 	return sparx5_afi_frm_hijack(sparx5,
-				     afi->tti_tbl[tti_idx].frm_idx,
-				     afi->tti_tbl[tti_idx].prio);
+				     afi->tti_tbl[tti_idx].frm_idx);
 }
 
 static int sparx5_afi_tti_frm_rm_inj(struct afi_control *afi, u32 tti_idx)
