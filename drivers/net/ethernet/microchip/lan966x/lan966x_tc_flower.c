@@ -1133,23 +1133,33 @@ static int lan966x_tc_flower_add(struct lan966x_port *port,
 			if (err)
 				goto out;
 			break;
-		case FLOW_ACTION_REDIRECT:
+		case FLOW_ACTION_REDIRECT: {
+			struct lan966x_port *tport;
+
 			if (admin->vtype != VCAP_TYPE_IS2) {
 				NL_SET_ERR_MSG_MOD(f->common.extack,
 						   "Redirect action not supported in this VCAP");
 				err = -EOPNOTSUPP;
 				goto out;
 			}
+			if (!lan966x_netdevice_check(act->dev)) {
+				NL_SET_ERR_MSG_MOD(f->common.extack,
+						   "Redirect destination is not a lan966x port");
+				err = -EOPNOTSUPP;
+				goto out;
+			}
+			tport = netdev_priv(act->dev);
 			/* VCAP_AF_MASK_MODE: lan966x is2 W2 */
 			err = vcap_rule_add_action_u32(vrule, VCAP_AF_MASK_MODE, LAN966X_PMM_REDIRECT);
 			if (err)
 				goto out;
 			/* VCAP_AF_PORT_MASK: (lan966x s2 W8 */
-			ports |= BIT(port->chip_port);
+			ports |= BIT(tport->chip_port);
 			err = vcap_rule_add_action_u32(vrule, VCAP_AF_PORT_MASK, ports);
 			if (err)
 				goto out;
 			break;
+		}
 		case FLOW_ACTION_POLICE:
 			if (admin->vtype != VCAP_TYPE_IS1 && admin->vtype != VCAP_TYPE_IS2) {
 				NL_SET_ERR_MSG_MOD(f->common.extack,
