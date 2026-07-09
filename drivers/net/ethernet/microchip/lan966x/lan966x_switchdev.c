@@ -181,9 +181,9 @@ void lan966x_port_ageing_set(struct lan966x_port *port,
 			     unsigned long ageing_clock_t)
 {
 	unsigned long ageing_jiffies = clock_t_to_jiffies(ageing_clock_t);
-	u32 ageing_time = jiffies_to_msecs(ageing_jiffies) / 1000;
+	u32 ageing_ms = jiffies_to_msecs(ageing_jiffies);
 
-	lan966x_mac_set_ageing(port->lan966x, ageing_time);
+	lan966x_mac_set_ageing(port->lan966x, ageing_ms);
 }
 
 static void lan966x_port_mc_set(struct lan966x_port *port, bool mcast_ena)
