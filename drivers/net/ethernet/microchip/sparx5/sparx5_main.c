@@ -1081,10 +1081,16 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		goto cleanup_ptp;
 	}
 
+	err = sparx5_mact_init(sparx5);
+	if (err) {
+		dev_err(sparx5->dev, "Failed to initialize MAC table\n");
+		goto cleanup_afi;
+	}
+
 	err = sparx5_mrp_init(sparx5);
 	if (err) {
 		dev_err(sparx5->dev, "MRP initialization failed\n");
-		goto cleanup_afi;
+		goto cleanup_mact;
 	}
 
 	err = sparx5_vcap_init(sparx5);
@@ -1093,16 +1099,10 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		goto cleanup_mrp;
 	}
 
-	err = sparx5_mact_init(sparx5);
-	if (err) {
-		dev_err(sparx5->dev, "Failed to initialize MAC table\n");
-		goto cleanup_vcap;
-	}
-
 	err = sparx5_stats_init(sparx5);
 	if (err) {
 		dev_err(sparx5->dev, "Failed to initialize stats\n");
-		goto cleanup_mact;
+		goto cleanup_vcap;
 	}
 
 	err = sparx5_rr_router_init(sparx5);
@@ -1143,12 +1143,12 @@ cleanup_router:
 	sparx5_rr_router_deinit(sparx5);
 cleanup_stats:
 	sparx5_stats_deinit(sparx5);
-cleanup_mact:
-	sparx5_mact_deinit(sparx5);
 cleanup_vcap:
 	sparx5_vcap_destroy(sparx5);
 cleanup_mrp:
 	sparx5_mrp_deinit(sparx5);
+cleanup_mact:
+	sparx5_mact_deinit(sparx5);
 cleanup_afi:
 	sparx5_afi_deinit(sparx5);
 cleanup_ptp:
