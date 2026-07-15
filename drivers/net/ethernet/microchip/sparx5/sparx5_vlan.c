@@ -40,6 +40,13 @@ void sparx5_vlan_init(struct sparx5 *sparx5)
 			 ANA_L3_VLAN_CFG_VLAN_FID,
 			 sparx5,
 			 ANA_L3_VLAN_CFG(vid));
+
+	/* The ANA_L3:VLAN:VLAN_MASK_CFG reset value is all-ones (every port a
+	 * member) for VIDs 0, 1 and 4095, and 0 for all other VIDs. VID 0 is
+	 * the standalone PVID and VID 1 is the forced PVID for VLAN-unaware
+	 * bridges. Both rely on that default membership and are left as-is.
+	 */
+	sparx5_vlant_set_mask(sparx5, VLAN_N_VID - 1);
 }
 
 void sparx5_vlan_port_setup(struct sparx5 *sparx5, int portno)
