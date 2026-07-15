@@ -200,12 +200,16 @@ static int sparx5_port_attr_set(struct net_device *dev, const void *ctx,
 		sparx5_port_attr_ageing_set(port, attr->u.ageing_time);
 		break;
 	case SWITCHDEV_ATTR_ID_BRIDGE_VLAN_FILTERING:
-		/* Used PVID 1 when default_pvid is 0, to avoid
-		 * collision with non-bridged ports.
-		 */
-		if (port->pvid == 0)
-			port->pvid = 1;
 		port->vlan_aware = attr->u.vlan_filtering;
+		/* A vlan-unaware bridge classifies all traffic to an internal
+		 * PVID; use 1 when default_pvid is 0 to avoid colliding with the
+		 * VID 0 FID used by standalone ports. A vlan-aware bridge must
+		 * not force a PVID: pvid/untagged is applied from VLAN objects,
+		 * and with none configured untagged frames must be dropped
+		 * (TAG_REQUIRED).
+		 */
+		if (!port->vlan_aware && port->pvid == NULL_VID)
+			port->pvid = 1;
 		sparx5_vlan_port_apply(port->sparx5, port);
 		break;
 	case SWITCHDEV_ATTR_ID_PORT_MROUTER:
