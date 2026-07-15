@@ -30,7 +30,7 @@ static int sparx5_port_attr_pre_bridge_flags(struct sparx5_port *port,
 					     struct switchdev_brport_flags flags)
 {
 	if (flags.mask & ~(BR_FLOOD | BR_MCAST_FLOOD | BR_BCAST_FLOOD |
-			   BR_PORT_LOCKED))
+			   BR_PORT_LOCKED | BR_LEARNING))
 		return -EINVAL;
 
 	return 0;
@@ -70,6 +70,18 @@ static void sparx5_port_attr_bridge_flags(struct sparx5_port *port,
 
 	if (flags.mask & BR_PORT_LOCKED)
 		sparx5_psec_set(port, (flags.val & BR_PORT_LOCKED));
+
+	if (flags.mask & BR_LEARNING) {
+		if (flags.val & BR_LEARNING)
+			set_bit(port->portno, sparx5->bridge_learn_flag_mask);
+		else
+			clear_bit(port->portno, sparx5->bridge_learn_flag_mask);
+
+		/* Recompute the auto-learn mask (STP state and BR_PORT_LOCKED
+		 * still gate it; locked ports are removed in sparx5_update_fwd).
+		 */
+		sparx5_update_fwd(sparx5);
+	}
 }
 
 void sparx5_attr_stp_state_set(struct sparx5_port *port, u8 state)
@@ -247,7 +259,7 @@ static int sparx5_port_bridge_join(struct sparx5_port *port,
 	__dev_mc_unsync(ndev, sparx5_mc_unsync);
 
 	/* Enable uc/mc/bc flooding */
-	flags.mask = BR_FLOOD | BR_MCAST_FLOOD | BR_BCAST_FLOOD;
+	flags.mask = BR_FLOOD | BR_MCAST_FLOOD | BR_BCAST_FLOOD | BR_LEARNING;
 	flags.val = flags.mask;
 	sparx5_port_attr_bridge_flags(port, flags);
 
@@ -281,7 +293,7 @@ static void sparx5_port_bridge_leave(struct sparx5_port *port,
 	__dev_mc_sync(port->ndev, sparx5_mc_sync, sparx5_mc_unsync);
 
 	/* Disable uc/mc/bc flooding */
-	flags.mask = BR_FLOOD | BR_MCAST_FLOOD | BR_BCAST_FLOOD;
+	flags.mask = BR_FLOOD | BR_MCAST_FLOOD | BR_BCAST_FLOOD | BR_LEARNING;
 	flags.val = 0;
 	sparx5_port_attr_bridge_flags(port, flags);
 }

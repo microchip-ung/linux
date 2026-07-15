@@ -369,7 +369,7 @@ void sparx5_update_fwd(struct sparx5 *sparx5)
 	bitmap_copy(clearmask, floodmask, SPX5_PORTS);
 
 	bitmap_and(learnmask,
-		   sparx5->bridge_fwd_mask,
+		   sparx5->bridge_learn_flag_mask,
 		   sparx5->bridge_lrn_mask,
 		   SPX5_PORTS);
 
