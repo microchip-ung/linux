@@ -4,6 +4,7 @@
  * Copyright (c) 2021 Microchip Technology Inc. and its subsidiaries.
  */
 
+#include <linux/etherdevice.h>
 #include <net/addrconf.h>
 #include <net/switchdev.h>
 
@@ -68,6 +69,13 @@ void sparx5_consume_skb(struct sk_buff *skb)
 bool sparx5_skb_offloaded(struct sparx5 *sparx5, u32 port, struct sk_buff *skb)
 {
 	u32 val;
+
+	/* Link-local reserved frames (01:80:C2:00:00:0X), e.g. STP/RSTP BPDUs
+	 * and LLDP, are redirected to the CPU and must be handled by the
+	 * software bridge, so they must not be marked as offloaded.
+	 */
+	if (is_link_local_ether_addr(eth_hdr(skb)->h_dest))
+		return false;
 
 	/* IGMP and MLD frames are not forwarded by hardware when
 	 * multicast snooping is enabled. Therefore, do not mark these

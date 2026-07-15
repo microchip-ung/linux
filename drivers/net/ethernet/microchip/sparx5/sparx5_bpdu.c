@@ -45,16 +45,20 @@
 #define BPDU_MASK	0x3
 
 enum sparx5_bpdu_type {
+	BPDU_STP,
 	BPDU_PAUSE,
 	BPDU_LACP,
 	BPDU_EAPOL,
+	BPDU_LLDP,
 	BPDU_MAX,
 };
 
 static const u32 bpdu_shift[BPDU_MAX] = {
+	[BPDU_STP] = 0, /* 01:80:c2:00:00:00 STP/RSTP/MSTP (IEEE 802.1D/802.1Q) */
 	[BPDU_PAUSE] = 2, /* 01:80:c2:00:00:01 PAUSE (IEEE 802.3x) */
 	[BPDU_LACP] = 4, /* 01:80:C2:00:00:02  LACP (IEEE 802.1AX / 802.3ad) */
 	[BPDU_EAPOL] = 6, /* 01:80:c2:00:00:03 (802.1X/EAPOL) */
+	[BPDU_LLDP] = 28, /* 01:80:c2:00:00:0e LLDP (IEEE 802.1AB) */
 };
 
 static void sparx5_bpdu_trap(struct sparx5_port *port,
@@ -69,6 +73,16 @@ static void sparx5_bpdu_trap(struct sparx5_port *port,
 void sparx5_bpdu_lacp_redir(struct sparx5_port *port)
 {
 	sparx5_bpdu_trap(port, BPDU_LACP, BPDU_REDIR);
+}
+
+void sparx5_bpdu_stp_redir(struct sparx5_port *port)
+{
+	sparx5_bpdu_trap(port, BPDU_STP, BPDU_REDIR);
+}
+
+void sparx5_bpdu_lldp_redir(struct sparx5_port *port)
+{
+	sparx5_bpdu_trap(port, BPDU_LLDP, BPDU_REDIR);
 }
 
 void sparx5_bpdu_pause_discard(struct sparx5_port *port)

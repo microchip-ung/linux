@@ -1138,6 +1138,8 @@ void sparx5_psec_set(struct sparx5_port *port, bool enable);
 
 /* sparx5_bpdu.c */
 void sparx5_bpdu_lacp_redir(struct sparx5_port *port);
+void sparx5_bpdu_stp_redir(struct sparx5_port *port);
+void sparx5_bpdu_lldp_redir(struct sparx5_port *port);
 void sparx5_bpdu_pause_discard(struct sparx5_port *port);
 void sparx5_bpdu_eapol_forward(struct sparx5_port *port);
 void sparx5_bpdu_eapol_redir(struct sparx5_port *port);

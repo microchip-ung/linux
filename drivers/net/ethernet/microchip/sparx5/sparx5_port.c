@@ -1362,6 +1362,10 @@ int sparx5_port_init(struct sparx5 *sparx5,
 	/* Redirect LACP frames to CPU */
 	sparx5_bpdu_lacp_redir(port);
 
+	/* Redirect STP/RSTP BPDUs and LLDP to CPU */
+	sparx5_bpdu_stp_redir(port);
+	sparx5_bpdu_lldp_redir(port);
+
 	/* Discard SMAC multicast */
 	spx5_rmw(ANA_CL_FILTER_CTRL_FILTER_SMAC_MC_DIS_SET(0),
 		 ANA_CL_FILTER_CTRL_FILTER_SMAC_MC_DIS,
