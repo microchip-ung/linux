@@ -368,11 +368,13 @@ static struct lan969x_redbox_params danp_params[LAN969X_RB_PORT_MAX] = {
 		 */
 		.spv_sel   = RB_FWD_SEL_REDIR_CPU,
 		.masks     = {
-			/* CPU injected frames from node listed as local, and to
-			 * unknown destinations, are allowed on AB.
+			/* CPU injected frames from node listed as local, to a
+			 * discovered node, and to unknown destinations, are
+			 * allowed on AB.
 			 */
 			[LOCAL_SRC_FWD_MASK] = RB_FWD_AB,
 			[FLD_DST_FWD_MASK]   = RB_FWD_AB,
+			[NODE_DST_FWD_MASK]  = RB_FWD_AB,
 		}
 	},
 };
