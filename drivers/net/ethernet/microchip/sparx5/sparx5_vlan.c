@@ -70,6 +70,8 @@ int sparx5_vlan_vid_add(struct sparx5_port *port, u16 vid, bool pvid,
 			return -EBUSY;
 		}
 		port->vid = vid;
+	} else if (!untagged && port->vid == vid) {
+		port->vid = 0;
 	}
 
 	/* Make the port a member of the VLAN */
@@ -81,6 +83,8 @@ int sparx5_vlan_vid_add(struct sparx5_port *port, u16 vid, bool pvid,
 	/* Default ingress vlan classification */
 	if (pvid)
 		port->pvid = vid;
+	else if (port->pvid == vid)
+		port->pvid = 0;
 
 	sparx5_vlan_port_apply(sparx5, port);
 
