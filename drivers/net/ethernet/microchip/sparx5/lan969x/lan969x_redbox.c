@@ -208,7 +208,7 @@ static struct lan969x_redbox_params hsr_san_params[LAN969X_RB_PORT_MAX] = {
 		.net_id    = RB_NETID,
 		.tag       = RB_TAG_HSR,
 		.host_type = RB_HT_DAN,
-		.filter    = RB_FLT_NOT_HSR,
+		.filter    = RB_FLT_REDIR,
 		/* Supervision frames are subject to forwarding. Copy to CPU
 		 * also.
 		 */
@@ -229,7 +229,7 @@ static struct lan969x_redbox_params hsr_san_params[LAN969X_RB_PORT_MAX] = {
 		.net_id    = RB_NETID,
 		.tag       = RB_TAG_HSR,
 		.host_type = RB_HT_DAN,
-		.filter    = RB_FLT_NOT_HSR,
+		.filter    = RB_FLT_REDIR,
 		/* Supervision frames are subject to forwarding. Copy to CPU
 		 * also.
 		 */
@@ -272,7 +272,7 @@ static struct lan969x_redbox_params danh_params[LAN969X_RB_PORT_MAX] = {
 		.net_id    = RB_NETID,
 		.tag       = RB_TAG_HSR,
 		.host_type = RB_HT_DAN,
-		.filter    = RB_FLT_NOT_HSR,
+		.filter    = RB_FLT_REDIR,
 		/* Supervision frames are subject to forwarding. Copy to CPU
 		 * also.
 		 */
@@ -292,7 +292,7 @@ static struct lan969x_redbox_params danh_params[LAN969X_RB_PORT_MAX] = {
 		.net_id    = RB_NETID,
 		.tag       = RB_TAG_HSR,
 		.host_type = RB_HT_DAN,
-		.filter    = RB_FLT_NOT_HSR,
+		.filter    = RB_FLT_REDIR,
 		/* Supervision frames are subject to forwarding. Copy to CPU
 		 * also.
 		 */
