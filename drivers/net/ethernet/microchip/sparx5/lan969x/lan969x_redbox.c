@@ -1287,20 +1287,31 @@ int lan969x_hsr_join(struct net_device *master, struct net_device *slave)
 	/* LREA */
 	if (!lan969x_rb_has_lrea(redbox)) {
 		lan969x_rb_add_lrea(redbox, port);
+		port->ndev->features |= LAN969X_SUPPORTED_HSR_FEATURES;
 		return 0;
 	}
 
 	/* LREB */
 	if (!lan969x_rb_has_lreb(redbox)) {
 		lan969x_rb_add_lreb(redbox, port);
+		port->ndev->features |= LAN969X_SUPPORTED_HSR_FEATURES;
 		if (is_hsr_redbox(master))
 			/* Need LREC to sign up as well. */
 			return 0;
 	}
 
 	/* LREC */
-	if (!lan969x_rb_has_lrec(redbox) && is_hsr_redbox(master))
+	if (!lan969x_rb_has_lrec(redbox) && is_hsr_redbox(master)) {
 		lan969x_rb_add_lrec(redbox, port);
+		/* The RedBox forwards ring<->interlink autonomously but does NOT
+		 * replicate CPU-injected frames to the interlink (IRI FWD_SEL
+		 * has no interlink encoding). Withhold NETIF_F_HW_HSR_DUP so
+		 * net/hsr software-dispatches host-originated frames to the
+		 * interlink (hsr_drop_frame()).
+		 */
+		port->ndev->features |= LAN969X_SUPPORTED_HSR_FEATURES &
+					~NETIF_F_HW_HSR_DUP;
+	}
 
 	err = lan969x_rb_port_taxi_get(redbox->ports[LAN969X_RB_LREA],
 				       &lrea_taxi_port,
@@ -1439,6 +1450,9 @@ int lan969x_hsr_leave(struct net_device *master, struct net_device *slave)
 	/* Clear source port masks for lrea and lrec when HSR-SAN */
 	if (has_interlink)
 		sparx5_update_fwd(sparx5);
+
+	/* Clear HSR/PRP offload features */
+	slave->features &= ~LAN969X_SUPPORTED_HSR_FEATURES;
 
 	return 0;
 }
