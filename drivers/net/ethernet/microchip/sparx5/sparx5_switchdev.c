@@ -594,6 +594,12 @@ static void sparx5_switchdev_bridge_fdb_event_work(struct work_struct *work)
 		else
 			sparx5_add_mact_entry(sparx5, port->ndev, port->portno,
 					      fdb_info->addr, vid);
+		/* Ack the offload so the bridge sets the offloaded flag on its
+		 * FDB entry (orig_dev + original VID match the bridge entry).
+		 */
+		fdb_info->offloaded = true;
+		call_switchdev_notifiers(SWITCHDEV_FDB_OFFLOADED, orig_dev,
+					 &fdb_info->info, NULL);
 		break;
 	case SWITCHDEV_FDB_DEL_TO_DEVICE:
 		sparx5_del_mact_entry(sparx5, fdb_info->addr, vid);
