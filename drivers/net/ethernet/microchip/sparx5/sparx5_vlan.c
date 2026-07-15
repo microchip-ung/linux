@@ -27,6 +27,8 @@ static int sparx5_vlant_set_mask(struct sparx5 *sparx5, u16 vid)
 
 void sparx5_vlan_init(struct sparx5 *sparx5)
 {
+	DECLARE_BITMAP(filter_mask, SPX5_PORTS);
+	u32 fmask[3];
 	u16 vid;
 
 	spx5_rmw(ANA_L3_VLAN_CTRL_VLAN_ENA_SET(1),
@@ -47,6 +49,16 @@ void sparx5_vlan_init(struct sparx5 *sparx5)
 	 * bridges. Both rely on that default membership and are left as-is.
 	 */
 	sparx5_vlant_set_mask(sparx5, VLAN_N_VID - 1);
+
+	/* Enable ingress VLAN membership filtering for all front ports. */
+	bitmap_zero(filter_mask, SPX5_PORTS);
+	bitmap_set(filter_mask, 0, sparx5->data->consts->n_ports);
+	bitmap_to_arr32(fmask, filter_mask, SPX5_PORTS);
+	spx5_wr(fmask[0], sparx5, ANA_L3_VLAN_FILTER_CTRL);
+	if (is_sparx5(sparx5)) {
+		spx5_wr(fmask[1], sparx5, ANA_L3_VLAN_FILTER_CTRL1);
+		spx5_wr(fmask[2], sparx5, ANA_L3_VLAN_FILTER_CTRL2);
+	}
 }
 
 void sparx5_vlan_port_setup(struct sparx5 *sparx5, int portno)
