@@ -3115,6 +3115,29 @@ extern const struct sparx5_regs *regs;
 #define ANA_L3_L3_UC_ENA2_L3_UC_ENA2_GET(x)\
 	FIELD_GET(ANA_L3_L3_UC_ENA2_L3_UC_ENA2, x)
 
+/* ANA_L3:COMMON:VLAN_FILTER_CTRL */
+#define ANA_L3_VLAN_FILTER_CTRL                                                \
+	__REG(TARGET_ANA_L3, 0, 1, regs->gaddr[GA_ANA_L3_COMMON], 0, 1, 184,   \
+	      68, 0, 1, 4)
+
+/* SPARX5 ONLY */
+/* ANA_L3:COMMON:VLAN_FILTER_CTRL1 */
+#define ANA_L3_VLAN_FILTER_CTRL1                                               \
+	__REG(TARGET_ANA_L3, 0, 1, regs->gaddr[GA_ANA_L3_COMMON], 0, 1, 184,   \
+	      72, 0, 1, 4)
+
+/* SPARX5 ONLY */
+/* ANA_L3:COMMON:VLAN_FILTER_CTRL2 */
+#define ANA_L3_VLAN_FILTER_CTRL2                                               \
+	__REG(TARGET_ANA_L3, 0, 1, regs->gaddr[GA_ANA_L3_COMMON], 0, 1, 184,   \
+	      76, 0, 1, 4)
+
+#define ANA_L3_VLAN_FILTER_CTRL2_VLAN_IGR_FILTER_ENA2 BIT(0)
+#define ANA_L3_VLAN_FILTER_CTRL2_VLAN_IGR_FILTER_ENA2_SET(x)\
+	FIELD_PREP(ANA_L3_VLAN_FILTER_CTRL2_VLAN_IGR_FILTER_ENA2, x)
+#define ANA_L3_VLAN_FILTER_CTRL2_VLAN_IGR_FILTER_ENA2_GET(x)\
+	FIELD_GET(ANA_L3_VLAN_FILTER_CTRL2_VLAN_IGR_FILTER_ENA2, x)
+
 /* ANA_L3:COMMON:ROUTING_CFG */
 #define ANA_L3_ROUTING_CFG                                                     \
 	__REG(TARGET_ANA_L3, 0, 1, regs->gaddr[GA_ANA_L3_COMMON], 0, 1, 184, 104, 0, \
