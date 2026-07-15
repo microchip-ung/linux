@@ -562,13 +562,16 @@ bool hsr_drop_frame(struct hsr_frame_info *frame, struct hsr_port *port)
 		return true;
 	}
 
-	/* Do not forward to port C (Interlink) frames from nodes A and B
-	 * if DA is in NodeTable.
+	/* Do not forward to port C (Interlink) frames from nodes A and B, or
+	 * from the CPU (master), if DA is in NodeTable: a known ring node is
+	 * reached via the ring, not the SAN. Master-originated frames carry the
+	 * DA in skb_std (no HSR tag yet).
 	 */
 	if ((frame->port_rcv->type == HSR_PT_SLAVE_A ||
-	     frame->port_rcv->type == HSR_PT_SLAVE_B) &&
+	     frame->port_rcv->type == HSR_PT_SLAVE_B ||
+	     frame->port_rcv->type == HSR_PT_MASTER) &&
 	    port->type == HSR_PT_INTERLINK) {
-		skb = frame->skb_hsr;
+		skb = frame->skb_hsr ? frame->skb_hsr : frame->skb_std;
 		if (skb && is_unicast_ether_addr(eth_hdr(skb)->h_dest) &&
 		    hsr_is_node_in_db(&port->hsr->node_db,
 				      eth_hdr(skb)->h_dest)) {
