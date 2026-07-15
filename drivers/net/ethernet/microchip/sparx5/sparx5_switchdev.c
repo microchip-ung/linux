@@ -183,6 +183,9 @@ static int sparx5_port_attr_set(struct net_device *dev, const void *ctx,
 {
 	struct sparx5_port *port = netdev_priv(dev);
 
+	if (ctx && ctx != port)
+		return 0;
+
 	switch (attr->id) {
 	case SWITCHDEV_ATTR_ID_PORT_PRE_BRIDGE_FLAGS:
 		return sparx5_port_attr_pre_bridge_flags(port,
@@ -245,7 +248,9 @@ static int sparx5_port_bridge_join(struct sparx5_port *port,
 
 	set_bit(port->portno, sparx5->bridge_mask);
 
-	err = switchdev_bridge_port_offload(brport_dev, ndev, NULL, NULL, NULL,
+	err = switchdev_bridge_port_offload(brport_dev, ndev, port,
+					    &sparx5->switchdev_nb,
+					    &sparx5->switchdev_blocking_nb,
 					    false, extack);
 	if (err)
 		goto err_switchdev_offload;
