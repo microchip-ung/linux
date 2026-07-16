@@ -995,8 +995,7 @@ static int sparx5_tc_action_trap(struct vcap_admin *admin,
 
 static int sparx5_tc_action_vlan_pop(struct vcap_admin *admin,
 				     struct vcap_rule *vrule,
-				     struct flow_cls_offload *fco,
-				     u16 tpid)
+				     struct flow_cls_offload *fco)
 {
 	int err = 0;
 
@@ -1009,18 +1008,9 @@ static int sparx5_tc_action_vlan_pop(struct vcap_admin *admin,
 		return -EOPNOTSUPP;
 	}
 
-	switch (tpid) {
-	case ETH_P_8021Q:
-	case ETH_P_8021AD:
-		err = vcap_rule_add_action_u32(vrule,
-					       VCAP_AF_PUSH_OUTER_TAG,
-					       SPX5_OTAG_UNTAG);
-		break;
-	default:
-		NL_SET_ERR_MSG_MOD(fco->common.extack,
-				   "Invalid vlan proto");
-		err = -EINVAL;
-	}
+	/* Popping the outer tag is independent of its TPID. */
+	err = vcap_rule_add_action_u32(vrule, VCAP_AF_PUSH_OUTER_TAG,
+				       SPX5_OTAG_UNTAG);
 	return err;
 }
 
@@ -1418,8 +1408,7 @@ static int sparx5_tc_flower_replace(struct net_device *ndev,
 						act->chain_index);
 			break;
 		case FLOW_ACTION_VLAN_POP:
-			err = sparx5_tc_action_vlan_pop(admin, vrule, fco,
-							state.tpid);
+			err = sparx5_tc_action_vlan_pop(admin, vrule, fco);
 			if (err)
 				goto out;
 			break;
@@ -1431,7 +1420,8 @@ static int sparx5_tc_flower_replace(struct net_device *ndev,
 			break;
 		case FLOW_ACTION_VLAN_MANGLE:
 			err = sparx5_tc_action_vlan_modify(admin, vrule, fco,
-							   act, state.tpid);
+							   act,
+							   be16_to_cpu(act->vlan.proto));
 			if (err)
 				goto out;
 			break;
