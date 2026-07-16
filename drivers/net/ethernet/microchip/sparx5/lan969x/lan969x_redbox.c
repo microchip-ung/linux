@@ -964,17 +964,17 @@ static const char *lan969x_rb_mode_to_str(struct lan969x_redbox *rb)
 	}
 }
 
-static void lan969x_rb_htable_print(struct sparx5 *sparx5)
+static void lan969x_rb_htable_print(struct seq_file *s, struct sparx5 *sparx5)
 {
 	if (debugfs_redbox_idx >= 5) {
 		pr_err("Invalid redbox index: %u", debugfs_redbox_idx);
 		return;
 	}
 
-	pr_info("                                   Rx                    Last Seen             Rx Wrong LAN\n");
-	pr_info("                                   --------------------- --------------------- ---------------------\n");
-	pr_info("Inst MAC Address       Node Type   Port A     Port B     Port A     Port B     Port A     Port B\n");
-	pr_info("---- ----------------- ----------- ---------- ---------- ---------- ---------- ---------- ----------\n");
+	seq_puts(s, "                                   Rx                    Last Seen             Rx Wrong LAN\n");
+	seq_puts(s, "                                   --------------------- --------------------- ---------------------\n");
+	seq_puts(s, "Inst MAC Address       Node Type   Port A     Port B     Port A     Port B     Port A     Port B\n");
+	seq_puts(s, "---- ----------------- ----------- ---------- ---------- ---------- ---------- ---------- ----------\n");
 
 	for (int j = 0; j < RB_HTABLE_CNT; j++) {
 		struct lan969x_rb_htable_node node = { 0 };
@@ -986,7 +986,7 @@ static void lan969x_rb_htable_print(struct sparx5 *sparx5)
 		struct lan969x_rb_htable_port *port_a = &node.ports[LAN969X_RB_LREA];
 		struct lan969x_rb_htable_port *port_b = &node.ports[LAN969X_RB_LREB];
 
-		pr_info("%4u %pM %-11s %10u %10u %10u %10u %10u %10u\n\n",
+		seq_printf(s, "%4u %pM %-11s %10u %10u %10u %10u %10u %10u\n\n",
 			debugfs_redbox_idx,
 			node.mac,
 			lan969x_rb_type_to_str(node.type),
@@ -1060,17 +1060,17 @@ static int lan969x_rb_dtable_read(struct sparx5 *sparx5,
 	return 0;
 }
 
-static void lan969x_rb_dtable_print(struct sparx5 *sparx5)
+static void lan969x_rb_dtable_print(struct seq_file *s, struct sparx5 *sparx5)
 {
 	if (debugfs_redbox_idx >= 5) {
 		pr_err("Invalid redbox index: %u", debugfs_redbox_idx);
 		return;
 	}
 
-	pr_info("                                   Discard count\n");
-	pr_info("                                   --------------------------------\n");
-	pr_info("Inst MAC Address       Seqno Age   Port A     Port B     Port C    \n");
-	pr_info("---- ----------------- ----- ----- ---------- ---------- ----------\n");
+	seq_puts(s, "                                   Discard count\n");
+	seq_puts(s, "                                   --------------------------------\n");
+	seq_puts(s, "Inst MAC Address       Seqno Age   Port A     Port B     Port C    \n");
+	seq_puts(s, "---- ----------------- ----- ----- ---------- ---------- ----------\n");
 
 	for (int j = 0; j < RB_DTABLE_CNT; j++) {
 		struct lan969x_rb_dtable_node node = { 0 };
@@ -1079,7 +1079,7 @@ static void lan969x_rb_dtable_print(struct sparx5 *sparx5)
 					   j))
 			continue;
 
-		pr_info("%4u %pM %5u %5u %10u %10u %10u\n\n",
+		seq_printf(s, "%4u %pM %5u %5u %10u %10u %10u\n\n",
 			debugfs_redbox_idx,
 			node.mac,
 			node.seq_no,
@@ -1107,21 +1107,21 @@ static bool lan969x_rb_has_warnings(struct sparx5 *sparx5, u8 rb)
 	return false;
 }
 
-static void lan969x_rb_print(struct sparx5 *sparx5)
+static void lan969x_rb_print(struct seq_file *s, struct sparx5 *sparx5)
 {
-	pr_info("Inst Oper. State Taxi Mode    Port A     Port B     Port C     Warnings\n");
-	pr_info("---- ----------- ---- ------- ---------- ---------- ---------- --------\n");
+	seq_puts(s, "Inst Oper. State Taxi Mode    Port A     Port B     Port C     Warnings\n");
+	seq_puts(s, "---- ----------- ---- ------- ---------- ---------- ---------- --------\n");
 
 	for (int i = 0; i < LAN969X_RB_REDBOX_CNT; i++) {
 		struct lan969x_redbox *rb = &redboxes[i];
 		u8 taxi = rb->taxi;
 
 		if (!rb->hsr_master) {
-			pr_info("%4u %-11s", i, "Inactive");
+			seq_printf(s, "%4u %-11s", i, "Inactive");
 			continue;
 		}
 
-		pr_info("%4u %-11s %4u %7s %-10s %-10s %-10s %-8s\n",
+		seq_printf(s, "%4u %-11s %4u %7s %-10s %-10s %-10s %-8s\n",
 			i,
 			"Active",
 			taxi,
@@ -1142,17 +1142,17 @@ static void lan969x_rb_stats_read(struct sparx5 *sparx5, u32 rb, u32 idx,
 	stats->rx_unt = spx5_rd(sparx5, RB_CNT_RX_UNT(rb, idx));
 }
 
-static void lan969x_rb_stats_print(struct sparx5 *sparx5)
+static void lan969x_rb_stats_print(struct seq_file *s, struct sparx5 *sparx5)
 {
 	if (debugfs_redbox_idx >= LAN969X_RB_REDBOX_CNT) {
 		pr_err("Invalid redbox index: %u", debugfs_redbox_idx);
 		return;
 	}
 
-	pr_info("     Tx Tagged     Tx Untagged   Rx Tagged     Rx Untagged  \n");
-	pr_info("     ------------- ------------- ------------- -------------\n");
-	pr_info("Inst A      B      A      B      A      B      A      B     \n");
-	pr_info("---- ------ ------ ------ ------ ------ ------ ------ ------\n");
+	seq_puts(s, "     Tx Tagged     Tx Untagged   Rx Tagged     Rx Untagged  \n");
+	seq_puts(s, "     ------------- ------------- ------------- -------------\n");
+	seq_puts(s, "Inst A      B      A      B      A      B      A      B     \n");
+	seq_puts(s, "---- ------ ------ ------ ------ ------ ------ ------ ------\n");
 
 	for (int i = 0; i < LAN969X_RB_REDBOX_CNT; i++) {
 		struct lan969x_rb_stats stats[2] = { 0 };
@@ -1160,7 +1160,7 @@ static void lan969x_rb_stats_print(struct sparx5 *sparx5)
 		for (int j = 0; j < 2; j++)
 			lan969x_rb_stats_read(sparx5, i, j, &stats[j]);
 
-		pr_info("%4u %6u %6u %6u %6u %6u %6u %6u %6u\n\n",
+		seq_printf(s, "%4u %6u %6u %6u %6u %6u %6u %6u %6u\n\n",
 			i,
 			stats[0].tx_tag,
 			stats[1].tx_tag,
@@ -1177,7 +1177,7 @@ static int lan969x_rb_show(struct seq_file *s, void *unused)
 {
 	struct sparx5 *sparx5 = s->private;
 
-	lan969x_rb_print(sparx5);
+	lan969x_rb_print(s, sparx5);
 
 	return 0;
 }
@@ -1187,7 +1187,7 @@ static int lan969x_rb_htable_show(struct seq_file *s, void *unused)
 {
 	struct sparx5 *sparx5 = s->private;
 
-	lan969x_rb_htable_print(sparx5);
+	lan969x_rb_htable_print(s, sparx5);
 
 	return 0;
 }
@@ -1197,7 +1197,7 @@ static int lan969x_rb_dtable_show(struct seq_file *s, void *unused)
 {
 	struct sparx5 *sparx5 = s->private;
 
-	lan969x_rb_dtable_print(sparx5);
+	lan969x_rb_dtable_print(s, sparx5);
 
 	return 0;
 }
@@ -1207,7 +1207,7 @@ static int lan969x_rb_stats_show(struct seq_file *s, void *unused)
 {
 	struct sparx5 *sparx5 = s->private;
 
-	lan969x_rb_stats_print(sparx5);
+	lan969x_rb_stats_print(s, sparx5);
 
 	return 0;
 }
