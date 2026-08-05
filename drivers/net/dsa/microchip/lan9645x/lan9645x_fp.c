@@ -44,7 +44,11 @@ static bool lan9645x_fp_ena(struct lan9645x_port *p, bool link)
 	return capable && link && p->fp.enable_tx;
 }
 
-static void __lan9645x_fp_commit_pqueues(struct lan9645x_port *p, bool fp_ena)
+/* Returns true when the committed preemptible TC mask changed, in which case the
+ * caller must re-run lan9645x_taprio_guard_bands_recalc() once fp_lock is
+ * dropped: preemptible TCs are guard banded differently from express ones.
+ */
+static bool __lan9645x_fp_commit_pqueues(struct lan9645x_port *p, bool fp_ena)
 {
 	u32 status, mask;
 	bool active;
@@ -58,6 +62,13 @@ static void __lan9645x_fp_commit_pqueues(struct lan9645x_port *p, bool fp_ena)
 		QSYS_PREEMPT_CFG_P_QUEUES,
 		p->lan9645x,
 		QSYS_PREEMPT_CFG(p->chip_port));
+
+	if (p->fp_active_tcs == mask)
+		return false;
+
+	p->fp_active_tcs = mask;
+
+	return true;
 }
 
 static void lan9645x_fp_recheck(struct lan9645x_port *p)
@@ -66,7 +77,8 @@ static void lan9645x_fp_recheck(struct lan9645x_port *p)
 }
 
 static int __lan9645x_fp_set(struct lan9645x_port *p,
-			     struct lan9645x_fp_port_conf *c, bool link)
+			     struct lan9645x_fp_port_conf *c, bool link,
+			     bool *tcs_changed)
 {
 	bool verify_dis, fp_ena;
 	struct net_device *dev;
@@ -110,7 +122,7 @@ static int __lan9645x_fp_set(struct lan9645x_port *p,
 		p->lan9645x,
 		SYS_FRONT_PORT_MODE(p->chip_port));
 
-	__lan9645x_fp_commit_pqueues(p, fp_ena);
+	*tcs_changed = __lan9645x_fp_commit_pqueues(p, fp_ena);
 
 	return 0;
 }
@@ -118,16 +130,22 @@ static int __lan9645x_fp_set(struct lan9645x_port *p,
 int lan9645x_fp_set(struct lan9645x_port *p,
 		    struct lan9645x_fp_port_conf *c, bool link)
 {
+	bool tcs_changed = false;
 	int err;
 
 	mutex_lock(&p->fp_lock);
-	err = __lan9645x_fp_set(p, c, link);
+	err = __lan9645x_fp_set(p, c, link, &tcs_changed);
 	mutex_unlock(&p->fp_lock);
 
-	if (!err)
-		lan9645x_fp_recheck(p);
+	if (err)
+		return err;
 
-	return err;
+	if (tcs_changed)
+		lan9645x_taprio_guard_bands_recalc(p);
+
+	lan9645x_fp_recheck(p);
+
+	return 0;
 }
 
 void lan9645x_fp_change_preemptable_tcs(struct lan9645x_port *p,
@@ -216,6 +234,7 @@ static void lan9645x_fp_check_port(struct lan9645x_port *p)
 	struct net_device *dev = lan9645x_port_to_ndev(p);
 	struct lan9645x *lan9645x = p->lan9645x;
 	u32 status, verify_state, act_sticky;
+	bool tcs_changed = false;
 
 	mutex_lock(&p->fp_lock);
 
@@ -231,7 +250,7 @@ static void lan9645x_fp_check_port(struct lan9645x_port *p)
 			DEV_MM_STATUS_PRMPT_ACTIVE_STICKY,
 			lan9645x, DEV_MM_STATUS(p->chip_port));
 
-		__lan9645x_fp_commit_pqueues(p,
+		tcs_changed = __lan9645x_fp_commit_pqueues(p,
 			lan9645x_fp_ena(p, dev && netif_carrier_ok(dev)));
 	}
 
@@ -254,6 +273,9 @@ static void lan9645x_fp_check_port(struct lan9645x_port *p)
 
 unlock:
 	mutex_unlock(&p->fp_lock);
+
+	if (tcs_changed)
+		lan9645x_taprio_guard_bands_recalc(p);
 }
 
 static void lan9645x_fp_check_all(struct lan9645x *lan9645x)

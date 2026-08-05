@@ -703,6 +703,7 @@ struct lan9645x_port {
 
 	/* Frame preemption */
 	struct lan9645x_fp_port_conf fp;
+	u8 fp_active_tcs; /* Preemptible TCs committed to QSYS_PREEMPT_CFG */
 	struct mutex fp_lock; /* Lock port FP config */
 
 	/* PTP */

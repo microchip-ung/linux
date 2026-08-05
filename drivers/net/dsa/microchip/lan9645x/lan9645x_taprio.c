@@ -390,19 +390,22 @@ static int lan9645x_taprio_gcl_setup(struct lan9645x_port *port, int list,
  *
  * Guard band time = (QMAXSDU_GRANULARITY * 8) * QMAXSDU_VAL / LINK_SPEED.
  *
- * Use max_sdu[tc] when provided by user, otherwise fall back to the port MTU +
- * L2 overhead.
+ * Use max_sdu[tc] when provided by the user.  Otherwise fall back to the port
+ * MTU + L2 overhead for express TCs, and to zero for the active preemptible TCs.
  *
- * For preemptible TCs (when frame preemption is active), guard banding is
- * disabled via SCH_TRAFFIC_QUEUES and MAC HOLD is used instead.  The
- * HOLDADVANCE register controls the hold timing.
+ * Preemptible TCs must not be guard banded: the Set-And-Hold-MAC gate operation
+ * preempts the in-flight frame at the boundary instead.  QMAXSDU applies to a
+ * preemptible TC regardless of SCH_TRAFFIC_QUEUES, so it has to be left at zero
+ * explicitly.  An MTU sized QMAXSDU there stops the scheduler selecting the
+ * queue a full max frame time before the gate closes, leaving nothing in flight
+ * for MAC HOLD to preempt.
  */
 static void lan9645x_taprio_guard_bands_update(struct lan9645x_port *p,
 					       struct tc_taprio_qopt_offload *qopt)
 {
 	struct dsa_port *dp = dsa_to_port(p->lan9645x->ds, p->chip_port);
 	struct lan9645x *lan9645x = p->lan9645x;
-	u8 preemptible_tcs = p->fp.admin_status;
+	u8 preemptible_tcs = p->fp_active_tcs;
 	struct net_device *dev = dp->user;
 	u32 max_guard_band = 0;
 	u8 holdadv;
@@ -411,8 +414,11 @@ static void lan9645x_taprio_guard_bands_update(struct lan9645x_port *p,
 	for (tc = 0; tc < LAN9645X_NUM_TC; tc++) {
 		u32 max_sdu_bytes, maxsdu_val, maxsdu_lsb;
 
-		max_sdu_bytes = dev->mtu + ETH_HLEN + 2 * VLAN_HLEN +
-				ETH_FCS_LEN;
+		if (preemptible_tcs & BIT(tc))
+			max_sdu_bytes = 0;
+		else
+			max_sdu_bytes = dev->mtu + ETH_HLEN + 2 * VLAN_HLEN +
+					ETH_FCS_LEN;
 
 		if (qopt && qopt->max_sdu[tc])
 			max_sdu_bytes = qopt->max_sdu[tc] + ETH_HLEN +
@@ -439,9 +445,10 @@ static void lan9645x_taprio_guard_bands_update(struct lan9645x_port *p,
 	}
 
 	/* Configure frame preemption TAS registers unconditionally.
-	 * SCH_TRAFFIC_QUEUES marks queues where guard banding is disabled
-	 * (preemptible queues use MAC HOLD instead).  HOLDADVANCE controls
-	 * the hold timing based on minimum fragment size.
+	 * SCH_TRAFFIC_QUEUES marks the queues carrying scheduled traffic.
+	 * HOLDADVANCE is one minimum fragment (add_frag_size + 1 units of 64
+	 * bytes): the time a Set-And-Hold-MAC operation takes effect ahead of
+	 * the nominal gate time, so an in-flight fragment can complete.
 	 */
 	holdadv = preemptible_tcs ? p->fp.add_frag_size + 1 : 0;
 
