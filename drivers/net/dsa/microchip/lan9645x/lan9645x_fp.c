@@ -181,7 +181,14 @@ int lan9645x_fp_status(struct lan9645x_port *p,
 	s->release_advance = FP_RELEASE_ADVANCE;
 
 	status = lan_rd(p->lan9645x, DEV_MM_STATUS(p->chip_port));
-	s->preemption_active = !!DEV_MM_STATUS_PRMPT_ACTIVE_STATUS_GET(status);
+
+	/* MM_TX_ENA is enabled for every port, so PRMPT_ACTIVE_STATUS reads set
+	 * on any port with verification disabled. Qualify it with the conditions
+	 * that gate P_QUEUES, so this cannot report active while preemption is
+	 * administratively off, the link is down or the speed is too low.
+	 */
+	s->preemption_active = lan9645x_fp_ena(p, netif_carrier_ok(dev)) &&
+			       !!DEV_MM_STATUS_PRMPT_ACTIVE_STATUS_GET(status);
 	sv = DEV_MM_STATUS_PRMPT_VERIFY_STATE_GET(status);
 
 	if (!netif_carrier_ok(dev))
