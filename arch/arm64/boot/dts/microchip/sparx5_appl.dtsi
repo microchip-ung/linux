@@ -5,7 +5,8 @@
 
 / {
 	timer {
-		clock-frequency = <250000000>;
+		/* LCPLL fractional mode (511/512) offsets core clock, DBB-1229 */
+		clock-frequency = <250489237>;
 	};
 
 	axi: axi@600000000 {
