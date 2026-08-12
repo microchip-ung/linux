@@ -402,6 +402,15 @@ static int sparx5_create_port(struct sparx5 *sparx5,
 	__set_bit(PHY_INTERFACE_MODE_10G_QXGMII,
 		  spx5_port->phylink_config.supported_interfaces);
 
+	/* Single-lane USXGMII has an RTL erratum on Sparx5 (multi-mode
+	 * USXGMII only); only advertise it on LAN969x. It is only driven
+	 * through the DEV10G (high-speed) PCS/MAC, so only advertise it
+	 * on 10G-class ports.
+	 */
+	if (!is_sparx5(sparx5) && ops->is_port_10g(spx5_port->portno))
+		__set_bit(PHY_INTERFACE_MODE_USXGMII,
+			  spx5_port->phylink_config.supported_interfaces);
+
 	if (spx5_port->conf.bandwidth == SPEED_5000 ||
 	    spx5_port->conf.bandwidth == SPEED_10000 ||
 	    spx5_port->conf.bandwidth == SPEED_25000)
@@ -987,11 +996,12 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		conf->portmode = conf->phy_mode;
 		conf->power_down = true;
 
-		/* In case the link between MAC and PHY is 10G_QXGMII, the
-		 * serdes on the MAC side doesn't need to be reseted it is OK to
-		 * just apply the needed configuration,
+		/* In case the link between MAC and PHY is 10G_QXGMII or
+		 * USXGMII, the serdes on the MAC side doesn't need to be
+		 * reset, it is OK to just apply the needed configuration,
 		 */
-		if (conf->portmode == PHY_INTERFACE_MODE_10G_QXGMII)
+		if (conf->portmode == PHY_INTERFACE_MODE_10G_QXGMII ||
+		    conf->portmode == PHY_INTERFACE_MODE_USXGMII)
 			conf->serdes_reset = false;
 		idx++;
 	}

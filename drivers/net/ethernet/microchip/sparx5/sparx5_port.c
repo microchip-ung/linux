@@ -31,6 +31,7 @@
 enum port_error {
 	SPX5_PERR_SPEED,
 	SPX5_PERR_IFTYPE,
+	SPX5_PERR_DUPLEX,
 };
 
 #define ETH_MAXLEN           (ETH_DATA_LEN + ETH_HLEN + ETH_FCS_LEN)
@@ -212,6 +213,7 @@ int sparx5_get_port_status(struct sparx5 *sparx5,
 	case PHY_INTERFACE_MODE_25GBASER:
 		return sparx5_get_sfi_status(sparx5, port, status);
 	case PHY_INTERFACE_MODE_10G_QXGMII:
+	case PHY_INTERFACE_MODE_USXGMII:
 		return sparx5_get_10g_qxgmii_status(sparx5, port, status);
 	case PHY_INTERFACE_MODE_NA:
 		return 0;
@@ -235,6 +237,11 @@ static int sparx5_port_error(struct sparx5_port *port,
 	case SPX5_PERR_IFTYPE:
 		netdev_err(port->ndev,
 			   "Switch port does not support interface type: %s\n",
+			   phy_modes(conf->portmode));
+		break;
+	case SPX5_PERR_DUPLEX:
+		netdev_err(port->ndev,
+			   "Interface does not support half duplex: %s\n",
 			   phy_modes(conf->portmode));
 		break;
 	default:
@@ -290,6 +297,22 @@ static int sparx5_port_verify_speed(struct sparx5 *sparx5,
 		    conf->speed != SPEED_10 &&
 		    conf->speed != SPEED_2500)
 			return sparx5_port_error(port, conf, SPX5_PERR_SPEED);
+		break;
+	case PHY_INTERFACE_MODE_USXGMII:
+		/* Single-lane USXGMII has an RTL erratum on Sparx5
+		 * (multi-mode QXGMII only).
+		 */
+		if (is_sparx5(sparx5))
+			return sparx5_port_error(port, conf, SPX5_PERR_IFTYPE);
+		if (conf->speed != SPEED_10 &&
+		    conf->speed != SPEED_100 &&
+		    conf->speed != SPEED_1000 &&
+		    conf->speed != SPEED_2500 &&
+		    conf->speed != SPEED_5000 &&
+		    conf->speed != SPEED_10000)
+			return sparx5_port_error(port, conf, SPX5_PERR_SPEED);
+		if (conf->duplex == DUPLEX_HALF)
+			return sparx5_port_error(port, conf, SPX5_PERR_DUPLEX);
 		break;
 	case PHY_INTERFACE_MODE_5GBASER:
 	case PHY_INTERFACE_MODE_10GBASER:
@@ -987,7 +1010,8 @@ static int sparx5_port_pcs_low_set(struct sparx5 *sparx5,
 	bool sgmii = false, inband_aneg = false;
 	int err;
 
-	if (conf->portmode == PHY_INTERFACE_MODE_10G_QXGMII)
+	if (conf->portmode == PHY_INTERFACE_MODE_10G_QXGMII ||
+	    conf->portmode == PHY_INTERFACE_MODE_USXGMII)
 		return sparx5_port_usx_pcs_low_set(sparx5, port, conf);
 
 	if (conf->inband) {

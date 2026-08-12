@@ -173,6 +173,7 @@ extern const u8 ifh_smac[];
 #define SPX5_BUM_KNOWN_UNICAST BIT(5)
 #define SPX5_BUM_LEARN_FRAMES BIT(6)
 
+#define SPX5_USXGMII_SINGLE 0
 #define SPX5_USXGMII_QUAD 2
 #define SPX5_USXGMII_SPEED 6
 

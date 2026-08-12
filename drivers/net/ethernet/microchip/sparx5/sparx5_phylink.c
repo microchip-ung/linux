@@ -42,6 +42,7 @@ sparx5_phylink_mac_select_pcs(struct phylink_config *config,
 	case PHY_INTERFACE_MODE_10GBASER:
 	case PHY_INTERFACE_MODE_25GBASER:
 	case PHY_INTERFACE_MODE_10G_QXGMII:
+	case PHY_INTERFACE_MODE_USXGMII:
 		return &port->phylink_pcs;
 	default:
 		return NULL;
