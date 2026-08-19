@@ -791,6 +791,15 @@ int br_mrp_start_test(struct net_bridge *br,
 	if (support == BR_MRP_HW)
 		return 0;
 
+	/* An interval of 0 means stop. The switchdev call above has already
+	 * deleted the test object for it, so all that is left is to stop the
+	 * software generation.
+	 */
+	if (!test->interval) {
+		cancel_delayed_work_sync(&mrp->test_work);
+		return 0;
+	}
+
 	mrp->test_interval = test->interval;
 	mrp->test_end = jiffies + usecs_to_jiffies(test->period);
 	mrp->test_max_miss = test->max_miss;
@@ -929,6 +938,15 @@ int br_mrp_start_in_test(struct net_bridge *br,
 
 	if (support == BR_MRP_HW)
 		return 0;
+
+	/* An interval of 0 means stop. The switchdev call above has already
+	 * deleted the test object for it, so all that is left is to stop the
+	 * software generation.
+	 */
+	if (!in_test->interval) {
+		cancel_delayed_work_sync(&mrp->in_test_work);
+		return 0;
+	}
 
 	mrp->in_test_interval = in_test->interval;
 	mrp->in_test_end = jiffies + usecs_to_jiffies(in_test->period);
