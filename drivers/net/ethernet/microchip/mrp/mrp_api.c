@@ -195,10 +195,15 @@ static int __mrp_port_start_ring_test(struct mrp_port *mrp_port,
 	struct mrp_control *mrp_ctrl;
 	int ret;
 
+	if (!interval)
+		return -EINVAL;
+
 	mrp_ctrl = mrp_port->mrp_inst->mrp_ctrl;
 
 	if (afi_slow_inj_started(mrp_ctrl->afi_ctrl,
-				 mrp_port->afi_ring_test_id))
+				 mrp_port->afi_ring_test_id) &&
+	    mrp_port->ring_interval == interval &&
+	    mrp_port->ring_max_miss == max)
 		return 0;
 
 	ret = mrp_ctrl->ops->mrp_port_disable_ring_interrupt(mrp_port);
@@ -218,6 +223,7 @@ static int __mrp_port_start_ring_test(struct mrp_port *mrp_port,
 			   &cfg);
 
 	mrp_port->ring_interval = interval;
+	mrp_port->ring_max_miss = max;
 
 	ret = mrp_ctrl->ops->mrp_port_process_ring_test(mrp_port, true);
 	if (ret)
@@ -329,10 +335,15 @@ static int __mrp_port_start_in_test(struct mrp_port *mrp_port,
 	struct mrp_control *mrp_ctrl;
 	int ret;
 
+	if (!interval)
+		return -EINVAL;
+
 	mrp_ctrl = mrp_port->mrp_inst->mrp_ctrl;
 
 	if (afi_slow_inj_started(mrp_ctrl->afi_ctrl,
-				 mrp_port->afi_in_test_id))
+				 mrp_port->afi_in_test_id) &&
+	    mrp_port->in_interval == interval &&
+	    mrp_port->in_max_miss == max)
 		return 0;
 
 	ret = mrp_ctrl->ops->mrp_port_disable_in_interrupt(mrp_port);
@@ -352,6 +363,7 @@ static int __mrp_port_start_in_test(struct mrp_port *mrp_port,
 			   &cfg);
 
 	mrp_port->in_interval = interval;
+	mrp_port->in_max_miss = max;
 
 	ret = mrp_ctrl->ops->mrp_port_process_in_test(mrp_port, true);
 	if (ret)
@@ -903,7 +915,6 @@ int mrp_port_start_ring_test(struct mrp_port *mrp_port,
 	if (mrp_port->role == BR_MRP_PORT_ROLE_INTER)
 		return 0;
 
-	mrp_port->ring_max_miss = mrp->max_miss;
 	mrp_inst = mrp_port->mrp_inst;
 	mrp_inst->monitor = mrp->monitor;
 
@@ -1156,7 +1167,6 @@ int mrp_port_start_in_test(struct mrp_port *mrp_port,
 	 * frames on all the ports of the MRP instance regardless of the port
 	 */
 	mrp_inst = mrp_port->mrp_inst;
-	mrp_port->in_max_miss = mrp->max_miss;
 
 	switch (mrp_inst->in_role) {
 	case BR_MRP_IN_ROLE_MIM:
