@@ -265,6 +265,15 @@ static int lan9645x_mrp_port_init(struct mrp_port *mrp_port, u16 prio)
 		MEP_TST_PRIO_CFG_OWN_PRIO,
 		lan9645x, MEP_TST_PRIO_CFG(port->chip_port));
 
+	/* Arm the LOC interrupts for as long as this port exists. Nothing can
+	 * latch yet, because MEP_TST_CFG.LOC_PERIOD and
+	 * MEP_ITST_CFG.ITST_LOC_PERIOD select no LOC period until a test is
+	 * started on the port.
+	 */
+	lan_wr(MEP_MRP_INTR_ENA_TST_LOC_INTR_ENA_SET(1) |
+	       MEP_MRP_INTR_ENA_ITST_LOC_INTR_ENA_SET(1),
+	       lan9645x, MEP_MRP_INTR_ENA(port->chip_port));
+
 	return 0;
 }
 
@@ -284,6 +293,16 @@ static int lan9645x_mrp_port_uninit(struct mrp_port *mrp_port)
 	lan_rmw(MEP_MRP_CTRL_MRP_ENA_SET(0),
 		MEP_MRP_CTRL_MRP_ENA,
 		lan9645x, MEP_MRP_CTRL(port->chip_port));
+
+	lan_rmw(MEP_MRP_INTR_ENA_TST_LOC_INTR_ENA_SET(0) |
+		MEP_MRP_INTR_ENA_ITST_LOC_INTR_ENA_SET(0),
+		MEP_MRP_INTR_ENA_TST_LOC_INTR_ENA |
+		MEP_MRP_INTR_ENA_ITST_LOC_INTR_ENA,
+		lan9645x, MEP_MRP_INTR_ENA(port->chip_port));
+
+	lan_wr(MEP_MRP_STICKY_TST_LOC_STICKY |
+	       MEP_MRP_STICKY_ITST_LOC_STICKY,
+	       lan9645x, MEP_MRP_STICKY(port->chip_port));
 
 	return 0;
 }
@@ -599,7 +618,8 @@ static int lan9645x_mrp_port_process_ring_test(struct mrp_port *mrp_port,
 
 	/* Set LOC */
 	lan_rmw(MEP_TST_CFG_CLR_MISS_CNT_ENA_SET(process) |
-		MEP_TST_CFG_LOC_PERIOD_SET(mrp_port->mrp_inst->ring_loc_idx),
+		MEP_TST_CFG_LOC_PERIOD_SET(process ?
+					   mrp_port->mrp_inst->ring_loc_idx : 0),
 		MEP_TST_CFG_CLR_MISS_CNT_ENA |
 		MEP_TST_CFG_LOC_PERIOD,
 		lan9645x, MEP_TST_CFG(port->chip_port));
@@ -797,7 +817,8 @@ static int lan9645x_mrp_port_process_in_test(struct mrp_port *mrp_port,
 
 	/* Set LOC */
 	lan_rmw(MEP_ITST_CFG_ITST_CLR_MISS_CNT_ENA_SET(process) |
-		MEP_ITST_CFG_ITST_LOC_PERIOD_SET(mrp_port->mrp_inst->in_loc_idx),
+		MEP_ITST_CFG_ITST_LOC_PERIOD_SET(process ?
+						 mrp_port->mrp_inst->in_loc_idx : 0),
 		MEP_ITST_CFG_ITST_CLR_MISS_CNT_ENA |
 		MEP_ITST_CFG_ITST_LOC_PERIOD,
 		lan9645x, MEP_ITST_CFG(port->chip_port));
@@ -976,10 +997,6 @@ int lan9645x_mrp_init(struct lan9645x *lan9645x)
 
 		lan9645x_mact_learn(lan9645x, PGID_MRP, mrp_test_dmac,
 				    port->pvid, ENTRYTYPE_LOCKED);
-
-		lan_wr(MEP_MRP_INTR_ENA_TST_LOC_INTR_ENA_SET(1) |
-		       MEP_MRP_INTR_ENA_ITST_LOC_INTR_ENA_SET(1),
-		       lan9645x, MEP_MRP_INTR_ENA(port->chip_port));
 	}
 
 	lan_rmw(MEP_INTR_CTRL_OAM_MEP_INTR_ENA_SET(1),
