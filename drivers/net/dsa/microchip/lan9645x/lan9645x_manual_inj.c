@@ -29,6 +29,10 @@ static int lan9645x_port_ifh_xmit(struct sk_buff *skb,
 
 	dev = lan9645x_port_to_ndev(port);
 
+	/* Pass free_on_error as false: the caller owns the skb on failure. */
+	if (__skb_put_padto(skb, LAN9645X_BUFFER_MIN_SZ, false))
+		return -ENOMEM;
+
 	val = lan_rd(lan9645x, QS_INJ_STATUS);
 	if (!(QS_INJ_STATUS_FIFO_RDY_GET(val) & BIT(cpum)) ||
 	    (QS_INJ_STATUS_WMARK_REACHED_GET(val) & BIT(cpum)))
@@ -48,8 +52,11 @@ static int lan9645x_port_ifh_xmit(struct sk_buff *skb,
 		lan_wr((__force u32)ifh[i], lan9645x, QS_INJ_WR(cpum));
 	}
 
-	/* Write frame */
-	count = DIV_ROUND_UP(skb->len, 4);
+	/* Write frame. The trailing bytes of a length that is not a multiple
+	 * of 4 are assembled in a zeroed word of their own, so that no byte
+	 * past skb->len is ever read.
+	 */
+	count = skb->len / 4;
 	last = skb->len % 4;
 	for (i = 0; i < count; ++i) {
 		/* Wait until the fifo is ready */
@@ -59,20 +66,22 @@ static int lan9645x_port_ifh_xmit(struct sk_buff *skb,
 		lan_wr(((u32 *)skb->data)[i], lan9645x, QS_INJ_WR(cpum));
 	}
 
-	/* Add padding */
-	while (i < (LAN9645X_BUFFER_MIN_SZ / 4)) {
+	if (last) {
+		u32 tail = 0;
+
 		/* Wait until the fifo is ready */
 		if (lan9645x_port_inj_ready(lan9645x, cpum))
 			goto err;
 
-		lan_wr(0, lan9645x, QS_INJ_WR(cpum));
-		++i;
+		memcpy(&tail, &skb->data[i * 4], last);
+		lan_wr(tail, lan9645x, QS_INJ_WR(cpum));
 	}
 
-	/* Indicate EOF and valid bytes in the last word */
+	/* Indicate EOF and valid bytes in the last word. A last of 0 means the
+	 * frame ends on a word boundary, which VLD_BYTES encodes the same way.
+	 */
 	lan_wr(QS_INJ_CTRL_GAP_SIZE_SET(1) |
-	       QS_INJ_CTRL_VLD_BYTES_SET(skb->len < LAN9645X_BUFFER_MIN_SZ ?
-				     0 : last) |
+	       QS_INJ_CTRL_VLD_BYTES_SET(last) |
 	       QS_INJ_CTRL_EOF_SET(1),
 	       lan9645x, QS_INJ_CTRL(cpum));
 
