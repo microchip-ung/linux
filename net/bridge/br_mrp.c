@@ -578,6 +578,9 @@ int br_mrp_add(struct net_bridge *br, struct br_mrp_instance *instance)
 	if (mrp)
 		return -EINVAL;
 
+	if (instance->p_ifindex == instance->s_ifindex)
+		return -EINVAL;
+
 	if (!br_mrp_get_port(br, instance->p_ifindex) ||
 	    !br_mrp_get_port(br, instance->s_ifindex))
 		return -EINVAL;
