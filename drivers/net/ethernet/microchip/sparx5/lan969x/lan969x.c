@@ -236,6 +236,29 @@ static u32 lan969x_port_dev_mapping(struct sparx5 *sparx5, int port)
 	return port;
 }
 
+static void lan969x_port_mux_clear(struct sparx5 *sparx5, u32 portno)
+{
+	u32 inst;
+
+	/* These mux enable bits are set-only, so clear whatever this port
+	 * could occupy before the target mode re-asserts its own bit below.
+	 */
+	if (lan969x_port_is_10g(portno)) {
+		inst = lan969x_port_dev_mapping(sparx5, portno);
+		spx5_rmw(0, BIT(inst), sparx5, PORT_CONF_USXGMII_ENA);
+	}
+
+	if (portno >= 8 && portno <= 23) {
+		inst = portno / 4;
+		spx5_rmw(0, BIT(inst), sparx5, PORT_CONF_USXGMII_ENA);
+	}
+
+	if (portno <= 23) {
+		inst = portno / 4;
+		spx5_rmw(0, BIT(inst), sparx5, PORT_CONF_QSGMII_ENA);
+	}
+}
+
 static int lan969x_port_mux_set(struct sparx5 *sparx5, struct sparx5_port *port,
 			 struct sparx5_port_config *conf)
 {
@@ -244,6 +267,8 @@ static int lan969x_port_mux_set(struct sparx5 *sparx5, struct sparx5_port *port,
 
 	if (port->conf.portmode == conf->portmode)
 		return 0; /* Nothing to do */
+
+	lan969x_port_mux_clear(sparx5, portno);
 
 	switch (conf->portmode) {
 	case PHY_INTERFACE_MODE_QSGMII: /* QSGMII: 4x2G5 devices. Mode Q'  */
