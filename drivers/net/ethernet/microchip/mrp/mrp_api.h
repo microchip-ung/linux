@@ -163,8 +163,8 @@ int mrp_del_in_port(struct mrp_control *mrp_ctrl,
 		    const struct switchdev_obj_in_role_mrp *mrp,
 		    struct mrp_port *mrp_port);
 
-int mrp_ring_interrupt(struct mrp_control *mrp_ctrl);
-int mrp_in_interrupt(struct mrp_control *mrp_ctrl);
+bool mrp_ring_interrupt(struct mrp_control *mrp_ctrl);
+bool mrp_in_interrupt(struct mrp_control *mrp_ctrl);
 
 int mrp_port_set_ring_state(struct mrp_port *mrp_port,
 			    const struct switchdev_obj_ring_state_mrp *mrp);

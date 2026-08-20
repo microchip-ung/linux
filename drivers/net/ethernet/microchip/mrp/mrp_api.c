@@ -736,11 +736,12 @@ int mrp_del_in_port(struct mrp_control *mrp_ctrl,
 }
 EXPORT_SYMBOL_GPL(mrp_del_in_port);
 
-int mrp_ring_interrupt(struct mrp_control *mrp_ctrl)
+bool mrp_ring_interrupt(struct mrp_control *mrp_ctrl)
 {
 	struct mrp_instance *mrp_inst;
 	bool is_interrupt = false;
 	struct mrp_port *mrp_port;
+	bool handled = false;
 
 	list_for_each_entry(mrp_inst, &mrp_ctrl->mrps_list, list) {
 		for (int i = 0; i < MRP_MAX_PORTS; ++i) {
@@ -761,19 +762,21 @@ int mrp_ring_interrupt(struct mrp_control *mrp_ctrl)
 			queue_delayed_work(system_wq,
 					   &mrp_inst->ring_loc_work,
 					   0);
+			handled = true;
 		}
 		is_interrupt = false;
 	}
 
-	return 0;
+	return handled;
 }
 EXPORT_SYMBOL_GPL(mrp_ring_interrupt);
 
-int mrp_in_interrupt(struct mrp_control *mrp_ctrl)
+bool mrp_in_interrupt(struct mrp_control *mrp_ctrl)
 {
 	struct mrp_instance *mrp_inst;
 	bool is_interrupt = false;
 	struct mrp_port *mrp_port;
+	bool handled = false;
 
 	list_for_each_entry(mrp_inst, &mrp_ctrl->mrps_list, list) {
 		for (int i = 0; i < MRP_MAX_PORTS; ++i) {
@@ -791,11 +794,12 @@ int mrp_in_interrupt(struct mrp_control *mrp_ctrl)
 			queue_delayed_work(system_wq,
 					   &mrp_inst->in_loc_work,
 					   0);
+			handled = true;
 		}
 		is_interrupt = false;
 	}
 
-	return 0;
+	return handled;
 }
 EXPORT_SYMBOL_GPL(mrp_in_interrupt);
 
