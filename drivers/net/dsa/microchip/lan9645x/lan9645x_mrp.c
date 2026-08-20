@@ -22,6 +22,47 @@
 #define CONFIG_TEST		0
 #define CONFIG_IN_TEST		1
 
+/* Base ticks in one millisecond, taken from the encoding table of
+ * OAM_MEP:COMMON:LOC_PERIOD_CFG.LOC_PERIOD_VAL, which lists 5045 for a period
+ * of 1 ms. Do not re-derive it from the base tick length: the datasheet gives
+ * that as 198.2 ns for the field and as 198.4 ns for the reset value of
+ * OAM_MEP:COMMON:LOC_CTRL.LOC_BASE_TICK_CNT, and those disagree.
+ */
+#define MEP_LOC_TICKS_PER_MSEC		5045
+
+/* An MRP endpoint raises the LOC event once MISS_CNT reaches MAX_MISS_CNT,
+ * which per the LOC_PERIOD_CFG description happens "at MAX_MISS_CNT/2 times
+ * the configured LOC period". MAX_MISS_CNT is programmed as the number of
+ * misses the daemon asked for, so program twice the test interval to make the
+ * event land after max_miss intervals rather than half that.
+ */
+#define MEP_LOC_INTERVAL_MULT		2
+
+/* MEP_TST_CFG.MAX_MISS_CNT and MEP_ITST_CFG.ITST_MAX_MISS_CNT are 4 bits. */
+#define MEP_MAX_MISS_CNT_MAX		15
+
+static u32 lan9645x_mrp_loc_period(u32 interval_us)
+{
+	u64 ticks = (u64)interval_us * MEP_LOC_TICKS_PER_MSEC *
+		    MEP_LOC_INTERVAL_MULT;
+
+	ticks = div_u64(ticks, USEC_PER_MSEC);
+
+	/* LOC_PERIOD_VAL is 32 bits wide. */
+	if (ticks > U32_MAX)
+		return U32_MAX;
+
+	return ticks;
+}
+
+/* max_miss arrives unbounded from netlink, and FIELD_PREP() would silently
+ * mask it into the 4 bit register field, turning 16 into an immediate LOC.
+ */
+static u32 lan9645x_mrp_max_miss(u32 max_miss)
+{
+	return min_t(u32, max_miss, MEP_MAX_MISS_CNT_MAX);
+}
+
 static const u8 mrp_test_dmac[ETH_ALEN] = { 0x1, 0x15, 0x4e, 0x0, 0x0, 0x1 };
 static const u8 mrp_in_test_dmac[ETH_ALEN] = { 0x1, 0x15, 0x4e, 0x0, 0x0, 0x3 };
 
@@ -609,11 +650,10 @@ static int lan9645x_mrp_port_process_ring_test(struct mrp_port *mrp_port,
 		MEP_MRP_CTRL_MRP_TST_ENA,
 		lan9645x, MEP_MRP_CTRL(port->chip_port));
 
-	/* 51 represents 10 usec */
 	/* MRP loc index 0 represents that there is no LOC used, while index 1
 	 * in MRP represents index 0 in MEP, therefor subtract 1
 	 */
-	lan_wr(mrp_port->ring_interval / 10 * 51,
+	lan_wr(lan9645x_mrp_loc_period(mrp_port->ring_interval),
 	       lan9645x, MEP_LOC_PERIOD_CFG(mrp_port->mrp_inst->ring_loc_idx - 1));
 
 	/* Set LOC */
@@ -666,7 +706,7 @@ static enum mrp_interrupt_status lan9645x_mrp_port_get_ring_intr_status(struct m
 	val = lan_rd(lan9645x, MEP_TST_CFG(port->chip_port));
 	val = MEP_TST_CFG_MISS_CNT_GET(val);
 
-	if (val == mrp_port->ring_max_miss)
+	if (val == lan9645x_mrp_max_miss(mrp_port->ring_max_miss))
 		return MRP_INTERRUPT_STATUS_OPEN;
 
 	return MRP_INTERRUPT_STATUS_CLOSED;
@@ -690,7 +730,7 @@ static int lan9645x_mrp_port_enable_ring_intr(struct mrp_port *mrp_port,
 	struct lan9645x_port *port = mrp_port->priv;
 	struct lan9645x *lan9645x = port->lan9645x;
 
-	lan_rmw(MEP_TST_CFG_MAX_MISS_CNT_SET(max),
+	lan_rmw(MEP_TST_CFG_MAX_MISS_CNT_SET(lan9645x_mrp_max_miss(max)),
 		MEP_TST_CFG_MAX_MISS_CNT,
 		lan9645x, MEP_TST_CFG(port->chip_port));
 
@@ -808,11 +848,10 @@ static int lan9645x_mrp_port_process_in_test(struct mrp_port *mrp_port,
 		MEP_MRP_CTRL_MRP_ITST_ENA,
 		lan9645x, MEP_MRP_CTRL(port->chip_port));
 
-	/* 51 represents 10 usec */
 	/* MRP loc index 0 represents that there is no LOC used, while index 1
 	 * in MRP represets index 0 in MEP, therefor subtract 1
 	 */
-	lan_wr(mrp_port->in_interval / 10 * 51, lan9645x,
+	lan_wr(lan9645x_mrp_loc_period(mrp_port->in_interval), lan9645x,
 	       MEP_LOC_PERIOD_CFG(mrp_port->mrp_inst->in_loc_idx - 1));
 
 	/* Set LOC */
@@ -865,7 +904,7 @@ static enum mrp_interrupt_status lan9645x_mrp_port_get_in_intr_status(struct mrp
 	val = lan_rd(lan9645x, MEP_ITST_CFG(port->chip_port));
 	val = MEP_ITST_CFG_ITST_MISS_CNT_GET(val);
 
-	if (val == mrp_port->in_max_miss)
+	if (val == lan9645x_mrp_max_miss(mrp_port->in_max_miss))
 		return MRP_INTERRUPT_STATUS_OPEN;
 
 	return MRP_INTERRUPT_STATUS_CLOSED;
@@ -888,7 +927,7 @@ static int lan9645x_mrp_port_enable_in_intr(struct mrp_port *mrp_port, u32 max)
 	struct lan9645x_port *port = mrp_port->priv;
 	struct lan9645x *lan9645x = port->lan9645x;
 
-	lan_rmw(MEP_ITST_CFG_ITST_MAX_MISS_CNT_SET(max),
+	lan_rmw(MEP_ITST_CFG_ITST_MAX_MISS_CNT_SET(lan9645x_mrp_max_miss(max)),
 		MEP_ITST_CFG_ITST_MAX_MISS_CNT,
 		lan9645x, MEP_ITST_CFG(port->chip_port));
 
