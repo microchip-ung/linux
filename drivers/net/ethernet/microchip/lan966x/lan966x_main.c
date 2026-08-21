@@ -10,6 +10,7 @@
 #include <linux/phy/phy.h>
 #include <linux/platform_device.h>
 #include <linux/reset.h>
+#include <linux/unaligned.h>
 #include <net/addrconf.h>
 
 #include "lan966x_main.h"
@@ -230,7 +231,18 @@ static int lan966x_port_ifh_xmit(struct sk_buff *skb,
 	u32 i, count, last;
 	u8 grp = 0;
 	u32 val;
+	u8 *buf;
 	int err;
+
+	if (__skb_put_padto(skb, LAN966X_BUFFER_MIN_SZ, false)) {
+		dev->stats.tx_dropped++;
+		if (skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP &&
+		    LAN966X_SKB_CB(skb)->rew_op == IFH_REW_OP_TWO_STEP_PTP)
+			lan966x_ptp_txtstamp_release(port, skb);
+
+		dev_kfree_skb_any(skb);
+		return NETDEV_TX_OK;
+	}
 
 	val = lan_rd(lan966x, QS_INJ_STATUS);
 	if (!(QS_INJ_STATUS_FIFO_RDY_GET(val) & BIT(grp)) ||
@@ -252,16 +264,31 @@ static int lan966x_port_ifh_xmit(struct sk_buff *skb,
 		lan_wr((__force u32)ifh[i], lan966x, QS_INJ_WR(grp));
 	}
 
-	/* Write frame */
-	count = DIV_ROUND_UP(skb->len, 4);
-	last = skb->len % 4;
-	for (i = 0; i < count; ++i) {
+	/* Write the whole words of the frame */
+	count = skb->len / 4;
+	buf = skb->data;
+	for (i = 0; i < count; ++i, buf += 4) {
 		/* Wait until the fifo is ready */
 		err = lan966x_port_inj_ready(lan966x, grp);
 		if (err)
 			goto err;
 
-		lan_wr(((u32 *)skb->data)[i], lan966x, QS_INJ_WR(grp));
+		lan_wr(get_unaligned((const u32 *)buf), lan966x, QS_INJ_WR(grp));
+	}
+
+	/* Write the trailing bytes from a zeroed word, so that no byte past
+	 * skb->len is read
+	 */
+	last = skb->len % 4;
+	if (last) {
+		/* Wait until the fifo is ready */
+		err = lan966x_port_inj_ready(lan966x, grp);
+		if (err)
+			goto err;
+
+		val = 0;
+		memcpy(&val, buf, last);
+		lan_wr(val, lan966x, QS_INJ_WR(grp));
 	}
 
 	/* Add padding */
