@@ -1038,6 +1038,13 @@ static void apply_ring_port_cfg(struct lan9645x *lan9645x, int port, int lan_id,
 	lan9645x_hsr_features_set(lan9645x, port, type);
 }
 
+static void lan9645x_npi_red_tag_ena(struct lan9645x *lan9645x, bool enable)
+{
+	lan_rmw(REW_RED_TAG_CFG_RED_TAG_CFG_SET(enable),
+		REW_RED_TAG_CFG_RED_TAG_CFG,
+		lan9645x, REW_RED_TAG_CFG(lan9645x->npi));
+}
+
 static void apply_interlink_port_cfg(struct lan9645x *lan9645x, int port)
 {
 	struct lan9645x_port *p = lan9645x_to_port(lan9645x, port);
@@ -1239,6 +1246,14 @@ int lan9645x_hsr_prp_interlink_add(struct lan9645x *lan9645x,
 
 	apply_interlink_port_cfg(lan9645x, port_c);
 
+	/* Suppress HSR tag push toward NPI on CPU-bound copies. Ring frames
+	 * already carry the tag in the frame data, so the rewriter never
+	 * needs to push one for them. The catch-all classifies untagged
+	 * SAN frames into a seqgen ISDX which would otherwise push a tag
+	 * toward NPI and trigger the IFH/DMAC overlap quirk.
+	 */
+	lan9645x_npi_red_tag_ena(lan9645x, false);
+
 	lan_rmw(QSYS_DD_CFG_DUPL_DISC_MASK_SET(0xf) |
 		QSYS_DD_CFG_UPD_DISC_TBL_MASK_SET(0xf) |
 		QSYS_DD_CFG_INTERLINK_ENA_SET(1),
@@ -1300,6 +1315,7 @@ del_catch_all:
 	vcap_del_rule(lan9645x->vcap_ctrl, dev, h->catch_all_vrule_id);
 revert_port:
 	revert_interlink_port_cfg(lan9645x, port_c);
+	lan9645x_npi_red_tag_ena(lan9645x, true);
 	lan9645x_streamt_del(lan9645x, catch_all_isdx);
 free_isdx:
 	lan9645x_stream_isdx_free(lan9645x, catch_all_isdx);
@@ -1354,6 +1370,8 @@ int lan9645x_hsr_prp_interlink_del(struct lan9645x *lan9645x, int port,
 	vcap_del_rule(lan9645x->vcap_ctrl, dev, h->catch_all_vrule_id);
 
 	revert_interlink_port_cfg(lan9645x, port);
+
+	lan9645x_npi_red_tag_ena(lan9645x, true);
 
 	lan9645x_streamt_del(lan9645x, h->catch_all_isdx);
 	lan9645x_stream_isdx_free(lan9645x, h->catch_all_isdx);
@@ -1468,16 +1486,6 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 			lan9645x,
 			ANA_PORT_CFG(CPU_PORT));
 	}
-
-	/* Suppress HSR tag push toward NPI on CPU-bound copies. Ring frames
-	 * already carry the tag in the frame data, so the rewriter never
-	 * needs to push one for them. The catch-all classifies untagged
-	 * SAN frames into a seqgen ISDX which would otherwise push a tag
-	 * toward NPI and trigger the IFH/DMAC overlap quirk.
-	 */
-	lan_rmw(REW_RED_TAG_CFG_RED_TAG_CFG_SET(0),
-		REW_RED_TAG_CFG_RED_TAG_CFG,
-		lan9645x, REW_RED_TAG_CFG(lan9645x->npi));
 
 	/* Setup duplicate discard in queue system */
 	lan_wr(QSYS_MISC_DROP_CFG_FRER_ENA_SET(true),
@@ -1691,10 +1699,6 @@ int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 
 	lan_wr(QSYS_MISC_DROP_CFG_FRER_ENA_SET(false),
 	       lan9645x, QSYS_MISC_DROP_CFG);
-
-	lan_rmw(REW_RED_TAG_CFG_RED_TAG_CFG_SET(1),
-		REW_RED_TAG_CFG_RED_TAG_CFG,
-		lan9645x, REW_RED_TAG_CFG(lan9645x->npi));
 
 	lan_rmw(ANA_RED_MISC_CFG_CHK_LANID_ENA_SET(false) |
 		ANA_RED_MISC_CFG_DUPL_DISC_ENA_SET(false) |
