@@ -1814,7 +1814,7 @@ static int lan9645x_port_hsr_join(struct dsa_switch *ds, int port,
 		}
 		return lan9645x_hsr_prp_interlink_add(lan9645x,
 						      lan9645x->ports[port],
-						      hsr);
+						      hsr, extack);
 	default:
 		return -EOPNOTSUPP;
 	}

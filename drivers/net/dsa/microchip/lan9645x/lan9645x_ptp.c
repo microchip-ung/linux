@@ -340,7 +340,7 @@ static int lan9645x_ptp_apply_cfg(struct lan9645x *lan9645x, int port,
 	if (err)
 		return err;
 
-	return lan9645x_ptp_hsr_setup(lan9645x, port, cfg);
+	return lan9645x_ptp_hsr_setup(lan9645x, port, cfg, extack);
 }
 
 int lan9645x_port_hwtstamp_set(struct dsa_switch *ds, int port,

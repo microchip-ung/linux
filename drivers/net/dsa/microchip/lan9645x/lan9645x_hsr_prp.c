@@ -1194,9 +1194,25 @@ static int lan9645x_vcap_s1_normal_catch_all(struct lan9645x *lan9645x,
 	return err;
 }
 
+static bool lan9645x_hsr_ring_ptp_active(struct lan9645x *lan9645x)
+{
+	struct lan9645x_hsr_prp *h = &lan9645x->hsr;
+
+	lockdep_assert_held(&h->lock);
+
+	if (h->ptp_ports)
+		return true;
+
+	if (lan9645x_to_port(lan9645x, h->port_a)->ptp_rx_cmd)
+		return true;
+
+	return lan9645x_to_port(lan9645x, h->port_b)->ptp_rx_cmd;
+}
+
 int lan9645x_hsr_prp_interlink_add(struct lan9645x *lan9645x,
 				   struct lan9645x_port *interlink,
-				   struct net_device *hsr)
+				   struct net_device *hsr,
+				   struct netlink_ext_ack *extack)
 {
 	struct lan9645x_hsr_prp *h = &lan9645x->hsr;
 	struct lan9645x_streamt_entry entry = { };
@@ -1210,17 +1226,30 @@ int lan9645x_hsr_prp_interlink_add(struct lan9645x *lan9645x,
 	mutex_lock(&h->lock);
 
 	if (!h->enabled) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "an HSR ring pair must be offloaded before an interlink port can be added");
 		err = -ENODEV;
 		goto unlock;
 	}
 
 	if (h->interlink_enabled) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "only one HSR-SAN interlink port can be offloaded");
 		err = -EBUSY;
 		goto unlock;
 	}
 
 	if (h->type != LAN9645X_HSR) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "interlink offload is only supported for HSR, not PRP");
 		err = -EOPNOTSUPP;
+		goto unlock;
+	}
+
+	if (lan9645x_hsr_ring_ptp_active(lan9645x)) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "HSR-SAN interlink is incompatible with PTP over HSR; disable hardware timestamping on the ring ports first");
+		err = -EBUSY;
 		goto unlock;
 	}
 

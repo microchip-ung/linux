@@ -307,7 +307,8 @@ void lan9645x_ptp_hsr_pair_deinit(struct lan9645x *lan9645x)
  * event frames, and forwarding overwrite from shadow ports, to direct PTP
  * frames to either A or B.
  */
-static int lan9645x_ptp_hsr_port_init(struct lan9645x *lan9645x, int port)
+static int lan9645x_ptp_hsr_port_init(struct lan9645x *lan9645x, int port,
+				      struct netlink_ext_ack *extack)
 {
 	struct lan9645x_hsr_prp *hsr;
 	int err = 0;
@@ -319,8 +320,16 @@ static int lan9645x_ptp_hsr_port_init(struct lan9645x *lan9645x, int port)
 		goto unlock;
 
 	if (hsr->shadow_ports[1] < 0) {
-		dev_warn(lan9645x->dev,
-			 "PTP over HSR requires 2 shadow ports, skipping HSR PTP setup\n");
+		NL_SET_ERR_MSG_MOD(extack,
+				   "PTP over HSR requires 2 shadow ports in the device tree");
+		err = -EOPNOTSUPP;
+		goto unlock;
+	}
+
+	if (hsr->interlink_enabled) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "PTP over HSR is incompatible with an HSR-SAN interlink; remove the interlink port from the HSR device first");
+		err = -EBUSY;
 		goto unlock;
 	}
 
@@ -426,13 +435,14 @@ int lan9645x_ptp_hsr_init(struct lan9645x *lan9645x)
 }
 
 int lan9645x_ptp_hsr_setup(struct lan9645x *lan9645x, int port,
-			   struct kernel_hwtstamp_config *cfg)
+			   struct kernel_hwtstamp_config *cfg,
+			   struct netlink_ext_ack *extack)
 {
 	if (cfg->rx_filter == HWTSTAMP_FILTER_NONE) {
 		lan9645x_ptp_hsr_port_deinit(lan9645x, port);
 		return 0;
 	} else {
-		return lan9645x_ptp_hsr_port_init(lan9645x, port);
+		return lan9645x_ptp_hsr_port_init(lan9645x, port, extack);
 	}
 }
 
