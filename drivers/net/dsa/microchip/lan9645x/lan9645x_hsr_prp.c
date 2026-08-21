@@ -491,11 +491,15 @@ static void lan9645x_hsr_prp_proxy_nodes_flush(struct lan9645x *lan9645x)
 
 	list_for_each_entry_safe(n, tmp, &h->proxy_nodes, list) {
 		list_del(&n->list);
+		lan9645x_mact_forget(lan9645x, n->smac, VLAN_HSR_PRP,
+				     ENTRYTYPE_LOCKED);
 		lan9645x_hsr_prp_proxy_node_dealloc(lan9645x, dev, n);
 	}
 
 	list_for_each_entry_safe(n, tmp, &h->deferred_proxy_nodes, list) {
 		list_del(&n->list);
+		lan9645x_mact_forget(lan9645x, n->smac, VLAN_HSR_PRP,
+				     ENTRYTYPE_LOCKED);
 		kfree(n);
 	}
 }
@@ -619,6 +623,21 @@ int lan9645x_hsr_prp_proxy_node_add(struct lan9645x *lan9645x, int port,
 	}
 	ether_addr_copy(n->smac, smac);
 
+	/* Pin the proxy node to the interlink. A locked entry is never moved by
+	 * learning, so the SAN's own frames coming back around the ring can not
+	 * steal it onto a ring port, and they are discarded there by
+	 * LOCKED_PORTMOVE_DROP. This overwrites the dynamic entry learned when
+	 * the frame that triggered this proxy node arrived on the interlink.
+	 * Done before the seqgen offload so that a node parked on the deferred
+	 * list is pinned too.
+	 */
+	err = lan9645x_mact_learn(lan9645x, h->port_c, n->smac, VLAN_HSR_PRP,
+				  ENTRYTYPE_LOCKED);
+	if (err) {
+		kfree(n);
+		goto unlock;
+	}
+
 	err = lan9645x_hsr_prp_proxy_node_install(lan9645x, n);
 	if (err) {
 		/* VCAP / streamtable full. Park the node on the deferred
@@ -665,6 +684,8 @@ void lan9645x_hsr_prp_proxy_node_del(struct lan9645x *lan9645x, int port,
 	list_for_each_entry(tmp, &h->deferred_proxy_nodes, list) {
 		if (ether_addr_equal(tmp->smac, smac)) {
 			list_del(&tmp->list);
+			lan9645x_mact_forget(lan9645x, tmp->smac, VLAN_HSR_PRP,
+					     ENTRYTYPE_LOCKED);
 			kfree(tmp);
 			goto unlock;
 		}
@@ -674,6 +695,8 @@ void lan9645x_hsr_prp_proxy_node_del(struct lan9645x *lan9645x, int port,
 		if (ether_addr_equal(tmp->smac, smac)) {
 			n = tmp;
 			list_del(&n->list);
+			lan9645x_mact_forget(lan9645x, n->smac, VLAN_HSR_PRP,
+					     ENTRYTYPE_LOCKED);
 			break;
 		}
 	}
@@ -916,10 +939,16 @@ static void apply_ring_port_cfg(struct lan9645x *lan9645x, int port, int lan_id,
 		REW_TAG_CFG_TAG_CFG,
 		lan9645x, REW_TAG_CFG(port));
 
-	/* Enable MAC learning on the ring port. */
+	/* Enable MAC learning on the ring port. Frames that would move a locked
+	 * MAC entry onto the ring are discarded: this removes from the ring the
+	 * frames sourced by the redbox itself and by the SAN proxy nodes behind
+	 * the interlink, both of which own a locked entry.
+	 */
 	p->learn_ena = true;
-	lan_rmw(ANA_PORT_CFG_LEARN_ENA_SET(true),
-		ANA_PORT_CFG_LEARN_ENA,
+	lan_rmw(ANA_PORT_CFG_LEARN_ENA_SET(true) |
+		ANA_PORT_CFG_LOCKED_PORTMOVE_DROP_SET(true),
+		ANA_PORT_CFG_LEARN_ENA |
+		ANA_PORT_CFG_LOCKED_PORTMOVE_DROP,
 		lan9645x, ANA_PORT_CFG(port));
 
 	/* Ingress redundancy-tag awareness: PRP or HSR, plus LAN-id / NET-id. */
@@ -1561,9 +1590,11 @@ static void revert_ring_port_cfg(struct lan9645x *lan9645x, int port,
 
 	/* Restore the port's own logical port id and disable MAC learning. */
 	lan_rmw(ANA_PORT_CFG_PORTID_VAL_SET(port) |
-		ANA_PORT_CFG_LEARN_ENA_SET(false),
+		ANA_PORT_CFG_LEARN_ENA_SET(false) |
+		ANA_PORT_CFG_LOCKED_PORTMOVE_DROP_SET(false),
 		ANA_PORT_CFG_PORTID_VAL |
-		ANA_PORT_CFG_LEARN_ENA,
+		ANA_PORT_CFG_LEARN_ENA |
+		ANA_PORT_CFG_LOCKED_PORTMOVE_DROP,
 		lan9645x, ANA_PORT_CFG(port));
 
 	/* Forward only to the port itself and drop the netdev feature flags. */
