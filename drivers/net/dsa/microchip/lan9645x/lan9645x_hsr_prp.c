@@ -1559,15 +1559,10 @@ static void revert_ring_port_cfg(struct lan9645x *lan9645x, int port,
 		ANA_PORT_MODE_REDTAG_PARSE_CFG,
 		lan9645x, ANA_PORT_MODE(port));
 
-	/* PRP: restore the port's own logical port id. */
-	if (type == LAN9645X_PRP) {
-		lan_rmw(ANA_PORT_CFG_PORTID_VAL_SET(port),
-			ANA_PORT_CFG_PORTID_VAL, lan9645x,
-			ANA_PORT_CFG(port));
-	}
-
-	/* Disable MAC learning. */
-	lan_rmw(ANA_PORT_CFG_LEARN_ENA_SET(false),
+	/* Restore the port's own logical port id and disable MAC learning. */
+	lan_rmw(ANA_PORT_CFG_PORTID_VAL_SET(port) |
+		ANA_PORT_CFG_LEARN_ENA_SET(false),
+		ANA_PORT_CFG_PORTID_VAL |
 		ANA_PORT_CFG_LEARN_ENA,
 		lan9645x, ANA_PORT_CFG(port));
 
