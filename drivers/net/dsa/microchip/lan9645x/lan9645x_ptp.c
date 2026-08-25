@@ -348,9 +348,7 @@ int lan9645x_port_hwtstamp_set(struct dsa_switch *ds, int port,
 	if (err)
 		return err;
 
-	mutex_lock(&lan9645x->ptp_lock);
 	p->hwtstamp_config = cfg;
-	mutex_unlock(&lan9645x->ptp_lock);
 
 	*config = cfg;
 
@@ -1175,7 +1173,6 @@ int lan9645x_ptp_init(struct lan9645x *lan9645x)
 	}
 
 	spin_lock_init(&lan9645x->ptp_ts_id_lock);
-	mutex_init(&lan9645x->ptp_lock);
 
 	/* Disable master counters */
 	lan_wr(PTP_DOM_CFG_ENA_SET(0), lan9645x, PTP_DOM_CFG);

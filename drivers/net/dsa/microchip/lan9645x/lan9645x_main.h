@@ -581,7 +581,6 @@ struct lan9645x {
 	struct lan9645x_phc phc[LAN9645X_PHC_COUNT];
 	struct mutex ptp_clock_lock; /* lock for phc */
 	spinlock_t ptp_ts_id_lock; /* lock for ts_id */
-	struct mutex ptp_lock; /* lock for ptp interface state */
 	u16 ptp_skbs;
 	int ptp_ext_irq;
 	int ptp_irq;
