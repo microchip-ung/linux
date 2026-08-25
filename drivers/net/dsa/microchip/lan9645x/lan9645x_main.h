@@ -1415,6 +1415,7 @@ void lan9645x_afi_deinit(struct lan9645x *lan9645x);
 int lan9645x_ptp_hsr_init(struct lan9645x *lan9645x);
 int lan9645x_ptp_hsr_setup(struct lan9645x *lan9645x, int port,
 			   struct kernel_hwtstamp_config *cfg);
+void lan9645x_ptp_hsr_pair_deinit(struct lan9645x *lan9645x);
 struct sk_buff *lan9645x_ptp_hsr_tx_irq_skb_match(struct lan9645x_port *port);
 void lan9645x_ptp_hsr_flush_tx_skbs(struct lan9645x_port *port);
 int lan9645x_port_xmit_redundancy_src(struct dsa_switch *ds, int port,

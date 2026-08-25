@@ -292,6 +292,17 @@ static void lan9645x_ptp_hsr_port_deinit(struct lan9645x *lan9645x, int port)
 	mutex_unlock(&lan9645x->hsr.lock);
 }
 
+void lan9645x_ptp_hsr_pair_deinit(struct lan9645x *lan9645x)
+{
+	lockdep_assert_held(&lan9645x->hsr.lock);
+
+	if (!lan9645x->hsr.ptp_ports)
+		return;
+
+	lan9645x->hsr.ptp_ports = 0;
+	__lan9645x_ptp_hsr_rules_delete(lan9645x);
+}
+
 /* Enable PTP on an existing HSR port, by adding VCAP rules to timestamp PTP
  * event frames, and forwarding overwrite from shadow ports, to direct PTP
  * frames to either A or B.
@@ -311,18 +322,6 @@ static int lan9645x_ptp_hsr_port_init(struct lan9645x *lan9645x, int port)
 		dev_warn(lan9645x->dev,
 			 "PTP over HSR requires 2 shadow ports, skipping HSR PTP setup\n");
 		goto unlock;
-	}
-
-	/* Detect stale state: if ptp_ports has bits for ports not in the
-	 * current HSR pair, the old VCAP rules have wrong parameters. Delete
-	 * them so they get recreated below.
-	 */
-	if (hsr->ptp_ports & ~(BIT(hsr->port_a) | BIT(hsr->port_b))) {
-		dev_warn(lan9645x->dev,
-			 "stale PTP HSR state (ptp_ports=0x%x), cleaning up\n",
-			 hsr->ptp_ports);
-		__lan9645x_ptp_hsr_rules_delete(lan9645x);
-		hsr->ptp_ports = 0;
 	}
 
 	if (hsr->ptp_ports & BIT(port))

@@ -1426,7 +1426,12 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 	h->port_a = lrea_port;
 	h->port_b = lreb_port;
 	h->isdx = isdx;
+	h->ptp_ports = 0;
 	h->enabled = true;
+
+	if (lrea->ptp_rx_cmd || lreb->ptp_rx_cmd)
+		dev_warn(lan9645x->dev,
+			 "hardware timestamping was enabled before the HSR ring; re-issue SIOCSHWTSTAMP on the ring ports to get PTP over HSR\n");
 
 	entry.input_port_mask = BIT(CPU_PORT) | lan9645x_hsr_shadow_mask(lan9645x);
 	entry.seq_gen_ena = true;
@@ -1651,6 +1656,8 @@ int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 	lreb_port = h->port_b;
 	lrea = lan9645x_to_port(lan9645x, lrea_port);
 	lreb = lan9645x_to_port(lan9645x, lreb_port);
+
+	lan9645x_ptp_hsr_pair_deinit(lan9645x);
 
 	mutex_lock(&lan9645x->fwd_domain_lock);
 	lrea->hsr = NULL;
