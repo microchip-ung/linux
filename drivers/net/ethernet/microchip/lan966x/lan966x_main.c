@@ -291,21 +291,9 @@ static int lan966x_port_ifh_xmit(struct sk_buff *skb,
 		lan_wr(val, lan966x, QS_INJ_WR(grp));
 	}
 
-	/* Add padding */
-	while (i < (LAN966X_BUFFER_MIN_SZ / 4)) {
-		/* Wait until the fifo is ready */
-		err = lan966x_port_inj_ready(lan966x, grp);
-		if (err)
-			goto err;
-
-		lan_wr(0, lan966x, QS_INJ_WR(grp));
-		++i;
-	}
-
 	/* Indicate EOF and valid bytes in the last word */
 	lan_wr(QS_INJ_CTRL_GAP_SIZE_SET(1) |
-	       QS_INJ_CTRL_VLD_BYTES_SET(skb->len < LAN966X_BUFFER_MIN_SZ ?
-				     0 : last) |
+	       QS_INJ_CTRL_VLD_BYTES_SET(last) |
 	       QS_INJ_CTRL_EOF_SET(1),
 	       lan966x, QS_INJ_CTRL(grp));
 
