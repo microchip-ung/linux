@@ -28,9 +28,17 @@
 
 #define SPX5_PHAD_DIV 3 /* Divide port clock by the power of this */
 
+#define SPX5_USX_CLK_SPD_10G  0 /* DEV10G_DEV_RST_CTRL_SPEED_SEL encoding */
+#define SPX5_USX_CLK_SPD_5G   1
+#define SPX5_USX_CLK_SPD_2G5  2
+#define SPX5_USX_CLK_SPD_1G   3
+#define SPX5_USX_CLK_SPD_100M 4
+#define SPX5_USX_CLK_SPD_10M  5
+
 enum port_error {
 	SPX5_PERR_SPEED,
 	SPX5_PERR_IFTYPE,
+	SPX5_PERR_DUPLEX,
 };
 
 #define ETH_MAXLEN           (ETH_DATA_LEN + ETH_HLEN + ETH_FCS_LEN)
@@ -172,15 +180,37 @@ static int sparx5_get_10g_qxgmii_status(struct sparx5 *sparx5,
 	uint16_t adv;
 	u32 aneg;
 
-	aneg = spx5_rd(sparx5, DEV2G5_USXGMII_ANEG_STATUS(port->portno));
-	spx5_wr(aneg, sparx5, DEV2G5_USXGMII_ANEG_STATUS(port->portno));
+	if (sparx5_port_is_high_speed(sparx5, port->portno, port->conf.portmode)) {
+		u32 dev = sparx5_to_high_dev(sparx5, port->portno);
+		u32 tinst = sparx5_port_dev_index(sparx5, port->portno);
+		void __iomem *inst = spx5_inst_get(sparx5, dev, tinst);
 
-	status->an_complete = DEV2G5_USXGMII_ANEG_STATUS_ANEG_COMPLETE_GET(aneg);
-	adv = DEV2G5_USXGMII_ANEG_STATUS_LP_ADV_ABILITY_GET(aneg);
+		aneg = spx5_inst_rd(inst, DEV10G_USXGMII_ANEG_STATUS(0));
+		spx5_inst_wr(aneg, inst, DEV10G_USXGMII_ANEG_STATUS(0));
 
-	status->link = !DEV2G5_USXGMII_ANEG_STATUS_PAGE_RX_STICKY_GET(aneg) &&
-		       !DEV2G5_USXGMII_ANEG_STATUS_LINK_DOWN_STATUS_GET(aneg);
-	status->link_down = DEV2G5_USXGMII_ANEG_STATUS_LINK_DOWN_STATUS_GET(aneg);
+		status->an_complete =
+			DEV10G_USXGMII_ANEG_STATUS_ANEG_COMPLETE_GET(aneg);
+		adv = DEV10G_USXGMII_ANEG_STATUS_LP_ADV_ABILITY_GET(aneg);
+
+		status->link =
+			!DEV10G_USXGMII_ANEG_STATUS_PAGE_RX_STICKY_GET(aneg) &&
+			!DEV10G_USXGMII_ANEG_STATUS_LINK_DOWN_STATUS_GET(aneg);
+		status->link_down =
+			DEV10G_USXGMII_ANEG_STATUS_LINK_DOWN_STATUS_GET(aneg);
+	} else {
+		aneg = spx5_rd(sparx5, DEV2G5_USXGMII_ANEG_STATUS(port->portno));
+		spx5_wr(aneg, sparx5, DEV2G5_USXGMII_ANEG_STATUS(port->portno));
+
+		status->an_complete =
+			DEV2G5_USXGMII_ANEG_STATUS_ANEG_COMPLETE_GET(aneg);
+		adv = DEV2G5_USXGMII_ANEG_STATUS_LP_ADV_ABILITY_GET(aneg);
+
+		status->link =
+			!DEV2G5_USXGMII_ANEG_STATUS_PAGE_RX_STICKY_GET(aneg) &&
+			!DEV2G5_USXGMII_ANEG_STATUS_LINK_DOWN_STATUS_GET(aneg);
+		status->link_down =
+			DEV2G5_USXGMII_ANEG_STATUS_LINK_DOWN_STATUS_GET(aneg);
+	}
 
 	phylink_decode_usxgmii_word(&state, adv);
 	status->speed = state.speed;
@@ -212,6 +242,7 @@ int sparx5_get_port_status(struct sparx5 *sparx5,
 	case PHY_INTERFACE_MODE_25GBASER:
 		return sparx5_get_sfi_status(sparx5, port, status);
 	case PHY_INTERFACE_MODE_10G_QXGMII:
+	case PHY_INTERFACE_MODE_USXGMII:
 		return sparx5_get_10g_qxgmii_status(sparx5, port, status);
 	case PHY_INTERFACE_MODE_NA:
 		return 0;
@@ -235,6 +266,11 @@ static int sparx5_port_error(struct sparx5_port *port,
 	case SPX5_PERR_IFTYPE:
 		netdev_err(port->ndev,
 			   "Switch port does not support interface type: %s\n",
+			   phy_modes(conf->portmode));
+		break;
+	case SPX5_PERR_DUPLEX:
+		netdev_err(port->ndev,
+			   "Interface does not support half duplex: %s\n",
 			   phy_modes(conf->portmode));
 		break;
 	default:
@@ -291,6 +327,22 @@ static int sparx5_port_verify_speed(struct sparx5 *sparx5,
 		    conf->speed != SPEED_2500)
 			return sparx5_port_error(port, conf, SPX5_PERR_SPEED);
 		break;
+	case PHY_INTERFACE_MODE_USXGMII:
+		/* Single-lane USXGMII has an RTL erratum on Sparx5
+		 * (multi-mode QXGMII only).
+		 */
+		if (is_sparx5(sparx5))
+			return sparx5_port_error(port, conf, SPX5_PERR_IFTYPE);
+		if (conf->speed != SPEED_10 &&
+		    conf->speed != SPEED_100 &&
+		    conf->speed != SPEED_1000 &&
+		    conf->speed != SPEED_2500 &&
+		    conf->speed != SPEED_5000 &&
+		    conf->speed != SPEED_10000)
+			return sparx5_port_error(port, conf, SPX5_PERR_SPEED);
+		if (conf->duplex == DUPLEX_HALF)
+			return sparx5_port_error(port, conf, SPX5_PERR_DUPLEX);
+		break;
 	case PHY_INTERFACE_MODE_5GBASER:
 	case PHY_INTERFACE_MODE_10GBASER:
 	case PHY_INTERFACE_MODE_25GBASER:
@@ -318,8 +370,9 @@ static bool sparx5_dev_change(struct sparx5 *sparx5,
 			      struct sparx5_port *port,
 			      struct sparx5_port_config *conf)
 {
-	return sparx5_is_baser(port->conf.portmode) ^
-		sparx5_is_baser(conf->portmode);
+	return sparx5_port_is_high_speed(sparx5, port->portno,
+					  port->conf.portmode) ^
+		sparx5_port_is_high_speed(sparx5, port->portno, conf->portmode);
 }
 
 static int sparx5_port_flush_poll(struct sparx5 *sparx5, u32 portno)
@@ -864,10 +917,11 @@ int sparx5_serdes_set(struct sparx5 *sparx5,
 		p->conf.usx_enabled = true;
 	}
 
-	if (sparx5_is_baser(conf->portmode)) {
+	if (sparx5_port_is_high_speed(sparx5, port->portno, conf->portmode)) {
 		if (conf->portmode == PHY_INTERFACE_MODE_25GBASER)
 			speed = SPEED_25000;
-		else if (conf->portmode == PHY_INTERFACE_MODE_10GBASER)
+		else if (conf->portmode == PHY_INTERFACE_MODE_10GBASER ||
+			 conf->portmode == PHY_INTERFACE_MODE_USXGMII)
 			speed = SPEED_10000;
 		else
 			speed = SPEED_5000;
@@ -987,7 +1041,8 @@ static int sparx5_port_pcs_low_set(struct sparx5 *sparx5,
 	bool sgmii = false, inband_aneg = false;
 	int err;
 
-	if (conf->portmode == PHY_INTERFACE_MODE_10G_QXGMII)
+	if (conf->portmode == PHY_INTERFACE_MODE_10G_QXGMII ||
+	    conf->portmode == PHY_INTERFACE_MODE_USXGMII)
 		return sparx5_port_usx_pcs_low_set(sparx5, port, conf);
 
 	if (conf->inband) {
@@ -1054,6 +1109,113 @@ static int sparx5_port_pcs_low_set(struct sparx5 *sparx5,
 	return 0;
 }
 
+static int sparx5_port_usx_pcs_high_set(struct sparx5 *sparx5,
+					struct sparx5_port *port,
+					void __iomem *devinst)
+{
+	/* DEV10G has no USXGMII_RX_RADAPT_CFG register, unlike DEV2G5, so
+	 * only the Tx rate adaptation FIFO is configured here.
+	 */
+	spx5_inst_rmw(DEV10G_USXGMII_TX_RADAPT_CFG_TX_LF_GEN_DIS_SET(0) |
+		      DEV10G_USXGMII_TX_RADAPT_CFG_TX_RADAPT_ADD_LVL_SET(4) |
+		      DEV10G_USXGMII_TX_RADAPT_CFG_TX_RADAPT_DROP_LVL_SET(8) |
+		      DEV10G_USXGMII_TX_RADAPT_CFG_TX_RADAPT_MIN_IFG_SET(1),
+		      DEV10G_USXGMII_TX_RADAPT_CFG_TX_LF_GEN_DIS |
+		      DEV10G_USXGMII_TX_RADAPT_CFG_TX_RADAPT_ADD_LVL |
+		      DEV10G_USXGMII_TX_RADAPT_CFG_TX_RADAPT_DROP_LVL |
+		      DEV10G_USXGMII_TX_RADAPT_CFG_TX_RADAPT_MIN_IFG,
+		      devinst,
+		      DEV10G_USXGMII_TX_RADAPT_CFG(0));
+
+	spx5_inst_rmw(DEV10G_MAC_LFS_CFG_LFS_MODE_ENA_SET(0) |
+		      DEV10G_MAC_LFS_CFG_LFS_MAX_NON_FAULT_SEQ_SET(127) |
+		      DEV10G_MAC_LFS_CFG_LFS_MAX_FAULT_SEQ_SET(3),
+		      DEV10G_MAC_LFS_CFG_LFS_MODE_ENA |
+		      DEV10G_MAC_LFS_CFG_LFS_MAX_NON_FAULT_SEQ |
+		      DEV10G_MAC_LFS_CFG_LFS_MAX_FAULT_SEQ,
+		      devinst,
+		      DEV10G_MAC_LFS_CFG(0));
+
+	spx5_inst_rmw(DEV10G_USXGMII_ANEG_CFG_ADV_ABILITY_SET(0xd601) |
+		      DEV10G_USXGMII_ANEG_CFG_LINK_TIMER_SET(1008) |
+		      DEV10G_USXGMII_ANEG_CFG_ANEG_ENA_SET(1) |
+		      DEV10G_USXGMII_ANEG_CFG_ANEG_RESTART_ONE_SHOT_SET(1) |
+		      DEV10G_USXGMII_ANEG_CFG_SW_RESOLVE_ENA_SET(1),
+		      DEV10G_USXGMII_ANEG_CFG_ADV_ABILITY |
+		      DEV10G_USXGMII_ANEG_CFG_LINK_TIMER |
+		      DEV10G_USXGMII_ANEG_CFG_ANEG_ENA |
+		      DEV10G_USXGMII_ANEG_CFG_ANEG_RESTART_ONE_SHOT |
+		      DEV10G_USXGMII_ANEG_CFG_SW_RESOLVE_ENA,
+		      devinst,
+		      DEV10G_USXGMII_ANEG_CFG(0));
+
+	return 0;
+}
+
+static int sparx5_port_baser_pcs_high_set(struct sparx5 *sparx5,
+					  struct sparx5_port *port,
+					  void __iomem *devinst)
+{
+	/* LFS_MODE_ENA and ANEG_ENA are shared between USXGMII and the
+	 * BASE-R modes on the same DEV10G device. Program the BASE-R
+	 * values here unconditionally, purely as a function of the
+	 * target mode, so this never depends on what the port was
+	 * previously configured as.
+	 */
+	spx5_inst_rmw(DEV10G_MAC_LFS_CFG_LFS_MODE_ENA_SET(1),
+		      DEV10G_MAC_LFS_CFG_LFS_MODE_ENA,
+		      devinst,
+		      DEV10G_MAC_LFS_CFG(0));
+
+	spx5_inst_rmw(DEV10G_USXGMII_ANEG_CFG_ANEG_ENA_SET(0),
+		      DEV10G_USXGMII_ANEG_CFG_ANEG_ENA,
+		      devinst,
+		      DEV10G_USXGMII_ANEG_CFG(0));
+
+	return 0;
+}
+
+static u32 sparx5_usxgmii_clk_spd(struct sparx5_port_config *conf)
+{
+	switch (conf->speed) {
+	case SPEED_10:
+		return SPX5_USX_CLK_SPD_10M;
+	case SPEED_100:
+		return SPX5_USX_CLK_SPD_100M;
+	case SPEED_1000:
+		return SPX5_USX_CLK_SPD_1G;
+	case SPEED_2500:
+		return SPX5_USX_CLK_SPD_2G5;
+	case SPEED_5000:
+		return SPX5_USX_CLK_SPD_5G;
+	case SPEED_10000:
+	default:
+		return SPX5_USX_CLK_SPD_10G;
+	}
+}
+
+/* USXGMII in-band aneg resolves the actual link speed only after
+ * sparx5_port_pcs_high_set() has already programmed the device with
+ * whatever speed was known at PCS-config time. Re-sync SPEED_SEL here
+ * on every link-up so the MAC's rate adaptation matches the speed that
+ * was actually negotiated on the wire.
+ */
+static int sparx5_port_usx_speed_high_set(struct sparx5 *sparx5,
+					  struct sparx5_port *port,
+					  struct sparx5_port_config *conf)
+{
+	u32 pix = sparx5_port_dev_index(sparx5, port->portno);
+	u32 dev = sparx5_to_high_dev(sparx5, port->portno);
+	void __iomem *devinst = spx5_inst_get(sparx5, dev, pix);
+
+	spx5_inst_rmw(DEV10G_DEV_RST_CTRL_SPEED_SEL_SET(sparx5_usxgmii_clk_spd(conf)),
+		      DEV10G_DEV_RST_CTRL_SPEED_SEL,
+		      devinst,
+		      DEV10G_DEV_RST_CTRL(0));
+
+	return 0;
+}
+
 static int sparx5_port_pcs_high_set(struct sparx5 *sparx5,
 				    struct sparx5_port *port,
 				    struct sparx5_port_config *conf)
@@ -1098,14 +1260,34 @@ static int sparx5_port_pcs_high_set(struct sparx5 *sparx5,
 		      DEV10G_DEV_RST_CTRL_PCS_TX_RST_SET(0) |
 		      DEV10G_DEV_RST_CTRL_MAC_RX_RST_SET(0) |
 		      DEV10G_DEV_RST_CTRL_MAC_TX_RST_SET(0) |
-		      DEV10G_DEV_RST_CTRL_SPEED_SEL_SET(clk_spd),
+		      DEV10G_DEV_RST_CTRL_SPEED_SEL_SET(clk_spd) |
+		      DEV10G_DEV_RST_CTRL_MUXED_USXGMII_NETWORK_PORTS_SET(0),
 		      DEV10G_DEV_RST_CTRL_PCS_RX_RST |
 		      DEV10G_DEV_RST_CTRL_PCS_TX_RST |
 		      DEV10G_DEV_RST_CTRL_MAC_RX_RST |
 		      DEV10G_DEV_RST_CTRL_MAC_TX_RST |
-		      DEV10G_DEV_RST_CTRL_SPEED_SEL,
+		      DEV10G_DEV_RST_CTRL_SPEED_SEL |
+		      DEV10G_DEV_RST_CTRL_MUXED_USXGMII_NETWORK_PORTS,
 		      devinst,
 		      DEV10G_DEV_RST_CTRL(0));
+
+	if (conf->portmode == PHY_INTERFACE_MODE_USXGMII) {
+		/* ANEG must be configured after the device is taken out of
+		 * reset. Otherwise it seems that the PCS can't negotiate
+		 * with the PHY (mirrors sparx5_port_usx_pcs_low_set()).
+		 *
+		 * Real speed is only known once in-band aneg completes;
+		 * sparx5_port_usx_speed_high_set() re-syncs clk_spd (SPEED_SEL)
+		 * once it does. clk_spd stays at its 10G default until then.
+		 */
+		err = sparx5_port_usx_pcs_high_set(sparx5, port, devinst);
+		if (err)
+			return err;
+	} else {
+		err = sparx5_port_baser_pcs_high_set(sparx5, port, devinst);
+		if (err)
+			return err;
+	}
 
 	return 0;
 }
@@ -1210,8 +1392,18 @@ int sparx5_port_pcs_set(struct sparx5 *sparx5,
 			struct sparx5_port_config *conf)
 
 {
-	bool high_speed_dev = sparx5_is_baser(conf->portmode);
+	bool high_speed_dev = sparx5_port_is_high_speed(sparx5, port->portno,
+							 conf->portmode);
+	const struct sparx5_ops *ops = sparx5->data->ops;
 	int err;
+
+	/* Re-run here too, not just from sparx5_port_init(): this path is hit
+	 * on every phylink renegotiation (e.g. an SFP swap), and a stale mux
+	 * bit from the previous mode must not keep routing to it.
+	 */
+	err = ops->set_port_mux(sparx5, port, conf);
+	if (err)
+		return err;
 
 	if (sparx5_dev_change(sparx5, port, conf)) {
 		/* switch device */
@@ -1259,7 +1451,8 @@ int sparx5_port_config(struct sparx5 *sparx5,
 		       struct sparx5_port_config *conf)
 {
 	bool rgmii = phy_interface_mode_is_rgmii(conf->phy_mode);
-	bool high_speed_dev = sparx5_is_baser(conf->portmode);
+	bool high_speed_dev = sparx5_port_is_high_speed(sparx5, port->portno,
+							 conf->portmode);
 	const struct sparx5_ops *ops = sparx5->data->ops;
 	int err, urgency, stop_wm;
 
@@ -1273,9 +1466,15 @@ int sparx5_port_config(struct sparx5 *sparx5,
 			return err;
 	}
 
-	/* high speed device is already configured */
+	/* high speed device is already configured, except USXGMII whose
+	 * actual link speed is only known once in-band aneg completes, so
+	 * SPEED_SEL must be re-synced to it on every link-up
+	 */
 	if (!rgmii && !high_speed_dev)
 		sparx5_port_config_low_set(sparx5, port, conf);
+	else if (!rgmii && high_speed_dev &&
+		 conf->portmode == PHY_INTERFACE_MODE_USXGMII)
+		sparx5_port_usx_speed_high_set(sparx5, port, conf);
 
 	/* Configure flow control */
 	err = sparx5_port_fc_setup(sparx5, port, conf);
@@ -1442,7 +1641,7 @@ int sparx5_port_init(struct sparx5 *sparx5,
 	if (conf->portmode == PHY_INTERFACE_MODE_NA)
 		conf->portmode = PHY_INTERFACE_MODE_10GBASER;
 
-	if (sparx5_is_baser(conf->portmode))
+	if (sparx5_port_is_high_speed(sparx5, port->portno, conf->portmode))
 		sparx5_dev_switch(sparx5, port->portno, true);
 
 	/* Set Max Length */

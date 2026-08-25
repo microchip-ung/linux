@@ -173,6 +173,7 @@ extern const u8 ifh_smac[];
 #define SPX5_BUM_KNOWN_UNICAST BIT(5)
 #define SPX5_BUM_LEARN_FRAMES BIT(6)
 
+#define SPX5_USXGMII_SINGLE 0
 #define SPX5_USXGMII_QUAD 2
 #define SPX5_USXGMII_SPEED 6
 
@@ -1168,6 +1169,18 @@ static inline bool sparx5_is_baser(phy_interface_t interface)
 	return interface == PHY_INTERFACE_MODE_5GBASER ||
 		   interface == PHY_INTERFACE_MODE_10GBASER ||
 		   interface == PHY_INTERFACE_MODE_25GBASER;
+}
+
+/* USXGMII on a 10G-class port is driven through the DEV10G (high-speed)
+ * PCS/MAC, just like the BaseR modes. On any other port it stays on the
+ * DEV2G5 (low-speed) PCS/MAC, capped at 2500 Mbps.
+ */
+static inline bool sparx5_port_is_high_speed(struct sparx5 *sparx5, u32 portno,
+					     phy_interface_t portmode)
+{
+	return sparx5_is_baser(portmode) ||
+		(portmode == PHY_INTERFACE_MODE_USXGMII &&
+		 sparx5->data->ops->is_port_10g(portno));
 }
 
 extern const struct phylink_mac_ops sparx5_phylink_mac_ops;
