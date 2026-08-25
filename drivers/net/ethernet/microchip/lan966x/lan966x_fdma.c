@@ -716,9 +716,10 @@ int lan966x_fdma_xmit(struct sk_buff *skb, __be32 *ifh, struct net_device *dev)
 		return NETDEV_TX_BUSY;
 	}
 
-	if (skb_put_padto(skb, ETH_ZLEN)) {
+	if (__skb_put_padto(skb, ETH_ZLEN, false)) {
 		dev->stats.tx_dropped++;
-		return NETDEV_TX_OK;
+		err = NETDEV_TX_OK;
+		goto release;
 	}
 
 	/* skb processing */
