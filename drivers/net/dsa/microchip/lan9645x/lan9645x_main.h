@@ -480,7 +480,6 @@ struct lan9645x_phc {
 	struct ptp_clock *clock;
 	struct ptp_clock_info info;
 	struct ptp_pin_desc pins[LAN9645X_PHC_PINS_NUM];
-	struct kernel_hwtstamp_config hwtstamp_config;
 	struct lan9645x *lan9645x;
 	u8 index;
 };
@@ -712,6 +711,7 @@ struct lan9645x_port {
 	u16 ts_id;
 	u8 ptp_tx_cmd;
 	bool ptp_rx_cmd;
+	struct kernel_hwtstamp_config hwtstamp_config;
 
 	bool cut_thru_ena;
 
@@ -1305,7 +1305,7 @@ int lan9645x_eee_mac_set(struct lan9645x *lan9645x, int port,
 
 /* lan9645x_ptp.c */
 int lan9645x_port_hwtstamp_get(struct dsa_switch *ds, int port,
-                               struct kernel_hwtstamp_config *config);
+			       struct kernel_hwtstamp_config *config);
 int lan9645x_port_hwtstamp_set(struct dsa_switch *ds, int port,
 			       struct kernel_hwtstamp_config *config,
 			       struct netlink_ext_ack *extack);

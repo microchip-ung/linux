@@ -279,7 +279,6 @@ int lan9645x_port_hwtstamp_set(struct dsa_switch *ds, int port,
 {
 	struct lan9645x *lan9645x = ds->priv;
 	struct kernel_hwtstamp_config cfg;
-	struct lan9645x_phc *phc;
 	struct lan9645x_port *p;
 	int err = 0;
 
@@ -351,22 +350,19 @@ int lan9645x_port_hwtstamp_set(struct dsa_switch *ds, int port,
 
 	/* Commit back the result & save it */
 	mutex_lock(&lan9645x->ptp_lock);
-	phc = &lan9645x->phc[LAN9645X_PHC_PORT];
-	phc->hwtstamp_config = cfg;
+	p->hwtstamp_config = cfg;
 	mutex_unlock(&lan9645x->ptp_lock);
 
 	return 0;
 }
 
 int lan9645x_port_hwtstamp_get(struct dsa_switch *ds, int port,
-                               struct kernel_hwtstamp_config *config)
+			       struct kernel_hwtstamp_config *config)
 {
 	struct lan9645x *lan9645x = ds->priv;
-	struct lan9645x_phc *phc;
 
-	dev_dbg(lan9645x->dev, "port=%d", port);
-	phc = &lan9645x->phc[LAN9645X_PHC_PORT];
-	*config = phc->hwtstamp_config;
+	dev_dbg(lan9645x->dev, "port=%d\n", port);
+	*config = lan9645x_to_port(lan9645x, port)->hwtstamp_config;
 
 	return 0;
 }
