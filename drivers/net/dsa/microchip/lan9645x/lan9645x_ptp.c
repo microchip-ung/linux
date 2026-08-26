@@ -348,10 +348,11 @@ int lan9645x_port_hwtstamp_set(struct dsa_switch *ds, int port,
 	if (err)
 		return err;
 
-	/* Commit back the result & save it */
 	mutex_lock(&lan9645x->ptp_lock);
 	p->hwtstamp_config = cfg;
 	mutex_unlock(&lan9645x->ptp_lock);
+
+	*config = cfg;
 
 	return 0;
 }
