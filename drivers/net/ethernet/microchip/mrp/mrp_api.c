@@ -472,8 +472,8 @@ static bool mrp_is_empty_instance(struct mrp_instance *mrp_inst)
 	return true;
 }
 
-static void mrp_instance_add_port(struct mrp_instance *mrp_inst,
-				  struct mrp_port *mrp_port)
+static int mrp_instance_add_port(struct mrp_instance *mrp_inst,
+				 struct mrp_port *mrp_port)
 {
 	int i;
 
@@ -481,10 +481,15 @@ static void mrp_instance_add_port(struct mrp_instance *mrp_inst,
 		if (!mrp_inst->ports[i])
 			break;
 
+	if (i == MRP_MAX_PORTS)
+		return -ENOSPC;
+
 	mrp_inst->ports[i] = mrp_port;
 
 	mrp_port_alloc_ring_test(mrp_port);
 	mrp_port_alloc_in_test(mrp_port);
+
+	return 0;
 }
 
 static void mrp_instance_del_port(struct mrp_instance *mrp_inst,
@@ -568,6 +573,7 @@ struct mrp_port *mrp_add_port(struct mrp_control *mrp_ctrl,
 {
 	struct mrp_instance *mrp_inst;
 	struct mrp_port *mrp_port;
+	int ret;
 
 	mrp_inst = mrp_find_instance(mrp_ctrl, mrp->ring_id);
 	if (!mrp_inst) {
@@ -580,8 +586,10 @@ struct mrp_port *mrp_add_port(struct mrp_control *mrp_ctrl,
 	}
 
 	mrp_port = kzalloc(sizeof(*mrp_port), GFP_KERNEL);
-	if (!mrp_port)
+	if (!mrp_port) {
+		ret = -ENOMEM;
 		goto out;
+	}
 
 	mrp_port->priv = mrp_port_priv_from_netdev(mrp_ctrl, dev);
 	mrp_port->dev = dev;
@@ -593,10 +601,15 @@ struct mrp_port *mrp_add_port(struct mrp_control *mrp_ctrl,
 	mrp_ctrl->ops->mrp_port_update_mac(mrp_port);
 	mrp_ctrl->ops->mrp_port_redirect_control(mrp_port);
 
-	mrp_instance_add_port(mrp_inst, mrp_port);
+	ret = mrp_instance_add_port(mrp_inst, mrp_port);
+	if (ret)
+		goto out_uninit;
 
 	return mrp_port;
 
+out_uninit:
+	mrp_ctrl->ops->mrp_port_uninit(mrp_port);
+	kfree(mrp_port);
 out:
 	/* Only drop the instance if this call is what brought it into
 	 * existence. An instance found above still owns the ports that were
@@ -605,7 +618,7 @@ out:
 	if (mrp_is_empty_instance(mrp_inst))
 		mrp_remove_instance(mrp_inst);
 
-	return ERR_PTR(-ENOMEM);
+	return ERR_PTR(ret);
 }
 EXPORT_SYMBOL_GPL(mrp_add_port);
 
@@ -647,6 +660,7 @@ struct mrp_port *mrp_add_in_port(struct mrp_control *mrp_ctrl,
 {
 	struct mrp_instance *mrp_inst;
 	struct mrp_port *mrp_port;
+	int ret;
 
 	mrp_inst = mrp_find_instance(mrp_ctrl, mrp->ring_id);
 	if (!mrp_inst)
@@ -669,7 +683,12 @@ struct mrp_port *mrp_add_in_port(struct mrp_control *mrp_ctrl,
 	mrp_ctrl->ops->mrp_port_redirect_control(mrp_port);
 	mrp_port_set_port_role(mrp_port, BR_MRP_PORT_ROLE_INTER);
 
-	mrp_instance_add_port(mrp_inst, mrp_port);
+	ret = mrp_instance_add_port(mrp_inst, mrp_port);
+	if (ret) {
+		mrp_ctrl->ops->mrp_port_uninit(mrp_port);
+		kfree(mrp_port);
+		return ERR_PTR(ret);
+	}
 
 	return mrp_port;
 
