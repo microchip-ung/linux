@@ -598,7 +598,12 @@ struct mrp_port *mrp_add_port(struct mrp_control *mrp_ctrl,
 	return mrp_port;
 
 out:
-	mrp_remove_instance(mrp_inst);
+	/* Only drop the instance if this call is what brought it into
+	 * existence. An instance found above still owns the ports that were
+	 * added to it before.
+	 */
+	if (mrp_is_empty_instance(mrp_inst))
+		mrp_remove_instance(mrp_inst);
 
 	return ERR_PTR(-ENOMEM);
 }
