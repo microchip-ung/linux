@@ -1402,10 +1402,14 @@ int lan9645x_fp_ethtool_set_mm(struct lan9645x *lan9645x, int port,
 int lan9645x_bum_init(struct lan9645x *lan9645x);
 void lan9645x_bum_deinit(struct lan9645x *lan9645x);
 
-/* Manual frame injection lan9645x_manual_inj.c */
-netdev_tx_t lan9645x_inj_xmit(struct lan9645x_port *port,
-			      struct sk_buff *skb,
-			      __be32 ifh[LAN9645X_IFH_LEN_U32]);
+/* Manual frame injection lan9645x_manual_inj.c
+ *
+ * Returns 0 with the skb consumed, or a negative errno with the skb left for
+ * the caller to dispose of.
+ */
+int lan9645x_inj_xmit(struct lan9645x_port *port,
+		      struct sk_buff *skb,
+		      __be32 ifh[LAN9645X_IFH_LEN_U32]);
 
 /* Automatic Frame Injection, lan9645x_afi.c */
 int lan9645x_afi_init(struct lan9645x *lan9645x);

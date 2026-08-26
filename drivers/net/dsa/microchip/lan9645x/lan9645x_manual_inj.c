@@ -14,9 +14,12 @@ static int lan9645x_port_inj_ready(struct lan9645x *lan9645x, u8 cpum)
 					BIT(cpum));
 }
 
-static netdev_tx_t lan9645x_port_ifh_xmit(struct sk_buff *skb,
-					  __be32 *ifh,
-					  struct lan9645x_port *port)
+/* Returns 0 with the skb consumed, or a negative errno with the skb left for
+ * the caller to dispose of.
+ */
+static int lan9645x_port_ifh_xmit(struct sk_buff *skb,
+				  __be32 *ifh,
+				  struct lan9645x_port *port)
 {
 	struct lan9645x *lan9645x = port->lan9645x;
 	struct net_device *dev;
@@ -80,15 +83,15 @@ static netdev_tx_t lan9645x_port_ifh_xmit(struct sk_buff *skb,
 	dev->stats.tx_bytes += skb->len;
 
 	dev_consume_skb_any(skb);
-	return NETDEV_TX_OK;
+	return 0;
 
 err:
-	return NETDEV_TX_BUSY;
+	return -EBUSY;
 }
 
-netdev_tx_t lan9645x_inj_xmit(struct lan9645x_port *port,
-			      struct sk_buff *skb,
-			      __be32 ifh[LAN9645X_IFH_LEN_U32])
+int lan9645x_inj_xmit(struct lan9645x_port *port,
+		      struct sk_buff *skb,
+		      __be32 ifh[LAN9645X_IFH_LEN_U32])
 {
 	struct lan9645x *lan9645x = port->lan9645x;
 	int ret;
