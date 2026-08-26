@@ -759,7 +759,7 @@ bool mrp_ring_interrupt(struct mrp_control *mrp_ctrl)
 		}
 
 		if (is_interrupt) {
-			queue_delayed_work(system_wq,
+			queue_delayed_work(system_percpu_wq,
 					   &mrp_inst->ring_loc_work,
 					   0);
 			handled = true;
@@ -791,7 +791,7 @@ bool mrp_in_interrupt(struct mrp_control *mrp_ctrl)
 		}
 
 		if (is_interrupt) {
-			queue_delayed_work(system_wq,
+			queue_delayed_work(system_percpu_wq,
 					   &mrp_inst->in_loc_work,
 					   0);
 			handled = true;
