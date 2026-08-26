@@ -66,24 +66,24 @@ static u32 lan9645x_mrp_max_miss(u32 max_miss)
 static const u8 mrp_test_dmac[ETH_ALEN] = { 0x1, 0x15, 0x4e, 0x0, 0x0, 0x1 };
 static const u8 mrp_in_test_dmac[ETH_ALEN] = { 0x1, 0x15, 0x4e, 0x0, 0x0, 0x3 };
 
-void lan9645x_mrp_ring_open(struct lan9645x *lan9645x)
+bool lan9645x_mrp_ring_open(struct lan9645x *lan9645x)
 {
 	u32 mep_intr = lan_rd(lan9645x, MEP_INTR);
 
 	/* If this is not an interrupt for MRP then just ignore it */
 	if (!MEP_INTR_MRP_INTR_GET(mep_intr))
-		return;
+		return false;
 
-	mrp_ring_interrupt(lan9645x->mrp_ctrl);
+	return mrp_ring_interrupt(lan9645x->mrp_ctrl);
 }
 
-void lan9645x_mrp_in_open(struct lan9645x *lan9645x)
+bool lan9645x_mrp_in_open(struct lan9645x *lan9645x)
 {
 	/* If this is not an interrupt for MRP then just ignore it */
 	if (!MEP_INTR_MRP_INTR_GET(lan_rd(lan9645x, MEP_INTR)))
-		return;
+		return false;
 
-	mrp_in_interrupt(lan9645x->mrp_ctrl);
+	return mrp_in_interrupt(lan9645x->mrp_ctrl);
 }
 
 int lan9645x_handle_mrp_port_role(struct lan9645x *lan9645x, int port,

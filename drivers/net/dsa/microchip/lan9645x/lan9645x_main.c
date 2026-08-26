@@ -219,11 +219,12 @@ static int lan9645x_get_max_mtu(struct dsa_switch *ds, int port)
 static irqreturn_t lan9645x_ana_irq_handler(int virq, void *args)
 {
 	struct lan9645x *lan9645x = args;
+	bool ring, in;
 
-	lan9645x_mrp_ring_open(lan9645x);
-	lan9645x_mrp_in_open(lan9645x);
+	ring = lan9645x_mrp_ring_open(lan9645x);
+	in = lan9645x_mrp_in_open(lan9645x);
 
-	return IRQ_HANDLED;
+	return (ring || in) ? IRQ_HANDLED : IRQ_NONE;
 }
 
 static int lan9645x_port_init(struct lan9645x *lan9645x, int port)
