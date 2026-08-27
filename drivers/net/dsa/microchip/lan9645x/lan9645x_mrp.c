@@ -66,6 +66,43 @@ static u32 lan9645x_mrp_max_miss(u32 max_miss)
 static const u8 mrp_test_dmac[ETH_ALEN] = { 0x1, 0x15, 0x4e, 0x0, 0x0, 0x1 };
 static const u8 mrp_in_test_dmac[ETH_ALEN] = { 0x1, 0x15, 0x4e, 0x0, 0x0, 0x3 };
 
+static void lan9645x_mrp_blackhole(struct lan9645x_port *port, const u8 *dmac,
+				   u16 *installed, bool on)
+{
+	struct lan9645x *lan9645x = port->lan9645x;
+	u16 vid = LAN9645X_MRP_VID_NONE;
+
+	if (on)
+		vid = lan9645x_vlan_port_get_pvid(port);
+
+	if (*installed == vid)
+		return;
+
+	if (*installed != LAN9645X_MRP_VID_NONE)
+		lan9645x_mact_forget(lan9645x, dmac, *installed,
+				     ENTRYTYPE_LOCKED);
+
+	if (vid != LAN9645X_MRP_VID_NONE)
+		lan9645x_mact_learn(lan9645x, PGID_MRP, dmac, vid,
+				    ENTRYTYPE_LOCKED);
+
+	*installed = vid;
+}
+
+void lan9645x_mrp_port_vlan_changed(struct lan9645x_port *port)
+{
+	if (!port->mrp_port)
+		return;
+
+	if (port->mrp_test_vid != LAN9645X_MRP_VID_NONE)
+		lan9645x_mrp_blackhole(port, mrp_test_dmac,
+				       &port->mrp_test_vid, true);
+
+	if (port->mrp_in_test_vid != LAN9645X_MRP_VID_NONE)
+		lan9645x_mrp_blackhole(port, mrp_in_test_dmac,
+				       &port->mrp_in_test_vid, true);
+}
+
 bool lan9645x_mrp_ring_open(struct lan9645x *lan9645x)
 {
 	u32 mep_intr = lan_rd(lan9645x, MEP_INTR);
@@ -327,7 +364,6 @@ static int lan9645x_mrp_port_init(struct mrp_port *mrp_port, u16 prio)
 static int lan9645x_mrp_port_uninit(struct mrp_port *mrp_port)
 {
 	struct lan9645x_port *port = mrp_port->priv;
-	u16 vid = lan9645x_vlan_port_get_pvid(port);
 	struct lan9645x *lan9645x = port->lan9645x;
 
 	dev_dbg(lan9645x->dev, "port=%d\n", port->chip_port);
@@ -352,8 +388,9 @@ static int lan9645x_mrp_port_uninit(struct mrp_port *mrp_port)
 	       MEP_MRP_STICKY_ITST_LOC_STICKY,
 	       lan9645x, MEP_MRP_STICKY(port->chip_port));
 
-	lan9645x_mact_forget(lan9645x, mrp_test_dmac, vid, ENTRYTYPE_LOCKED);
-	lan9645x_mact_forget(lan9645x, mrp_in_test_dmac, vid, ENTRYTYPE_LOCKED);
+	lan9645x_mrp_blackhole(port, mrp_test_dmac, &port->mrp_test_vid, false);
+	lan9645x_mrp_blackhole(port, mrp_in_test_dmac, &port->mrp_in_test_vid,
+			       false);
 
 	return 0;
 }
@@ -590,11 +627,9 @@ static int lan9645x_mrp_port_redirect_ring_test(struct mrp_port *mrp_port,
 static int lan9645x_mrp_port_terminate_ring_test(struct mrp_port *mrp_port)
 {
 	struct lan9645x_port *port = mrp_port->priv;
-	u16 vid = lan9645x_vlan_port_get_pvid(port);
 	struct lan9645x *lan9645x = port->lan9645x;
 
-	dev_dbg(port->lan9645x->dev, "port=%d vid=%d\n",
-		port->chip_port, vid);
+	dev_dbg(port->lan9645x->dev, "port=%d\n", port->chip_port);
 	/* Terminate frames */
 	/* When the frame is discard means that not to forward the frame
 	 * to other front ports but if other block enables the copy to the
@@ -613,8 +648,7 @@ static int lan9645x_mrp_port_terminate_ring_test(struct mrp_port *mrp_port)
 		MEP_TST_FWD_CTRL_HI_PRIO_FWD_SEL,
 		lan9645x, MEP_TST_FWD_CTRL(port->chip_port));
 
-	lan9645x_mact_learn(lan9645x, PGID_MRP, mrp_test_dmac,
-			    vid, ENTRYTYPE_LOCKED);
+	lan9645x_mrp_blackhole(port, mrp_test_dmac, &port->mrp_test_vid, true);
 
 	return 0;
 }
@@ -625,7 +659,6 @@ static int lan9645x_mrp_port_forward_ring_test(struct mrp_port *mrp_port,
 {
 	struct lan9645x_port *partner = mrp_partner_port->priv;
 	struct lan9645x_port *port = mrp_port->priv;
-	u16 vid = lan9645x_vlan_port_get_pvid(port);
 	struct lan9645x *lan9645x = port->lan9645x;
 
 	dev_dbg(port->lan9645x->dev, "port=%d partner=%d forward=%d\n",
@@ -635,12 +668,8 @@ static int lan9645x_mrp_port_forward_ring_test(struct mrp_port *mrp_port,
 		MEP_RING_MASK_CFG_RING_PORTMASK,
 		lan9645x, MEP_RING_MASK_CFG(port->chip_port));
 
-	if (forward)
-		lan9645x_mact_learn(lan9645x, PGID_MRP, mrp_test_dmac,
-				    vid, ENTRYTYPE_LOCKED);
-	else
-		lan9645x_mact_forget(lan9645x, mrp_test_dmac,
-				     vid, ENTRYTYPE_LOCKED);
+	lan9645x_mrp_blackhole(port, mrp_test_dmac, &port->mrp_test_vid,
+			       forward);
 
 	lan_rmw(MEP_MRP_FWD_CTRL_MRP_TST_FWD_SEL_SET(MRP_FWD_NOP) |
 		MEP_MRP_FWD_CTRL_RING_MASK_ENA_SET(forward),
@@ -768,7 +797,6 @@ static int lan9645x_mrp_port_enable_ring_intr(struct mrp_port *mrp_port,
 static int lan9645x_mrp_port_terminate_in_test(struct mrp_port *mrp_port)
 {
 	struct lan9645x_port *port = mrp_port->priv;
-	u16 vid = lan9645x_vlan_port_get_pvid(port);
 	struct lan9645x *lan9645x = port->lan9645x;
 
 	dev_dbg(port->lan9645x->dev, "port=%d\n", port->chip_port);
@@ -776,8 +804,8 @@ static int lan9645x_mrp_port_terminate_in_test(struct mrp_port *mrp_port)
 		MEP_ITST_FWD_CTRL_OWN_FWD_SEL,
 		lan9645x, MEP_ITST_FWD_CTRL(port->chip_port));
 
-	lan9645x_mact_learn(lan9645x, PGID_MRP, mrp_in_test_dmac,
-			    vid, ENTRYTYPE_LOCKED);
+	lan9645x_mrp_blackhole(port, mrp_in_test_dmac, &port->mrp_in_test_vid,
+			       true);
 
 	return 0;
 }
@@ -790,7 +818,6 @@ static int lan9645x_mrp_port_forward_in_test(struct mrp_port *mrp_port,
 	struct lan9645x_port *partner_1 = mrp_partner_port_1->priv;
 	struct lan9645x_port *partner_2 = mrp_partner_port_2->priv;
 	struct lan9645x_port *port = mrp_port->priv;
-	u16 vid = lan9645x_vlan_port_get_pvid(port);
 	struct lan9645x *lan9645x = port->lan9645x;
 	u32 mask;
 
@@ -805,12 +832,8 @@ static int lan9645x_mrp_port_forward_in_test(struct mrp_port *mrp_port,
 		MEP_ICON_MASK_CFG_ICON_PORTMASK,
 		lan9645x, MEP_ICON_MASK_CFG(port->chip_port));
 
-	if (forward)
-		lan9645x_mact_learn(lan9645x, PGID_MRP, mrp_in_test_dmac,
-				    vid, ENTRYTYPE_LOCKED);
-	else
-		lan9645x_mact_forget(lan9645x, mrp_in_test_dmac,
-				     vid, ENTRYTYPE_LOCKED);
+	lan9645x_mrp_blackhole(port, mrp_in_test_dmac, &port->mrp_in_test_vid,
+			       forward);
 
 	lan_rmw(MEP_MRP_FWD_CTRL_ICON_MASK_ENA_SET(1),
 		MEP_MRP_FWD_CTRL_ICON_MASK_ENA,
@@ -825,7 +848,6 @@ static int lan9645x_mrp_port_forward_rem_in_test(struct mrp_port *mrp_port,
 {
 	struct lan9645x_port *partner = mrp_partner_port->priv;
 	struct lan9645x_port *port = mrp_port->priv;
-	u16 vid = lan9645x_vlan_port_get_pvid(port);
 	struct lan9645x *lan9645x = port->lan9645x;
 	u32 mask;
 
@@ -845,12 +867,8 @@ static int lan9645x_mrp_port_forward_rem_in_test(struct mrp_port *mrp_port,
 		MEP_ICON_MASK_CFG_ICON_PORTMASK,
 		lan9645x, MEP_ICON_MASK_CFG(port->chip_port));
 
-	if (forward)
-		lan9645x_mact_learn(lan9645x, PGID_MRP, mrp_in_test_dmac,
-				    vid, ENTRYTYPE_LOCKED);
-	else
-		lan9645x_mact_forget(lan9645x, mrp_in_test_dmac,
-				     vid, ENTRYTYPE_LOCKED);
+	lan9645x_mrp_blackhole(port, mrp_in_test_dmac, &port->mrp_in_test_vid,
+			       forward);
 
 	lan_rmw(MEP_MRP_FWD_CTRL_ICON_MASK_ENA_SET(1),
 		MEP_MRP_FWD_CTRL_ICON_MASK_ENA,

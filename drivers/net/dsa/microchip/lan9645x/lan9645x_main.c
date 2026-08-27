@@ -525,6 +525,8 @@ static int lan9645x_setup(struct dsa_switch *ds)
 		p->lan9645x = lan9645x;
 		p->chip_port = port;
 		p->bridge_num = -1;
+		p->mrp_test_vid = LAN9645X_MRP_VID_NONE;
+		p->mrp_in_test_vid = LAN9645X_MRP_VID_NONE;
 		p->phylink_pcs.poll = true;
 		p->phylink_pcs.ops = &lan9645x_phylink_pcs_ops;
 		INIT_LIST_HEAD(&p->tc_templates);
@@ -1368,6 +1370,7 @@ static int lan9645x_port_vlan_filtering(struct dsa_switch *ds, int port,
 
 	p->vlan_aware = enabled;
 	lan9645x_vlan_port_apply(p);
+	lan9645x_mrp_port_vlan_changed(p);
 
 	mutex_unlock(&lan9645x->fwd_domain_lock);
 

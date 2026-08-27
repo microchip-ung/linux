@@ -82,6 +82,7 @@
 #define VLAN_MAX			(VLAN_RSV_RANGE_START - 1)
 
 #define VLAN_N_VID 4096
+#define LAN9645X_MRP_VID_NONE		VLAN_N_VID
 
 /* 160KiB / 1.25Mbit */
 #define LAN9645X_BUFFER_MEMORY (160 * 1024)
@@ -718,6 +719,8 @@ struct lan9645x_port {
 
 	struct mrp_port *mrp_port;
 	int mrp_is1_p_port_rule_id;
+	u16 mrp_test_vid;
+	u16 mrp_in_test_vid;
 
 	/* tc flower chain templates active on this port */
 	struct list_head tc_templates;

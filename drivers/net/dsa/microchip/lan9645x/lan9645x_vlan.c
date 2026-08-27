@@ -3,6 +3,7 @@
  */
 
 #include "lan9645x_main.h"
+#include "lan9645x_mrp.h"
 
 #define VLANACCESS_CMD_IDLE		0
 #define VLANACCESS_CMD_READ		1
@@ -315,6 +316,7 @@ int lan9645x_vlan_port_add_vlan(struct lan9645x_port *p, u16 vid, bool pvid,
 	lan9645x_vlan_commit_port_mask(lan9645x, vid, old_vlan.portmask);
 	lan9645x_vlan_port_apply_ingress(p);
 	lan9645x_vlan_port_apply_egress(p, &info);
+	lan9645x_mrp_port_vlan_changed(p);
 
 	return 0;
 }
@@ -350,6 +352,7 @@ int lan9645x_vlan_port_del_vlan(struct lan9645x_port *p, u16 vid)
 	lan9645x_vlan_set_port_mask(lan9645x, vid,
 				    v->portmask & ~BIT(p->chip_port));
 	lan9645x_vlan_port_apply(p);
+	lan9645x_mrp_port_vlan_changed(p);
 
 	return 0;
 }
