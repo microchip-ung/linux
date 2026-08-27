@@ -1036,6 +1036,7 @@ int lan9645x_mac_bc_flood_del(struct lan9645x *lan9645x, u16 vid);
 /* VLAN lan9645x_vlan.c */
 int lan9645x_vlan_init(struct lan9645x *lan9645x);
 u16 lan9645x_vlan_unaware_pvid(int bridge_num);
+u16 lan9645x_vlan_port_get_pvid(struct lan9645x_port *port);
 void lan9645x_vlan_port_apply(struct lan9645x_port *p);
 int lan9645x_vlan_port_add_vlan(struct lan9645x_port *p, u16 vid, bool pvid,
 				bool untagged,

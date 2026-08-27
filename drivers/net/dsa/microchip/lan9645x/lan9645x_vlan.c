@@ -126,7 +126,7 @@ u16 lan9645x_vlan_unaware_pvid(int bridge_num)
 	return VLAN_N_VID - bridge_num - 1;
 }
 
-static u16 lan9645x_vlan_port_get_pvid(struct lan9645x_port *port)
+u16 lan9645x_vlan_port_get_pvid(struct lan9645x_port *port)
 {
 	if (!lan9645x_port_is_bridged(port))
 		return HOST_PVID;
