@@ -100,6 +100,7 @@ int lan9645x_handle_mrp_add_port(struct lan9645x *lan9645x, int port,
 				 const struct switchdev_obj_mrp *mrp)
 {
 	struct lan9645x_port *p = lan9645x_to_port(lan9645x, port);
+	struct mrp_port *mrp_port;
 	struct net_device *dev;
 
 	dev_dbg(lan9645x->dev,
@@ -113,9 +114,11 @@ int lan9645x_handle_mrp_add_port(struct lan9645x *lan9645x, int port,
 	if (mrp->p_port != dev && mrp->s_port != dev)
 		return 0;
 
-	p->mrp_port = mrp_add_port(lan9645x->mrp_ctrl, mrp, dev);
-	if (IS_ERR(p->mrp_port))
-		return PTR_ERR(p->mrp_port);
+	mrp_port = mrp_add_port(lan9645x->mrp_ctrl, mrp, dev);
+	if (IS_ERR(mrp_port))
+		return PTR_ERR(mrp_port);
+
+	p->mrp_port = mrp_port;
 
 	lan9645x_add_prio_is1_rule(p, VCAP_USER_MRP,
 				   &p->mrp_is1_p_port_rule_id);
@@ -228,6 +231,7 @@ int lan9645x_handle_mrp_in_role_add(struct lan9645x *lan9645x, int port,
 				    const struct switchdev_obj_in_role_mrp *mrp)
 {
 	struct lan9645x_port *p = lan9645x_to_port(lan9645x, port);
+	struct mrp_port *mrp_port;
 	struct net_device *dev;
 
 	dev = lan9645x_port_to_ndev(p);
@@ -236,9 +240,11 @@ int lan9645x_handle_mrp_in_role_add(struct lan9645x *lan9645x, int port,
 	if (mrp->i_port != dev)
 		return 0;
 
-	p->mrp_port = mrp_add_in_port(lan9645x->mrp_ctrl, mrp, dev);
-	if (IS_ERR(p->mrp_port))
-		return PTR_ERR(p->mrp_port);
+	mrp_port = mrp_add_in_port(lan9645x->mrp_ctrl, mrp, dev);
+	if (IS_ERR(mrp_port))
+		return PTR_ERR(mrp_port);
+
+	p->mrp_port = mrp_port;
 
 	return mrp_port_set_in_role(p->mrp_port, mrp);
 }
