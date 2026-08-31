@@ -393,6 +393,11 @@ int lan9645x_bum_init(struct lan9645x *lan9645x)
 		bctrl->policers[btype].ipmc_unknown_ena = false;
 	}
 
+	lan_wr(QSYS_STORMLIM_BURST_STORM_BURST_SET(bctrl->burst),
+	       lan9645x, QSYS_STORMLIM_BURST);
+	for (int btype = 0; btype < __LAN9645X_BUM_NUM; btype++)
+		lan9645x_bum_pol_apply(&bctrl->policers[btype]);
+
 	lan9645x->bum = bctrl;
 
 	return lan9645x_bum_dbfs_add(lan9645x, bctrl);
