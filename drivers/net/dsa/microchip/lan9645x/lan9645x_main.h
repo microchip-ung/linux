@@ -270,6 +270,7 @@ struct lan9645x_bum_pol {
 struct lan9645x_bum_ctrl {
 	struct lan9645x *lan9645x;
 	int burst;
+	bool no_pol_dis;
 	struct lan9645x_bum_pol policers[LAN9645X_NUM_BUM_POL];
 	struct list_head debugfs_list;
 	/* Lock bum_ctrl and bum reg IO */
