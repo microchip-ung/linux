@@ -1021,6 +1021,7 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 	sparx5->ptp_irq = platform_get_irq_byname(sparx5->pdev, "ptp");
 	sparx5->ptp_ext_irq = platform_get_irq_byname(sparx5->pdev, "ptp-ext");
 	sparx5->oam_vop_irq = platform_get_irq_byname(sparx5->pdev, "oam-vop");
+	sparx5->wdt_irq = platform_get_irq_byname_optional(sparx5->pdev, "wdt");
 
 	/* Read chip ID to check CPU interface */
 	sparx5->chip_id = spx5_rd(sparx5, GCB_CHIP_ID);
@@ -1127,10 +1128,12 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		goto cleanup_router;
 	}
 
+	sparx5_watchdog_init(sparx5);
+
 	err = sparx5_register_netdevs(sparx5);
 	if (err) {
 		dev_err(sparx5->dev, "Failed to register net devices\n");
-		goto cleanup_notifiers;
+		goto cleanup_watchdog;
 	}
 
 	/* Initialize the rest of the hardware and start the IRQ handlers.
@@ -1147,7 +1150,8 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 
 cleanup_netdevs:
 	sparx5_unregister_netdevs(sparx5);
-cleanup_notifiers:
+cleanup_watchdog:
+	sparx5_watchdog_deinit(sparx5);
 	sparx5_unregister_notifier_blocks(sparx5);
 cleanup_router:
 	sparx5_rr_router_deinit(sparx5);
@@ -1200,6 +1204,7 @@ static void mchp_sparx5_remove(struct platform_device *pdev)
 	}
 
 	sparx5_unregister_netdevs(sparx5);
+	sparx5_watchdog_deinit(sparx5);
 	sparx5_unregister_notifier_blocks(sparx5);
 	sparx5_rr_router_deinit(sparx5);
 	sparx5_stats_deinit(sparx5);

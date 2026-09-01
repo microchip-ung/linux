@@ -652,6 +652,10 @@ struct sparx5 {
 	struct mrp_control *mrp_ctrl;
 
 	int oam_vop_irq;
+	/* Watchdog pretimeout, shared with the watchdog timer */
+	int wdt_irq;
+	/* cleared before the irq is freed, the handler must then do nothing */
+	bool wdt_armed;
 };
 
 /* sparx5_main.c */
@@ -1105,6 +1109,10 @@ int sparx5_handle_mdb_del(struct net_device *dev,
 			  const struct switchdev_obj_port_mdb *v);
 int sparx5_mdb_entries_clear(struct sparx5 *sparx5);
 int sparx5_mdb_entries_restore(struct sparx5 *sparx5);
+
+/* sparx5_watchdog.c */
+void sparx5_watchdog_init(struct sparx5 *sparx5);
+void sparx5_watchdog_deinit(struct sparx5 *sparx5);
 
 /* FDMA return action codes for checking if the frame is valid
  * FDMA_PASS, frame is valid and can be used
