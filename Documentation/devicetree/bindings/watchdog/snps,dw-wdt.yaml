@@ -18,6 +18,7 @@ properties:
       - const: snps,dw-wdt
       - items:
           - enum:
+              - microchip,sparx5-wdt
               - rockchip,px30-wdt
               - rockchip,rk3066-wdt
               - rockchip,rk3128-wdt

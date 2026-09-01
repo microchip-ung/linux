@@ -69,18 +69,12 @@ properties:
       - const: gcb
 
   interrupts:
-    minItems: 1
-    items:
-      - description: register based extraction
-      - description: frame dma based extraction
-      - description: ptp interrupt
+    minItems: 4
+    maxItems: 6
 
   interrupt-names:
-    minItems: 1
-    items:
-      - const: xtr
-      - const: fdma
-      - const: ptp
+    minItems: 4
+    maxItems: 6
 
   resets:
     items:
@@ -183,12 +177,44 @@ allOf:
           maxItems: 2
         reg-names:
           maxItems: 2
+        interrupts:
+          minItems: 6
+          items:
+            - description: register based extraction
+            - description: frame dma based extraction
+            - description: ptp interrupt
+            - description: ptp external interrupt
+            - description: oam vop interrupt
+            - description: watchdog pre-timeout, shared with the watchdog timer
+        interrupt-names:
+          minItems: 6
+          items:
+            - const: xtr
+            - const: fdma
+            - const: ptp
+            - const: ptp-ext
+            - const: oam-vop
+            - const: wdt
     else:
       properties:
         reg:
           minItems: 3
         reg-names:
           minItems: 3
+        interrupts:
+          maxItems: 4
+          items:
+            - description: register based extraction
+            - description: frame dma based extraction
+            - description: ptp interrupt
+            - description: watchdog pre-timeout, shared with the watchdog timer
+        interrupt-names:
+          maxItems: 4
+          items:
+            - const: xtr
+            - const: fdma
+            - const: ptp
+            - const: wdt
 
 additionalProperties: false
 
@@ -201,8 +227,11 @@ examples:
              <0x10004000 0x7fc000>,
              <0x11010000 0xaf0000>;
       reg-names = "cpu", "devices", "gcb";
-      interrupts = <GIC_SPI 30 IRQ_TYPE_LEVEL_HIGH>;
-      interrupt-names = "xtr";
+      interrupts = <GIC_SPI 30 IRQ_TYPE_LEVEL_HIGH>,
+                   <GIC_SPI 25 IRQ_TYPE_LEVEL_HIGH>,
+                   <GIC_SPI 27 IRQ_TYPE_LEVEL_HIGH>,
+                   <GIC_SPI  5 IRQ_TYPE_EDGE_RISING>;
+      interrupt-names = "xtr", "fdma", "ptp", "wdt";
       resets = <&reset 0>;
       reset-names = "switch";
       ethernet-ports {
