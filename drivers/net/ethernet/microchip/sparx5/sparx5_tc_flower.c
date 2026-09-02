@@ -1390,7 +1390,8 @@ static int sparx5_tc_flower_replace(struct net_device *ndev,
 			if (err)
 				goto out;
 			/* VCAP_AF_POLICE_IDX: sparx5 is2 W6, sparx5 es2 W6 */
-			err = vcap_rule_add_action_u32(vrule, VCAP_AF_POLICE_IDX, SPX5_POL_ACL_DISCARD);
+			err = vcap_rule_add_action_u32(vrule, VCAP_AF_POLICE_IDX,
+						       sparx5->data->consts->n_pol_acl - 1);
 			if (err)
 				goto out;
 			break;

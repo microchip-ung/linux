@@ -953,10 +953,7 @@ struct sparx5_policer {
 	u8 event_mask;
 };
 
-#define SPARX5_POL_ACL_NUM 64 /* Number of acl policers */
 #define SPARX5_POL_SRV_NUM 4096
-/* Index of ACL discard policer */
-#define SPX5_POL_ACL_DISCARD (SPARX5_POL_ACL_NUM - 1)
 /* Bits for acl policer cnt statistics */
 #define SPX5_POL_ACL_STAT_CNT_UNMASKED_NO_ERR BIT(1)
 /* Bits for acl policer global event mask */

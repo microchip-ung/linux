@@ -441,6 +441,7 @@ static const struct sparx5_consts lan969x_consts = {
 	.n_hsch_queues       = 4,
 	.n_lb_groups         = 5,
 	.n_pgids             = 1054, /* (1024 + n_ports) */
+	.n_pol_acl           = 32,
 	.n_sio_clks          = 1,
 	.n_own_upsids        = 1,
 	.n_auto_cals         = 4,
