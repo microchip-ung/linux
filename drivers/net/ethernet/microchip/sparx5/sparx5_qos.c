@@ -1387,11 +1387,15 @@ int sparx5_qos_port_conf_set(struct sparx5_port *const port,
 	spx5_rmw(ANA_CL_QOS_CFG_DEFAULT_QOS_VAL_SET(conf->i_default_prio) |
 			 ANA_CL_QOS_CFG_DEFAULT_DP_VAL_SET(conf->i_default_dpl) |
 			 ANA_CL_QOS_CFG_PCP_DEI_QOS_ENA_SET(conf->i_mode.tag_map_enable) |
-			 ANA_CL_QOS_CFG_DSCP_QOS_ENA_SET(conf->i_mode.dscp_map_enable),
+			 ANA_CL_QOS_CFG_PCP_DEI_DP_ENA_SET(conf->i_mode.tag_map_enable) |
+			 ANA_CL_QOS_CFG_DSCP_QOS_ENA_SET(conf->i_mode.dscp_map_enable) |
+			 ANA_CL_QOS_CFG_DSCP_DP_ENA_SET(conf->i_mode.dscp_map_enable),
 			 ANA_CL_QOS_CFG_DEFAULT_QOS_VAL |
 			 ANA_CL_QOS_CFG_DEFAULT_DP_VAL |
 			 ANA_CL_QOS_CFG_PCP_DEI_QOS_ENA |
-			 ANA_CL_QOS_CFG_DSCP_QOS_ENA,
+			 ANA_CL_QOS_CFG_PCP_DEI_DP_ENA |
+			 ANA_CL_QOS_CFG_DSCP_QOS_ENA |
+			 ANA_CL_QOS_CFG_DSCP_DP_ENA,
 			 port->sparx5,
 			 ANA_CL_QOS_CFG(port->portno));
 
@@ -1436,13 +1440,13 @@ int sparx5_qos_port_conf_set(struct sparx5_port *const port,
 					 REW_PCP_MAP_DE1(port->portno, prio));
 
 			dei = conf->e_prio_dpl_pcp_dei_map[prio][0].dei;
-			spx5_rmw(REW_DEI_MAP_DE0_DEI_DE0_SET(pcp),
+			spx5_rmw(REW_DEI_MAP_DE0_DEI_DE0_SET(dei),
 					 REW_DEI_MAP_DE0_DEI_DE0,
 					 port->sparx5,
 					 REW_DEI_MAP_DE0(port->portno, prio));
 
 			dei = conf->e_prio_dpl_pcp_dei_map[prio][1].dei;
-			spx5_rmw(REW_DEI_MAP_DE1_DEI_DE1_SET(pcp),
+			spx5_rmw(REW_DEI_MAP_DE1_DEI_DE1_SET(dei),
 					 REW_DEI_MAP_DE1_DEI_DE1,
 					 port->sparx5,
 					 REW_DEI_MAP_DE1(port->portno, prio));
