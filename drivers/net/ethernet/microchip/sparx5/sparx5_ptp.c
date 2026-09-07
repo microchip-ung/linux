@@ -6,6 +6,7 @@
  * The Sparx5 Chip Register Model can be browsed at this location:
  * https://github.com/microchip-ung/sparx-5_reginfo
  */
+#include <linux/math64.h>
 #include <linux/ptp_classify.h>
 
 #include "sparx5_main_regs.h"
@@ -27,47 +28,9 @@ enum {
 	PTP_PIN_ACTION_TOD
 };
 
-static u64 sparx5_ptp_get_1ppm(struct sparx5 *sparx5)
-{
-	/* Represents 1ppm adjustment in 2^59 format with 1.59687500000(625)
-	 * 1.99609375000(500), 3.04761904762(380), 3.99218750000(250),
-	 * 5.56521739130(180) as reference
-	 * The value is calculated as following:
-	 * (1/1000000)/((2^-59)/X)
-	 */
-
-	u64 res = 0;
-
-	switch (sparx5->coreclock) {
-	case SPX5_CORE_CLOCK_180MHZ:
-		if (sparx5->coreclockref == SPX5_CORE_CLOCK_REF_25MHZ)
-			res = 3207484700609;
-		else
-			res = 3208129404120;
-		break;
-	case SPX5_CORE_CLOCK_250MHZ:
-		res = 2301339409586;
-		break;
-	case SPX5_CORE_CLOCK_328MHZ:
-		if (sparx5->coreclockref == SPX5_CORE_CLOCK_REF_25MHZ)
-			res = 1756479716445;
-		else
-			res = 1756832768924;
-		break;
-	case SPX5_CORE_CLOCK_500MHZ:
-		res = 1150669704793;
-		break;
-	case SPX5_CORE_CLOCK_625MHZ:
-		res =  920535763834;
-		break;
-	default:
-		WARN(1, "Invalid core clock");
-		break;
-	}
-
-	return res;
-}
-
+/* The TOD increment is the core clock period in nanoseconds, in 2^59 fixed
+ * point: 1 ns is 0x0800000000000000, so 0x18604697DD0F9B5B is 3.047009646 ns.
+ */
 static u64 sparx5_ptp_get_nominal_value(struct sparx5 *sparx5)
 {
 	u64 res = 0;
@@ -738,12 +701,14 @@ static int sparx5_ptp_adjfine(struct ptp_clock_info *ptp, long scaled_ppm)
 
 	tod_inc = sparx5_ptp_get_nominal_value(sparx5);
 
-	/* The multiplication is split in 2 separate additions because of
-	 * overflow issues. If scaled_ppm with 16bit fractional part was bigger
-	 * than 20ppm then we got overflow.
+	/* Scale the nominal increment by scaled_ppm, which is parts per million
+	 * with a 16 bit fractional part. mul_u64_u64_div_u64() carries the
+	 * product in 128 bits, so there is no overflow to work around and no
+	 * precision lost to an intermediate per-ppm quantity. This is what MESA
+	 * does in vtss_cil_ts_domain_adjtimer_set(), which scales the nominal
+	 * directly rather than keeping a table of per-ppm values.
 	 */
-	ref = sparx5_ptp_get_1ppm(sparx5) * (scaled_ppm >> 16);
-	ref += (sparx5_ptp_get_1ppm(sparx5) * (0xffff & scaled_ppm)) >> 16;
+	ref = mul_u64_u64_div_u64(tod_inc, scaled_ppm, 1000000ULL << 16);
 	tod_inc = neg_adj ? tod_inc - ref : tod_inc + ref;
 
 	spin_lock_irqsave(&sparx5->ptp_clock_lock, flags);
