@@ -1903,6 +1903,7 @@ static int lan9645x_tc_handle_police(struct lan9645x_act_state *s,
 	struct lan9645x *lan9645x = p->lan9645x;
 	struct lan9645x_policer pol = {};
 	int err = 0;
+	int polix;
 
 	if (admin->vtype == VCAP_TYPE_IS2 &&
 	    vcap_chain_id_to_lookup(admin, cid) != 0) {
@@ -1917,11 +1918,13 @@ static int lan9645x_tc_handle_police(struct lan9645x_act_state *s,
 		return -EOPNOTSUPP;
 	}
 
-	s->pol_idx = lan9645x_qos_polix_alloc(lan9645x);
-	if (s->pol_idx < 0) {
+	polix = lan9645x_qos_polix_alloc(lan9645x);
+	if (polix < 0) {
 		NL_SET_ERR_MSG_MOD(extack, "Out of policer resources");
 		return -ENOSPC;
 	}
+
+	s->pol_idx = polix;
 
 	dev_dbg(lan9645x->dev,
 		"policer idx alloc id=%d port=%u rate_bts_ps=%llu burst=%u rate_pkt_ps=%llu burst_pkt=%llu exceed.act_id=%d exceed.extval=%u notexceed.act_id=%d notexceed.extval=%u ",
