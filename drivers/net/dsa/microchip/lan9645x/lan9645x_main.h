@@ -171,11 +171,14 @@
 #define LAN9645X_VCAP_CID_ES0_L0 VCAP_CID_EGRESS_L0 /* ES0 lookup 0 */
 #define LAN9645X_VCAP_CID_ES0_MAX (VCAP_CID_EGRESS_L1 - 1) /* ES0 Max */
 
-/* Policer indexes */
-#define LAN9645X_POL_IX_PORT      0 /* 0-9    : 10 port policers */
-#define LAN9645X_POL_IX_QUEUE    10 /* 10-90  : 80 queue policers (10p * 8q) */
-#define LAN9645X_POL_IX_POOL     91 /* 91-344 : 263 PSFP and VCAP IS1/IS2 policers */
-#define LAN9645X_POL_IX_MAX      344
+/* Policer indexes. The device has 226 policers in three contiguous
+ * sections. VCAP IS1 and IS2 rules point into the pool with their
+ * POLICE_IDX action.
+ */
+#define LAN9645X_POL_IX_PORT      0 /* 0-9    : port n uses policer n */
+#define LAN9645X_POL_IX_QUEUE    10 /* 10-89  : port n prio m uses 10 + 8 * n + m */
+#define LAN9645X_POL_IX_POOL     90 /* 90-225 : 136 PSFP and VCAP IS1/IS2 policers */
+#define LAN9645X_POL_IX_MAX      225
 #define LAN9645X_NUM_POL_POOL   (LAN9645X_POL_IX_MAX + 1 - LAN9645X_POL_IX_POOL)
 
 #define LAN9645X_PHC_COUNT		3
