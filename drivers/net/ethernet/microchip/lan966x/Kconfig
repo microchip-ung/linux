@@ -27,5 +27,6 @@ config LAN966X_DCB
 
 config LAN966X_SWITCH_APPL
 	tristate "Lan966x switch driver used by APPL"
+	depends on !LAN966X_SWITCH
 	help
 	  This driver supports the Lan966x network switch device for APPL.
