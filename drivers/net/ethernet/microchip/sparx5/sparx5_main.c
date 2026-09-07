@@ -512,11 +512,140 @@ static int sparx5_init_switchcore(struct sparx5 *sparx5)
 	return 0;
 }
 
+/* Core PLL divider sets for a 328 MHz core clock. CORE_PLL_FREQ_CFG defines
+ *
+ *	Fout = (Fin / (DIVR+1)) * 8 * (1 + DIVFI + DIVFF / 2^24) / DIVQ_VAL
+ *
+ * where DIVQ_VAL is an encoding of DIVQ that equals it only up to 10, which is
+ * the value both entries below use.
+ *
+ * so these give 328.190625 MHz from a 39.0625 MHz reference and 328.190953 MHz
+ * from a 25 MHz one, both about 200 ppm above the 328.125 MHz default. DIVQ is
+ * the reset value of its field and has to stay there for the glitch free
+ * divider change below.
+ */
+struct lan969x_core_pll_dividers {
+	u32 divfi;	/* CORE_PLL_FREQ_CFG.DIVFI, feedback integer */
+	u32 divff;	/* CORE_PLL_FREQ_CFG.DIVFF, feedback fraction */
+	u32 divr;	/* CORE_PLL_CFG.DIVR, reference divider */
+	u32 divq;	/* CORE_PLL_CFG.DIVQ, output divider */
+};
+
+static const struct lan969x_core_pll_dividers lan969x_core_pll_328mhz[] = {
+	[SPX5_CORE_CLOCK_REF_25MHZ] = {
+		.divfi = 64, .divff = 0xa36076, .divr = 3, .divq = 10,
+	},
+	[SPX5_CORE_CLOCK_REF_39MHZ] = {
+		.divfi = 72, .divff = 0x83c361, .divr = 6, .divq = 10,
+	},
+};
+
+/* Skew the core clock about 200 ppm up from its default, so that it sits far
+ * enough from the line clock frequencies for the high accuracy phase detectors.
+ * The PTP CLK_PER_CFG values in sparx5_ptp.c already assume the skewed rate, so
+ * without this the core clock and the time of day disagree by 200 ppm.
+ *
+ * CORE_PLL_CFG.ENA_CFG documents two ways to reach a new frequency. This is the
+ * first: DIVFI and DIVFF change glitch free via NEWDIV/DIVACK, provided DIVR is
+ * set for the reference clock and DIVQ is left at its default. It needs no
+ * SPARE_PLL.
+ */
+static int lan969x_init_core_pll(struct sparx5 *sparx5,
+				 enum sparx5_core_clockref *ref)
+{
+	const struct lan969x_core_pll_dividers *div;
+	u32 hw_stat, pll_cfg, freq_cfg;
+	int err;
+
+	hw_stat = spx5_rd(sparx5, CHIP_TOP_HW_STAT);
+	*ref = CHIP_TOP_HW_STAT_REFCLK_SEL_GET(hw_stat) ?
+		SPX5_CORE_CLOCK_REF_39MHZ : SPX5_CORE_CLOCK_REF_25MHZ;
+	div = &lan969x_core_pll_328mhz[*ref];
+
+	/* Already configured by an earlier probe */
+	pll_cfg = spx5_rd(sparx5, CHIP_TOP_CORE_PLL_CFG);
+	freq_cfg = spx5_rd(sparx5, CHIP_TOP_CORE_PLL_FREQ_CFG);
+	if (CHIP_TOP_CORE_PLL_CFG_ENA_CFG_GET(pll_cfg) &&
+	    CHIP_TOP_CORE_PLL_FREQ_CFG_DIVFI_GET(freq_cfg) == div->divfi)
+		return 0;
+
+	spx5_rmw(CHIP_TOP_CORE_PLL_FREQ_CFG_DIVFI_SET(div->divfi) |
+		 CHIP_TOP_CORE_PLL_FREQ_CFG_DIVFF_SET(div->divff),
+		 CHIP_TOP_CORE_PLL_FREQ_CFG_DIVFI |
+		 CHIP_TOP_CORE_PLL_FREQ_CFG_DIVFF,
+		 sparx5, CHIP_TOP_CORE_PLL_FREQ_CFG);
+
+	/* Every register based setting is ignored while ENA_CFG is 0, so nothing
+	 * is guaranteed about the fields that go live with it. REF_CLK_SEL 0
+	 * keeps the reference the strapping pad selected, which is the one the
+	 * divider set above was chosen for, and FILTER_RANGE must be 0 for
+	 * fractional mode.
+	 */
+	spx5_rmw(CHIP_TOP_CORE_PLL_CFG_DIVQ_SET(div->divq) |
+		 CHIP_TOP_CORE_PLL_CFG_DIVR_SET(div->divr) |
+		 CHIP_TOP_CORE_PLL_CFG_REF_CLK_SEL_SET(0) |
+		 CHIP_TOP_CORE_PLL_CFG_FILTER_RANGE_SET(0),
+		 CHIP_TOP_CORE_PLL_CFG_DIVQ |
+		 CHIP_TOP_CORE_PLL_CFG_DIVR |
+		 CHIP_TOP_CORE_PLL_CFG_REF_CLK_SEL |
+		 CHIP_TOP_CORE_PLL_CFG_FILTER_RANGE,
+		 sparx5, CHIP_TOP_CORE_PLL_CFG);
+
+	spx5_rmw(CHIP_TOP_CORE_PLL_CFG_ENA_CFG_SET(1),
+		 CHIP_TOP_CORE_PLL_CFG_ENA_CFG,
+		 sparx5, CHIP_TOP_CORE_PLL_CFG);
+
+	spx5_rmw(CHIP_TOP_CORE_PLL_CFG_NEWDIV_SET(1),
+		 CHIP_TOP_CORE_PLL_CFG_NEWDIV,
+		 sparx5, CHIP_TOP_CORE_PLL_CFG);
+
+	err = read_poll_timeout(spx5_rd, pll_cfg,
+				CHIP_TOP_CORE_PLL_CFG_DIVACK_GET(pll_cfg),
+				100, 10000, false, sparx5,
+				CHIP_TOP_CORE_PLL_CFG);
+
+	spx5_rmw(CHIP_TOP_CORE_PLL_CFG_NEWDIV_SET(0),
+		 CHIP_TOP_CORE_PLL_CFG_NEWDIV,
+		 sparx5, CHIP_TOP_CORE_PLL_CFG);
+
+	if (err) {
+		/* Clear ENA_CFG so the check above does not mistake this for a
+		 * configured PLL and skip the handshake on the next probe.
+		 */
+		spx5_rmw(CHIP_TOP_CORE_PLL_CFG_ENA_CFG_SET(0),
+			 CHIP_TOP_CORE_PLL_CFG_ENA_CFG,
+			 sparx5, CHIP_TOP_CORE_PLL_CFG);
+		dev_err(sparx5->dev,
+			"core PLL did not acknowledge new dividers\n");
+		return err;
+	}
+
+	/* LOCK_STAT is a live signal that resets to 1, so sleep before the first
+	 * read rather than sampling it in the same breath as clearing NEWDIV.
+	 */
+	err = read_poll_timeout(spx5_rd, pll_cfg,
+				CHIP_TOP_CORE_PLL_CFG_LOCK_STAT_GET(pll_cfg),
+				100, 10000, true, sparx5,
+				CHIP_TOP_CORE_PLL_CFG);
+	if (err) {
+		dev_err(sparx5->dev, "core PLL did not lock\n");
+		return err;
+	}
+
+	dev_dbg(sparx5->dev,
+		"core PLL set for a %s reference: DIVFI %u DIVFF 0x%x DIVQ %u DIVR %u\n",
+		*ref == SPX5_CORE_CLOCK_REF_39MHZ ? "39.0625MHz" : "25MHz",
+		div->divfi, div->divff, div->divq, div->divr);
+
+	return 0;
+}
+
 static int sparx5_init_coreclock(struct sparx5 *sparx5)
 {
 	enum sparx5_core_clockfreq freq = sparx5->coreclock;
 	u32 clk_div, clk_period, pol_upd_int, idx;
 	enum sparx5_core_clockref ref;
+	int err;
 
 	/* Verify if core clock frequency is supported on target.
 	 * If 'VTSS_CORE_CLOCK_DEFAULT' then the highest supported
@@ -613,6 +742,13 @@ static int sparx5_init_coreclock(struct sparx5 *sparx5)
 			 CLKGEN_LCPLL1_CORE_CLK_CFG_CORE_CLK_ENA,
 			 sparx5, CLKGEN_LCPLL1_CORE_CLK_CFG);
 	} else {
+		if (freq != SPX5_CORE_CLOCK_328MHZ) {
+			dev_err(sparx5->dev, "%d coreclock not supported\n", freq);
+			return -EINVAL;
+		}
+		err = lan969x_init_core_pll(sparx5, &ref);
+		if (err)
+			return err;
 		pol_upd_int = 820; // SPX5_CORE_CLOCK_328MHZ
 	}
 
