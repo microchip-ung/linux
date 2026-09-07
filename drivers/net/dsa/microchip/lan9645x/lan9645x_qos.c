@@ -14,7 +14,7 @@ static int __lan9645x_qos_polix_alloc(struct lan9645x *lan9645x)
 
 	polix = find_first_zero_bit(lan9645x->pol_idx_mask,
 				    LAN9645X_NUM_POL_POOL);
-	if (polix >= LAN9645X_ISDX_MAX)
+	if (polix >= LAN9645X_NUM_POL_POOL)
 		return -ENOSPC;
 
 	set_bit(polix, lan9645x->pol_idx_mask);
