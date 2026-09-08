@@ -412,6 +412,10 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 drop:
 	stats->tx_dropped++;
 	sparx5->tx.dropped++;
+	if (skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP &&
+	    SPARX5_SKB_CB(skb)->rew_op == IFH_REW_OP_TWO_STEP_PTP)
+		sparx5_ptp_txtstamp_release(port, skb);
+
 	dev_kfree_skb_any(skb);
 	return NETDEV_TX_OK;
 busy:
