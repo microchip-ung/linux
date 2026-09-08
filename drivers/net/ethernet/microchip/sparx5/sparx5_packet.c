@@ -329,6 +329,7 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 	const struct sparx5_ops *ops;
 	u32 ifh[IFH_LEN];
 	netdev_tx_t ret;
+	u32 len;
 
 	ops = sparx5->data->ops;
 
@@ -382,6 +383,9 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 #endif
 
 	skb_tx_timestamp(skb);
+
+	len = max_t(u32, skb->len, ETH_ZLEN);
+
 	spin_lock(&sparx5->tx_lock);
 	if (sparx5->fdma_irq > 0)
 		ret = ops->fdma_xmit(sparx5, ifh, skb, dev);
@@ -400,7 +404,7 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 		 */
 		return NETDEV_TX_OK;
 
-	stats->tx_bytes += skb->len;
+	stats->tx_bytes += len;
 	stats->tx_packets++;
 	sparx5->tx.packets++;
 
