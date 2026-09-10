@@ -719,11 +719,26 @@ static int sparx5_switchdev_event(struct notifier_block *nb,
 	return NOTIFY_DONE;
 }
 
+static bool vid_is_rb_reserved(u16 vid)
+{
+	return IS_ENABLED(CONFIG_LAN969X_SWITCH) && vid >= LAN969X_RB_VID_BASE;
+}
+
 static int sparx5_handle_port_vlan_add(struct net_device *dev,
 				       struct notifier_block *nb,
-				       const struct switchdev_obj_port_vlan *v)
+				       const struct switchdev_obj_port_vlan *v,
+				       struct netlink_ext_ack *extack)
 {
 	struct sparx5_port *port = netdev_priv(dev);
+
+	/* Ahead of the branching, so it covers the bridge master too: that path
+	 * installs {vid, broadcast} -> PGID_BCAST and returns early.
+	 */
+	if (vid_is_rb_reserved(v->vid)) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "VLAN range reserved for HSR/PRP redboxes");
+		return -EBUSY;
+	}
 
 	if (netif_is_bridge_master(dev)) {
 		struct sparx5 *sparx5 =
@@ -804,7 +819,8 @@ static int sparx5_handle_port_obj_add(struct net_device *dev,
 	switch (obj->id) {
 	case SWITCHDEV_OBJ_ID_PORT_VLAN:
 		err = sparx5_handle_port_vlan_add(dev, nb,
-						  SWITCHDEV_OBJ_PORT_VLAN(obj));
+						  SWITCHDEV_OBJ_PORT_VLAN(obj),
+						  info->info.extack);
 		break;
 	case SWITCHDEV_OBJ_ID_PORT_MDB:
 	case SWITCHDEV_OBJ_ID_HOST_MDB:
@@ -844,10 +860,20 @@ static int sparx5_handle_port_obj_add(struct net_device *dev,
 
 static int sparx5_handle_port_vlan_del(struct net_device *dev,
 				       struct notifier_block *nb,
-				       u16 vid)
+				       u16 vid,
+				       struct netlink_ext_ack *extack)
 {
 	struct sparx5_port *port = netdev_priv(dev);
 	int ret;
+
+	/* Deleting one would drop the redbox's {vid, bcast} row, or clear a live
+	 * redbox port's membership and pvid.
+	 */
+	if (vid_is_rb_reserved(vid)) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "VLAN range reserved for HSR/PRP redboxes");
+		return -EBUSY;
+	}
 
 	/* Master bridge? */
 	if (netif_is_bridge_master(dev)) {
@@ -925,7 +951,8 @@ static int sparx5_handle_port_obj_del(struct net_device *dev,
 	switch (obj->id) {
 	case SWITCHDEV_OBJ_ID_PORT_VLAN:
 		err = sparx5_handle_port_vlan_del(dev, nb,
-						  SWITCHDEV_OBJ_PORT_VLAN(obj)->vid);
+						  SWITCHDEV_OBJ_PORT_VLAN(obj)->vid,
+						  info->info.extack);
 		break;
 	case SWITCHDEV_OBJ_ID_PORT_MDB:
 	case SWITCHDEV_OBJ_ID_HOST_MDB:

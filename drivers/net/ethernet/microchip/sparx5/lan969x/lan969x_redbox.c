@@ -1233,6 +1233,115 @@ void lan969x_rb_debugfs(struct sparx5 *sparx5)
 			    &lan969x_rb_stats_fops);
 }
 
+/* Move one redbox port into vid, or back to the host-mode default.
+ *
+ * Membership must be set before the pvid change: ingress VLAN membership
+ * filtering is on for all front ports, so a frame classified to a VID the port
+ * is not a member of is dropped. dev_addr and the synced multicast addresses
+ * are locked and keyed on pvid, so they have to be moved across the change or
+ * they strand in the old FID for good; __dev_mc_sync() alone re-learns nothing,
+ * as it skips addresses already flagged synced. port->vid is left alone to keep
+ * egress untagged.
+ */
+static void lan969x_rb_port_pvid_set(struct sparx5_port *port, u16 vid)
+{
+	struct sparx5 *sparx5 = port->sparx5;
+
+	__dev_mc_unsync(port->ndev, sparx5_mc_unsync);
+	sparx5_mact_forget(sparx5, port->ndev->dev_addr, port->pvid);
+
+	port->pvid = vid;
+	sparx5_vlan_port_setup(sparx5, port->portno);
+
+	sparx5_mact_learn(sparx5, sparx5_get_pgid(sparx5, PGID_CPU),
+			  port->ndev->dev_addr, port->pvid);
+
+	__dev_mc_sync(port->ndev, sparx5_mc_sync, sparx5_mc_unsync);
+}
+
+static int lan969x_rb_port_vlan_add(struct sparx5_port *port, u16 vid)
+{
+	struct sparx5 *sparx5 = port->sparx5;
+	int err;
+
+	set_bit(port->portno, sparx5->vlan_mask[vid]);
+
+	err = sparx5_vlant_set_mask(sparx5, vid);
+	if (err)
+		return err;
+
+	lan969x_rb_port_pvid_set(port, vid);
+
+	return 0;
+}
+
+static void lan969x_rb_port_vlan_del(struct sparx5_port *port, u16 vid)
+{
+	struct sparx5 *sparx5 = port->sparx5;
+
+	lan969x_rb_port_pvid_set(port, NULL_VID);
+
+	clear_bit(port->portno, sparx5->vlan_mask[vid]);
+
+	sparx5_vlant_set_mask(sparx5, vid);
+}
+
+static u16 lan969x_rb_vid(struct lan969x_redbox *redbox)
+{
+	return VLAN_N_VID - 1 - redbox->taxi;
+}
+
+static void lan969x_rb_vlan_del(struct lan969x_redbox *redbox)
+{
+	struct sparx5 *sparx5 = redbox->ports[LAN969X_RB_LREA]->sparx5;
+	u16 vid = lan969x_rb_vid(redbox);
+	u8 broadcast[ETH_ALEN];
+
+	eth_broadcast_addr(broadcast);
+
+	sparx5_mact_forget(sparx5, broadcast, vid);
+
+	for (int i = 0; i < LAN969X_RB_PORT_MAX; i++)
+		if (lan969x_rb_has_port(redbox, i))
+			lan969x_rb_port_vlan_del(redbox->ports[i], vid);
+}
+
+/* The {vid, bcast} -> PGID_BCAST row is what lets a SAN broadcast reach the
+ * ring: PGID_BCAST carries lrea and lrec, and is the only flood pgid with CPU
+ * copy enabled.
+ */
+static int lan969x_rb_vlan_add(struct lan969x_redbox *redbox)
+{
+	struct sparx5 *sparx5 = redbox->ports[LAN969X_RB_LREA]->sparx5;
+	u16 vid = lan969x_rb_vid(redbox);
+	u8 broadcast[ETH_ALEN];
+	int err;
+
+	eth_broadcast_addr(broadcast);
+
+	for (int i = 0; i < LAN969X_RB_PORT_MAX; i++) {
+		if (!lan969x_rb_has_port(redbox, i))
+			continue;
+
+		err = lan969x_rb_port_vlan_add(redbox->ports[i], vid);
+		if (err)
+			goto err_vlan_del;
+	}
+
+	err = sparx5_mact_learn(sparx5,
+				sparx5_get_pgid(sparx5, PGID_BCAST),
+				broadcast, vid);
+	if (err)
+		goto err_vlan_del;
+
+	return 0;
+
+err_vlan_del:
+	lan969x_rb_vlan_del(redbox);
+
+	return err;
+}
+
 /* Retrieve a redbox for this master. */
 static struct lan969x_redbox *lan969x_rb_get(struct net_device *master)
 {
@@ -1357,6 +1466,11 @@ int lan969x_hsr_join(struct net_device *master, struct net_device *slave)
 		lan969x_rb_fcs_upd_set(sparx5,
 				       redbox->ports[LAN969X_RB_LREC]->portno,
 				       true);
+
+		/* Own forwarding domain, so SAN broadcast floods to the ring. */
+		err = lan969x_rb_vlan_add(redbox);
+		if (err)
+			goto err_rb_put;
 	}
 
 	/* Configure each port. */
@@ -1420,6 +1534,18 @@ int lan969x_hsr_join(struct net_device *master, struct net_device *slave)
 			   true);
 
 	return 0;
+
+err_rb_put:
+	lan969x_rb_fcs_upd_set(sparx5,
+			       redbox->ports[LAN969X_RB_LREC]->portno,
+			       false);
+	lan969x_rb_ena(sparx5, redbox->taxi, false);
+	port->ndev->features &= ~LAN969X_SUPPORTED_HSR_FEATURES;
+
+	lan969x_rb_put(redbox);
+	sparx5_update_fwd(sparx5);
+
+	return err;
 }
 
 int lan969x_hsr_leave(struct net_device *master, struct net_device *slave)
@@ -1439,6 +1565,10 @@ int lan969x_hsr_leave(struct net_device *master, struct net_device *slave)
 
 	/* Disable redbox. */
 	lan969x_rb_ena(sparx5, redbox->taxi, false);
+
+	/* While the port pointers are still valid, i.e. before rb_put(). */
+	if (has_interlink)
+		lan969x_rb_vlan_del(redbox);
 
 	/* This will remove all ports and nullify the hsr master. This is done
 	 * for all linked ports, but that should be fine.
