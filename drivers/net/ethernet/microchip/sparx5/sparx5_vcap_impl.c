@@ -1981,6 +1981,29 @@ static void sparx5_vcap_is2_port_key_selection(struct sparx5 *sparx5,
 			 ANA_ACL_VCAP_S2_CFG(portno));
 }
 
+/* ip4_tcp_udp and ip4_other have no L2_SMAC field, so an L2_SMAC-keyed rule
+ * cannot match IPv4 while they are selected. Lookup 0 only.
+ */
+void sparx5_vcap_is2_port_ipv4_mac_etype(struct sparx5 *sparx5, int portno,
+					 bool enable)
+{
+	u32 v4_uc, v4_mc;
+
+	v4_uc = enable ? VCAP_IS2_PS_IPV4_UC_MAC_ETYPE :
+			 VCAP_IS2_PS_IPV4_UC_IP4_TCP_UDP_OTHER;
+	v4_mc = enable ? VCAP_IS2_PS_IPV4_MC_MAC_ETYPE :
+			 VCAP_IS2_PS_IPV4_MC_IP4_TCP_UDP_OTHER;
+
+	/* Field-scoped: tc-flower selects the other keysets per port and lookup,
+	 * so a full write would discard them.
+	 */
+	spx5_rmw(ANA_ACL_VCAP_S2_KEY_SEL_IP4_UC_KEY_SEL_SET(v4_uc) |
+		 ANA_ACL_VCAP_S2_KEY_SEL_IP4_MC_KEY_SEL_SET(v4_mc),
+		 ANA_ACL_VCAP_S2_KEY_SEL_IP4_UC_KEY_SEL |
+		 ANA_ACL_VCAP_S2_KEY_SEL_IP4_MC_KEY_SEL,
+		 sparx5, ANA_ACL_VCAP_S2_KEY_SEL(portno, 0));
+}
+
 /* Enable ES0 lookups per port and set the keyset generation */
 static void sparx5_vcap_es0_port_key_selection(struct sparx5 *sparx5,
 					       struct vcap_admin *admin)

@@ -54,6 +54,9 @@ struct sparx5;
 struct vcap_admin;
 struct net_device;
 struct vcap_keyset_list;
+void sparx5_vcap_is2_port_ipv4_mac_etype(struct sparx5 *sparx5, int portno,
+					 bool enable);
+
 enum vcap_keyfield_set;
 enum vcap_key_field;
 

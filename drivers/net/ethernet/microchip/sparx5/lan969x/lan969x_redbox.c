@@ -33,6 +33,12 @@
 
 #include "lan969x.h"
 
+/* Number of IS2 rules needed to cover the interlink SMAC-kill filter: sparx5
+ * selects the IS2 keyset by frame type, so each keyset that can carry L2_SMAC
+ * needs its own rule. See lan969x_rb_smac_kill_add().
+ */
+#define LAN969X_RB_SMAC_KILL_CNT 3
+
 #define RB_NETID 5 /* Default netid. */
 
 /* Table timeouts. */
@@ -199,6 +205,11 @@ struct lan969x_redbox {
 
 	 /* Taxi instance in hardware, maps 1:1 to redbox instance. */
 	u8 taxi;
+
+	/* IS2 rule ids of the interlink SMAC-kill rules, 0 when not installed.
+	 * See lan969x_rb_smac_kill_add().
+	 */
+	u32 smac_kill_id[LAN969X_RB_SMAC_KILL_CNT];
 };
 
 static struct lan969x_redbox_params hsr_san_params[LAN969X_RB_PORT_MAX] = {
@@ -1342,6 +1353,96 @@ err_vlan_del:
 	return err;
 }
 
+static const enum vcap_keyfield_set
+lan969x_rb_smac_kill_keysets[LAN969X_RB_SMAC_KILL_CNT] = {
+	VCAP_KFS_MAC_ETYPE,
+	VCAP_KFS_ARP,
+	VCAP_KFS_IP_7TUPLE,
+};
+
+static void lan969x_rb_smac_kill_del(struct lan969x_redbox *redbox)
+{
+	struct sparx5_port *port = redbox->ports[LAN969X_RB_LREC];
+	struct vcap_control *vctrl = port->sparx5->vcap_ctrl;
+
+	for (int i = 0; i < LAN969X_RB_SMAC_KILL_CNT; i++) {
+		if (!redbox->smac_kill_id[i])
+			continue;
+
+		vcap_del_rule(vctrl, port->ndev, redbox->smac_kill_id[i]);
+
+		redbox->smac_kill_id[i] = 0;
+	}
+
+	sparx5_vcap_is2_port_ipv4_mac_etype(port->sparx5, port->portno, false);
+}
+
+/* Drop frames arriving on the interlink carrying the redbox's own MAC as SMAC:
+ * our own traffic looping back in. This cannot be done with the redbox masks,
+ * because hsr_san_params[LREC].LOCAL_SRC_FWD_MASK must stay RB_FWD_AB for
+ * CPU-originated frames, which are indistinguishable there. lan9645x does the
+ * same in lan9645x_vcap_s2_hsr_smac_kill().
+ *
+ * One rule per keyset, because sparx5_vcap_is2_port_key_selection() picks the
+ * keyset by frame type: MAC_ETYPE for non-IP, ARP for ARP, IP_7TUPLE for IPv6.
+ * IPv4 would land in ip4_tcp_udp / ip4_other, which have no L2_SMAC field at
+ * all, so lan969x_rb_smac_kill_add() also points IPv4 at MAC_ETYPE for this
+ * port. The ingress port mask comes from the ndev via
+ * sparx5_vcap_ingress_add_default_fields().
+ */
+static int lan969x_rb_smac_kill_add(struct lan969x_redbox *redbox)
+{
+	struct sparx5_port *port = redbox->ports[LAN969X_RB_LREC];
+	struct sparx5 *sparx5 = port->sparx5;
+	struct vcap_u48_key smac = {};
+	struct vcap_rule *vrule;
+	int err;
+
+	/* VCAP keys are in reverse byte order; memcpy() would match nothing. */
+	vcap_netbytes_copy(smac.value, (u8 *)port->ndev->dev_addr, ETH_ALEN);
+	memset(smac.mask, 0xff, ETH_ALEN);
+
+	/* IPv4 is otherwise classified with keys that cannot carry L2_SMAC. */
+	sparx5_vcap_is2_port_ipv4_mac_etype(sparx5, port->portno, true);
+
+	for (int i = 0; i < LAN969X_RB_SMAC_KILL_CNT; i++) {
+		vrule = vcap_alloc_rule(sparx5->vcap_ctrl, port->ndev,
+					SPARX5_VCAP_CID_IS2_L0,
+					VCAP_USER_HSR_PRP, 0, 0);
+		if (IS_ERR(vrule)) {
+			err = PTR_ERR(vrule);
+			goto err_kill_del;
+		}
+
+		err = vcap_set_rule_set_keyset(vrule,
+					       lan969x_rb_smac_kill_keysets[i]);
+		err |= vcap_rule_add_key_u48(vrule, VCAP_KF_L2_SMAC, &smac);
+		err |= vcap_set_rule_set_actionset(vrule, VCAP_AFS_BASE_TYPE);
+		/* Replace the forwarding decision with an empty mask: discard. */
+		err |= vcap_rule_add_action_u32(vrule, VCAP_AF_MASK_MODE,
+						SPX5_PMM_REPLACE_ALL);
+		err |= vcap_rule_add_action_u32(vrule, VCAP_AF_PORT_MASK, 0);
+		err = err ? -EINVAL : vcap_val_rule(vrule, ETH_P_ALL);
+		if (!err) {
+			err = vcap_add_rule(vrule);
+			if (!err)
+				redbox->smac_kill_id[i] = vrule->id;
+		}
+
+		vcap_free_rule(vrule);
+
+		if (err)
+			goto err_kill_del;
+	}
+
+	return 0;
+
+err_kill_del:
+	lan969x_rb_smac_kill_del(redbox);
+
+	return err;
+}
+
 /* Retrieve a redbox for this master. */
 static struct lan969x_redbox *lan969x_rb_get(struct net_device *master)
 {
@@ -1471,6 +1572,13 @@ int lan969x_hsr_join(struct net_device *master, struct net_device *slave)
 		err = lan969x_rb_vlan_add(redbox);
 		if (err)
 			goto err_rb_put;
+
+		/* The interlink can now reach the ring, so kill looped frames. */
+		err = lan969x_rb_smac_kill_add(redbox);
+		if (err) {
+			lan969x_rb_vlan_del(redbox);
+			goto err_rb_put;
+		}
 	}
 
 	/* Configure each port. */
@@ -1567,8 +1675,10 @@ int lan969x_hsr_leave(struct net_device *master, struct net_device *slave)
 	lan969x_rb_ena(sparx5, redbox->taxi, false);
 
 	/* While the port pointers are still valid, i.e. before rb_put(). */
-	if (has_interlink)
+	if (has_interlink) {
+		lan969x_rb_smac_kill_del(redbox);
 		lan969x_rb_vlan_del(redbox);
+	}
 
 	/* This will remove all ports and nullify the hsr master. This is done
 	 * for all linked ports, but that should be fine.
