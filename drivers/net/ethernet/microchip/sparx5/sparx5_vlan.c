@@ -8,7 +8,7 @@
 #include "sparx5_main.h"
 #include "lan969x/lan969x.h"
 
-static int sparx5_vlant_set_mask(struct sparx5 *sparx5, u16 vid)
+int sparx5_vlant_set_mask(struct sparx5 *sparx5, u16 vid)
 {
 	u32 mask[3];
 

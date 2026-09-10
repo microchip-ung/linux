@@ -755,6 +755,7 @@ void sparx5_pgid_clear(struct sparx5 *spx5, int pgid);
 void sparx5_pgid_read_mask(struct sparx5 *sparx5, int pgid, u32 portmask[3]);
 void sparx5_update_fwd(struct sparx5 *sparx5);
 void sparx5_vlan_init(struct sparx5 *sparx5);
+int sparx5_vlant_set_mask(struct sparx5 *sparx5, u16 vid);
 void sparx5_vlan_port_setup(struct sparx5 *sparx5, int portno);
 int sparx5_vlan_vid_add(struct sparx5_port *port, u16 vid, bool pvid,
 			bool untagged);
