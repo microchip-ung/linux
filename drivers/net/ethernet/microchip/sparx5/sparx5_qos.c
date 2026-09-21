@@ -1387,11 +1387,15 @@ int sparx5_qos_port_conf_set(struct sparx5_port *const port,
 	spx5_rmw(ANA_CL_QOS_CFG_DEFAULT_QOS_VAL_SET(conf->i_default_prio) |
 			 ANA_CL_QOS_CFG_DEFAULT_DP_VAL_SET(conf->i_default_dpl) |
 			 ANA_CL_QOS_CFG_PCP_DEI_QOS_ENA_SET(conf->i_mode.tag_map_enable) |
-			 ANA_CL_QOS_CFG_DSCP_QOS_ENA_SET(conf->i_mode.dscp_map_enable),
+			 ANA_CL_QOS_CFG_PCP_DEI_DP_ENA_SET(conf->i_mode.tag_map_enable) |
+			 ANA_CL_QOS_CFG_DSCP_QOS_ENA_SET(conf->i_mode.dscp_map_enable) |
+			 ANA_CL_QOS_CFG_DSCP_DP_ENA_SET(conf->i_mode.dscp_map_enable),
 			 ANA_CL_QOS_CFG_DEFAULT_QOS_VAL |
 			 ANA_CL_QOS_CFG_DEFAULT_DP_VAL |
 			 ANA_CL_QOS_CFG_PCP_DEI_QOS_ENA |
-			 ANA_CL_QOS_CFG_DSCP_QOS_ENA,
+			 ANA_CL_QOS_CFG_PCP_DEI_DP_ENA |
+			 ANA_CL_QOS_CFG_DSCP_QOS_ENA |
+			 ANA_CL_QOS_CFG_DSCP_DP_ENA,
 			 port->sparx5,
 			 ANA_CL_QOS_CFG(port->portno));
 
@@ -1436,13 +1440,13 @@ int sparx5_qos_port_conf_set(struct sparx5_port *const port,
 					 REW_PCP_MAP_DE1(port->portno, prio));
 
 			dei = conf->e_prio_dpl_pcp_dei_map[prio][0].dei;
-			spx5_rmw(REW_DEI_MAP_DE0_DEI_DE0_SET(pcp),
+			spx5_rmw(REW_DEI_MAP_DE0_DEI_DE0_SET(dei),
 					 REW_DEI_MAP_DE0_DEI_DE0,
 					 port->sparx5,
 					 REW_DEI_MAP_DE0(port->portno, prio));
 
 			dei = conf->e_prio_dpl_pcp_dei_map[prio][1].dei;
-			spx5_rmw(REW_DEI_MAP_DE1_DEI_DE1_SET(pcp),
+			spx5_rmw(REW_DEI_MAP_DE1_DEI_DE1_SET(dei),
 					 REW_DEI_MAP_DE1_DEI_DE1,
 					 port->sparx5,
 					 REW_DEI_MAP_DE1(port->portno, prio));
@@ -1656,7 +1660,9 @@ int sparx5_fp_status(struct sparx5_port *port,
 	} else {
 		v = DEV2G5_MM_STATUS_PRMPT_VERIFY_STATE_GET(status);
 		/* DEV2G5 does not support full state */
-		v = sparx5_is_baser(port->conf.portmode) || v == 0 ? v : (v + 2);
+		v = sparx5_port_is_high_speed(port->sparx5, port->portno,
+					      port->conf.portmode) ||
+			v == 0 ? v : (v + 2);
 	}
 
 	s->status_verify = v;
@@ -1694,7 +1700,8 @@ static void sparx5_fp_init(struct sparx5 *sparx5)
 					 port,
 					 DEV_PFRAME_CFG);
 
-		if (sparx5_is_baser(port->conf.portmode)) {
+		if (sparx5_port_is_high_speed(port->sparx5, port->portno,
+					      port->conf.portmode)) {
 			pix = sparx5_port_dev_index(sparx5, port->portno);
 			dev = sparx5_to_high_dev(sparx5, port->portno);
 			devinst = spx5_inst_get(port->sparx5, dev, pix);

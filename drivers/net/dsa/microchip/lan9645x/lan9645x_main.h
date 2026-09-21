@@ -82,6 +82,7 @@
 #define VLAN_MAX			(VLAN_RSV_RANGE_START - 1)
 
 #define VLAN_N_VID 4096
+#define LAN9645X_MRP_VID_NONE		VLAN_N_VID
 
 /* 160KiB / 1.25Mbit */
 #define LAN9645X_BUFFER_MEMORY (160 * 1024)
@@ -170,11 +171,14 @@
 #define LAN9645X_VCAP_CID_ES0_L0 VCAP_CID_EGRESS_L0 /* ES0 lookup 0 */
 #define LAN9645X_VCAP_CID_ES0_MAX (VCAP_CID_EGRESS_L1 - 1) /* ES0 Max */
 
-/* Policer indexes */
-#define LAN9645X_POL_IX_PORT      0 /* 0-9    : 10 port policers */
-#define LAN9645X_POL_IX_QUEUE    10 /* 10-90  : 80 queue policers (10p * 8q) */
-#define LAN9645X_POL_IX_POOL     91 /* 91-344 : 263 PSFP and VCAP IS1/IS2 policers */
-#define LAN9645X_POL_IX_MAX      344
+/* Policer indexes. The device has 226 policers in three contiguous
+ * sections. VCAP IS1 and IS2 rules point into the pool with their
+ * POLICE_IDX action.
+ */
+#define LAN9645X_POL_IX_PORT      0 /* 0-9    : port n uses policer n */
+#define LAN9645X_POL_IX_QUEUE    10 /* 10-89  : port n prio m uses 10 + 8 * n + m */
+#define LAN9645X_POL_IX_POOL     90 /* 90-225 : 136 PSFP and VCAP IS1/IS2 policers */
+#define LAN9645X_POL_IX_MAX      225
 #define LAN9645X_NUM_POL_POOL   (LAN9645X_POL_IX_MAX + 1 - LAN9645X_POL_IX_POOL)
 
 #define LAN9645X_PHC_COUNT		3
@@ -269,6 +273,7 @@ struct lan9645x_bum_pol {
 struct lan9645x_bum_ctrl {
 	struct lan9645x *lan9645x;
 	int burst;
+	bool no_pol_dis;
 	struct lan9645x_bum_pol policers[LAN9645X_NUM_BUM_POL];
 	struct list_head debugfs_list;
 	/* Lock bum_ctrl and bum reg IO */
@@ -426,18 +431,41 @@ enum lan9645x_hsr_type {
 	LAN9645X_PRP,
 };
 
+struct lan9645x_hsr_prp_proxy_node {
+	struct list_head list;
+	unsigned char smac[ETH_ALEN];
+	int isdx;
+	u32 vrule_id;
+	u64 last_rx_pkts;
+};
+
 struct lan9645x_hsr_prp {
 	unsigned char mac[ETH_ALEN];
 	struct mutex lock; /* Lock HSR/PRP management. */
 	u32 isdx_vrule_id; /* TX isdx classification for seqnum generation */
 	u32 local_ring_vrule_id; /* HSR only: kill own frames on ring */
+	u32 catch_all_vrule_id; /* interlink: classify unknown UC to seqgen ISDX */
 	u16 isdx; /* Allocated ISDX for tx stream */
+	u16 catch_all_isdx; /* interlink: seqgen ISDX for catch-all rule */
 	int port_a;
 	int port_b;
+	int port_c; /* interlink chip port, -1 when none */
 	int shadow_ports[2];
 	bool enabled;
+	bool interlink_enabled;
 	enum lan9645x_hsr_type type; /* HSR or PRP */
+	struct net_device *hsr_dev; /* HSR master, used for proxy refresh */
+	unsigned char sup_addr[ETH_ALEN]; /* HSR supervision multicast addr */
 	struct list_head nodes;
+	struct list_head proxy_nodes;
+	/* Proxy nodes whose per-MAC VCAP rule could not be installed
+	 * (typically VCAP exhaustion). They are kept in proxy_node_db on
+	 * the kernel side and the catch-all rule still forwards their
+	 * traffic; only the per-MAC seqgen ISDX is missing. Promoted FIFO
+	 * to proxy_nodes when a slot frees in proxy_node_del.
+	 */
+	struct list_head deferred_proxy_nodes;
+	struct delayed_work proxy_refresh_work;
 	u16 ptp_ports;
 };
 
@@ -457,7 +485,6 @@ struct lan9645x_phc {
 	struct ptp_clock *clock;
 	struct ptp_clock_info info;
 	struct ptp_pin_desc pins[LAN9645X_PHC_PINS_NUM];
-	struct kernel_hwtstamp_config hwtstamp_config;
 	struct lan9645x *lan9645x;
 	u8 index;
 };
@@ -559,7 +586,6 @@ struct lan9645x {
 	struct lan9645x_phc phc[LAN9645X_PHC_COUNT];
 	struct mutex ptp_clock_lock; /* lock for phc */
 	spinlock_t ptp_ts_id_lock; /* lock for ts_id */
-	struct mutex ptp_lock; /* lock for ptp interface state */
 	u16 ptp_skbs;
 	int ptp_ext_irq;
 	int ptp_irq;
@@ -680,6 +706,7 @@ struct lan9645x_port {
 
 	/* Frame preemption */
 	struct lan9645x_fp_port_conf fp;
+	u8 fp_active_tcs; /* Preemptible TCs committed to QSYS_PREEMPT_CFG */
 	struct mutex fp_lock; /* Lock port FP config */
 
 	/* PTP */
@@ -688,6 +715,7 @@ struct lan9645x_port {
 	u16 ts_id;
 	u8 ptp_tx_cmd;
 	bool ptp_rx_cmd;
+	struct kernel_hwtstamp_config hwtstamp_config;
 
 	bool cut_thru_ena;
 
@@ -695,6 +723,11 @@ struct lan9645x_port {
 
 	struct mrp_port *mrp_port;
 	int mrp_is1_p_port_rule_id;
+	u16 mrp_test_vid;
+	u16 mrp_in_test_vid;
+
+	/* tc flower chain templates active on this port */
+	struct list_head tc_templates;
 };
 
 struct lan9645x_path_delay {
@@ -831,6 +864,14 @@ static inline bool lan9645x_port_is_hsr(struct lan9645x_port *p)
 	return lan9645x->hsr.enabled && lan9645x->hsr.type == LAN9645X_HSR &&
 		(lan9645x->hsr.port_a == p->chip_port ||
 		 lan9645x->hsr.port_b == p->chip_port);
+}
+
+static inline bool lan9645x_port_is_hsr_interlink(struct lan9645x_port *p)
+{
+	struct lan9645x *lan9645x = p->lan9645x;
+
+	return lan9645x->hsr.interlink_enabled &&
+	       lan9645x->hsr.port_c == p->chip_port;
 }
 
 static inline struct lan9645x_port *
@@ -1002,6 +1043,7 @@ int lan9645x_mac_bc_flood_del(struct lan9645x *lan9645x, u16 vid);
 /* VLAN lan9645x_vlan.c */
 int lan9645x_vlan_init(struct lan9645x *lan9645x);
 u16 lan9645x_vlan_unaware_pvid(int bridge_num);
+u16 lan9645x_vlan_port_get_pvid(struct lan9645x_port *port);
 void lan9645x_vlan_port_apply(struct lan9645x_port *p);
 int lan9645x_vlan_port_add_vlan(struct lan9645x_port *p, u16 vid, bool pvid,
 				bool untagged,
@@ -1040,6 +1082,12 @@ void lan9645x_mdb_init(struct lan9645x *lan9645x);
 void lan9645x_mdb_deinit(struct lan9645x *lan9645x);
 int lan9645x_mdb_port_mrouter_set(struct lan9645x *lan9645x, int port,
 				  bool enable);
+int __lan9645x_mdb_del(struct lan9645x *lan9645x, int chip_port,
+		       const unsigned char addr[ETH_ALEN], u16 vid,
+		       enum macaccess_entry_type type);
+int __lan9645x_mdb_add(struct lan9645x *lan9645x, int chip_port,
+		       const unsigned char addr[ETH_ALEN], u16 vid,
+		       enum macaccess_entry_type type);
 
 /* VCAP */
 int lan9645x_vcap_init(struct lan9645x *lan9645x);
@@ -1059,6 +1107,43 @@ int lan9645x_vcap_get_port_keyset(struct net_device *ndev,
 				  struct vcap_admin *admin, int cid,
 				  u16 l3_proto,
 				  struct vcap_keyset_list *keysetlist);
+void lan9645x_vcap_set_port_keyset(struct net_device *ndev,
+				   struct vcap_admin *admin, int cid,
+				   u16 l3_proto, enum vcap_keyfield_set keyset);
+
+/* Snapshot of the per-port keyset-selection registers for one VCAP lookup.
+ * A template may reprogram several frame-type selectors at once, so the only
+ * way to restore the previous state exactly is to save and replay the raw
+ * register contents.
+ */
+struct lan9645x_port_keyset_snapshot {
+	u32 cfg;  /* ANA_VCAP_S1_CFG(port, lookup) (IS1) or S2_CFG(port) (IS2) */
+	u32 dmac; /* ANA_VCAP_CFG(port) DMAC-DIP enable (IS1 only) */
+};
+
+void lan9645x_vcap_save_port_keyset(struct net_device *ndev,
+				    struct vcap_admin *admin, int cid,
+				    struct lan9645x_port_keyset_snapshot *snap);
+void lan9645x_vcap_restore_port_keyset(struct net_device *ndev,
+				       struct vcap_admin *admin, int cid,
+				       const struct lan9645x_port_keyset_snapshot *snap);
+
+/* Who controls the keyset selection of a (port, vcap, lookup). Tracked per port
+ * on lan9645x_port.tc_templates; at most one owner per (vcap, lookup).
+ */
+enum lan9645x_keyset_owner {
+	LAN9645X_KEYSET_OWNER_TEMPLATE = 1, /* tc chain template */
+	LAN9645X_KEYSET_OWNER_HSR,	    /* HSR/PRP and friends */
+};
+
+int lan9645x_vcap_keyset_claim(struct lan9645x_port *port, enum vcap_type vtype,
+			       int lookup, enum lan9645x_keyset_owner owner,
+			       struct netlink_ext_ack *extack);
+void lan9645x_vcap_keyset_release(struct lan9645x_port *port,
+				  enum vcap_type vtype, int lookup,
+				  enum lan9645x_keyset_owner owner);
+bool lan9645x_vcap_keyset_claimed(struct lan9645x_port *port,
+				  enum vcap_type vtype, int lookup);
 const char *lan9645x_vcap_keyset_name(struct lan9645x *lan9645x,
 				      enum vcap_keyfield_set keyset);
 const char *lan9645x_vcap_keyset_name_short(struct lan9645x *lan9645x,
@@ -1084,6 +1169,12 @@ int lan9645x_hsr_prp_pair_add(struct lan9645x *lan9645x, struct lan9645x_port *l
 			      enum lan9645x_hsr_type type);
 int lan9645x_hsr_prp_pair_del(struct lan9645x *lan9645x, int port,
 			      struct net_device *hsr);
+int lan9645x_hsr_prp_interlink_add(struct lan9645x *lan9645x,
+				   struct lan9645x_port *interlink,
+				   struct net_device *hsr,
+				   struct netlink_ext_ack *extack);
+int lan9645x_hsr_prp_interlink_del(struct lan9645x *lan9645x, int port,
+				   struct net_device *hsr);
 u32 lan9645x_hsr_prp_dev_get_mask(struct lan9645x *lan9645x,
 				  struct net_device *hsr);
 enum lan9645x_hsr_type lan9645x_hsr_prp_ver_to_type(enum hsr_version ver);
@@ -1091,6 +1182,17 @@ int lan9645x_hsr_prp_prepare(struct lan9645x *lan9645x, int port,
 			     struct net_device *hsr, enum lan9645x_hsr_type type,
 			     struct netlink_ext_ack *extack);
 int lan9645x_hsr2type(struct net_device *hsr, enum lan9645x_hsr_type *type);
+int lan9645x_hsr_prp_proxy_node_add(struct lan9645x *lan9645x, int port,
+				    struct net_device *hsr,
+				    const unsigned char *smac);
+void lan9645x_hsr_prp_proxy_node_del(struct lan9645x *lan9645x, int port,
+				     struct net_device *hsr,
+				     const unsigned char *smac);
+int lan9645x_hsr_keyset_claim(struct lan9645x_port *port,
+			      enum lan9645x_hsr_type type,
+			      struct netlink_ext_ack *extack);
+void lan9645x_hsr_keyset_release(struct lan9645x_port *port,
+				 enum lan9645x_hsr_type type);
 int lan9645x_hsr_prp_dan_node_add(struct lan9645x *lan9645x, int port,
 				  struct net_device *hsr,
 				  const unsigned char *smac);
@@ -1117,6 +1219,9 @@ void lan9645x_police_del(struct lan9645x *lan9645x, u16 pol_idx);
 void lan9645x_police_port_init(struct lan9645x_port *p);
 
 /* TC matchall lan9645x_tc_matchall.c */
+int lan9645x_tc_enable_lookups(struct lan9645x_port *p, int from_cid,
+			       int to_cid, unsigned long cookie,
+			       struct netlink_ext_ack *extack, bool enable);
 int lan9645x_tc_matchall_goto_add(struct lan9645x_port *p,
 				  struct tc_cls_matchall_offload *f);
 int lan9645x_tc_matchall_goto_del(struct lan9645x_port *p,
@@ -1171,6 +1276,11 @@ int lan9645x_tc_flower_del(struct lan9645x_port *p, struct flow_cls_offload *f,
 			   bool ingress);
 int lan9645x_tc_flower_stats(struct lan9645x_port *p,
 			     struct flow_cls_offload *f);
+int lan9645x_tc_flower_template_add(struct lan9645x_port *p,
+				    struct flow_cls_offload *f);
+int lan9645x_tc_flower_template_del(struct lan9645x_port *p,
+				    struct flow_cls_offload *f);
+void lan9645x_tc_flower_templates_free(struct lan9645x_port *p);
 
 /* Credit Based Shaping CBS: lan9645x_cbs.c */
 int lan9645x_cbs_del(struct lan9645x *lan9645x, int port,
@@ -1203,7 +1313,7 @@ int lan9645x_eee_mac_set(struct lan9645x *lan9645x, int port,
 
 /* lan9645x_ptp.c */
 int lan9645x_port_hwtstamp_get(struct dsa_switch *ds, int port,
-                               struct kernel_hwtstamp_config *config);
+			       struct kernel_hwtstamp_config *config);
 int lan9645x_port_hwtstamp_set(struct dsa_switch *ds, int port,
 			       struct kernel_hwtstamp_config *config,
 			       struct netlink_ext_ack *extack);
@@ -1300,10 +1410,14 @@ int lan9645x_fp_ethtool_set_mm(struct lan9645x *lan9645x, int port,
 int lan9645x_bum_init(struct lan9645x *lan9645x);
 void lan9645x_bum_deinit(struct lan9645x *lan9645x);
 
-/* Manual frame injection lan9645x_manual_inj.c */
-netdev_tx_t lan9645x_inj_xmit(struct lan9645x_port *port,
-			      struct sk_buff *skb,
-			      __be32 ifh[LAN9645X_IFH_LEN_U32]);
+/* Manual frame injection lan9645x_manual_inj.c
+ *
+ * Returns 0 with the skb consumed, or a negative errno with the skb left for
+ * the caller to dispose of.
+ */
+int lan9645x_inj_xmit(struct lan9645x_port *port,
+		      struct sk_buff *skb,
+		      __be32 ifh[LAN9645X_IFH_LEN_U32]);
 
 /* Automatic Frame Injection, lan9645x_afi.c */
 int lan9645x_afi_init(struct lan9645x *lan9645x);
@@ -1312,7 +1426,9 @@ void lan9645x_afi_deinit(struct lan9645x *lan9645x);
 /* PTP over HSR, lan9645x_ptp_hsr.c */
 int lan9645x_ptp_hsr_init(struct lan9645x *lan9645x);
 int lan9645x_ptp_hsr_setup(struct lan9645x *lan9645x, int port,
-			   struct kernel_hwtstamp_config *cfg);
+			   struct kernel_hwtstamp_config *cfg,
+			   struct netlink_ext_ack *extack);
+void lan9645x_ptp_hsr_pair_deinit(struct lan9645x *lan9645x);
 struct sk_buff *lan9645x_ptp_hsr_tx_irq_skb_match(struct lan9645x_port *port);
 void lan9645x_ptp_hsr_flush_tx_skbs(struct lan9645x_port *port);
 int lan9645x_port_xmit_redundancy_src(struct dsa_switch *ds, int port,

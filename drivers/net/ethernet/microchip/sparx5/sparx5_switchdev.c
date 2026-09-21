@@ -30,7 +30,7 @@ static int sparx5_port_attr_pre_bridge_flags(struct sparx5_port *port,
 					     struct switchdev_brport_flags flags)
 {
 	if (flags.mask & ~(BR_FLOOD | BR_MCAST_FLOOD | BR_BCAST_FLOOD |
-			   BR_PORT_LOCKED))
+			   BR_PORT_LOCKED | BR_LEARNING))
 		return -EINVAL;
 
 	return 0;
@@ -70,6 +70,18 @@ static void sparx5_port_attr_bridge_flags(struct sparx5_port *port,
 
 	if (flags.mask & BR_PORT_LOCKED)
 		sparx5_psec_set(port, (flags.val & BR_PORT_LOCKED));
+
+	if (flags.mask & BR_LEARNING) {
+		if (flags.val & BR_LEARNING)
+			set_bit(port->portno, sparx5->bridge_learn_flag_mask);
+		else
+			clear_bit(port->portno, sparx5->bridge_learn_flag_mask);
+
+		/* Recompute the auto-learn mask (STP state and BR_PORT_LOCKED
+		 * still gate it; locked ports are removed in sparx5_update_fwd).
+		 */
+		sparx5_update_fwd(sparx5);
+	}
 }
 
 void sparx5_attr_stp_state_set(struct sparx5_port *port, u8 state)
@@ -171,6 +183,9 @@ static int sparx5_port_attr_set(struct net_device *dev, const void *ctx,
 {
 	struct sparx5_port *port = netdev_priv(dev);
 
+	if (ctx && ctx != port)
+		return 0;
+
 	switch (attr->id) {
 	case SWITCHDEV_ATTR_ID_PORT_PRE_BRIDGE_FLAGS:
 		return sparx5_port_attr_pre_bridge_flags(port,
@@ -185,12 +200,16 @@ static int sparx5_port_attr_set(struct net_device *dev, const void *ctx,
 		sparx5_port_attr_ageing_set(port, attr->u.ageing_time);
 		break;
 	case SWITCHDEV_ATTR_ID_BRIDGE_VLAN_FILTERING:
-		/* Used PVID 1 when default_pvid is 0, to avoid
-		 * collision with non-bridged ports.
-		 */
-		if (port->pvid == 0)
-			port->pvid = 1;
 		port->vlan_aware = attr->u.vlan_filtering;
+		/* A vlan-unaware bridge classifies all traffic to an internal
+		 * PVID; use 1 when default_pvid is 0 to avoid colliding with the
+		 * VID 0 FID used by standalone ports. A vlan-aware bridge must
+		 * not force a PVID: pvid/untagged is applied from VLAN objects,
+		 * and with none configured untagged frames must be dropped
+		 * (TAG_REQUIRED).
+		 */
+		if (!port->vlan_aware && port->pvid == NULL_VID)
+			port->pvid = 1;
 		sparx5_vlan_port_apply(port->sparx5, port);
 		break;
 	case SWITCHDEV_ATTR_ID_PORT_MROUTER:
@@ -233,7 +252,9 @@ static int sparx5_port_bridge_join(struct sparx5_port *port,
 
 	set_bit(port->portno, sparx5->bridge_mask);
 
-	err = switchdev_bridge_port_offload(brport_dev, ndev, NULL, NULL, NULL,
+	err = switchdev_bridge_port_offload(brport_dev, ndev, port,
+					    &sparx5->switchdev_nb,
+					    &sparx5->switchdev_blocking_nb,
 					    false, extack);
 	if (err)
 		goto err_switchdev_offload;
@@ -247,7 +268,7 @@ static int sparx5_port_bridge_join(struct sparx5_port *port,
 	__dev_mc_unsync(ndev, sparx5_mc_unsync);
 
 	/* Enable uc/mc/bc flooding */
-	flags.mask = BR_FLOOD | BR_MCAST_FLOOD | BR_BCAST_FLOOD;
+	flags.mask = BR_FLOOD | BR_MCAST_FLOOD | BR_BCAST_FLOOD | BR_LEARNING;
 	flags.val = flags.mask;
 	sparx5_port_attr_bridge_flags(port, flags);
 
@@ -281,7 +302,7 @@ static void sparx5_port_bridge_leave(struct sparx5_port *port,
 	__dev_mc_sync(port->ndev, sparx5_mc_sync, sparx5_mc_unsync);
 
 	/* Disable uc/mc/bc flooding */
-	flags.mask = BR_FLOOD | BR_MCAST_FLOOD | BR_BCAST_FLOOD;
+	flags.mask = BR_FLOOD | BR_MCAST_FLOOD | BR_BCAST_FLOOD | BR_LEARNING;
 	flags.val = 0;
 	sparx5_port_attr_bridge_flags(port, flags);
 }
@@ -573,6 +594,12 @@ static void sparx5_switchdev_bridge_fdb_event_work(struct work_struct *work)
 		else
 			sparx5_add_mact_entry(sparx5, port->ndev, port->portno,
 					      fdb_info->addr, vid);
+		/* Ack the offload so the bridge sets the offloaded flag on its
+		 * FDB entry (orig_dev + original VID match the bridge entry).
+		 */
+		fdb_info->offloaded = true;
+		call_switchdev_notifiers(SWITCHDEV_FDB_OFFLOADED, orig_dev,
+					 &fdb_info->info, NULL);
 		break;
 	case SWITCHDEV_FDB_DEL_TO_DEVICE:
 		sparx5_del_mact_entry(sparx5, fdb_info->addr, vid);
@@ -692,11 +719,26 @@ static int sparx5_switchdev_event(struct notifier_block *nb,
 	return NOTIFY_DONE;
 }
 
+static bool vid_is_rb_reserved(u16 vid)
+{
+	return IS_ENABLED(CONFIG_LAN969X_SWITCH) && vid >= LAN969X_RB_VID_BASE;
+}
+
 static int sparx5_handle_port_vlan_add(struct net_device *dev,
 				       struct notifier_block *nb,
-				       const struct switchdev_obj_port_vlan *v)
+				       const struct switchdev_obj_port_vlan *v,
+				       struct netlink_ext_ack *extack)
 {
 	struct sparx5_port *port = netdev_priv(dev);
+
+	/* Ahead of the branching, so it covers the bridge master too: that path
+	 * installs {vid, broadcast} -> PGID_BCAST and returns early.
+	 */
+	if (vid_is_rb_reserved(v->vid)) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "VLAN range reserved for HSR/PRP redboxes");
+		return -EBUSY;
+	}
 
 	if (netif_is_bridge_master(dev)) {
 		struct sparx5 *sparx5 =
@@ -777,7 +819,8 @@ static int sparx5_handle_port_obj_add(struct net_device *dev,
 	switch (obj->id) {
 	case SWITCHDEV_OBJ_ID_PORT_VLAN:
 		err = sparx5_handle_port_vlan_add(dev, nb,
-						  SWITCHDEV_OBJ_PORT_VLAN(obj));
+						  SWITCHDEV_OBJ_PORT_VLAN(obj),
+						  info->info.extack);
 		break;
 	case SWITCHDEV_OBJ_ID_PORT_MDB:
 	case SWITCHDEV_OBJ_ID_HOST_MDB:
@@ -817,10 +860,20 @@ static int sparx5_handle_port_obj_add(struct net_device *dev,
 
 static int sparx5_handle_port_vlan_del(struct net_device *dev,
 				       struct notifier_block *nb,
-				       u16 vid)
+				       u16 vid,
+				       struct netlink_ext_ack *extack)
 {
 	struct sparx5_port *port = netdev_priv(dev);
 	int ret;
+
+	/* Deleting one would drop the redbox's {vid, bcast} row, or clear a live
+	 * redbox port's membership and pvid.
+	 */
+	if (vid_is_rb_reserved(vid)) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "VLAN range reserved for HSR/PRP redboxes");
+		return -EBUSY;
+	}
 
 	/* Master bridge? */
 	if (netif_is_bridge_master(dev)) {
@@ -898,7 +951,8 @@ static int sparx5_handle_port_obj_del(struct net_device *dev,
 	switch (obj->id) {
 	case SWITCHDEV_OBJ_ID_PORT_VLAN:
 		err = sparx5_handle_port_vlan_del(dev, nb,
-						  SWITCHDEV_OBJ_PORT_VLAN(obj)->vid);
+						  SWITCHDEV_OBJ_PORT_VLAN(obj)->vid,
+						  info->info.extack);
 		break;
 	case SWITCHDEV_OBJ_ID_PORT_MDB:
 	case SWITCHDEV_OBJ_ID_HOST_MDB:

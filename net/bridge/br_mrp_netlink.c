@@ -58,6 +58,13 @@ static int br_mrp_instance_parse(struct net_bridge *br, struct nlattr *attr,
 	if (tb[IFLA_BRIDGE_MRP_INSTANCE_PRIO])
 		inst.prio = nla_get_u16(tb[IFLA_BRIDGE_MRP_INSTANCE_PRIO]);
 
+	if (inst.p_ifindex == inst.s_ifindex) {
+		NL_SET_ERR_MSG_ATTR(extack,
+				    tb[IFLA_BRIDGE_MRP_INSTANCE_S_IFINDEX],
+				    "Primary and secondary ring ports must differ");
+		return -EINVAL;
+	}
+
 	if (cmd == RTM_SETLINK)
 		return br_mrp_add(br, &inst);
 	else

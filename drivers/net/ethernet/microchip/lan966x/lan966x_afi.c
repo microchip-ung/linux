@@ -7,25 +7,33 @@
 #include "lan966x_main.h"
 
 #include "afi_api.h"
+#include "afi_netlink.h"
 
 #define LAN966X_AFI_SLOW_INJ_CNT		64
 #define LAN966X_AFI_FRM_CNT			64
+#define LAN966X_AFI_DTI_CNT			16
 #define LAN966X_PRIO_SUPER			8
 
+#define LAN966X_AFI_FAST_INJ_BPS_MIN		1000ULL
+#define LAN966X_AFI_FAST_INJ_BPS_MAX		2500000000ULL
+
+#define LAN966X_AFI_FRM_PART0_INJ_CNT		GENMASK(23, 16)
+#define LAN966X_AFI_FRM_PART0_DELAY		GENMASK(29, 0)
+
 #define LAN966X_AFI_FRM_PART0_FP_POS		0
-#define LAN966X_AFI_FRM_PART0_DSTP_POS		9
+#define LAN966X_AFI_FRM_PART0_DSTP_POS		12
 #define LAN966X_AFI_FRM_PART1_FSHORT_POS	0
 #define LAN966X_AFI_FRM_PART1_EPRIO_POS		1
 
-#define LAN966X_AFI_FRM_INFO_FP_MASK		GENMASK(8, 0)
-#define LAN966X_AFI_FRM_INFO_DSTP_MASK		GENMASK(12, 9)
-#define LAN966X_AFI_FRM_INFO_EPRIO_MASK		GENMASK(15, 13)
-#define LAN966X_AFI_FRM_INFO_FSHORT_MASK	GENMASK(17, 16)
+#define LAN966X_AFI_FRM_INFO_FP_MASK		GENMASK(11, 0)
+#define LAN966X_AFI_FRM_INFO_DSTP_MASK		GENMASK(15, 12)
+#define LAN966X_AFI_FRM_INFO_EPRIO_MASK		GENMASK(18, 16)
+#define LAN966X_AFI_FRM_INFO_FSHORT_MASK	GENMASK(19, 19)
 
 #define LAN966X_AFI_FRM_TBL_PART1_RM_POS	4
 
-#define LAN966X_AFI_FRM_TBL_PART1_RM_MASK	GENMASK(5, 4)
-#define LAN966X_AFI_FRM_TBL_PART1_GONE_MASK	GENMASK(7, 6)
+#define LAN966X_AFI_FRM_TBL_PART1_RM_MASK	GENMASK(4, 4)
+#define LAN966X_AFI_FRM_TBL_PART1_GONE_MASK	GENMASK(5, 5)
 
 #define LAN966X_AFI_TTI_TBL_TIMER_LEN_WID	9
 
@@ -411,10 +419,194 @@ static int lan966x_afi_tti_stop(struct afi_control *afi, u32 tti_idx)
 	return 0;
 }
 
+static int lan966x_afi_frm_inject(struct afi_control *afi, u32 port_no,
+				  u32 prio, struct sk_buff *skb)
+{
+	struct lan966x *lan966x = afi->priv;
+	struct lan966x_port *port;
+	__be32 ifh[IFH_LEN];
+	netdev_tx_t tx;
+
+	if (port_no >= NUM_PHYS_PORTS)
+		return -EINVAL;
+
+	port = lan966x->ports[port_no];
+	if (!port)
+		return -EINVAL;
+
+	memset(ifh, 0, sizeof(__be32) * IFH_LEN);
+	lan966x_ifh_set_bypass(ifh, 1);
+	lan966x_ifh_set_port(ifh, BIT_ULL(port->chip_port));
+	lan966x_ifh_set_afi(ifh, 1);
+
+	local_bh_disable();
+	tx = lan966x_xmit(port, skb, ifh);
+	local_bh_enable();
+
+	if (tx != NETDEV_TX_OK)
+		return -EBUSY;
+
+	return 0;
+}
+
+static int lan966x_afi_dti_frm_hijack(struct afi_control *afi, u32 frm_idx)
+{
+	struct lan966x *lan966x = afi->priv;
+
+	return lan966x_afi_frm_hijack(lan966x, frm_idx);
+}
+
+static void lan966x_afi_dti_frm_entry_write(struct lan966x *lan966x,
+					    struct afi_frm *frm, u32 frm_idx)
+{
+	if (frm->entry_type)
+		lan_wr(FIELD_PREP(LAN966X_AFI_FRM_PART0_DELAY, frm->delay),
+		       lan966x, AFI_FRM_ENTRY_PART0(frm_idx));
+	else
+		lan_rmw(FIELD_PREP(LAN966X_AFI_FRM_PART0_INJ_CNT, frm->inj_cnt),
+			LAN966X_AFI_FRM_PART0_INJ_CNT,
+			lan966x, AFI_FRM_ENTRY_PART0(frm_idx));
+
+	lan_wr(AFI_FRM_NXT_AND_TYPE_NEXT_PTR_SET(frm->next_idx) |
+	       AFI_FRM_NXT_AND_TYPE_ENTRY_TYPE_SET(frm->entry_type),
+	       lan966x, AFI_FRM_NXT_AND_TYPE(frm_idx));
+}
+
+static void lan966x_afi_dti_qu_ref_update(struct lan966x *lan966x, u32 dti_idx)
+{
+	struct afi_dti *dti = &lan966x->afi_ctrl->dti_tbl[dti_idx];
+	struct lan966x_afi_qu_ref qu_ref;
+
+	lan966x_afi_port_prio_2_qu_ref(dti->port_no, dti->prio, &qu_ref);
+
+	lan_wr(AFI_DTI_PORT_QU_PORT_NUM_SET(qu_ref.chip_port) |
+	       AFI_DTI_PORT_QU_QU_NUM_SET(qu_ref.qu_num),
+	       lan966x, AFI_DTI_PORT_QU(dti_idx));
+}
+
+static int lan966x_afi_dti_start(struct afi_control *afi, u32 dti_idx,
+				 bool do_frm_cfg, bool do_dti_cfg, bool start)
+{
+	struct afi_dti *dti = &afi->dti_tbl[dti_idx];
+	struct lan966x *lan966x = afi->priv;
+	u32 frm_idx;
+
+	if (do_frm_cfg) {
+		frm_idx = dti->first_frm_idx;
+		while (frm_idx) {
+			struct afi_frm *frm = &afi->frm_tbl[frm_idx];
+
+			lan966x_afi_dti_frm_entry_write(lan966x, frm, frm_idx);
+			frm_idx = frm->next_idx;
+		}
+	}
+
+	if (do_dti_cfg) {
+		lan_wr(AFI_DTI_MODE_MODE_SET(dti->mode) |
+		       AFI_DTI_MODE_TRAILING_DELAY_SEQ_CNT_SET(dti->trailing_delay_seq_cnt) |
+		       AFI_DTI_MODE_FRM_INJ_CNT_SET(0) |
+		       AFI_DTI_MODE_DTI_NEXT_SET(dti->dti_next),
+		       lan966x, AFI_DTI_MODE(dti_idx));
+
+		lan966x_afi_dti_qu_ref_update(lan966x, dti_idx);
+	}
+
+	lan_wr(AFI_DTI_FRM_FIRST_FRM_PTR_SET(dti->first_frm_idx) |
+	       AFI_DTI_FRM_NEXT_FRM_PTR_SET(dti->first_frm_idx),
+	       lan966x, AFI_DTI_FRM(dti_idx));
+
+	lan_wr(AFI_DTI_CNT_CNT_SET(dti->mode == 1 ? 0 : dti->frm_inj_cnt),
+	       lan966x, AFI_DTI_CNT(dti_idx));
+
+	lan_wr(0, lan966x, AFI_DTI_CNT_DOWN(dti_idx));
+	lan_wr(0, lan966x, AFI_DTI_DURATION(dti_idx));
+
+	lan_wr(AFI_DTI_CTRL_ENA_SET(start ? 1 : 0) |
+	       AFI_DTI_CTRL_BW_SET(dti->bw),
+	       lan966x, AFI_DTI_CTRL(dti_idx));
+
+	return 0;
+}
+
+static int lan966x_afi_dti_stop(struct afi_control *afi, u32 dti_idx)
+{
+	struct lan966x *lan966x = afi->priv;
+
+	lan_rmw(AFI_DTI_CTRL_ENA_SET(0), AFI_DTI_CTRL_ENA,
+		lan966x, AFI_DTI_CTRL(dti_idx));
+
+	return 0;
+}
+
+static int lan966x_afi_dti_frm_rm_inj(struct afi_control *afi, u32 dti_idx)
+{
+	struct afi_dti *dti = &afi->dti_tbl[dti_idx];
+	struct lan966x *lan966x = afi->priv;
+	s32 frm_idx, last_frm_idx = 0;
+	int ret;
+
+	if (dti->state != AFI_ENTRY_STATE_STOPPED) {
+		pr_info("ID = %u: Injection must be stopped before rm injection\n",
+			dti_idx);
+		return -EINVAL;
+	}
+
+	for (frm_idx = dti->first_frm_idx; frm_idx > 0;
+	     frm_idx = afi->frm_tbl[frm_idx].next_idx) {
+		if (afi->frm_tbl[frm_idx].entry_type == 0) {
+			ret = lan966x_afi_frm_set_rm(lan966x, frm_idx);
+			if (ret)
+				return ret;
+			last_frm_idx = frm_idx;
+		}
+	}
+
+	lan_rmw(AFI_DTI_FRM_NEXT_FRM_PTR_SET(dti->first_frm_idx),
+		AFI_DTI_FRM_NEXT_FRM_PTR, lan966x, AFI_DTI_FRM(dti_idx));
+
+	if (dti->mode != 0)
+		lan_rmw(AFI_DTI_MODE_MODE_SET(0) | AFI_DTI_MODE_FRM_INJ_CNT_SET(0),
+			AFI_DTI_MODE_MODE | AFI_DTI_MODE_FRM_INJ_CNT,
+			lan966x, AFI_DTI_MODE(dti_idx));
+
+	lan_rmw(AFI_DTI_CNT_CNT_SET(1), AFI_DTI_CNT_CNT,
+		lan966x, AFI_DTI_CNT(dti_idx));
+
+	for (frm_idx = dti->first_frm_idx; frm_idx > 0;
+	     frm_idx = afi->frm_tbl[frm_idx].next_idx) {
+		if (afi->frm_tbl[frm_idx].entry_type == 1)
+			lan_wr(0, lan966x, AFI_FRM_ENTRY_PART0(frm_idx));
+	}
+
+	lan_wr(0, lan966x, AFI_DTI_CNT_DOWN(dti_idx));
+
+	lan_wr(AFI_DTI_CTRL_ENA_SET(1) | AFI_DTI_CTRL_BW_SET(0),
+	       lan966x, AFI_DTI_CTRL(dti_idx));
+
+	if (last_frm_idx)
+		lan966x_afi_frm_gone_wait(lan966x, dti_idx, dti->port_no,
+					  last_frm_idx, true);
+
+	return 0;
+}
+
+static int lan966x_afi_dti_seq_cnt_get(struct afi_control *afi, u32 dti_idx,
+				       u32 *seq_cnt)
+{
+	struct lan966x *lan966x = afi->priv;
+
+	*seq_cnt = AFI_DTI_CNT_CNT_GET(lan_rd(lan966x, AFI_DTI_CNT(dti_idx)));
+
+	return 0;
+}
+
 struct afi_consts lan966x_afi_consts = {
 	.frm_cnt = LAN966X_AFI_FRM_CNT,
 	.slow_inj_cnt = LAN966X_AFI_SLOW_INJ_CNT,
+	.dti_cnt = LAN966X_AFI_DTI_CNT,
 	.prio_super = LAN966X_PRIO_SUPER,
+	.fast_inj_bps_min = LAN966X_AFI_FAST_INJ_BPS_MIN,
+	.fast_inj_bps_max = LAN966X_AFI_FAST_INJ_BPS_MAX,
 };
 
 struct afi_operations lan966x_afi_operations = {
@@ -425,11 +617,37 @@ struct afi_operations lan966x_afi_operations = {
 	.tti_frm_rm_inj = lan966x_afi_tti_frm_rm_inj,
 	.tti_start = lan966x_afi_tti_start,
 	.tti_stop = lan966x_afi_tti_stop,
+	.frm_inject = lan966x_afi_frm_inject,
+	.dti_frm_hijack = lan966x_afi_dti_frm_hijack,
+	.dti_frm_rm_inj = lan966x_afi_dti_frm_rm_inj,
+	.dti_start = lan966x_afi_dti_start,
+	.dti_stop = lan966x_afi_dti_stop,
+	.dti_seq_cnt_get = lan966x_afi_dti_seq_cnt_get,
+};
+
+static int lan966x_afi_nl_port_of(void *priv, struct net_device *ndev)
+{
+	struct lan966x *lan966x = priv;
+	struct lan966x_port *port;
+
+	if (!lan966x_netdevice_check(ndev))
+		return -ENODEV;
+
+	port = netdev_priv(ndev);
+	if (port->lan966x != lan966x)
+		return -ENODEV;
+
+	return port->chip_port;
+}
+
+static const struct afi_nl_ops lan966x_afi_nl_ops = {
+	.port_of = lan966x_afi_nl_port_of,
 };
 
 int lan966x_afi_init(struct lan966x *lan966x)
 {
 	struct afi_control *afi_ctrl;
+	int ret;
 
 	afi_ctrl = kzalloc(sizeof(*afi_ctrl), GFP_KERNEL);
 	if (!afi_ctrl)
@@ -440,11 +658,28 @@ int lan966x_afi_init(struct lan966x *lan966x)
 	afi_ctrl->priv = lan966x;
 	lan966x->afi_ctrl = afi_ctrl;
 
-	return afi_init(afi_ctrl);
+	ret = afi_init(afi_ctrl);
+	if (ret)
+		goto err_free;
+
+	ret = afi_netlink_register(afi_ctrl, lan966x, &lan966x_afi_nl_ops);
+	if (ret)
+		goto err_deinit;
+
+	return 0;
+
+err_deinit:
+	afi_deinit(afi_ctrl);
+err_free:
+	kfree(afi_ctrl);
+	lan966x->afi_ctrl = NULL;
+	return ret;
 }
 
 void lan966x_afi_deinit(struct lan966x *lan966x)
 {
+	afi_netlink_unregister(lan966x->afi_ctrl);
+
 	afi_deinit(lan966x->afi_ctrl);
 
 	kfree(lan966x->afi_ctrl);

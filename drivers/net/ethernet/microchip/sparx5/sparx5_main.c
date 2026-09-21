@@ -356,7 +356,7 @@ static int sparx5_create_port(struct sparx5 *sparx5,
 	spx5_port->signd_internal = config->conf.sd_sgpio == ~0 ? true : false;
 	spx5_port->signd_active_high = config->conf.sd_sgpio == ~0 ? true : false;
 	spx5_port->signd_enable = true;
-	spx5_port->max_vlan_tags = SPX5_PORT_MAX_TAGS_NONE;
+	spx5_port->max_vlan_tags = SPX5_PORT_MAX_TAGS_TWO;
 	spx5_port->vlan_type = SPX5_VLAN_PORT_TYPE_UNAWARE;
 	spx5_port->custom_etype = 0x8880; /* Vitesse */
 	spx5_port->phylink_pcs.poll = true;
@@ -401,6 +401,15 @@ static int sparx5_create_port(struct sparx5 *sparx5,
 		  spx5_port->phylink_config.supported_interfaces);
 	__set_bit(PHY_INTERFACE_MODE_10G_QXGMII,
 		  spx5_port->phylink_config.supported_interfaces);
+
+	/* Single-lane USXGMII has an RTL erratum on Sparx5 (multi-mode
+	 * USXGMII only); only advertise it on LAN969x. It is only driven
+	 * through the DEV10G (high-speed) PCS/MAC, so only advertise it
+	 * on 10G-class ports.
+	 */
+	if (!is_sparx5(sparx5) && ops->is_port_10g(spx5_port->portno))
+		__set_bit(PHY_INTERFACE_MODE_USXGMII,
+			  spx5_port->phylink_config.supported_interfaces);
 
 	if (spx5_port->conf.bandwidth == SPEED_5000 ||
 	    spx5_port->conf.bandwidth == SPEED_10000 ||
@@ -500,8 +509,133 @@ static int sparx5_init_switchcore(struct sparx5 *sparx5)
 	spx5_wr(ANA_AC_STAT_RESET_RESET_SET(1), sparx5, ANA_AC_STAT_RESET);
 	spx5_wr(ASM_STAT_CFG_STAT_CNT_CLR_SHOT_SET(1), sparx5, ASM_STAT_CFG);
 
-	/* Enable switch-core and queue system */
-	spx5_wr(HSCH_RESET_CFG_CORE_ENA_SET(1), sparx5, HSCH_RESET_CFG);
+	return 0;
+}
+
+/* Core PLL divider sets for a 328 MHz core clock. CORE_PLL_FREQ_CFG defines
+ *
+ *	Fout = (Fin / (DIVR+1)) * 8 * (1 + DIVFI + DIVFF / 2^24) / DIVQ_VAL
+ *
+ * where DIVQ_VAL is an encoding of DIVQ that equals it only up to 10, which is
+ * the value both entries below use.
+ *
+ * so these give 328.190625 MHz from a 39.0625 MHz reference and 328.190953 MHz
+ * from a 25 MHz one, both about 200 ppm above the 328.125 MHz default. DIVQ is
+ * the reset value of its field and has to stay there for the glitch free
+ * divider change below.
+ */
+struct lan969x_core_pll_dividers {
+	u32 divfi;	/* CORE_PLL_FREQ_CFG.DIVFI, feedback integer */
+	u32 divff;	/* CORE_PLL_FREQ_CFG.DIVFF, feedback fraction */
+	u32 divr;	/* CORE_PLL_CFG.DIVR, reference divider */
+	u32 divq;	/* CORE_PLL_CFG.DIVQ, output divider */
+};
+
+static const struct lan969x_core_pll_dividers lan969x_core_pll_328mhz[] = {
+	[SPX5_CORE_CLOCK_REF_25MHZ] = {
+		.divfi = 64, .divff = 0xa36076, .divr = 3, .divq = 10,
+	},
+	[SPX5_CORE_CLOCK_REF_39MHZ] = {
+		.divfi = 72, .divff = 0x83c361, .divr = 6, .divq = 10,
+	},
+};
+
+/* Skew the core clock about 200 ppm up from its default, so that it sits far
+ * enough from the line clock frequencies for the high accuracy phase detectors.
+ * The PTP CLK_PER_CFG values in sparx5_ptp.c already assume the skewed rate, so
+ * without this the core clock and the time of day disagree by 200 ppm.
+ *
+ * CORE_PLL_CFG.ENA_CFG documents two ways to reach a new frequency. This is the
+ * first: DIVFI and DIVFF change glitch free via NEWDIV/DIVACK, provided DIVR is
+ * set for the reference clock and DIVQ is left at its default. It needs no
+ * SPARE_PLL.
+ */
+static int lan969x_init_core_pll(struct sparx5 *sparx5,
+				 enum sparx5_core_clockref *ref)
+{
+	const struct lan969x_core_pll_dividers *div;
+	u32 hw_stat, pll_cfg, freq_cfg;
+	int err;
+
+	hw_stat = spx5_rd(sparx5, CHIP_TOP_HW_STAT);
+	*ref = CHIP_TOP_HW_STAT_REFCLK_SEL_GET(hw_stat) ?
+		SPX5_CORE_CLOCK_REF_39MHZ : SPX5_CORE_CLOCK_REF_25MHZ;
+	div = &lan969x_core_pll_328mhz[*ref];
+
+	/* Already configured by an earlier probe */
+	pll_cfg = spx5_rd(sparx5, CHIP_TOP_CORE_PLL_CFG);
+	freq_cfg = spx5_rd(sparx5, CHIP_TOP_CORE_PLL_FREQ_CFG);
+	if (CHIP_TOP_CORE_PLL_CFG_ENA_CFG_GET(pll_cfg) &&
+	    CHIP_TOP_CORE_PLL_FREQ_CFG_DIVFI_GET(freq_cfg) == div->divfi)
+		return 0;
+
+	spx5_rmw(CHIP_TOP_CORE_PLL_FREQ_CFG_DIVFI_SET(div->divfi) |
+		 CHIP_TOP_CORE_PLL_FREQ_CFG_DIVFF_SET(div->divff),
+		 CHIP_TOP_CORE_PLL_FREQ_CFG_DIVFI |
+		 CHIP_TOP_CORE_PLL_FREQ_CFG_DIVFF,
+		 sparx5, CHIP_TOP_CORE_PLL_FREQ_CFG);
+
+	/* Every register based setting is ignored while ENA_CFG is 0, so nothing
+	 * is guaranteed about the fields that go live with it. REF_CLK_SEL 0
+	 * keeps the reference the strapping pad selected, which is the one the
+	 * divider set above was chosen for, and FILTER_RANGE must be 0 for
+	 * fractional mode.
+	 */
+	spx5_rmw(CHIP_TOP_CORE_PLL_CFG_DIVQ_SET(div->divq) |
+		 CHIP_TOP_CORE_PLL_CFG_DIVR_SET(div->divr) |
+		 CHIP_TOP_CORE_PLL_CFG_REF_CLK_SEL_SET(0) |
+		 CHIP_TOP_CORE_PLL_CFG_FILTER_RANGE_SET(0),
+		 CHIP_TOP_CORE_PLL_CFG_DIVQ |
+		 CHIP_TOP_CORE_PLL_CFG_DIVR |
+		 CHIP_TOP_CORE_PLL_CFG_REF_CLK_SEL |
+		 CHIP_TOP_CORE_PLL_CFG_FILTER_RANGE,
+		 sparx5, CHIP_TOP_CORE_PLL_CFG);
+
+	spx5_rmw(CHIP_TOP_CORE_PLL_CFG_ENA_CFG_SET(1),
+		 CHIP_TOP_CORE_PLL_CFG_ENA_CFG,
+		 sparx5, CHIP_TOP_CORE_PLL_CFG);
+
+	spx5_rmw(CHIP_TOP_CORE_PLL_CFG_NEWDIV_SET(1),
+		 CHIP_TOP_CORE_PLL_CFG_NEWDIV,
+		 sparx5, CHIP_TOP_CORE_PLL_CFG);
+
+	err = read_poll_timeout(spx5_rd, pll_cfg,
+				CHIP_TOP_CORE_PLL_CFG_DIVACK_GET(pll_cfg),
+				100, 10000, false, sparx5,
+				CHIP_TOP_CORE_PLL_CFG);
+
+	spx5_rmw(CHIP_TOP_CORE_PLL_CFG_NEWDIV_SET(0),
+		 CHIP_TOP_CORE_PLL_CFG_NEWDIV,
+		 sparx5, CHIP_TOP_CORE_PLL_CFG);
+
+	if (err) {
+		/* Clear ENA_CFG so the check above does not mistake this for a
+		 * configured PLL and skip the handshake on the next probe.
+		 */
+		spx5_rmw(CHIP_TOP_CORE_PLL_CFG_ENA_CFG_SET(0),
+			 CHIP_TOP_CORE_PLL_CFG_ENA_CFG,
+			 sparx5, CHIP_TOP_CORE_PLL_CFG);
+		dev_err(sparx5->dev,
+			"core PLL did not acknowledge new dividers\n");
+		return err;
+	}
+
+	/* LOCK_STAT is a live signal that resets to 1, so sleep before the first
+	 * read rather than sampling it in the same breath as clearing NEWDIV.
+	 */
+	err = read_poll_timeout(spx5_rd, pll_cfg,
+				CHIP_TOP_CORE_PLL_CFG_LOCK_STAT_GET(pll_cfg),
+				100, 10000, true, sparx5,
+				CHIP_TOP_CORE_PLL_CFG);
+	if (err) {
+		dev_err(sparx5->dev, "core PLL did not lock\n");
+		return err;
+	}
+
+	dev_dbg(sparx5->dev,
+		"core PLL set for a %s reference: DIVFI %u DIVFF 0x%x DIVQ %u DIVR %u\n",
+		*ref == SPX5_CORE_CLOCK_REF_39MHZ ? "39.0625MHz" : "25MHz",
+		div->divfi, div->divff, div->divq, div->divr);
 
 	return 0;
 }
@@ -511,6 +645,7 @@ static int sparx5_init_coreclock(struct sparx5 *sparx5)
 	enum sparx5_core_clockfreq freq = sparx5->coreclock;
 	u32 clk_div, clk_period, pol_upd_int, idx;
 	enum sparx5_core_clockref ref;
+	int err;
 
 	/* Verify if core clock frequency is supported on target.
 	 * If 'VTSS_CORE_CLOCK_DEFAULT' then the highest supported
@@ -607,6 +742,13 @@ static int sparx5_init_coreclock(struct sparx5 *sparx5)
 			 CLKGEN_LCPLL1_CORE_CLK_CFG_CORE_CLK_ENA,
 			 sparx5, CLKGEN_LCPLL1_CORE_CLK_CFG);
 	} else {
+		if (freq != SPX5_CORE_CLOCK_328MHZ) {
+			dev_err(sparx5->dev, "%d coreclock not supported\n", freq);
+			return -EINVAL;
+		}
+		err = lan969x_init_core_pll(sparx5, &ref);
+		if (err)
+			return err;
 		pol_upd_int = 820; // SPX5_CORE_CLOCK_328MHZ
 	}
 
@@ -987,11 +1129,12 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		conf->portmode = conf->phy_mode;
 		conf->power_down = true;
 
-		/* In case the link between MAC and PHY is 10G_QXGMII, the
-		 * serdes on the MAC side doesn't need to be reseted it is OK to
-		 * just apply the needed configuration,
+		/* In case the link between MAC and PHY is 10G_QXGMII or
+		 * USXGMII, the serdes on the MAC side doesn't need to be
+		 * reset, it is OK to just apply the needed configuration,
 		 */
-		if (conf->portmode == PHY_INTERFACE_MODE_10G_QXGMII)
+		if (conf->portmode == PHY_INTERFACE_MODE_10G_QXGMII ||
+		    conf->portmode == PHY_INTERFACE_MODE_USXGMII)
 			conf->serdes_reset = false;
 		idx++;
 	}
@@ -1011,6 +1154,7 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 	sparx5->ptp_irq = platform_get_irq_byname(sparx5->pdev, "ptp");
 	sparx5->ptp_ext_irq = platform_get_irq_byname(sparx5->pdev, "ptp-ext");
 	sparx5->oam_vop_irq = platform_get_irq_byname(sparx5->pdev, "oam-vop");
+	sparx5->wdt_irq = platform_get_irq_byname_optional(sparx5->pdev, "wdt");
 
 	/* Read chip ID to check CPU interface */
 	sparx5->chip_id = spx5_rd(sparx5, GCB_CHIP_ID);
@@ -1036,6 +1180,9 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		dev_err(sparx5->dev, "LC-PLL initialization error\n");
 		goto cleanup_config;
 	}
+
+	/* Enable switch-core and queue system */
+	spx5_wr(HSCH_RESET_CFG_CORE_ENA_SET(1), sparx5, HSCH_RESET_CFG);
 
 	for (idx = 0; idx < sparx5->port_count; ++idx) {
 		config = &configs[idx];
@@ -1081,10 +1228,16 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		goto cleanup_ptp;
 	}
 
+	err = sparx5_mact_init(sparx5);
+	if (err) {
+		dev_err(sparx5->dev, "Failed to initialize MAC table\n");
+		goto cleanup_afi;
+	}
+
 	err = sparx5_mrp_init(sparx5);
 	if (err) {
 		dev_err(sparx5->dev, "MRP initialization failed\n");
-		goto cleanup_afi;
+		goto cleanup_mact;
 	}
 
 	err = sparx5_vcap_init(sparx5);
@@ -1093,16 +1246,10 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		goto cleanup_mrp;
 	}
 
-	err = sparx5_mact_init(sparx5);
-	if (err) {
-		dev_err(sparx5->dev, "Failed to initialize MAC table\n");
-		goto cleanup_vcap;
-	}
-
 	err = sparx5_stats_init(sparx5);
 	if (err) {
 		dev_err(sparx5->dev, "Failed to initialize stats\n");
-		goto cleanup_mact;
+		goto cleanup_vcap;
 	}
 
 	err = sparx5_rr_router_init(sparx5);
@@ -1117,10 +1264,12 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		goto cleanup_router;
 	}
 
+	sparx5_watchdog_init(sparx5);
+
 	err = sparx5_register_netdevs(sparx5);
 	if (err) {
 		dev_err(sparx5->dev, "Failed to register net devices\n");
-		goto cleanup_notifiers;
+		goto cleanup_watchdog;
 	}
 
 	/* Initialize the rest of the hardware and start the IRQ handlers.
@@ -1137,18 +1286,19 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 
 cleanup_netdevs:
 	sparx5_unregister_netdevs(sparx5);
-cleanup_notifiers:
+cleanup_watchdog:
+	sparx5_watchdog_deinit(sparx5);
 	sparx5_unregister_notifier_blocks(sparx5);
 cleanup_router:
 	sparx5_rr_router_deinit(sparx5);
 cleanup_stats:
 	sparx5_stats_deinit(sparx5);
-cleanup_mact:
-	sparx5_mact_deinit(sparx5);
 cleanup_vcap:
 	sparx5_vcap_destroy(sparx5);
 cleanup_mrp:
 	sparx5_mrp_deinit(sparx5);
+cleanup_mact:
+	sparx5_mact_deinit(sparx5);
 cleanup_afi:
 	sparx5_afi_deinit(sparx5);
 cleanup_ptp:
@@ -1190,6 +1340,7 @@ static void mchp_sparx5_remove(struct platform_device *pdev)
 	}
 
 	sparx5_unregister_netdevs(sparx5);
+	sparx5_watchdog_deinit(sparx5);
 	sparx5_unregister_notifier_blocks(sparx5);
 	sparx5_rr_router_deinit(sparx5);
 	sparx5_stats_deinit(sparx5);
@@ -1235,7 +1386,7 @@ static const struct sparx5_consts sparx5_consts = {
 	.vcaps               = sparx5_vcaps,
 	.vcaps_cfg           = sparx5_vcap_inst_cfg,
 	.vcap_stats          = &sparx5_vcap_stats,
-	.ptp_pins            = 4,
+	.ptp_pins            = 5,
 	.bum_slb_cnt         = 1024,
 	.isdx_cnt            = 4096,
 	.vmid_cnt = 511,

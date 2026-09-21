@@ -49,38 +49,62 @@ static struct mrp_port *mrp_find_port(struct mrp_instance *mrp_inst,
 	return NULL;
 }
 
+static void mrp_ring_loc_notify(struct mrp_instance *mrp_inst,
+				enum br_mrp_port_role_type role)
+{
+	struct mrp_port *mrp_port = mrp_find_port(mrp_inst, role);
+
+	if (!mrp_port)
+		return;
+
+	if (mrp_port->ring_intr_status == MRP_INTERRUPT_STATUS_OPEN) {
+		br_mrp_ring_port_open(mrp_port->dev, true);
+		mrp_port->ring_intr_status = MRP_INTERRUPT_STATUS_NONE;
+	}
+
+	if (mrp_port->ring_intr_status == MRP_INTERRUPT_STATUS_CLOSED) {
+		br_mrp_ring_port_open(mrp_port->dev, false);
+		mrp_port->ring_intr_status = MRP_INTERRUPT_STATUS_NONE;
+	}
+}
+
+static void mrp_in_loc_notify(struct mrp_instance *mrp_inst,
+			      enum br_mrp_port_role_type role)
+{
+	struct mrp_port *mrp_port = mrp_find_port(mrp_inst, role);
+
+	if (!mrp_port)
+		return;
+
+	if (mrp_port->in_intr_status == MRP_INTERRUPT_STATUS_OPEN) {
+		br_mrp_in_port_open(mrp_port->dev, true);
+		mrp_port->in_intr_status = MRP_INTERRUPT_STATUS_NONE;
+	}
+
+	if (mrp_port->in_intr_status == MRP_INTERRUPT_STATUS_CLOSED) {
+		br_mrp_in_port_open(mrp_port->dev, false);
+		mrp_port->in_intr_status = MRP_INTERRUPT_STATUS_NONE;
+	}
+}
+
 static void mrp_ring_loc_work(struct work_struct *work)
 {
 	struct delayed_work *del_work = to_delayed_work(work);
 	struct mrp_instance *mrp_inst = container_of(del_work,
 						     struct mrp_instance,
 						     ring_loc_work);
-	struct mrp_port *mrp_port;
 
-	rtnl_lock();
+	if (!rtnl_trylock()) {
+		queue_delayed_work(system_percpu_wq, &mrp_inst->ring_loc_work,
+				   1);
+		return;
+	}
+
 	rcu_read_lock();
-	mrp_port = mrp_find_port(mrp_inst, BR_MRP_PORT_ROLE_PRIMARY);
-	if (mrp_port->ring_intr_status == MRP_INTERRUPT_STATUS_OPEN) {
-		br_mrp_ring_port_open(mrp_port->dev, true);
-		mrp_port->ring_intr_status = MRP_INTERRUPT_STATUS_NONE;
-	}
-
-	if (mrp_port->ring_intr_status == MRP_INTERRUPT_STATUS_CLOSED) {
-		br_mrp_ring_port_open(mrp_port->dev, false);
-		mrp_port->ring_intr_status = MRP_INTERRUPT_STATUS_NONE;
-	}
-
-	mrp_port = mrp_find_port(mrp_inst, BR_MRP_PORT_ROLE_SECONDARY);
-	if (mrp_port->ring_intr_status == MRP_INTERRUPT_STATUS_OPEN) {
-		br_mrp_ring_port_open(mrp_port->dev, true);
-		mrp_port->ring_intr_status = MRP_INTERRUPT_STATUS_NONE;
-	}
-
-	if (mrp_port->ring_intr_status == MRP_INTERRUPT_STATUS_CLOSED) {
-		br_mrp_ring_port_open(mrp_port->dev, false);
-		mrp_port->ring_intr_status = MRP_INTERRUPT_STATUS_NONE;
-	}
+	mrp_ring_loc_notify(mrp_inst, BR_MRP_PORT_ROLE_PRIMARY);
+	mrp_ring_loc_notify(mrp_inst, BR_MRP_PORT_ROLE_SECONDARY);
 	rcu_read_unlock();
+
 	rtnl_unlock();
 }
 
@@ -90,43 +114,18 @@ static void mrp_in_loc_work(struct work_struct *work)
 	struct mrp_instance *mrp_inst = container_of(del_work,
 						     struct mrp_instance,
 						     in_loc_work);
-	struct mrp_port *mrp_port;
 
-	rtnl_lock();
+	if (!rtnl_trylock()) {
+		queue_delayed_work(system_percpu_wq, &mrp_inst->in_loc_work, 1);
+		return;
+	}
+
 	rcu_read_lock();
-	mrp_port = mrp_find_port(mrp_inst, BR_MRP_PORT_ROLE_PRIMARY);
-	if (mrp_port->in_intr_status == MRP_INTERRUPT_STATUS_OPEN) {
-		br_mrp_in_port_open(mrp_port->dev, true);
-		mrp_port->in_intr_status = MRP_INTERRUPT_STATUS_NONE;
-	}
-
-	if (mrp_port->in_intr_status == MRP_INTERRUPT_STATUS_CLOSED) {
-		br_mrp_in_port_open(mrp_port->dev, false);
-		mrp_port->in_intr_status = MRP_INTERRUPT_STATUS_NONE;
-	}
-
-	mrp_port = mrp_find_port(mrp_inst, BR_MRP_PORT_ROLE_SECONDARY);
-	if (mrp_port->in_intr_status == MRP_INTERRUPT_STATUS_OPEN) {
-		br_mrp_in_port_open(mrp_port->dev, true);
-		mrp_port->in_intr_status = MRP_INTERRUPT_STATUS_NONE;
-	}
-
-	if (mrp_port->in_intr_status == MRP_INTERRUPT_STATUS_CLOSED) {
-		br_mrp_in_port_open(mrp_port->dev, false);
-		mrp_port->in_intr_status = MRP_INTERRUPT_STATUS_NONE;
-	}
-
-	mrp_port = mrp_find_port(mrp_inst, BR_MRP_PORT_ROLE_INTER);
-	if (mrp_port->in_intr_status == MRP_INTERRUPT_STATUS_OPEN) {
-		br_mrp_in_port_open(mrp_port->dev, true);
-		mrp_port->in_intr_status = MRP_INTERRUPT_STATUS_NONE;
-	}
-
-	if (mrp_port->in_intr_status == MRP_INTERRUPT_STATUS_CLOSED) {
-		br_mrp_in_port_open(mrp_port->dev, false);
-		mrp_port->in_intr_status = MRP_INTERRUPT_STATUS_NONE;
-	}
+	mrp_in_loc_notify(mrp_inst, BR_MRP_PORT_ROLE_PRIMARY);
+	mrp_in_loc_notify(mrp_inst, BR_MRP_PORT_ROLE_SECONDARY);
+	mrp_in_loc_notify(mrp_inst, BR_MRP_PORT_ROLE_INTER);
 	rcu_read_unlock();
+
 	rtnl_unlock();
 }
 
@@ -196,10 +195,15 @@ static int __mrp_port_start_ring_test(struct mrp_port *mrp_port,
 	struct mrp_control *mrp_ctrl;
 	int ret;
 
+	if (!interval)
+		return -EINVAL;
+
 	mrp_ctrl = mrp_port->mrp_inst->mrp_ctrl;
 
 	if (afi_slow_inj_started(mrp_ctrl->afi_ctrl,
-				 mrp_port->afi_ring_test_id))
+				 mrp_port->afi_ring_test_id) &&
+	    mrp_port->ring_interval == interval &&
+	    mrp_port->ring_max_miss == max)
 		return 0;
 
 	ret = mrp_ctrl->ops->mrp_port_disable_ring_interrupt(mrp_port);
@@ -219,6 +223,7 @@ static int __mrp_port_start_ring_test(struct mrp_port *mrp_port,
 			   &cfg);
 
 	mrp_port->ring_interval = interval;
+	mrp_port->ring_max_miss = max;
 
 	ret = mrp_ctrl->ops->mrp_port_process_ring_test(mrp_port, true);
 	if (ret)
@@ -330,10 +335,15 @@ static int __mrp_port_start_in_test(struct mrp_port *mrp_port,
 	struct mrp_control *mrp_ctrl;
 	int ret;
 
+	if (!interval)
+		return -EINVAL;
+
 	mrp_ctrl = mrp_port->mrp_inst->mrp_ctrl;
 
 	if (afi_slow_inj_started(mrp_ctrl->afi_ctrl,
-				 mrp_port->afi_in_test_id))
+				 mrp_port->afi_in_test_id) &&
+	    mrp_port->in_interval == interval &&
+	    mrp_port->in_max_miss == max)
 		return 0;
 
 	ret = mrp_ctrl->ops->mrp_port_disable_in_interrupt(mrp_port);
@@ -353,6 +363,7 @@ static int __mrp_port_start_in_test(struct mrp_port *mrp_port,
 			   &cfg);
 
 	mrp_port->in_interval = interval;
+	mrp_port->in_max_miss = max;
 
 	ret = mrp_ctrl->ops->mrp_port_process_in_test(mrp_port, true);
 	if (ret)
@@ -459,6 +470,8 @@ static struct mrp_instance *mrp_create_instance(struct mrp_control *mrp_ctrl,
 static void mrp_remove_instance(struct mrp_instance *mrp_inst)
 {
 	list_del(&mrp_inst->list);
+	cancel_delayed_work_sync(&mrp_inst->ring_loc_work);
+	cancel_delayed_work_sync(&mrp_inst->in_loc_work);
 	kfree(mrp_inst);
 }
 
@@ -471,8 +484,8 @@ static bool mrp_is_empty_instance(struct mrp_instance *mrp_inst)
 	return true;
 }
 
-static void mrp_instance_add_port(struct mrp_instance *mrp_inst,
-				  struct mrp_port *mrp_port)
+static int mrp_instance_add_port(struct mrp_instance *mrp_inst,
+				 struct mrp_port *mrp_port)
 {
 	int i;
 
@@ -480,10 +493,15 @@ static void mrp_instance_add_port(struct mrp_instance *mrp_inst,
 		if (!mrp_inst->ports[i])
 			break;
 
+	if (i == MRP_MAX_PORTS)
+		return -ENOSPC;
+
 	mrp_inst->ports[i] = mrp_port;
 
 	mrp_port_alloc_ring_test(mrp_port);
 	mrp_port_alloc_in_test(mrp_port);
+
+	return 0;
 }
 
 static void mrp_instance_del_port(struct mrp_instance *mrp_inst,
@@ -567,6 +585,7 @@ struct mrp_port *mrp_add_port(struct mrp_control *mrp_ctrl,
 {
 	struct mrp_instance *mrp_inst;
 	struct mrp_port *mrp_port;
+	int ret;
 
 	mrp_inst = mrp_find_instance(mrp_ctrl, mrp->ring_id);
 	if (!mrp_inst) {
@@ -579,8 +598,10 @@ struct mrp_port *mrp_add_port(struct mrp_control *mrp_ctrl,
 	}
 
 	mrp_port = kzalloc(sizeof(*mrp_port), GFP_KERNEL);
-	if (!mrp_port)
+	if (!mrp_port) {
+		ret = -ENOMEM;
 		goto out;
+	}
 
 	mrp_port->priv = mrp_port_priv_from_netdev(mrp_ctrl, dev);
 	mrp_port->dev = dev;
@@ -592,14 +613,24 @@ struct mrp_port *mrp_add_port(struct mrp_control *mrp_ctrl,
 	mrp_ctrl->ops->mrp_port_update_mac(mrp_port);
 	mrp_ctrl->ops->mrp_port_redirect_control(mrp_port);
 
-	mrp_instance_add_port(mrp_inst, mrp_port);
+	ret = mrp_instance_add_port(mrp_inst, mrp_port);
+	if (ret)
+		goto out_uninit;
 
 	return mrp_port;
 
+out_uninit:
+	mrp_ctrl->ops->mrp_port_uninit(mrp_port);
+	kfree(mrp_port);
 out:
-	mrp_remove_instance(mrp_inst);
+	/* Only drop the instance if this call is what brought it into
+	 * existence. An instance found above still owns the ports that were
+	 * added to it before.
+	 */
+	if (mrp_is_empty_instance(mrp_inst))
+		mrp_remove_instance(mrp_inst);
 
-	return ERR_PTR(-ENOMEM);
+	return ERR_PTR(ret);
 }
 EXPORT_SYMBOL_GPL(mrp_add_port);
 
@@ -641,6 +672,7 @@ struct mrp_port *mrp_add_in_port(struct mrp_control *mrp_ctrl,
 {
 	struct mrp_instance *mrp_inst;
 	struct mrp_port *mrp_port;
+	int ret;
 
 	mrp_inst = mrp_find_instance(mrp_ctrl, mrp->ring_id);
 	if (!mrp_inst)
@@ -663,7 +695,12 @@ struct mrp_port *mrp_add_in_port(struct mrp_control *mrp_ctrl,
 	mrp_ctrl->ops->mrp_port_redirect_control(mrp_port);
 	mrp_port_set_port_role(mrp_port, BR_MRP_PORT_ROLE_INTER);
 
-	mrp_instance_add_port(mrp_inst, mrp_port);
+	ret = mrp_instance_add_port(mrp_inst, mrp_port);
+	if (ret) {
+		mrp_ctrl->ops->mrp_port_uninit(mrp_port);
+		kfree(mrp_port);
+		return ERR_PTR(ret);
+	}
 
 	return mrp_port;
 
@@ -699,11 +736,12 @@ int mrp_del_in_port(struct mrp_control *mrp_ctrl,
 }
 EXPORT_SYMBOL_GPL(mrp_del_in_port);
 
-int mrp_ring_interrupt(struct mrp_control *mrp_ctrl)
+bool mrp_ring_interrupt(struct mrp_control *mrp_ctrl)
 {
 	struct mrp_instance *mrp_inst;
 	bool is_interrupt = false;
 	struct mrp_port *mrp_port;
+	bool handled = false;
 
 	list_for_each_entry(mrp_inst, &mrp_ctrl->mrps_list, list) {
 		for (int i = 0; i < MRP_MAX_PORTS; ++i) {
@@ -721,22 +759,24 @@ int mrp_ring_interrupt(struct mrp_control *mrp_ctrl)
 		}
 
 		if (is_interrupt) {
-			queue_delayed_work(system_wq,
+			queue_delayed_work(system_percpu_wq,
 					   &mrp_inst->ring_loc_work,
 					   0);
+			handled = true;
 		}
 		is_interrupt = false;
 	}
 
-	return 0;
+	return handled;
 }
 EXPORT_SYMBOL_GPL(mrp_ring_interrupt);
 
-int mrp_in_interrupt(struct mrp_control *mrp_ctrl)
+bool mrp_in_interrupt(struct mrp_control *mrp_ctrl)
 {
 	struct mrp_instance *mrp_inst;
 	bool is_interrupt = false;
 	struct mrp_port *mrp_port;
+	bool handled = false;
 
 	list_for_each_entry(mrp_inst, &mrp_ctrl->mrps_list, list) {
 		for (int i = 0; i < MRP_MAX_PORTS; ++i) {
@@ -751,14 +791,15 @@ int mrp_in_interrupt(struct mrp_control *mrp_ctrl)
 		}
 
 		if (is_interrupt) {
-			queue_delayed_work(system_wq,
+			queue_delayed_work(system_percpu_wq,
 					   &mrp_inst->in_loc_work,
 					   0);
+			handled = true;
 		}
 		is_interrupt = false;
 	}
 
-	return 0;
+	return handled;
 }
 EXPORT_SYMBOL_GPL(mrp_in_interrupt);
 
@@ -878,7 +919,6 @@ int mrp_port_start_ring_test(struct mrp_port *mrp_port,
 	if (mrp_port->role == BR_MRP_PORT_ROLE_INTER)
 		return 0;
 
-	mrp_port->ring_max_miss = mrp->max_miss;
 	mrp_inst = mrp_port->mrp_inst;
 	mrp_inst->monitor = mrp->monitor;
 
@@ -1131,7 +1171,6 @@ int mrp_port_start_in_test(struct mrp_port *mrp_port,
 	 * frames on all the ports of the MRP instance regardless of the port
 	 */
 	mrp_inst = mrp_port->mrp_inst;
-	mrp_port->in_max_miss = mrp->max_miss;
 
 	switch (mrp_inst->in_role) {
 	case BR_MRP_IN_ROLE_MIM:

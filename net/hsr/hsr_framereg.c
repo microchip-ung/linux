@@ -53,10 +53,8 @@ bool hsr_addr_is_self(struct hsr_priv *hsr, unsigned char *addr)
 
 	rcu_read_lock();
 	sn = rcu_dereference(hsr->self_node);
-	if (!sn) {
-		WARN_ONCE(1, "HSR: No self node\n");
+	if (!sn)
 		goto out;
-	}
 
 	if (ether_addr_equal(addr, sn->macaddress_A) ||
 	    ether_addr_equal(addr, sn->macaddress_B))
@@ -220,6 +218,7 @@ struct hsr_node *hsr_get_node(struct hsr_port *port, struct list_head *node_db,
 			      enum hsr_port_type rx_port)
 {
 	struct hsr_priv *hsr = port->hsr;
+	struct list_head *other_db;
 	struct hsr_node *node;
 	struct ethhdr *ethhdr;
 	struct prp_rct *rct;
@@ -244,8 +243,26 @@ struct hsr_node *hsr_get_node(struct hsr_port *port, struct list_head *node_db,
 		}
 	}
 
-	/* Check if required node is not in proxy nodes table */
-	list_for_each_entry_rcu(node, &hsr->proxy_node_db, mac_list) {
+	/* Check if the node is already registered on the other side of the
+	 * RedBox: node_db is the ring NodesTable for a frame received on a ring
+	 * port and the ProxyNodeTable for one received on the interlink, so a
+	 * hit here means the node has appeared on both.
+	 *
+	 * Keep the existing registration instead of adding a second one. An
+	 * address in both tables is not forwardable: IEC 62439-3 5.4.4 forbids
+	 * forwarding to a ring port a frame addressed to a node in the
+	 * ProxyNodeTable, and forbids sending to the interlink a frame
+	 * addressed to a node in the NodesTable. It also keeps an offloading
+	 * driver from being told to proxy a node that is really in the ring.
+	 * If the node has genuinely moved, the stale entry ages out on its own
+	 * and the node is registered on its new side then.
+	 */
+	if (node_db == &hsr->proxy_node_db)
+		other_db = &hsr->node_db;
+	else
+		other_db = &hsr->proxy_node_db;
+
+	list_for_each_entry_rcu(node, other_db, mac_list) {
 		if (ether_addr_equal(node->macaddress_A, ethhdr->h_source)) {
 			if (hsr->proto_ops->update_san_info)
 				hsr->proto_ops->update_san_info(node, is_sup);
@@ -262,9 +279,11 @@ struct hsr_node *hsr_get_node(struct hsr_port *port, struct list_head *node_db,
 	/* Everyone may create a node entry, connected node to a HSR/PRP
 	 * device.
 	 */
-	if (port->dev->features & NETIF_F_HW_HSR_TAG_RM)
-		return hsr_add_node(hsr, node_db, ethhdr->h_source, seq_out,
+	if (port->dev->features & NETIF_F_HW_HSR_TAG_RM) {
+		node = hsr_add_node(hsr, node_db, ethhdr->h_source, seq_out,
 				    san, rx_port);
+		goto notify;
+	}
 
 	if (ethhdr->h_proto == htons(ETH_P_HSR)) {
 		/* Check if skb contains hsr_ethhdr */
@@ -285,8 +304,20 @@ struct hsr_node *hsr_get_node(struct hsr_port *port, struct list_head *node_db,
 		}
 	}
 
-	return hsr_add_node(hsr, node_db, ethhdr->h_source, seq_out,
+	node = hsr_add_node(hsr, node_db, ethhdr->h_source, seq_out,
 			    san, rx_port);
+notify:
+	/* Don't notify the driver about the redbox itself. It can land in
+	 * proxy_node_db via the hsr_proxy_announce -> hsr_forward_skb path
+	 * where hsr_xmit replaces SMAC with macaddress_redbox before the
+	 * frame is processed as an interlink-rx event.
+	 */
+	if (node && node_db == &hsr->proxy_node_db && !node->proxy_notified &&
+	    !hsr_addr_is_self(hsr, node->macaddress_A)) {
+		node->proxy_notified = true;
+		hsr_proxy_node_switchdev_add(hsr, node);
+	}
+	return node;
 }
 
 /* Use the Supervision frame's info about an eventual macaddress_B for merging
@@ -716,6 +747,10 @@ void hsr_prune_proxy_nodes(struct timer_list *t)
 		if (time_is_before_jiffies(timestamp +
 				msecs_to_jiffies(HSR_PROXY_NODE_FORGET_TIME))) {
 			hsr_nl_nodedown(hsr, node->macaddress_A);
+			if (node->proxy_notified) {
+				node->proxy_notified = false;
+				hsr_proxy_node_switchdev_del(hsr, node);
+			}
 			if (!node->removed) {
 				list_del_rcu(&node->mac_list);
 				node->removed = true;

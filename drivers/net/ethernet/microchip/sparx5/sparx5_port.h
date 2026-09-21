@@ -199,7 +199,8 @@ int sparx5_get_internal_port(struct sparx5 *sparx5, int port);
 		u32 pix = sparx5_port_dev_index(port->sparx5, port->portno);			\
 		u32 dev = sparx5_to_high_dev(port->sparx5, port->portno);			\
 		void __iomem *devinst;								\
-		if (sparx5_is_baser(port->conf.portmode)) {					\
+		if (sparx5_port_is_high_speed(port->sparx5, port->portno,			\
+					       port->conf.portmode)) {				\
 			devinst = spx5_inst_get(port->sparx5, dev, pix);			\
 			value = spx5_inst_rd(devinst, DEV10G_##name(0));			\
 		} else {									\
@@ -213,7 +214,8 @@ int sparx5_get_internal_port(struct sparx5 *sparx5, int port);
 		u32 dev = sparx5_to_high_dev(port->sparx5, port->portno);			\
 		void __iomem *devinst;								\
 		spx5_wr(value, port->sparx5, DEV2G5_##name(port->portno));			\
-		if (sparx5_is_baser(port->conf.portmode)) {					\
+		if (sparx5_port_is_high_speed(port->sparx5, port->portno,			\
+					       port->conf.portmode)) {				\
 			devinst = spx5_inst_get(port->sparx5, dev, pix);			\
 			spx5_inst_wr(value, devinst, DEV10G_##name(0));				\
 		}										\
@@ -225,7 +227,8 @@ int sparx5_get_internal_port(struct sparx5 *sparx5, int port);
 		u32 dev = sparx5_to_high_dev(port->sparx5, port->portno);			\
 		void __iomem *devinst;								\
 		spx5_rmw(value, mask, port->sparx5, DEV2G5_##name(port->portno));		\
-		if (sparx5_is_baser(port->conf.portmode)) {					\
+		if (sparx5_port_is_high_speed(port->sparx5, port->portno,			\
+					       port->conf.portmode)) {				\
 			devinst = spx5_inst_get(port->sparx5, dev, pix);			\
 			spx5_inst_rmw(value, mask, devinst, DEV10G_##name(0));			\
 		}										\

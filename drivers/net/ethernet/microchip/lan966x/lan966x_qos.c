@@ -2702,6 +2702,7 @@ int lan966x_frer_cs_cnt_clear(struct lan966x *lan966x,
 	}
 
 	spin_lock(&lan966x->stats_lock);
+	lan966x_frer_update_cs_stats(lan966x, cs_id);
 	cnt = &lan966x->frer.cs_cnt[cs_id];
 	cnt->out_of_order_packets = 0;
 	cnt->rogue_packets = 0;
@@ -2928,6 +2929,7 @@ int lan966x_frer_ms_cnt_clear(struct lan966x_port *port,
 
 	id = ms_id + i;
 	spin_lock(&lan966x->stats_lock);
+	lan966x_frer_update_ms_stats(lan966x, id);
 	cnt = &lan966x->frer.ms_cnt[id];
 	cnt->out_of_order_packets = 0;
 	cnt->rogue_packets = 0;

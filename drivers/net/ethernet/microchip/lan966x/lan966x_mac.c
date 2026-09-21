@@ -185,7 +185,9 @@ int lan966x_mac_cpu_forget(struct lan966x *lan966x, const char *addr, u16 vid)
 void lan966x_mac_set_ageing(struct lan966x *lan966x,
 			    u32 ageing)
 {
-	lan_rmw(ANA_AUTOAGE_AGE_PERIOD_SET(ageing / 2),
+	u32 age_period = ageing ? max(1u, ageing / 1000 / 2) : 0;
+
+	lan_rmw(ANA_AUTOAGE_AGE_PERIOD_SET(age_period),
 		ANA_AUTOAGE_AGE_PERIOD,
 		lan966x, ANA_AUTOAGE);
 }

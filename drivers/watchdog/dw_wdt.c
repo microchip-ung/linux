@@ -26,6 +26,7 @@
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/pm.h>
+#include <linux/property.h>
 #include <linux/reset.h>
 #include <linux/watchdog.h>
 
@@ -79,12 +80,19 @@ struct dw_wdt_timeout {
 	unsigned int msec;
 };
 
+struct dw_wdt_soc {
+	bool default_rmod_irq;
+	bool inhibit_ping;
+};
+
 struct dw_wdt {
 	void __iomem		*regs;
 	struct clk		*clk;
 	struct clk		*pclk;
 	unsigned long		rate;
 	enum dw_wdt_rmod	rmod;
+	const struct dw_wdt_soc	*soc;
+	bool			pretimeout_latched;
 	struct dw_wdt_timeout	timeouts[DW_WDT_NUM_TOPS];
 	struct watchdog_device	wdd;
 	struct reset_control	*rst;
@@ -189,6 +197,10 @@ static int dw_wdt_ping(struct watchdog_device *wdd)
 {
 	struct dw_wdt *dw_wdt = to_dw_wdt(wdd);
 
+	/* Prevent a kick from canceling the reset during the pre-timeout period */
+	if (READ_ONCE(dw_wdt->pretimeout_latched))
+		return 0;
+
 	writel(WDOG_COUNTER_RESTART_KICK_VALUE, dw_wdt->regs +
 	       WDOG_COUNTER_RESTART_REG_OFFSET);
 
@@ -274,6 +286,8 @@ static void dw_wdt_arm_system_reset(struct dw_wdt *dw_wdt)
 static int dw_wdt_start(struct watchdog_device *wdd)
 {
 	struct dw_wdt *dw_wdt = to_dw_wdt(wdd);
+
+	WRITE_ONCE(dw_wdt->pretimeout_latched, false);
 
 	dw_wdt_set_timeout(wdd, wdd->timeout);
 	dw_wdt_ping(&dw_wdt->wdd);
@@ -369,6 +383,10 @@ static irqreturn_t dw_wdt_irq(int irq, void *devid)
 	val = readl(dw_wdt->regs + WDOG_INTERRUPT_STATUS_REG_OFFSET);
 	if (!val)
 		return IRQ_NONE;
+
+	/* Prepare reset and prevent the second stage from being cancelled */
+	if (dw_wdt->soc && dw_wdt->soc->inhibit_ping)
+		WRITE_ONCE(dw_wdt->pretimeout_latched, true);
 
 	watchdog_notify_pretimeout(&dw_wdt->wdd);
 
@@ -556,6 +574,8 @@ static int dw_wdt_drv_probe(struct platform_device *pdev)
 	if (!dw_wdt)
 		return -ENOMEM;
 
+	dw_wdt->soc = device_get_match_data(dev);
+
 	dw_wdt->regs = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(dw_wdt->regs))
 		return PTR_ERR(dw_wdt->regs);
@@ -610,6 +630,9 @@ static int dw_wdt_drv_probe(struct platform_device *pdev)
 			return ret;
 
 		dw_wdt->wdd.info = &dw_wdt_pt_ident;
+
+		if (dw_wdt->soc && dw_wdt->soc->default_rmod_irq)
+			dw_wdt_update_mode(dw_wdt, DW_WDT_RMOD_IRQ);
 	} else {
 		if (ret == -EPROBE_DEFER)
 			return ret;
@@ -676,8 +699,14 @@ static void dw_wdt_drv_remove(struct platform_device *pdev)
 	reset_control_assert(dw_wdt->rst);
 }
 
+static const struct dw_wdt_soc dw_wdt_sparx5 = {
+	.default_rmod_irq = true,
+	.inhibit_ping = true,
+};
+
 #ifdef CONFIG_OF
 static const struct of_device_id dw_wdt_of_match[] = {
+	{ .compatible = "microchip,sparx5-wdt", .data = &dw_wdt_sparx5 },
 	{ .compatible = "snps,dw-wdt", },
 	{ /* sentinel */ }
 };

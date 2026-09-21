@@ -11,8 +11,10 @@
 int lan9645x_mrp_init(struct lan9645x *lan9645x);
 void lan9645x_mrp_uninit(struct lan9645x *lan9645x);
 
-void lan9645x_mrp_ring_open(struct lan9645x *lan9645x);
-void lan9645x_mrp_in_open(struct lan9645x *lan9645x);
+bool lan9645x_mrp_ring_open(struct lan9645x *lan9645x);
+bool lan9645x_mrp_in_open(struct lan9645x *lan9645x);
+
+void lan9645x_mrp_port_vlan_changed(struct lan9645x_port *port);
 
 void lan9645x_mrp_port_update_mrp_mac(struct lan9645x *lan9645x, int port,
 				      const u8 mac[ETH_ALEN]);

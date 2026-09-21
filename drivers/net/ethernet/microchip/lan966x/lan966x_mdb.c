@@ -117,9 +117,6 @@ static int lan966x_mdb_ip_add(struct lan966x_port *port,
 		mdb_entry = lan966x_mdb_entry_add(lan966x, mdb);
 		if (IS_ERR(mdb_entry))
 			return PTR_ERR(mdb_entry);
-	} else {
-		lan966x_mdb_encode_mac(mac, mdb_entry, type);
-		lan966x_mac_forget(lan966x, mac, mdb_entry->vid, type);
 	}
 
 	if (cpu_port)
@@ -163,12 +160,11 @@ static int lan966x_mdb_ip_del(struct lan966x_port *port,
 		ports &= ~BIT(port->chip_port);
 	}
 
-	lan966x_mdb_encode_mac(mac, mdb_entry, type);
-	lan966x_mac_forget(lan966x, mac, mdb_entry->vid, type);
-
 	mdb_entry->ports = ports;
 
 	if (!mdb_entry->ports && !mdb_entry->cpu_copy) {
+		lan966x_mdb_encode_mac(mac, mdb_entry, type);
+		lan966x_mac_forget(lan966x, mac, mdb_entry->vid, type);
 		list_del(&mdb_entry->list);
 		kfree(mdb_entry);
 		return 0;
@@ -253,7 +249,6 @@ static int lan966x_mdb_l2_add(struct lan966x_port *port,
 	struct lan966x *lan966x = port->lan966x;
 	struct lan966x_pgid_entry *pgid_entry;
 	struct lan966x_mdb_entry *mdb_entry;
-	unsigned char mac[ETH_ALEN];
 
 	mdb_entry = lan966x_mdb_entry_get(lan966x, mdb->addr, mdb->vid);
 	if (!mdb_entry) {
@@ -262,8 +257,6 @@ static int lan966x_mdb_l2_add(struct lan966x_port *port,
 			return PTR_ERR(mdb_entry);
 	} else {
 		lan966x_pgid_entry_del(lan966x, mdb_entry->pgid);
-		lan966x_mdb_encode_mac(mac, mdb_entry, type);
-		lan966x_mac_forget(lan966x, mac, mdb_entry->vid, type);
 	}
 
 	if (cpu_port) {
@@ -323,13 +316,13 @@ static int lan966x_mdb_l2_del(struct lan966x_port *port,
 		ports &= ~BIT(port->chip_port);
 	}
 
-	lan966x_mdb_encode_mac(mac, mdb_entry, type);
-	lan966x_mac_forget(lan966x, mac, mdb_entry->vid, type);
 	lan966x_pgid_entry_del(lan966x, mdb_entry->pgid);
 
 	mdb_entry->ports = ports;
 
 	if (!mdb_entry->ports) {
+		lan966x_mdb_encode_mac(mac, mdb_entry, type);
+		lan966x_mac_forget(lan966x, mac, mdb_entry->vid, type);
 		list_del(&mdb_entry->list);
 		kfree(mdb_entry);
 		return 0;

@@ -124,6 +124,9 @@ static void lan9645x_teardown(struct dsa_switch *ds)
 {
 	struct lan9645x *lan9645x = ds->priv;
 
+	for (int port = 0; port < lan9645x->num_phys_ports; port++)
+		lan9645x_tc_flower_templates_free(lan9645x->ports[port]);
+
 	debugfs_remove_recursive(lan9645x->debugfs_root);
 	lan9645x_afi_deinit(lan9645x);
 	lan9645x_mrp_uninit(lan9645x);
@@ -216,11 +219,12 @@ static int lan9645x_get_max_mtu(struct dsa_switch *ds, int port)
 static irqreturn_t lan9645x_ana_irq_handler(int virq, void *args)
 {
 	struct lan9645x *lan9645x = args;
+	bool ring, in;
 
-	lan9645x_mrp_ring_open(lan9645x);
-	lan9645x_mrp_in_open(lan9645x);
+	ring = lan9645x_mrp_ring_open(lan9645x);
+	in = lan9645x_mrp_in_open(lan9645x);
 
-	return IRQ_HANDLED;
+	return (ring || in) ? IRQ_HANDLED : IRQ_NONE;
 }
 
 static int lan9645x_port_init(struct lan9645x *lan9645x, int port)
@@ -521,8 +525,11 @@ static int lan9645x_setup(struct dsa_switch *ds)
 		p->lan9645x = lan9645x;
 		p->chip_port = port;
 		p->bridge_num = -1;
+		p->mrp_test_vid = LAN9645X_MRP_VID_NONE;
+		p->mrp_in_test_vid = LAN9645X_MRP_VID_NONE;
 		p->phylink_pcs.poll = true;
 		p->phylink_pcs.ops = &lan9645x_phylink_pcs_ops;
+		INIT_LIST_HEAD(&p->tc_templates);
 		lan9645x->ports[port] = p;
 	}
 
@@ -1140,7 +1147,8 @@ void lan9645x_update_fwd_mask(struct lan9645x *lan9645x, bool joining)
 			if (p->bond)
 				mask &= ~lan9645x_lag_dev_get_mask(lan9645x,
 								   p->bond);
-		} else if (lan9645x_port_is_hsr(p)) {
+		} else if (lan9645x_port_is_hsr(p) ||
+			   lan9645x_port_is_hsr_interlink(p)) {
 			mask = lan9645x_hsr_prp_dev_get_mask(lan9645x, p->hsr) &
 			       ~BIT(p->chip_port);
 		} else if (shadow_of) {
@@ -1362,6 +1370,7 @@ static int lan9645x_port_vlan_filtering(struct dsa_switch *ds, int port,
 
 	p->vlan_aware = enabled;
 	lan9645x_vlan_port_apply(p);
+	lan9645x_mrp_port_vlan_changed(p);
 
 	mutex_unlock(&lan9645x->fwd_domain_lock);
 
@@ -1705,35 +1714,22 @@ lan9645x_get_eth_ctrl_stats(struct dsa_switch *ds, int port,
 	lan9645x_stats_get_eth_ctrl_stats(lan9645x, port, ctrl_stats);
 }
 
-static int lan9645x_port_hsr_join(struct dsa_switch *ds, int port,
-				  struct net_device *hsr,
-				  struct netlink_ext_ack *extack)
+static int lan9645x_port_hsr_join_pair(struct dsa_switch *ds, int port,
+				       struct net_device *hsr,
+				       enum lan9645x_hsr_type type,
+				       struct netlink_ext_ack *extack)
 {
 	struct dsa_port *dslrea = NULL, *dslreb, *dp;
 	struct lan9645x *lan9645x = ds->priv;
-	enum lan9645x_hsr_type type;
 	int err;
-
-	if (lan9645x->dd_dis)
-		return -EOPNOTSUPP;
-
-	dev_dbg(lan9645x->dev, "port=%d", port);
-
-	err = lan9645x_hsr2type(hsr, &type);
-	if (err)
-		return err;
-
-	err = lan9645x_hsr_prp_prepare(lan9645x, port, hsr, type, extack);
-	if (err)
-		return err;
 
 	dslreb = dsa_to_port(ds, port);
 	if (!dslreb)
 		return -EOPNOTSUPP;
 
-	dsa_hsr_foreach_port(dp, ds, hsr)
-	{
-		if (dp->index != port) {
+	dsa_hsr_foreach_port(dp, ds, hsr) {
+		if (dp->index != port &&
+		    dp->hsr_port_type != HSR_PT_INTERLINK) {
 			dslrea = dp;
 			break;
 		}
@@ -1755,6 +1751,22 @@ static int lan9645x_port_hsr_join(struct dsa_switch *ds, int port,
 	dev_dbg(lan9645x->dev, "lan_a=%d lan_b=%d type=%d\n", dslrea->index,
 		dslreb->index, type);
 
+	/* Take ownership of the ring ports' VCAP keyset selection before
+	 * configuring it, so HSR fails cleanly (rather than clobbering) if a tc
+	 * chain template already controls those lookups.
+	 */
+	err = lan9645x_hsr_keyset_claim(lan9645x->ports[dslrea->index], type,
+					extack);
+	if (err)
+		return err;
+
+	err = lan9645x_hsr_keyset_claim(lan9645x->ports[dslreb->index], type,
+					extack);
+	if (err) {
+		lan9645x_hsr_keyset_release(lan9645x->ports[dslrea->index], type);
+		return err;
+	}
+
 	err = lan9645x_hsr_prp_pair_add(lan9645x, lan9645x->ports[dslrea->index],
 					lan9645x->ports[dslreb->index],
 					dslrea->user, hsr, type);
@@ -1762,10 +1774,54 @@ static int lan9645x_port_hsr_join(struct dsa_switch *ds, int port,
 		dev_err(lan9645x->dev,
 			"HSR/PRP pair add err=%d ds_a=%p ds_b=%p\n", err,
 			dslrea->user, dslreb->user);
+		lan9645x_hsr_keyset_release(lan9645x->ports[dslrea->index], type);
+		lan9645x_hsr_keyset_release(lan9645x->ports[dslreb->index], type);
 		return err;
 	}
 
-	return 0;
+	return err;
+}
+
+static int lan9645x_port_hsr_join(struct dsa_switch *ds, int port,
+				  struct net_device *hsr,
+				  struct netlink_ext_ack *extack)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	enum lan9645x_hsr_type type;
+	struct dsa_port *dp;
+	int err;
+
+	if (lan9645x->dd_dis)
+		return -EOPNOTSUPP;
+
+	dev_dbg(lan9645x->dev, "port=%d", port);
+
+	err = lan9645x_hsr2type(hsr, &type);
+	if (err)
+		return err;
+
+	err = lan9645x_hsr_prp_prepare(lan9645x, port, hsr, type, extack);
+	if (err)
+		return err;
+
+	dp = dsa_to_port(ds, port);
+
+	switch (dp->hsr_port_type) {
+	case HSR_PT_SLAVE_A:
+	case HSR_PT_SLAVE_B:
+		return lan9645x_port_hsr_join_pair(ds, port, hsr, type, extack);
+	case HSR_PT_INTERLINK:
+		if (type != LAN9645X_HSR) {
+			NL_SET_ERR_MSG_MOD(extack,
+					   "Interlink only supported for HSR");
+			return -EOPNOTSUPP;
+		}
+		return lan9645x_hsr_prp_interlink_add(lan9645x,
+						      lan9645x->ports[port],
+						      hsr, extack);
+	default:
+		return -EOPNOTSUPP;
+	}
 }
 
 static int lan9645x_port_hsr_leave(struct dsa_switch *ds, int port,
@@ -1777,6 +1833,12 @@ static int lan9645x_port_hsr_leave(struct dsa_switch *ds, int port,
 		return -EOPNOTSUPP;
 
 	dev_dbg(lan9645x->dev, "port=%d", port);
+
+	/* DSA core clears dp->hsr_port_type before invoking us, so dispatch
+	 * by chip-port match against the HSR state we own.
+	 */
+	if (lan9645x->hsr.interlink_enabled && port == lan9645x->hsr.port_c)
+		return lan9645x_hsr_prp_interlink_del(lan9645x, port, hsr);
 
 	return lan9645x_hsr_prp_pair_del(lan9645x, port, hsr);
 }
@@ -1953,6 +2015,36 @@ static int lan9645x_cls_flower_stats(struct dsa_switch *ds, int port,
 	return lan9645x_tc_flower_stats(p, cls);
 }
 
+static int lan9645x_cls_flower_tmplt_create(struct dsa_switch *ds, int port,
+					    struct flow_cls_offload *cls,
+					    bool ingress)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	struct lan9645x_port *p = lan9645x_to_port(lan9645x, port);
+
+	dev_dbg(lan9645x->dev,
+		"port=%d ingress=%u cmd=%d chain=%u prio=%u proto=%x",
+		port, ingress, cls->command, cls->common.chain_index,
+		cls->common.prio, ntohs(cls->common.protocol));
+
+	return lan9645x_tc_flower_template_add(p, cls);
+}
+
+static int lan9645x_cls_flower_tmplt_destroy(struct dsa_switch *ds, int port,
+					     struct flow_cls_offload *cls,
+					     bool ingress)
+{
+	struct lan9645x *lan9645x = ds->priv;
+	struct lan9645x_port *p = lan9645x_to_port(lan9645x, port);
+
+	dev_dbg(lan9645x->dev,
+		"port=%d ingress=%u cmd=%d chain=%u prio=%u proto=%x",
+		port, ingress, cls->command, cls->common.chain_index,
+		cls->common.prio, ntohs(cls->common.protocol));
+
+	return lan9645x_tc_flower_template_del(p, cls);
+}
+
 static int lan9645x_port_setup_cbs(struct dsa_switch *ds, int port,
 				   struct tc_cbs_qopt_offload *cbs_qopt)
 {
@@ -2016,12 +2108,24 @@ static int lan9645x_tc_setup_qdisc_taprio(struct dsa_switch *ds, int port,
 					  struct tc_taprio_qopt_offload *taprio)
 {
 	struct lan9645x *lan9645x = ds->priv;
+	int err;
 
 	switch (taprio->cmd) {
 	case TAPRIO_CMD_REPLACE:
-		return lan9645x_taprio_add(lan9645x, port, taprio);
+		err = lan9645x_port_setup_mqprio(ds, port, &taprio->mqprio);
+		if (err)
+			return err;
+
+		err = lan9645x_taprio_add(lan9645x, port, taprio);
+		if (err) {
+			taprio->mqprio.qopt.num_tc = 0;
+			lan9645x_port_setup_mqprio(ds, port, &taprio->mqprio);
+		}
+		return err;
 	case TAPRIO_CMD_DESTROY:
-		return lan9645x_taprio_del(lan9645x, port);
+		err = lan9645x_taprio_del(lan9645x, port);
+		lan9645x_port_setup_mqprio(ds, port, &taprio->mqprio);
+		return err;
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -2215,12 +2319,19 @@ lan9645x_port_hsr_node_add(struct dsa_switch *ds, int port,
 			   const struct switchdev_obj_node_hsr *hsr_node)
 {
 	struct lan9645x *lan9645x = ds->priv;
+	struct dsa_port *dp;
 
 	if (lan9645x->dd_dis)
 		return -EOPNOTSUPP;
 
 	dev_dbg(lan9645x->dev, "port=%d addrA=%pM\n",
 		port, hsr_node->addr_A);
+
+	dp = dsa_to_port(ds, port);
+	if (dp && dp->hsr_port_type == HSR_PT_INTERLINK)
+		return lan9645x_hsr_prp_proxy_node_add(lan9645x, port,
+						       hsr_node->hsr,
+						       hsr_node->addr_A);
 
 	return lan9645x_hsr_prp_dan_node_add(lan9645x, port,
 					     hsr_node->hsr,
@@ -2232,12 +2343,20 @@ lan9645x_port_hsr_node_del(struct dsa_switch *ds, int port,
 			   const struct switchdev_obj_node_hsr *hsr_node)
 {
 	struct lan9645x *lan9645x = ds->priv;
+	struct dsa_port *dp;
 
 	if (lan9645x->dd_dis)
 		return -EOPNOTSUPP;
 
 	dev_dbg(lan9645x->dev, "port=%d addrA=%pM\n",
 		 port, hsr_node->addr_A);
+
+	dp = dsa_to_port(ds, port);
+	if (dp && dp->hsr_port_type == HSR_PT_INTERLINK) {
+		lan9645x_hsr_prp_proxy_node_del(lan9645x, port, hsr_node->hsr,
+						hsr_node->addr_A);
+		return 0;
+	}
 
 	lan9645x_hsr_prp_dan_node_del(lan9645x, port, hsr_node->hsr,
 				      hsr_node->addr_A);
@@ -2442,6 +2561,8 @@ static const struct dsa_switch_ops lan9645x_switch_ops = {
 	.cls_flower_add			= lan9645x_cls_flower_add,
 	.cls_flower_del			= lan9645x_cls_flower_del,
 	.cls_flower_stats		= lan9645x_cls_flower_stats,
+	.cls_flower_tmplt_create	= lan9645x_cls_flower_tmplt_create,
+	.cls_flower_tmplt_destroy	= lan9645x_cls_flower_tmplt_destroy,
 	.port_setup_tc			= lan9645x_port_setup_tc,
 
 	/* DCB integration */

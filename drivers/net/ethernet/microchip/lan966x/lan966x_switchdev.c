@@ -181,9 +181,9 @@ void lan966x_port_ageing_set(struct lan966x_port *port,
 			     unsigned long ageing_clock_t)
 {
 	unsigned long ageing_jiffies = clock_t_to_jiffies(ageing_clock_t);
-	u32 ageing_time = jiffies_to_msecs(ageing_jiffies) / 1000;
+	u32 ageing_ms = jiffies_to_msecs(ageing_jiffies);
 
-	lan966x_mac_set_ageing(port->lan966x, ageing_time);
+	lan966x_mac_set_ageing(port->lan966x, ageing_ms);
 }
 
 static void lan966x_port_mc_set(struct lan966x_port *port, bool mcast_ena)
@@ -277,6 +277,8 @@ static int lan966x_port_bridge_join(struct lan966x_port *port,
 
 	lan966x->bridge_mask |= BIT(port->chip_port);
 
+	lan966x_vlan_port_del_host_vlan(port);
+
 	flags.mask = BR_LEARNING | BR_FLOOD | BR_MCAST_FLOOD | BR_BCAST_FLOOD;
 	flags.val = flags.mask;
 	lan966x_port_bridge_flags(port, flags);
@@ -300,6 +302,7 @@ static void lan966x_port_bridge_leave(struct lan966x_port *port,
 		lan966x->bridge = NULL;
 
 	/* Set the port back to host mode */
+	lan966x_vlan_port_add_host_vlan(port);
 	lan966x_vlan_port_set_vlan_aware(port, false);
 	lan966x_vlan_port_set_vid(port, HOST_PVID, false, false);
 	lan966x_vlan_port_apply(port);
@@ -587,19 +590,25 @@ static int lan966x_switchdev_event(struct notifier_block *nb,
 }
 
 static int lan966x_handle_port_vlan_add(struct lan966x_port *port,
-					const struct switchdev_obj *obj)
+					const struct switchdev_obj *obj,
+					struct netlink_ext_ack *extack)
 {
 	const struct switchdev_obj_port_vlan *v = SWITCHDEV_OBJ_PORT_VLAN(obj);
 	struct lan966x *lan966x = port->lan966x;
+	int err;
 
-	if (!netif_is_bridge_master(obj->orig_dev))
-		lan966x_vlan_port_add_vlan(port, v->vid,
-					   v->flags & BRIDGE_VLAN_INFO_PVID,
-					   v->flags & BRIDGE_VLAN_INFO_UNTAGGED);
-	else
+	if (netif_is_bridge_master(obj->orig_dev)) {
 		lan966x_vlan_cpu_add_vlan(lan966x, v->vid);
+		return 0;
+	}
 
-	return 0;
+	err = lan966x_vlan_port_add_vlan(port, v->vid,
+					 v->flags & BRIDGE_VLAN_INFO_PVID,
+					 v->flags & BRIDGE_VLAN_INFO_UNTAGGED);
+	if (err)
+		NL_SET_ERR_MSG_MOD(extack, "Failed to add VLAN");
+
+	return err;
 }
 
 static int lan966x_handle_port_obj_add(struct net_device *dev, const void *ctx,
@@ -614,7 +623,7 @@ static int lan966x_handle_port_obj_add(struct net_device *dev, const void *ctx,
 
 	switch (obj->id) {
 	case SWITCHDEV_OBJ_ID_PORT_VLAN:
-		err = lan966x_handle_port_vlan_add(port, obj);
+		err = lan966x_handle_port_vlan_add(port, obj, extack);
 		break;
 	case SWITCHDEV_OBJ_ID_PORT_MDB:
 	case SWITCHDEV_OBJ_ID_HOST_MDB:

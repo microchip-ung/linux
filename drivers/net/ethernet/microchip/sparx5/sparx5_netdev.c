@@ -450,8 +450,6 @@ struct net_device *sparx5_create_netdev(struct sparx5 *sparx5, u32 portno)
 	ndev->hw_features |= NETIF_F_HW_TC;
 	ndev->features |= NETIF_F_HW_TC;
 	if (!is_sparx5(sparx5)) {
-		ndev->hw_features |= LAN969X_SUPPORTED_HSR_FEATURES;
-		ndev->features |= LAN969X_SUPPORTED_HSR_FEATURES;
 		ndev->xdp_features = NETDEV_XDP_ACT_BASIC |
 				     NETDEV_XDP_ACT_REDIRECT |
 				     NETDEV_XDP_ACT_NDO_XMIT;

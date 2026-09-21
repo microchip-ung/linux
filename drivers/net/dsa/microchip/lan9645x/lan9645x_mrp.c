@@ -22,27 +22,105 @@
 #define CONFIG_TEST		0
 #define CONFIG_IN_TEST		1
 
+/* Base ticks in one millisecond, taken from the encoding table of
+ * OAM_MEP:COMMON:LOC_PERIOD_CFG.LOC_PERIOD_VAL, which lists 5045 for a period
+ * of 1 ms. Do not re-derive it from the base tick length: the datasheet gives
+ * that as 198.2 ns for the field and as 198.4 ns for the reset value of
+ * OAM_MEP:COMMON:LOC_CTRL.LOC_BASE_TICK_CNT, and those disagree.
+ */
+#define MEP_LOC_TICKS_PER_MSEC		5045
+
+/* An MRP endpoint raises the LOC event once MISS_CNT reaches MAX_MISS_CNT,
+ * which per the LOC_PERIOD_CFG description happens "at MAX_MISS_CNT/2 times
+ * the configured LOC period". MAX_MISS_CNT is programmed as the number of
+ * misses the daemon asked for, so program twice the test interval to make the
+ * event land after max_miss intervals rather than half that.
+ */
+#define MEP_LOC_INTERVAL_MULT		2
+
+/* MEP_TST_CFG.MAX_MISS_CNT and MEP_ITST_CFG.ITST_MAX_MISS_CNT are 4 bits. */
+#define MEP_MAX_MISS_CNT_MAX		15
+
+static u32 lan9645x_mrp_loc_period(u32 interval_us)
+{
+	u64 ticks = (u64)interval_us * MEP_LOC_TICKS_PER_MSEC *
+		    MEP_LOC_INTERVAL_MULT;
+
+	ticks = div_u64(ticks, USEC_PER_MSEC);
+
+	/* LOC_PERIOD_VAL is 32 bits wide. */
+	if (ticks > U32_MAX)
+		return U32_MAX;
+
+	return ticks;
+}
+
+/* max_miss arrives unbounded from netlink, and FIELD_PREP() would silently
+ * mask it into the 4 bit register field, turning 16 into an immediate LOC.
+ */
+static u32 lan9645x_mrp_max_miss(u32 max_miss)
+{
+	return min_t(u32, max_miss, MEP_MAX_MISS_CNT_MAX);
+}
+
 static const u8 mrp_test_dmac[ETH_ALEN] = { 0x1, 0x15, 0x4e, 0x0, 0x0, 0x1 };
 static const u8 mrp_in_test_dmac[ETH_ALEN] = { 0x1, 0x15, 0x4e, 0x0, 0x0, 0x3 };
 
-void lan9645x_mrp_ring_open(struct lan9645x *lan9645x)
+static void lan9645x_mrp_blackhole(struct lan9645x_port *port, const u8 *dmac,
+				   u16 *installed, bool on)
+{
+	struct lan9645x *lan9645x = port->lan9645x;
+	u16 vid = LAN9645X_MRP_VID_NONE;
+
+	if (on)
+		vid = lan9645x_vlan_port_get_pvid(port);
+
+	if (*installed == vid)
+		return;
+
+	if (*installed != LAN9645X_MRP_VID_NONE)
+		lan9645x_mact_forget(lan9645x, dmac, *installed,
+				     ENTRYTYPE_LOCKED);
+
+	if (vid != LAN9645X_MRP_VID_NONE)
+		lan9645x_mact_learn(lan9645x, PGID_MRP, dmac, vid,
+				    ENTRYTYPE_LOCKED);
+
+	*installed = vid;
+}
+
+void lan9645x_mrp_port_vlan_changed(struct lan9645x_port *port)
+{
+	if (!port->mrp_port)
+		return;
+
+	if (port->mrp_test_vid != LAN9645X_MRP_VID_NONE)
+		lan9645x_mrp_blackhole(port, mrp_test_dmac,
+				       &port->mrp_test_vid, true);
+
+	if (port->mrp_in_test_vid != LAN9645X_MRP_VID_NONE)
+		lan9645x_mrp_blackhole(port, mrp_in_test_dmac,
+				       &port->mrp_in_test_vid, true);
+}
+
+bool lan9645x_mrp_ring_open(struct lan9645x *lan9645x)
 {
 	u32 mep_intr = lan_rd(lan9645x, MEP_INTR);
 
 	/* If this is not an interrupt for MRP then just ignore it */
 	if (!MEP_INTR_MRP_INTR_GET(mep_intr))
-		return;
+		return false;
 
-	mrp_ring_interrupt(lan9645x->mrp_ctrl);
+	return mrp_ring_interrupt(lan9645x->mrp_ctrl);
 }
 
-void lan9645x_mrp_in_open(struct lan9645x *lan9645x)
+bool lan9645x_mrp_in_open(struct lan9645x *lan9645x)
 {
 	/* If this is not an interrupt for MRP then just ignore it */
 	if (!MEP_INTR_MRP_INTR_GET(lan_rd(lan9645x, MEP_INTR)))
-		return;
+		return false;
 
-	mrp_in_interrupt(lan9645x->mrp_ctrl);
+	return mrp_in_interrupt(lan9645x->mrp_ctrl);
 }
 
 int lan9645x_handle_mrp_port_role(struct lan9645x *lan9645x, int port,
@@ -59,6 +137,7 @@ int lan9645x_handle_mrp_add_port(struct lan9645x *lan9645x, int port,
 				 const struct switchdev_obj_mrp *mrp)
 {
 	struct lan9645x_port *p = lan9645x_to_port(lan9645x, port);
+	struct mrp_port *mrp_port;
 	struct net_device *dev;
 
 	dev_dbg(lan9645x->dev,
@@ -72,9 +151,11 @@ int lan9645x_handle_mrp_add_port(struct lan9645x *lan9645x, int port,
 	if (mrp->p_port != dev && mrp->s_port != dev)
 		return 0;
 
-	p->mrp_port = mrp_add_port(lan9645x->mrp_ctrl, mrp, dev);
-	if (IS_ERR(p->mrp_port))
-		return PTR_ERR(p->mrp_port);
+	mrp_port = mrp_add_port(lan9645x->mrp_ctrl, mrp, dev);
+	if (IS_ERR(mrp_port))
+		return PTR_ERR(mrp_port);
+
+	p->mrp_port = mrp_port;
 
 	lan9645x_add_prio_is1_rule(p, VCAP_USER_MRP,
 				   &p->mrp_is1_p_port_rule_id);
@@ -187,6 +268,7 @@ int lan9645x_handle_mrp_in_role_add(struct lan9645x *lan9645x, int port,
 				    const struct switchdev_obj_in_role_mrp *mrp)
 {
 	struct lan9645x_port *p = lan9645x_to_port(lan9645x, port);
+	struct mrp_port *mrp_port;
 	struct net_device *dev;
 
 	dev = lan9645x_port_to_ndev(p);
@@ -195,9 +277,11 @@ int lan9645x_handle_mrp_in_role_add(struct lan9645x *lan9645x, int port,
 	if (mrp->i_port != dev)
 		return 0;
 
-	p->mrp_port = mrp_add_in_port(lan9645x->mrp_ctrl, mrp, dev);
-	if (IS_ERR(p->mrp_port))
-		return PTR_ERR(p->mrp_port);
+	mrp_port = mrp_add_in_port(lan9645x->mrp_ctrl, mrp, dev);
+	if (IS_ERR(mrp_port))
+		return PTR_ERR(mrp_port);
+
+	p->mrp_port = mrp_port;
 
 	return mrp_port_set_in_role(p->mrp_port, mrp);
 }
@@ -265,6 +349,15 @@ static int lan9645x_mrp_port_init(struct mrp_port *mrp_port, u16 prio)
 		MEP_TST_PRIO_CFG_OWN_PRIO,
 		lan9645x, MEP_TST_PRIO_CFG(port->chip_port));
 
+	/* Arm the LOC interrupts for as long as this port exists. Nothing can
+	 * latch yet, because MEP_TST_CFG.LOC_PERIOD and
+	 * MEP_ITST_CFG.ITST_LOC_PERIOD select no LOC period until a test is
+	 * started on the port.
+	 */
+	lan_wr(MEP_MRP_INTR_ENA_TST_LOC_INTR_ENA_SET(1) |
+	       MEP_MRP_INTR_ENA_ITST_LOC_INTR_ENA_SET(1),
+	       lan9645x, MEP_MRP_INTR_ENA(port->chip_port));
+
 	return 0;
 }
 
@@ -284,6 +377,20 @@ static int lan9645x_mrp_port_uninit(struct mrp_port *mrp_port)
 	lan_rmw(MEP_MRP_CTRL_MRP_ENA_SET(0),
 		MEP_MRP_CTRL_MRP_ENA,
 		lan9645x, MEP_MRP_CTRL(port->chip_port));
+
+	lan_rmw(MEP_MRP_INTR_ENA_TST_LOC_INTR_ENA_SET(0) |
+		MEP_MRP_INTR_ENA_ITST_LOC_INTR_ENA_SET(0),
+		MEP_MRP_INTR_ENA_TST_LOC_INTR_ENA |
+		MEP_MRP_INTR_ENA_ITST_LOC_INTR_ENA,
+		lan9645x, MEP_MRP_INTR_ENA(port->chip_port));
+
+	lan_wr(MEP_MRP_STICKY_TST_LOC_STICKY |
+	       MEP_MRP_STICKY_ITST_LOC_STICKY,
+	       lan9645x, MEP_MRP_STICKY(port->chip_port));
+
+	lan9645x_mrp_blackhole(port, mrp_test_dmac, &port->mrp_test_vid, false);
+	lan9645x_mrp_blackhole(port, mrp_in_test_dmac, &port->mrp_in_test_vid,
+			       false);
 
 	return 0;
 }
@@ -541,8 +648,7 @@ static int lan9645x_mrp_port_terminate_ring_test(struct mrp_port *mrp_port)
 		MEP_TST_FWD_CTRL_HI_PRIO_FWD_SEL,
 		lan9645x, MEP_TST_FWD_CTRL(port->chip_port));
 
-	lan9645x_mact_learn(lan9645x, PGID_MRP, mrp_test_dmac,
-			    port->pvid, ENTRYTYPE_LOCKED);
+	lan9645x_mrp_blackhole(port, mrp_test_dmac, &port->mrp_test_vid, true);
 
 	return 0;
 }
@@ -562,12 +668,8 @@ static int lan9645x_mrp_port_forward_ring_test(struct mrp_port *mrp_port,
 		MEP_RING_MASK_CFG_RING_PORTMASK,
 		lan9645x, MEP_RING_MASK_CFG(port->chip_port));
 
-	if (forward)
-		lan9645x_mact_learn(lan9645x, PGID_MRP, mrp_test_dmac,
-				    port->pvid, ENTRYTYPE_LOCKED);
-	else
-		lan9645x_mact_forget(lan9645x, mrp_test_dmac,
-				     port->pvid, ENTRYTYPE_LOCKED);
+	lan9645x_mrp_blackhole(port, mrp_test_dmac, &port->mrp_test_vid,
+			       forward);
 
 	lan_rmw(MEP_MRP_FWD_CTRL_MRP_TST_FWD_SEL_SET(MRP_FWD_NOP) |
 		MEP_MRP_FWD_CTRL_RING_MASK_ENA_SET(forward),
@@ -590,16 +692,16 @@ static int lan9645x_mrp_port_process_ring_test(struct mrp_port *mrp_port,
 		MEP_MRP_CTRL_MRP_TST_ENA,
 		lan9645x, MEP_MRP_CTRL(port->chip_port));
 
-	/* 51 represents 10 usec */
 	/* MRP loc index 0 represents that there is no LOC used, while index 1
 	 * in MRP represents index 0 in MEP, therefor subtract 1
 	 */
-	lan_wr(mrp_port->ring_interval / 10 * 51,
+	lan_wr(lan9645x_mrp_loc_period(mrp_port->ring_interval),
 	       lan9645x, MEP_LOC_PERIOD_CFG(mrp_port->mrp_inst->ring_loc_idx - 1));
 
 	/* Set LOC */
 	lan_rmw(MEP_TST_CFG_CLR_MISS_CNT_ENA_SET(process) |
-		MEP_TST_CFG_LOC_PERIOD_SET(mrp_port->mrp_inst->ring_loc_idx),
+		MEP_TST_CFG_LOC_PERIOD_SET(process ?
+					   mrp_port->mrp_inst->ring_loc_idx : 0),
 		MEP_TST_CFG_CLR_MISS_CNT_ENA |
 		MEP_TST_CFG_LOC_PERIOD,
 		lan9645x, MEP_TST_CFG(port->chip_port));
@@ -646,7 +748,14 @@ static enum mrp_interrupt_status lan9645x_mrp_port_get_ring_intr_status(struct m
 	val = lan_rd(lan9645x, MEP_TST_CFG(port->chip_port));
 	val = MEP_TST_CFG_MISS_CNT_GET(val);
 
-	if (val == mrp_port->ring_max_miss)
+	dev_dbg(lan9645x->dev,
+		"port=%d ring loc: miss_cnt=%u max_miss=%u -> %s\n",
+		port->chip_port, val,
+		lan9645x_mrp_max_miss(mrp_port->ring_max_miss),
+		val == lan9645x_mrp_max_miss(mrp_port->ring_max_miss) ?
+		"open" : "closed");
+
+	if (val == lan9645x_mrp_max_miss(mrp_port->ring_max_miss))
 		return MRP_INTERRUPT_STATUS_OPEN;
 
 	return MRP_INTERRUPT_STATUS_CLOSED;
@@ -670,7 +779,7 @@ static int lan9645x_mrp_port_enable_ring_intr(struct mrp_port *mrp_port,
 	struct lan9645x_port *port = mrp_port->priv;
 	struct lan9645x *lan9645x = port->lan9645x;
 
-	lan_rmw(MEP_TST_CFG_MAX_MISS_CNT_SET(max),
+	lan_rmw(MEP_TST_CFG_MAX_MISS_CNT_SET(lan9645x_mrp_max_miss(max)),
 		MEP_TST_CFG_MAX_MISS_CNT,
 		lan9645x, MEP_TST_CFG(port->chip_port));
 
@@ -695,8 +804,8 @@ static int lan9645x_mrp_port_terminate_in_test(struct mrp_port *mrp_port)
 		MEP_ITST_FWD_CTRL_OWN_FWD_SEL,
 		lan9645x, MEP_ITST_FWD_CTRL(port->chip_port));
 
-	lan9645x_mact_learn(lan9645x, PGID_MRP, mrp_in_test_dmac,
-			    port->pvid, ENTRYTYPE_LOCKED);
+	lan9645x_mrp_blackhole(port, mrp_in_test_dmac, &port->mrp_in_test_vid,
+			       true);
 
 	return 0;
 }
@@ -723,12 +832,8 @@ static int lan9645x_mrp_port_forward_in_test(struct mrp_port *mrp_port,
 		MEP_ICON_MASK_CFG_ICON_PORTMASK,
 		lan9645x, MEP_ICON_MASK_CFG(port->chip_port));
 
-	if (forward)
-		lan9645x_mact_learn(lan9645x, PGID_MRP, mrp_in_test_dmac,
-				    port->pvid, ENTRYTYPE_LOCKED);
-	else
-		lan9645x_mact_forget(lan9645x, mrp_in_test_dmac,
-				     port->pvid, ENTRYTYPE_LOCKED);
+	lan9645x_mrp_blackhole(port, mrp_in_test_dmac, &port->mrp_in_test_vid,
+			       forward);
 
 	lan_rmw(MEP_MRP_FWD_CTRL_ICON_MASK_ENA_SET(1),
 		MEP_MRP_FWD_CTRL_ICON_MASK_ENA,
@@ -762,12 +867,8 @@ static int lan9645x_mrp_port_forward_rem_in_test(struct mrp_port *mrp_port,
 		MEP_ICON_MASK_CFG_ICON_PORTMASK,
 		lan9645x, MEP_ICON_MASK_CFG(port->chip_port));
 
-	if (forward)
-		lan9645x_mact_learn(lan9645x, PGID_MRP, mrp_in_test_dmac,
-				    port->pvid, ENTRYTYPE_LOCKED);
-	else
-		lan9645x_mact_forget(lan9645x, mrp_in_test_dmac,
-				     port->pvid, ENTRYTYPE_LOCKED);
+	lan9645x_mrp_blackhole(port, mrp_in_test_dmac, &port->mrp_in_test_vid,
+			       forward);
 
 	lan_rmw(MEP_MRP_FWD_CTRL_ICON_MASK_ENA_SET(1),
 		MEP_MRP_FWD_CTRL_ICON_MASK_ENA,
@@ -788,16 +889,16 @@ static int lan9645x_mrp_port_process_in_test(struct mrp_port *mrp_port,
 		MEP_MRP_CTRL_MRP_ITST_ENA,
 		lan9645x, MEP_MRP_CTRL(port->chip_port));
 
-	/* 51 represents 10 usec */
 	/* MRP loc index 0 represents that there is no LOC used, while index 1
 	 * in MRP represets index 0 in MEP, therefor subtract 1
 	 */
-	lan_wr(mrp_port->in_interval / 10 * 51, lan9645x,
+	lan_wr(lan9645x_mrp_loc_period(mrp_port->in_interval), lan9645x,
 	       MEP_LOC_PERIOD_CFG(mrp_port->mrp_inst->in_loc_idx - 1));
 
 	/* Set LOC */
 	lan_rmw(MEP_ITST_CFG_ITST_CLR_MISS_CNT_ENA_SET(process) |
-		MEP_ITST_CFG_ITST_LOC_PERIOD_SET(mrp_port->mrp_inst->in_loc_idx),
+		MEP_ITST_CFG_ITST_LOC_PERIOD_SET(process ?
+						 mrp_port->mrp_inst->in_loc_idx : 0),
 		MEP_ITST_CFG_ITST_CLR_MISS_CNT_ENA |
 		MEP_ITST_CFG_ITST_LOC_PERIOD,
 		lan9645x, MEP_ITST_CFG(port->chip_port));
@@ -844,7 +945,14 @@ static enum mrp_interrupt_status lan9645x_mrp_port_get_in_intr_status(struct mrp
 	val = lan_rd(lan9645x, MEP_ITST_CFG(port->chip_port));
 	val = MEP_ITST_CFG_ITST_MISS_CNT_GET(val);
 
-	if (val == mrp_port->in_max_miss)
+	dev_dbg(lan9645x->dev,
+		"port=%d in loc: miss_cnt=%u max_miss=%u -> %s\n",
+		port->chip_port, val,
+		lan9645x_mrp_max_miss(mrp_port->in_max_miss),
+		val == lan9645x_mrp_max_miss(mrp_port->in_max_miss) ?
+		"open" : "closed");
+
+	if (val == lan9645x_mrp_max_miss(mrp_port->in_max_miss))
 		return MRP_INTERRUPT_STATUS_OPEN;
 
 	return MRP_INTERRUPT_STATUS_CLOSED;
@@ -867,7 +975,7 @@ static int lan9645x_mrp_port_enable_in_intr(struct mrp_port *mrp_port, u32 max)
 	struct lan9645x_port *port = mrp_port->priv;
 	struct lan9645x *lan9645x = port->lan9645x;
 
-	lan_rmw(MEP_ITST_CFG_ITST_MAX_MISS_CNT_SET(max),
+	lan_rmw(MEP_ITST_CFG_ITST_MAX_MISS_CNT_SET(lan9645x_mrp_max_miss(max)),
 		MEP_ITST_CFG_ITST_MAX_MISS_CNT,
 		lan9645x, MEP_ITST_CFG(port->chip_port));
 
@@ -973,13 +1081,6 @@ int lan9645x_mrp_init(struct lan9645x *lan9645x)
 			MEP_MRP_FWD_CTRL_MRP_ILSP_FWD_SEL |
 			MEP_MRP_FWD_CTRL_OTHER_FWD_SEL,
 			lan9645x, MEP_MRP_FWD_CTRL(port->chip_port));
-
-		lan9645x_mact_learn(lan9645x, PGID_MRP, mrp_test_dmac,
-				    port->pvid, ENTRYTYPE_LOCKED);
-
-		lan_wr(MEP_MRP_INTR_ENA_TST_LOC_INTR_ENA_SET(1) |
-		       MEP_MRP_INTR_ENA_ITST_LOC_INTR_ENA_SET(1),
-		       lan9645x, MEP_MRP_INTR_ENA(port->chip_port));
 	}
 
 	lan_rmw(MEP_INTR_CTRL_OAM_MEP_INTR_ENA_SET(1),
@@ -1027,9 +1128,6 @@ void lan9645x_mrp_uninit(struct lan9645x *lan9645x)
 			MEP_MRP_FWD_CTRL_MRP_ILSP_FWD_SEL |
 			MEP_MRP_FWD_CTRL_OTHER_FWD_SEL,
 			lan9645x, MEP_MRP_FWD_CTRL(port->chip_port));
-
-		lan9645x_mact_forget(lan9645x, mrp_test_dmac,
-				     port->pvid, ENTRYTYPE_LOCKED);
 
 		lan_wr(MEP_MRP_INTR_ENA_TST_LOC_INTR_ENA_SET(0) |
 		       MEP_MRP_INTR_ENA_ITST_LOC_INTR_ENA_SET(0),

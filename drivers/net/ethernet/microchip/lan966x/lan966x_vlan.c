@@ -122,19 +122,25 @@ int lan966x_vlan_port_set_vid(struct lan966x_port *port, u16 vid,
 	struct lan966x *lan966x = port->lan966x;
 
 	/* Egress vlan classification */
-	if (untagged && port->vid != vid) {
-		if (port->vid) {
-			dev_err(lan966x->dev,
-				"Port already has a native VLAN: %d\n",
-				port->vid);
-			return -EBUSY;
+	if (untagged) {
+		if (port->vid != vid) {
+			if (port->vid) {
+				dev_err(lan966x->dev,
+					"Port already has a native VLAN: %d\n",
+					port->vid);
+				return -EBUSY;
+			}
+			port->vid = vid;
 		}
-		port->vid = vid;
+	} else if (port->vid == vid) {
+		port->vid = 0;
 	}
 
 	/* Default ingress vlan classification */
 	if (pvid)
 		port->pvid = vid;
+	else if (port->pvid == vid)
+		port->pvid = 0;
 
 	return 0;
 }
@@ -195,12 +201,6 @@ void lan966x_vlan_port_apply(struct lan966x_port *port)
 		ANA_VLAN_CFG_VLAN_POP_CNT,
 		lan966x, ANA_VLAN_CFG(port->chip_port));
 
-	lan_rmw(DEV_MAC_TAGS_CFG_VLAN_AWR_ENA_SET(port->vlan_aware) |
-		DEV_MAC_TAGS_CFG_VLAN_DBL_AWR_ENA_SET(port->vlan_aware),
-		DEV_MAC_TAGS_CFG_VLAN_AWR_ENA |
-		DEV_MAC_TAGS_CFG_VLAN_DBL_AWR_ENA,
-		lan966x, DEV_MAC_TAGS_CFG(port->chip_port));
-
 	/* Drop frames with multicast source address */
 	val = ANA_DROP_CFG_DROP_MC_SMAC_ENA_SET(1);
 	if (port->vlan_aware && !pvid)
@@ -213,8 +213,8 @@ void lan966x_vlan_port_apply(struct lan966x_port *port)
 
 	lan_wr(val, lan966x, ANA_DROP_CFG(port->chip_port));
 
-	/* Egress configuration (REW_TAG_CFG): VLAN tag type to 8021Q */
-	val = REW_TAG_CFG_TAG_TPID_CFG_SET(0);
+	/* Egress configuration (REW_TAG_CFG) */
+	val = REW_TAG_CFG_TAG_TPID_CFG_SET(3);
 	if (port->vlan_aware) {
 		if (port->vid)
 			/* Tag all frames except when VID == DEFAULT_VLAN */
@@ -228,20 +228,25 @@ void lan966x_vlan_port_apply(struct lan966x_port *port)
 		REW_TAG_CFG_TAG_TPID_CFG | REW_TAG_CFG_TAG_CFG,
 		lan966x, REW_TAG_CFG(port->chip_port));
 
-	/* Set default VLAN and tag type to 8021Q */
-	lan_rmw(REW_PORT_VLAN_CFG_PORT_TPID_SET(ETH_P_8021Q) |
+	/* Set default VLAN and port tag TPID */
+	lan_rmw(REW_PORT_VLAN_CFG_PORT_TPID_SET(ETH_P_8021AD) |
 		REW_PORT_VLAN_CFG_PORT_VID_SET(port->vid),
 		REW_PORT_VLAN_CFG_PORT_TPID |
 		REW_PORT_VLAN_CFG_PORT_VID,
 		lan966x, REW_PORT_VLAN_CFG(port->chip_port));
 }
 
-void lan966x_vlan_port_add_vlan(struct lan966x_port *port,
-				u16 vid,
-				bool pvid,
-				bool untagged)
+int lan966x_vlan_port_add_vlan(struct lan966x_port *port,
+			       u16 vid,
+			       bool pvid,
+			       bool untagged)
 {
 	struct lan966x *lan966x = port->lan966x;
+	int err;
+
+	err = lan966x_vlan_port_set_vid(port, vid, pvid, untagged);
+	if (err)
+		return err;
 
 	/* If the CPU(br) is already part of the vlan then add the fdb
 	 * entries in MAC table to copy the frames to the CPU(br).
@@ -254,9 +259,20 @@ void lan966x_vlan_port_add_vlan(struct lan966x_port *port,
 		lan966x_mdb_write_entries(lan966x, vid);
 	}
 
-	lan966x_vlan_port_set_vid(port, vid, pvid, untagged);
 	lan966x_vlan_port_add_vlan_mask(port, vid);
 	lan966x_vlan_port_apply(port);
+
+	return 0;
+}
+
+void lan966x_vlan_port_add_host_vlan(struct lan966x_port *port)
+{
+	lan966x_vlan_port_add_vlan_mask(port, HOST_PVID);
+}
+
+void lan966x_vlan_port_del_host_vlan(struct lan966x_port *port)
+{
+	lan966x_vlan_port_del_vlan_mask(port, HOST_PVID);
 }
 
 void lan966x_vlan_port_del_vlan(struct lan966x_port *port, u16 vid)

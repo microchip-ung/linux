@@ -284,6 +284,12 @@ static void sparx5_fdb_call_notifiers(enum switchdev_notifier_type type,
 	struct sparx5 *sparx5 = port->sparx5;
 	struct net_device *ndev;
 
+	/* VLAN-unaware bridge ports run with an internal PVID of 1. Report VID
+	 * 0 to the bridge so its FDB matches the VID it actually uses.
+	 */
+	if (!port->vlan_aware && vid == 1)
+		vid = 0;
+
 	info.addr = mac;
 	info.vid = vid;
 	info.offloaded = offloaded;

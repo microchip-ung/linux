@@ -2306,6 +2306,7 @@ static int sparx5_serdes_get_serdesmode(phy_interface_t portmode, int speed)
 	case PHY_INTERFACE_MODE_QSGMII:
 		return SPX5_SD_MODE_QSGMII;
 	case PHY_INTERFACE_MODE_10GBASER:
+	case PHY_INTERFACE_MODE_USXGMII:
 		return SPX5_SD_MODE_SFI;
 	case PHY_INTERFACE_MODE_10G_QXGMII:
 		return SPX5_SD_MODE_10G_QSXGMII;
@@ -2370,6 +2371,7 @@ static int sparx5_serdes_set_mode(struct phy *phy, enum phy_mode mode, int submo
 	case PHY_INTERFACE_MODE_QSGMII:
 	case PHY_INTERFACE_MODE_10GBASER:
 	case PHY_INTERFACE_MODE_10G_QXGMII:
+	case PHY_INTERFACE_MODE_USXGMII:
 		macro = phy_get_drvdata(phy);
 		macro->portmode = submode;
 		sparx5_serdes_config(macro);

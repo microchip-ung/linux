@@ -38,6 +38,102 @@ struct lan9645x_multi_rules {
 					     [LAN9645X_MAX_TYPES];
 };
 
+/* A tc chain template pins the port keyset selection for a (port, lookup) so
+ * that all filters added to the chain use a single, known keyset.
+ */
+struct lan9645x_tc_flower_template {
+	struct list_head list;		/* on lan9645x_port.tc_templates */
+	enum lan9645x_keyset_owner owner;
+	enum vcap_type vtype;
+	int lookup;
+	int cid;			/* chain id (template owner only) */
+	enum vcap_keyfield_set keyset;	/* keyset selected by the template */
+	u16 l3_proto;			/* protocol specified in the template */
+	struct lan9645x_port_keyset_snapshot orig; /* port cfg before template */
+};
+
+static const char *lan9645x_keyset_owner_name(enum lan9645x_keyset_owner owner)
+{
+	switch (owner) {
+	case LAN9645X_KEYSET_OWNER_TEMPLATE:
+		return "tc chain template";
+	case LAN9645X_KEYSET_OWNER_HSR:
+		return "HSR/PRP";
+	default:
+		return "N/A";
+	}
+}
+
+static struct lan9645x_tc_flower_template *
+lan9645x_keyset_find(struct lan9645x_port *port, enum vcap_type vtype,
+		     int lookup)
+{
+	struct lan9645x_tc_flower_template *e;
+
+	list_for_each_entry(e, &port->tc_templates, list)
+		if (e->vtype == vtype && e->lookup == lookup)
+			return e;
+	return NULL;
+}
+
+static struct lan9645x_tc_flower_template *
+__lan9645x_keyset_claim(struct lan9645x_port *port, enum vcap_type vtype,
+			int lookup, enum lan9645x_keyset_owner owner,
+			struct netlink_ext_ack *extack)
+{
+	struct lan9645x_tc_flower_template *e;
+
+	e = lan9645x_keyset_find(port, vtype, lookup);
+	if (e) {
+		NL_SET_ERR_MSG_FMT_MOD(extack,
+				       "port %d VCAP %s lookup %d keyset is controlled by %s",
+				       port->chip_port,
+				       vcap_type_name(port->lan9645x->vcap_ctrl, vtype),
+				       lookup,
+				       lan9645x_keyset_owner_name(e->owner));
+		return ERR_PTR(-EBUSY);
+	}
+
+	e = kzalloc(sizeof(*e), GFP_KERNEL);
+	if (!e)
+		return ERR_PTR(-ENOMEM);
+
+	e->owner = owner;
+	e->vtype = vtype;
+	e->lookup = lookup;
+	list_add_tail(&e->list, &port->tc_templates);
+	return e;
+}
+
+int lan9645x_vcap_keyset_claim(struct lan9645x_port *port, enum vcap_type vtype,
+			       int lookup, enum lan9645x_keyset_owner owner,
+			       struct netlink_ext_ack *extack)
+{
+	struct lan9645x_tc_flower_template *e;
+
+	e = __lan9645x_keyset_claim(port, vtype, lookup, owner, extack);
+	return IS_ERR(e) ? PTR_ERR(e) : 0;
+}
+
+void lan9645x_vcap_keyset_release(struct lan9645x_port *port,
+				  enum vcap_type vtype, int lookup,
+				  enum lan9645x_keyset_owner owner)
+{
+	struct lan9645x_tc_flower_template *e;
+
+	e = lan9645x_keyset_find(port, vtype, lookup);
+	if (e && e->owner == owner) {
+		list_del(&e->list);
+		kfree(e);
+	}
+}
+
+bool lan9645x_vcap_keyset_claimed(struct lan9645x_port *port,
+				  enum vcap_type vtype, int lookup)
+{
+	return lan9645x_keyset_find(port, vtype, lookup);
+}
+
 /* ISDXes are used by several features such as:
  *
  * - HSR/PRP (stream table and traffic classification using vcap)
@@ -701,7 +797,7 @@ static void lan9645x_tc_flower_merge_types(struct lan9645x *lan9645x,
 {
 	struct vcap_control *vctrl = lan9645x->vcap_ctrl;
 	int num_types_total, num_types_matched, rsize;
-	const struct vcap_info *vinfo;
+
 	/* multi now contains, for each keyset type size, all the keyset types
 	 * which contain all the keyfields passed from tc dissectors.
 	 *
@@ -743,8 +839,6 @@ static void lan9645x_tc_flower_merge_types(struct lan9645x *lan9645x,
 	 * We could check this by introducing additional state to
 	 * struct lan9645x_polymorphic_rule
 	 */
-
-	vinfo = &lan9645x->vcap_ctrl->vcaps[admin->vtype];
 
 	for (rsize = 1; rsize < LAN9645X_MAX_RULE_SIZE; ++rsize) {
 		num_types_total =
@@ -1407,6 +1501,13 @@ int lan9645x_tc_flower_del(struct lan9645x_port *p, struct flow_cls_offload *f,
 	ndev = lan9645x_port_to_ndev(p);
 	vctrl = p->lan9645x->vcap_ctrl;
 
+	/* If this filter enabled a lookup path, disable it. Otherwise -ENOENT
+	 * and we fall through to delete the backing rule(s).
+	 */
+	if (lan9645x_tc_enable_lookups(p, 0, 0, f->cookie, f->common.extack,
+				       false) == 0)
+		return 0;
+
 	admin = vcap_find_admin(vctrl, f->common.chain_index);
 	if (!admin) {
 		NL_SET_ERR_MSG_MOD(f->common.extack, "Invalid chain");
@@ -1802,6 +1903,7 @@ static int lan9645x_tc_handle_police(struct lan9645x_act_state *s,
 	struct lan9645x *lan9645x = p->lan9645x;
 	struct lan9645x_policer pol = {};
 	int err = 0;
+	int polix;
 
 	if (admin->vtype == VCAP_TYPE_IS2 &&
 	    vcap_chain_id_to_lookup(admin, cid) != 0) {
@@ -1816,11 +1918,13 @@ static int lan9645x_tc_handle_police(struct lan9645x_act_state *s,
 		return -EOPNOTSUPP;
 	}
 
-	s->pol_idx = lan9645x_qos_polix_alloc(lan9645x);
-	if (s->pol_idx < 0) {
+	polix = lan9645x_qos_polix_alloc(lan9645x);
+	if (polix < 0) {
 		NL_SET_ERR_MSG_MOD(extack, "Out of policer resources");
 		return -ENOSPC;
 	}
+
+	s->pol_idx = polix;
 
 	dev_dbg(lan9645x->dev,
 		"policer idx alloc id=%d port=%u rate_bts_ps=%llu burst=%u rate_pkt_ps=%llu burst_pkt=%llu exceed.act_id=%d exceed.extval=%u notexceed.act_id=%d notexceed.extval=%u ",
@@ -2142,6 +2246,284 @@ static void lan9645x_tc_action_state_cleanup(struct lan9645x *lan9645x,
 		lan9645x_sgi_put(lan9645x, s->sgi_ix);
 }
 
+/* Remove keys that are implied by the frame type the keyset encodes, so that a
+ * minimal keyset can be selected and the rule does not carry contradictory type
+ * bits. Only IS2 needs this (matches the lan966x behaviour).
+ */
+static void lan9645x_tc_flower_simplify_rule(struct vcap_admin *admin,
+					     struct vcap_rule *vrule,
+					     u16 l3_proto)
+{
+	switch (admin->vtype) {
+	case VCAP_TYPE_IS2:
+		switch (l3_proto) {
+		case ETH_P_IP:
+		case ETH_P_IPV6:
+			vcap_rule_rem_key(vrule, VCAP_KF_IP4_IS);
+			break;
+		default:
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+/* If a chain template pins the keyset for the rule's chain, apply it to the rule
+ * (bypassing the dynamic keyset selection and the polymorphic merge).
+ * Returns: 1 if a template was applied, 0 if no template owns this chain, or a
+ * negative errno if a template exists but the filter's declared keys do not fit
+ * its keyset.
+ */
+static int lan9645x_tc_flower_use_template(struct lan9645x_port *port,
+					   struct flow_cls_offload *fco,
+					   struct vcap_admin *admin,
+					   struct vcap_rule *vrule)
+{
+	struct lan9645x_tc_flower_template *ftp;
+	struct vcap_keyset_list matches = {};
+	enum vcap_keyfield_set keysets[10];
+	bool fits = false;
+	int i;
+
+	list_for_each_entry(ftp, &port->tc_templates, list) {
+		if (ftp->owner != LAN9645X_KEYSET_OWNER_TEMPLATE ||
+		    ftp->cid != fco->common.chain_index)
+			continue;
+
+		/* Order matters: simplify first so the fit check sees the same
+		 * keys the template selection did.
+		 */
+		lan9645x_tc_flower_simplify_rule(admin, vrule, ftp->l3_proto);
+
+		/* The template pins a single keyset. Reject a filter whose keys
+		 * cannot be represented in that keyset instead of silently
+		 * folding/dropping keys (e.g. matching only one of a declared
+		 * SMAC/DMAC or SIP/DIP pair): vcap_rule_find_keysets() lists the
+		 * keysets that hold ALL the rule's keys; the template's keyset
+		 * must be one of them.
+		 */
+		matches.keysets = keysets;
+		matches.max = ARRAY_SIZE(keysets);
+		if (vcap_rule_find_keysets(vrule, &matches))
+			for (i = 0; i < matches.cnt; ++i)
+				if (matches.keysets[i] == ftp->keyset) {
+					fits = true;
+					break;
+				}
+
+		if (!fits) {
+			NL_SET_ERR_MSG_FMT_MOD(fco->common.extack,
+					       "filter keys do not fit the chain template keyset %s",
+					       lan9645x_vcap_keyset_name(port->lan9645x,
+									 ftp->keyset));
+			return -EINVAL;
+		}
+
+		vcap_set_rule_set_keyset(vrule, ftp->keyset);
+		return 1;
+	}
+	return 0;
+}
+
+static int lan9645x_tc_flower_template_create(struct lan9645x_port *port,
+					      struct flow_cls_offload *fco,
+					      struct vcap_admin *admin)
+{
+	struct vcap_tc_flower_parse_usage state = {
+		.fco = fco,
+		.l3_proto = ETH_P_ALL,
+		.admin = admin,
+	};
+	struct net_device *ndev = lan9645x_port_to_ndev(port);
+	struct lan9645x *lan9645x = port->lan9645x;
+	struct lan9645x_tc_flower_template *ftp;
+	struct vcap_keyset_list kslist = {};
+	enum vcap_keyfield_set keysets[10];
+	struct vcap_control *vctrl;
+	struct vcap_rule *vrule;
+	int err, lookup;
+
+	if (admin->vtype == VCAP_TYPE_ES0) {
+		NL_SET_ERR_MSG_MOD(fco->common.extack,
+				   "VCAP does not support templates");
+		return -EINVAL;
+	}
+
+	if (vcap_admin_rule_count(admin, fco->common.chain_index)) {
+		NL_SET_ERR_MSG_MOD(fco->common.extack,
+				   "Filters are already present");
+		return -EBUSY;
+	}
+
+	/* Take ownership of the (port, lookup) keyset selection. Fails if a
+	 * sibling template or a system feature (HSR/PRP) already controls it.
+	 */
+	lookup = vcap_chain_id_to_lookup(admin, fco->common.chain_index);
+	ftp = __lan9645x_keyset_claim(port, admin->vtype, lookup,
+				      LAN9645X_KEYSET_OWNER_TEMPLATE,
+				      fco->common.extack);
+	if (IS_ERR(ftp))
+		return PTR_ERR(ftp);
+
+	ftp->cid = fco->common.chain_index;
+	ftp->keyset = VCAP_KFS_NO_VALUE;
+
+	vctrl = lan9645x->vcap_ctrl;
+	vrule = vcap_alloc_rule(vctrl, ndev, fco->common.chain_index,
+				VCAP_USER_TC, fco->common.prio, 0);
+	if (IS_ERR(vrule)) {
+		err = PTR_ERR(vrule);
+		goto out;
+	}
+
+	state.vrule = vrule;
+	state.frule = flow_cls_offload_flow_rule(fco);
+	err = lan9645x_tc_flower_use_dissectors(&state, admin, vrule);
+	if (err)
+		goto out;
+
+	ftp->l3_proto = state.l3_proto;
+
+	lan9645x_tc_flower_simplify_rule(admin, vrule, state.l3_proto);
+
+	/* Find the keysets the rule can use */
+	kslist.keysets = keysets;
+	kslist.max = ARRAY_SIZE(keysets);
+	if (!vcap_rule_find_keysets(vrule, &kslist)) {
+		NL_SET_ERR_MSG_MOD(fco->common.extack,
+				   "Could not find a suitable keyset");
+		err = -ENOENT;
+		goto out;
+	}
+
+	ftp->keyset = vcap_select_min_rule_keyset(vctrl, admin->vtype, &kslist);
+
+	/* Snapshot the current port keyset selection (restored verbatim on
+	 * destroy), then program the template's keyset.
+	 */
+	lan9645x_vcap_save_port_keyset(ndev, admin, fco->common.chain_index,
+				       &ftp->orig);
+	lan9645x_vcap_set_port_keyset(ndev, admin, fco->common.chain_index,
+				      state.l3_proto, ftp->keyset);
+
+	vcap_free_rule(vrule);
+	return 0;
+
+out:
+	vcap_free_rule(vrule);
+	/* Drop the claim taken above (this also frees ftp). */
+	lan9645x_vcap_keyset_release(port, admin->vtype, lookup,
+				     LAN9645X_KEYSET_OWNER_TEMPLATE);
+	return err;
+}
+
+static int lan9645x_tc_flower_template_destroy(struct lan9645x_port *port,
+					       struct flow_cls_offload *fco,
+					       struct vcap_admin *admin)
+{
+	struct net_device *ndev = lan9645x_port_to_ndev(port);
+	struct lan9645x_tc_flower_template *ftp, *tmp;
+	int err = -ENOENT;
+
+	/* Rules using the template are removed by the tc framework first */
+	list_for_each_entry_safe(ftp, tmp, &port->tc_templates, list) {
+		if (ftp->owner != LAN9645X_KEYSET_OWNER_TEMPLATE ||
+		    ftp->cid != fco->common.chain_index)
+			continue;
+
+		lan9645x_vcap_restore_port_keyset(ndev, admin,
+						  fco->common.chain_index,
+						  &ftp->orig);
+		lan9645x_vcap_keyset_release(port, ftp->vtype, ftp->lookup,
+					     LAN9645X_KEYSET_OWNER_TEMPLATE);
+		err = 0;
+		break;
+	}
+	return err;
+}
+
+int lan9645x_tc_flower_template_add(struct lan9645x_port *p,
+				    struct flow_cls_offload *f)
+{
+	struct vcap_admin *admin;
+
+	admin = vcap_find_admin(p->lan9645x->vcap_ctrl, f->common.chain_index);
+	if (!admin) {
+		NL_SET_ERR_MSG_MOD(f->common.extack, "Invalid chain");
+		return -EINVAL;
+	}
+
+	return lan9645x_tc_flower_template_create(p, f, admin);
+}
+
+int lan9645x_tc_flower_template_del(struct lan9645x_port *p,
+				    struct flow_cls_offload *f)
+{
+	struct vcap_admin *admin;
+
+	admin = vcap_find_admin(p->lan9645x->vcap_ctrl, f->common.chain_index);
+	if (!admin) {
+		NL_SET_ERR_MSG_MOD(f->common.extack, "Invalid chain");
+		return -EINVAL;
+	}
+
+	return lan9645x_tc_flower_template_destroy(p, f, admin);
+}
+
+/* Free any templates left on a port at teardown. The hardware is going away,
+ * so there is no need to restore the port keyset selection.
+ */
+void lan9645x_tc_flower_templates_free(struct lan9645x_port *p)
+{
+	struct lan9645x_tc_flower_template *ftp, *tmp;
+
+	list_for_each_entry_safe(ftp, tmp, &p->tc_templates, list) {
+		list_del(&ftp->list);
+		kfree(ftp);
+	}
+}
+
+/* A no-key flower with a single goto is equivalent to a matchall goto.
+ * cls_flower always reports CONTROL and BASIC in used_keys, so a real "no
+ * keys" filter is one with no other dissector and with empty CONTROL/BASIC
+ * masks.
+ */
+static bool lan9645x_tc_flower_is_goto_only(struct flow_rule *frule,
+					    int *to_cid)
+{
+	struct flow_match_control control;
+	struct flow_match_basic basic;
+
+	if (!frule->match.dissector)
+		return false;
+
+	if (frule->match.dissector->used_keys &
+	    ~(BIT_ULL(FLOW_DISSECTOR_KEY_CONTROL) |
+	      BIT_ULL(FLOW_DISSECTOR_KEY_BASIC)))
+		return false;
+
+	if (flow_rule_match_key(frule, FLOW_DISSECTOR_KEY_BASIC)) {
+		flow_rule_match_basic(frule, &basic);
+		if (basic.mask->n_proto || basic.mask->ip_proto)
+			return false;
+	}
+
+	if (flow_rule_match_key(frule, FLOW_DISSECTOR_KEY_CONTROL)) {
+		flow_rule_match_control(frule, &control);
+		if (control.mask->flags || control.mask->addr_type)
+			return false;
+	}
+
+	if (!(flow_offload_has_one_action(&frule->action) &&
+	      frule->action.entries[0].id == FLOW_ACTION_GOTO))
+		return false;
+
+	*to_cid = frule->action.entries[0].chain_index;
+	return true;
+}
+
 int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,
 			   bool ingress)
 {
@@ -2156,7 +2538,8 @@ int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,
 	struct vcap_admin *admin;
 	struct vcap_rule *vrule;
 	struct net_device *ndev;
-	int err, lookup, fcid;
+	struct flow_rule *frule;
+	int err, fcid, to_cid;
 
 	err = lan9645x_tc_flower_action_check(lan9645x->vcap_ctrl, f, ingress);
 	if (err)
@@ -2164,15 +2547,24 @@ int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,
 
 	fcid = f->common.chain_index;
 	extack = f->common.extack;
+	frule = flow_cls_offload_flow_rule(f);
 
-	/* TODO: handle the empty flower with goto as matchall goto */
+	/* Enabling a lookup path only makes sense between the first chains of
+	 * two lookups, so both chain ids must be a multiple of the per-lookup
+	 * chain range. Any other chain falls through to the rule-writing path.
+	 */
+	if (f->common.protocol == htons(ETH_P_ALL) &&
+	    lan9645x_tc_flower_is_goto_only(frule, &to_cid) &&
+	    !(fcid % VCAP_CID_LOOKUP_SIZE) && !(to_cid % VCAP_CID_LOOKUP_SIZE))
+		return lan9645x_tc_enable_lookups(p, fcid, to_cid, f->cookie,
+						  extack, true);
+
 	admin = vcap_find_admin(lan9645x->vcap_ctrl, fcid);
 	if (!admin) {
 		NL_SET_ERR_MSG_MOD(extack, "Invalid chain");
 		return -EINVAL;
 	}
 
-	lookup = vcap_chain_id_to_lookup(admin, fcid);
 	state.admin = admin;
 	ndev = lan9645x_port_to_ndev(p);
 
@@ -2183,7 +2575,7 @@ int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,
 
 	vrule->cookie = f->cookie;
 	state.vrule = vrule;
-	state.frule = flow_cls_offload_flow_rule(f);
+	state.frule = frule;
 
 	/* Parse dissectors/keys given by user */
 	err = lan9645x_tc_flower_use_dissectors(&state, admin, vrule);
@@ -2204,13 +2596,35 @@ int lan9645x_tc_flower_add(struct lan9645x_port *p, struct flow_cls_offload *f,
 	if (err)
 		goto out;
 
-	err = lan9645x_tc_select_protocol_keyset(p, vrule, admin, &state,
-						 &multi);
-	if (err) {
-		dev_dbg(lan9645x->dev, "err: %d", err);
-		NL_SET_ERR_MSG_MOD(extack,
-				   "No matching port keyset for filter protocol and keys");
+	err = lan9645x_tc_flower_use_template(p, f, admin, vrule);
+	if (err < 0)
 		goto out;
+	if (err > 0) {
+		/* A template pins a single keyset: add exactly one rule and
+		 * skip the dynamic keyset selection / polymorphic merge.
+		 */
+		multi.rule[0][0].kset = vrule->keyset;
+		multi.rule[0][0].tid = (u8)-1;
+		multi.rule[0][0].tid_mask = 0xff;
+	} else if (lan9645x_vcap_keyset_claimed(p, admin->vtype,
+						vcap_chain_id_to_lookup(admin, fcid))) {
+		/* The lookup's keyset selection is pinned by a template on
+		 * another chain or by a system feature (HSR/PRP); a
+		 * dynamically-keyed filter here would be corrupted by it.
+		 */
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Lookup keyset is controlled by a template on another chain");
+		err = -EBUSY;
+		goto out;
+	} else {
+		err = lan9645x_tc_select_protocol_keyset(p, vrule, admin, &state,
+							 &multi);
+		if (err) {
+			dev_dbg(lan9645x->dev, "err: %d", err);
+			NL_SET_ERR_MSG_MOD(extack,
+					   "No matching port keyset for filter protocol and keys");
+			goto out;
+		}
 	}
 
 	err = lan9645x_tc_add_remaining_rules(p, f, vrule, admin, &multi);

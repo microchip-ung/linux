@@ -33,6 +33,12 @@
 
 #include "lan969x.h"
 
+/* Number of IS2 rules needed to cover the interlink SMAC-kill filter: sparx5
+ * selects the IS2 keyset by frame type, so each keyset that can carry L2_SMAC
+ * needs its own rule. See lan969x_rb_smac_kill_add().
+ */
+#define LAN969X_RB_SMAC_KILL_CNT 3
+
 #define RB_NETID 5 /* Default netid. */
 
 /* Table timeouts. */
@@ -199,6 +205,11 @@ struct lan969x_redbox {
 
 	 /* Taxi instance in hardware, maps 1:1 to redbox instance. */
 	u8 taxi;
+
+	/* IS2 rule ids of the interlink SMAC-kill rules, 0 when not installed.
+	 * See lan969x_rb_smac_kill_add().
+	 */
+	u32 smac_kill_id[LAN969X_RB_SMAC_KILL_CNT];
 };
 
 static struct lan969x_redbox_params hsr_san_params[LAN969X_RB_PORT_MAX] = {
@@ -208,7 +219,7 @@ static struct lan969x_redbox_params hsr_san_params[LAN969X_RB_PORT_MAX] = {
 		.net_id    = RB_NETID,
 		.tag       = RB_TAG_HSR,
 		.host_type = RB_HT_DAN,
-		.filter    = RB_FLT_NOT_HSR,
+		.filter    = RB_FLT_REDIR,
 		/* Supervision frames are subject to forwarding. Copy to CPU
 		 * also.
 		 */
@@ -229,7 +240,7 @@ static struct lan969x_redbox_params hsr_san_params[LAN969X_RB_PORT_MAX] = {
 		.net_id    = RB_NETID,
 		.tag       = RB_TAG_HSR,
 		.host_type = RB_HT_DAN,
-		.filter    = RB_FLT_NOT_HSR,
+		.filter    = RB_FLT_REDIR,
 		/* Supervision frames are subject to forwarding. Copy to CPU
 		 * also.
 		 */
@@ -272,7 +283,7 @@ static struct lan969x_redbox_params danh_params[LAN969X_RB_PORT_MAX] = {
 		.net_id    = RB_NETID,
 		.tag       = RB_TAG_HSR,
 		.host_type = RB_HT_DAN,
-		.filter    = RB_FLT_NOT_HSR,
+		.filter    = RB_FLT_REDIR,
 		/* Supervision frames are subject to forwarding. Copy to CPU
 		 * also.
 		 */
@@ -292,7 +303,7 @@ static struct lan969x_redbox_params danh_params[LAN969X_RB_PORT_MAX] = {
 		.net_id    = RB_NETID,
 		.tag       = RB_TAG_HSR,
 		.host_type = RB_HT_DAN,
-		.filter    = RB_FLT_NOT_HSR,
+		.filter    = RB_FLT_REDIR,
 		/* Supervision frames are subject to forwarding. Copy to CPU
 		 * also.
 		 */
@@ -368,11 +379,13 @@ static struct lan969x_redbox_params danp_params[LAN969X_RB_PORT_MAX] = {
 		 */
 		.spv_sel   = RB_FWD_SEL_REDIR_CPU,
 		.masks     = {
-			/* CPU injected frames from node listed as local, and to
-			 * unknown destinations, are allowed on AB.
+			/* CPU injected frames from node listed as local, to a
+			 * discovered node, and to unknown destinations, are
+			 * allowed on AB.
 			 */
 			[LOCAL_SRC_FWD_MASK] = RB_FWD_AB,
 			[FLD_DST_FWD_MASK]   = RB_FWD_AB,
+			[NODE_DST_FWD_MASK]  = RB_FWD_AB,
 		}
 	},
 };
@@ -964,17 +977,17 @@ static const char *lan969x_rb_mode_to_str(struct lan969x_redbox *rb)
 	}
 }
 
-static void lan969x_rb_htable_print(struct sparx5 *sparx5)
+static void lan969x_rb_htable_print(struct seq_file *s, struct sparx5 *sparx5)
 {
 	if (debugfs_redbox_idx >= 5) {
 		pr_err("Invalid redbox index: %u", debugfs_redbox_idx);
 		return;
 	}
 
-	pr_info("                                   Rx                    Last Seen             Rx Wrong LAN\n");
-	pr_info("                                   --------------------- --------------------- ---------------------\n");
-	pr_info("Inst MAC Address       Node Type   Port A     Port B     Port A     Port B     Port A     Port B\n");
-	pr_info("---- ----------------- ----------- ---------- ---------- ---------- ---------- ---------- ----------\n");
+	seq_puts(s, "                                   Rx                    Last Seen             Rx Wrong LAN\n");
+	seq_puts(s, "                                   --------------------- --------------------- ---------------------\n");
+	seq_puts(s, "Inst MAC Address       Node Type   Port A     Port B     Port A     Port B     Port A     Port B\n");
+	seq_puts(s, "---- ----------------- ----------- ---------- ---------- ---------- ---------- ---------- ----------\n");
 
 	for (int j = 0; j < RB_HTABLE_CNT; j++) {
 		struct lan969x_rb_htable_node node = { 0 };
@@ -986,7 +999,7 @@ static void lan969x_rb_htable_print(struct sparx5 *sparx5)
 		struct lan969x_rb_htable_port *port_a = &node.ports[LAN969X_RB_LREA];
 		struct lan969x_rb_htable_port *port_b = &node.ports[LAN969X_RB_LREB];
 
-		pr_info("%4u %pM %-11s %10u %10u %10u %10u %10u %10u\n\n",
+		seq_printf(s, "%4u %pM %-11s %10u %10u %10u %10u %10u %10u\n\n",
 			debugfs_redbox_idx,
 			node.mac,
 			lan969x_rb_type_to_str(node.type),
@@ -1060,17 +1073,17 @@ static int lan969x_rb_dtable_read(struct sparx5 *sparx5,
 	return 0;
 }
 
-static void lan969x_rb_dtable_print(struct sparx5 *sparx5)
+static void lan969x_rb_dtable_print(struct seq_file *s, struct sparx5 *sparx5)
 {
 	if (debugfs_redbox_idx >= 5) {
 		pr_err("Invalid redbox index: %u", debugfs_redbox_idx);
 		return;
 	}
 
-	pr_info("                                   Discard count\n");
-	pr_info("                                   --------------------------------\n");
-	pr_info("Inst MAC Address       Seqno Age   Port A     Port B     Port C    \n");
-	pr_info("---- ----------------- ----- ----- ---------- ---------- ----------\n");
+	seq_puts(s, "                                   Discard count\n");
+	seq_puts(s, "                                   --------------------------------\n");
+	seq_puts(s, "Inst MAC Address       Seqno Age   Port A     Port B     Port C    \n");
+	seq_puts(s, "---- ----------------- ----- ----- ---------- ---------- ----------\n");
 
 	for (int j = 0; j < RB_DTABLE_CNT; j++) {
 		struct lan969x_rb_dtable_node node = { 0 };
@@ -1079,7 +1092,7 @@ static void lan969x_rb_dtable_print(struct sparx5 *sparx5)
 					   j))
 			continue;
 
-		pr_info("%4u %pM %5u %5u %10u %10u %10u\n\n",
+		seq_printf(s, "%4u %pM %5u %5u %10u %10u %10u\n\n",
 			debugfs_redbox_idx,
 			node.mac,
 			node.seq_no,
@@ -1107,21 +1120,21 @@ static bool lan969x_rb_has_warnings(struct sparx5 *sparx5, u8 rb)
 	return false;
 }
 
-static void lan969x_rb_print(struct sparx5 *sparx5)
+static void lan969x_rb_print(struct seq_file *s, struct sparx5 *sparx5)
 {
-	pr_info("Inst Oper. State Taxi Mode    Port A     Port B     Port C     Warnings\n");
-	pr_info("---- ----------- ---- ------- ---------- ---------- ---------- --------\n");
+	seq_puts(s, "Inst Oper. State Taxi Mode    Port A     Port B     Port C     Warnings\n");
+	seq_puts(s, "---- ----------- ---- ------- ---------- ---------- ---------- --------\n");
 
 	for (int i = 0; i < LAN969X_RB_REDBOX_CNT; i++) {
 		struct lan969x_redbox *rb = &redboxes[i];
 		u8 taxi = rb->taxi;
 
 		if (!rb->hsr_master) {
-			pr_info("%4u %-11s", i, "Inactive");
+			seq_printf(s, "%4u %-11s", i, "Inactive");
 			continue;
 		}
 
-		pr_info("%4u %-11s %4u %7s %-10s %-10s %-10s %-8s\n",
+		seq_printf(s, "%4u %-11s %4u %7s %-10s %-10s %-10s %-8s\n",
 			i,
 			"Active",
 			taxi,
@@ -1142,17 +1155,17 @@ static void lan969x_rb_stats_read(struct sparx5 *sparx5, u32 rb, u32 idx,
 	stats->rx_unt = spx5_rd(sparx5, RB_CNT_RX_UNT(rb, idx));
 }
 
-static void lan969x_rb_stats_print(struct sparx5 *sparx5)
+static void lan969x_rb_stats_print(struct seq_file *s, struct sparx5 *sparx5)
 {
 	if (debugfs_redbox_idx >= LAN969X_RB_REDBOX_CNT) {
 		pr_err("Invalid redbox index: %u", debugfs_redbox_idx);
 		return;
 	}
 
-	pr_info("     Tx Tagged     Tx Untagged   Rx Tagged     Rx Untagged  \n");
-	pr_info("     ------------- ------------- ------------- -------------\n");
-	pr_info("Inst A      B      A      B      A      B      A      B     \n");
-	pr_info("---- ------ ------ ------ ------ ------ ------ ------ ------\n");
+	seq_puts(s, "     Tx Tagged     Tx Untagged   Rx Tagged     Rx Untagged  \n");
+	seq_puts(s, "     ------------- ------------- ------------- -------------\n");
+	seq_puts(s, "Inst A      B      A      B      A      B      A      B     \n");
+	seq_puts(s, "---- ------ ------ ------ ------ ------ ------ ------ ------\n");
 
 	for (int i = 0; i < LAN969X_RB_REDBOX_CNT; i++) {
 		struct lan969x_rb_stats stats[2] = { 0 };
@@ -1160,7 +1173,7 @@ static void lan969x_rb_stats_print(struct sparx5 *sparx5)
 		for (int j = 0; j < 2; j++)
 			lan969x_rb_stats_read(sparx5, i, j, &stats[j]);
 
-		pr_info("%4u %6u %6u %6u %6u %6u %6u %6u %6u\n\n",
+		seq_printf(s, "%4u %6u %6u %6u %6u %6u %6u %6u %6u\n\n",
 			i,
 			stats[0].tx_tag,
 			stats[1].tx_tag,
@@ -1177,7 +1190,7 @@ static int lan969x_rb_show(struct seq_file *s, void *unused)
 {
 	struct sparx5 *sparx5 = s->private;
 
-	lan969x_rb_print(sparx5);
+	lan969x_rb_print(s, sparx5);
 
 	return 0;
 }
@@ -1187,7 +1200,7 @@ static int lan969x_rb_htable_show(struct seq_file *s, void *unused)
 {
 	struct sparx5 *sparx5 = s->private;
 
-	lan969x_rb_htable_print(sparx5);
+	lan969x_rb_htable_print(s, sparx5);
 
 	return 0;
 }
@@ -1197,7 +1210,7 @@ static int lan969x_rb_dtable_show(struct seq_file *s, void *unused)
 {
 	struct sparx5 *sparx5 = s->private;
 
-	lan969x_rb_dtable_print(sparx5);
+	lan969x_rb_dtable_print(s, sparx5);
 
 	return 0;
 }
@@ -1207,7 +1220,7 @@ static int lan969x_rb_stats_show(struct seq_file *s, void *unused)
 {
 	struct sparx5 *sparx5 = s->private;
 
-	lan969x_rb_stats_print(sparx5);
+	lan969x_rb_stats_print(s, sparx5);
 
 	return 0;
 }
@@ -1229,6 +1242,205 @@ void lan969x_rb_debugfs(struct sparx5 *sparx5)
 
 	debugfs_create_file("redbox_stats", 0444, sparx5->debugfs_root, sparx5,
 			    &lan969x_rb_stats_fops);
+}
+
+/* Move one redbox port into vid, or back to the host-mode default.
+ *
+ * Membership must be set before the pvid change: ingress VLAN membership
+ * filtering is on for all front ports, so a frame classified to a VID the port
+ * is not a member of is dropped. dev_addr and the synced multicast addresses
+ * are locked and keyed on pvid, so they have to be moved across the change or
+ * they strand in the old FID for good; __dev_mc_sync() alone re-learns nothing,
+ * as it skips addresses already flagged synced. port->vid is left alone to keep
+ * egress untagged.
+ */
+static void lan969x_rb_port_pvid_set(struct sparx5_port *port, u16 vid)
+{
+	struct sparx5 *sparx5 = port->sparx5;
+
+	__dev_mc_unsync(port->ndev, sparx5_mc_unsync);
+	sparx5_mact_forget(sparx5, port->ndev->dev_addr, port->pvid);
+
+	port->pvid = vid;
+	sparx5_vlan_port_setup(sparx5, port->portno);
+
+	sparx5_mact_learn(sparx5, sparx5_get_pgid(sparx5, PGID_CPU),
+			  port->ndev->dev_addr, port->pvid);
+
+	__dev_mc_sync(port->ndev, sparx5_mc_sync, sparx5_mc_unsync);
+}
+
+static int lan969x_rb_port_vlan_add(struct sparx5_port *port, u16 vid)
+{
+	struct sparx5 *sparx5 = port->sparx5;
+	int err;
+
+	set_bit(port->portno, sparx5->vlan_mask[vid]);
+
+	err = sparx5_vlant_set_mask(sparx5, vid);
+	if (err)
+		return err;
+
+	lan969x_rb_port_pvid_set(port, vid);
+
+	return 0;
+}
+
+static void lan969x_rb_port_vlan_del(struct sparx5_port *port, u16 vid)
+{
+	struct sparx5 *sparx5 = port->sparx5;
+
+	lan969x_rb_port_pvid_set(port, NULL_VID);
+
+	clear_bit(port->portno, sparx5->vlan_mask[vid]);
+
+	sparx5_vlant_set_mask(sparx5, vid);
+}
+
+static u16 lan969x_rb_vid(struct lan969x_redbox *redbox)
+{
+	return VLAN_N_VID - 1 - redbox->taxi;
+}
+
+static void lan969x_rb_vlan_del(struct lan969x_redbox *redbox)
+{
+	struct sparx5 *sparx5 = redbox->ports[LAN969X_RB_LREA]->sparx5;
+	u16 vid = lan969x_rb_vid(redbox);
+	u8 broadcast[ETH_ALEN];
+
+	eth_broadcast_addr(broadcast);
+
+	sparx5_mact_forget(sparx5, broadcast, vid);
+
+	for (int i = 0; i < LAN969X_RB_PORT_MAX; i++)
+		if (lan969x_rb_has_port(redbox, i))
+			lan969x_rb_port_vlan_del(redbox->ports[i], vid);
+}
+
+/* The {vid, bcast} -> PGID_BCAST row is what lets a SAN broadcast reach the
+ * ring: PGID_BCAST carries lrea and lrec, and is the only flood pgid with CPU
+ * copy enabled.
+ */
+static int lan969x_rb_vlan_add(struct lan969x_redbox *redbox)
+{
+	struct sparx5 *sparx5 = redbox->ports[LAN969X_RB_LREA]->sparx5;
+	u16 vid = lan969x_rb_vid(redbox);
+	u8 broadcast[ETH_ALEN];
+	int err;
+
+	eth_broadcast_addr(broadcast);
+
+	for (int i = 0; i < LAN969X_RB_PORT_MAX; i++) {
+		if (!lan969x_rb_has_port(redbox, i))
+			continue;
+
+		err = lan969x_rb_port_vlan_add(redbox->ports[i], vid);
+		if (err)
+			goto err_vlan_del;
+	}
+
+	err = sparx5_mact_learn(sparx5,
+				sparx5_get_pgid(sparx5, PGID_BCAST),
+				broadcast, vid);
+	if (err)
+		goto err_vlan_del;
+
+	return 0;
+
+err_vlan_del:
+	lan969x_rb_vlan_del(redbox);
+
+	return err;
+}
+
+static const enum vcap_keyfield_set
+lan969x_rb_smac_kill_keysets[LAN969X_RB_SMAC_KILL_CNT] = {
+	VCAP_KFS_MAC_ETYPE,
+	VCAP_KFS_ARP,
+	VCAP_KFS_IP_7TUPLE,
+};
+
+static void lan969x_rb_smac_kill_del(struct lan969x_redbox *redbox)
+{
+	struct sparx5_port *port = redbox->ports[LAN969X_RB_LREC];
+	struct vcap_control *vctrl = port->sparx5->vcap_ctrl;
+
+	for (int i = 0; i < LAN969X_RB_SMAC_KILL_CNT; i++) {
+		if (!redbox->smac_kill_id[i])
+			continue;
+
+		vcap_del_rule(vctrl, port->ndev, redbox->smac_kill_id[i]);
+
+		redbox->smac_kill_id[i] = 0;
+	}
+
+	sparx5_vcap_is2_port_ipv4_mac_etype(port->sparx5, port->portno, false);
+}
+
+/* Drop frames arriving on the interlink carrying the redbox's own MAC as SMAC:
+ * our own traffic looping back in. This cannot be done with the redbox masks,
+ * because hsr_san_params[LREC].LOCAL_SRC_FWD_MASK must stay RB_FWD_AB for
+ * CPU-originated frames, which are indistinguishable there. lan9645x does the
+ * same in lan9645x_vcap_s2_hsr_smac_kill().
+ *
+ * One rule per keyset, because sparx5_vcap_is2_port_key_selection() picks the
+ * keyset by frame type: MAC_ETYPE for non-IP, ARP for ARP, IP_7TUPLE for IPv6.
+ * IPv4 would land in ip4_tcp_udp / ip4_other, which have no L2_SMAC field at
+ * all, so lan969x_rb_smac_kill_add() also points IPv4 at MAC_ETYPE for this
+ * port. The ingress port mask comes from the ndev via
+ * sparx5_vcap_ingress_add_default_fields().
+ */
+static int lan969x_rb_smac_kill_add(struct lan969x_redbox *redbox)
+{
+	struct sparx5_port *port = redbox->ports[LAN969X_RB_LREC];
+	struct sparx5 *sparx5 = port->sparx5;
+	struct vcap_u48_key smac = {};
+	struct vcap_rule *vrule;
+	int err;
+
+	/* VCAP keys are in reverse byte order; memcpy() would match nothing. */
+	vcap_netbytes_copy(smac.value, (u8 *)port->ndev->dev_addr, ETH_ALEN);
+	memset(smac.mask, 0xff, ETH_ALEN);
+
+	/* IPv4 is otherwise classified with keys that cannot carry L2_SMAC. */
+	sparx5_vcap_is2_port_ipv4_mac_etype(sparx5, port->portno, true);
+
+	for (int i = 0; i < LAN969X_RB_SMAC_KILL_CNT; i++) {
+		vrule = vcap_alloc_rule(sparx5->vcap_ctrl, port->ndev,
+					SPARX5_VCAP_CID_IS2_L0,
+					VCAP_USER_HSR_PRP, 0, 0);
+		if (IS_ERR(vrule)) {
+			err = PTR_ERR(vrule);
+			goto err_kill_del;
+		}
+
+		err = vcap_set_rule_set_keyset(vrule,
+					       lan969x_rb_smac_kill_keysets[i]);
+		err |= vcap_rule_add_key_u48(vrule, VCAP_KF_L2_SMAC, &smac);
+		err |= vcap_set_rule_set_actionset(vrule, VCAP_AFS_BASE_TYPE);
+		/* Replace the forwarding decision with an empty mask: discard. */
+		err |= vcap_rule_add_action_u32(vrule, VCAP_AF_MASK_MODE,
+						SPX5_PMM_REPLACE_ALL);
+		err |= vcap_rule_add_action_u32(vrule, VCAP_AF_PORT_MASK, 0);
+		err = err ? -EINVAL : vcap_val_rule(vrule, ETH_P_ALL);
+		if (!err) {
+			err = vcap_add_rule(vrule);
+			if (!err)
+				redbox->smac_kill_id[i] = vrule->id;
+		}
+
+		vcap_free_rule(vrule);
+
+		if (err)
+			goto err_kill_del;
+	}
+
+	return 0;
+
+err_kill_del:
+	lan969x_rb_smac_kill_del(redbox);
+
+	return err;
 }
 
 /* Retrieve a redbox for this master. */
@@ -1285,20 +1497,31 @@ int lan969x_hsr_join(struct net_device *master, struct net_device *slave)
 	/* LREA */
 	if (!lan969x_rb_has_lrea(redbox)) {
 		lan969x_rb_add_lrea(redbox, port);
+		port->ndev->features |= LAN969X_SUPPORTED_HSR_FEATURES;
 		return 0;
 	}
 
 	/* LREB */
 	if (!lan969x_rb_has_lreb(redbox)) {
 		lan969x_rb_add_lreb(redbox, port);
+		port->ndev->features |= LAN969X_SUPPORTED_HSR_FEATURES;
 		if (is_hsr_redbox(master))
 			/* Need LREC to sign up as well. */
 			return 0;
 	}
 
 	/* LREC */
-	if (!lan969x_rb_has_lrec(redbox) && is_hsr_redbox(master))
+	if (!lan969x_rb_has_lrec(redbox) && is_hsr_redbox(master)) {
 		lan969x_rb_add_lrec(redbox, port);
+		/* The RedBox forwards ring<->interlink autonomously but does NOT
+		 * replicate CPU-injected frames to the interlink (IRI FWD_SEL
+		 * has no interlink encoding). Withhold NETIF_F_HW_HSR_DUP so
+		 * net/hsr software-dispatches host-originated frames to the
+		 * interlink (hsr_drop_frame()).
+		 */
+		port->ndev->features |= LAN969X_SUPPORTED_HSR_FEATURES &
+					~NETIF_F_HW_HSR_DUP;
+	}
 
 	err = lan969x_rb_port_taxi_get(redbox->ports[LAN969X_RB_LREA],
 				       &lrea_taxi_port,
@@ -1344,6 +1567,18 @@ int lan969x_hsr_join(struct net_device *master, struct net_device *slave)
 		lan969x_rb_fcs_upd_set(sparx5,
 				       redbox->ports[LAN969X_RB_LREC]->portno,
 				       true);
+
+		/* Own forwarding domain, so SAN broadcast floods to the ring. */
+		err = lan969x_rb_vlan_add(redbox);
+		if (err)
+			goto err_rb_put;
+
+		/* The interlink can now reach the ring, so kill looped frames. */
+		err = lan969x_rb_smac_kill_add(redbox);
+		if (err) {
+			lan969x_rb_vlan_del(redbox);
+			goto err_rb_put;
+		}
 	}
 
 	/* Configure each port. */
@@ -1365,13 +1600,11 @@ int lan969x_hsr_join(struct net_device *master, struct net_device *slave)
 	/*  Redirect DMAC addresses in the range 01-80-C2-00-00-00 - 01-80-C2-00-00-0F to the CPU */
 	spx5_rmw(RB_BPDU_CFG_BPDU_REDIR_ENA_SET(0xffff),
 		 RB_BPDU_CFG_BPDU_REDIR_ENA, sparx5,
-		 RB_BPDU_CFG(redbox->taxi,
-			     redbox->ports[LAN969X_RB_LREA]->portno));
+		 RB_BPDU_CFG(redbox->taxi, LAN969X_RB_LREA));
 
 	spx5_rmw(RB_BPDU_CFG_BPDU_REDIR_ENA_SET(0xffff),
 		 RB_BPDU_CFG_BPDU_REDIR_ENA, sparx5,
-		 RB_BPDU_CFG(redbox->taxi,
-			     redbox->ports[LAN969X_RB_LREB]->portno));
+		 RB_BPDU_CFG(redbox->taxi, LAN969X_RB_LREB));
 
 	/* Learn LREA and LREB as static entries, with type LOCAL. */
 	lan969x_rb_htable_learn(sparx5,
@@ -1409,6 +1642,18 @@ int lan969x_hsr_join(struct net_device *master, struct net_device *slave)
 			   true);
 
 	return 0;
+
+err_rb_put:
+	lan969x_rb_fcs_upd_set(sparx5,
+			       redbox->ports[LAN969X_RB_LREC]->portno,
+			       false);
+	lan969x_rb_ena(sparx5, redbox->taxi, false);
+	port->ndev->features &= ~LAN969X_SUPPORTED_HSR_FEATURES;
+
+	lan969x_rb_put(redbox);
+	sparx5_update_fwd(sparx5);
+
+	return err;
 }
 
 int lan969x_hsr_leave(struct net_device *master, struct net_device *slave)
@@ -1429,6 +1674,12 @@ int lan969x_hsr_leave(struct net_device *master, struct net_device *slave)
 	/* Disable redbox. */
 	lan969x_rb_ena(sparx5, redbox->taxi, false);
 
+	/* While the port pointers are still valid, i.e. before rb_put(). */
+	if (has_interlink) {
+		lan969x_rb_smac_kill_del(redbox);
+		lan969x_rb_vlan_del(redbox);
+	}
+
 	/* This will remove all ports and nullify the hsr master. This is done
 	 * for all linked ports, but that should be fine.
 	 */
@@ -1437,6 +1688,9 @@ int lan969x_hsr_leave(struct net_device *master, struct net_device *slave)
 	/* Clear source port masks for lrea and lrec when HSR-SAN */
 	if (has_interlink)
 		sparx5_update_fwd(sparx5);
+
+	/* Clear HSR/PRP offload features */
+	slave->features &= ~LAN969X_SUPPORTED_HSR_FEATURES;
 
 	return 0;
 }

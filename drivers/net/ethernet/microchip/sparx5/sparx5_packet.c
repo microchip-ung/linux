@@ -4,6 +4,7 @@
  * Copyright (c) 2021 Microchip Technology Inc. and its subsidiaries.
  */
 
+#include <linux/etherdevice.h>
 #include <net/addrconf.h>
 #include <net/switchdev.h>
 
@@ -68,6 +69,13 @@ void sparx5_consume_skb(struct sk_buff *skb)
 bool sparx5_skb_offloaded(struct sparx5 *sparx5, u32 port, struct sk_buff *skb)
 {
 	u32 val;
+
+	/* Link-local reserved frames (01:80:C2:00:00:0X), e.g. STP/RSTP BPDUs
+	 * and LLDP, are redirected to the CPU and must be handled by the
+	 * software bridge, so they must not be marked as offloaded.
+	 */
+	if (is_link_local_ether_addr(eth_hdr(skb)->h_dest))
+		return false;
 
 	/* IGMP and MLD frames are not forwarded by hardware when
 	 * multicast snooping is enabled. Therefore, do not mark these
@@ -255,6 +263,7 @@ static int sparx5_inject(struct sparx5 *sparx5,
 {
 	int grp = INJ_QUEUE;
 	u32 val, w, count;
+	u32 last;
 	u8 *buf;
 
 	val = spx5_rd(sparx5, QS_INJ_STATUS);
@@ -273,12 +282,20 @@ static int sparx5_inject(struct sparx5 *sparx5,
 	for (w = 0; w < IFH_LEN; w++)
 		spx5_wr(ifh[w], sparx5, QS_INJ_WR(grp));
 
-	/* Write words, round up */
-	count = DIV_ROUND_UP(skb->len, 4);
+	/* Write the whole words of the frame */
+	count = skb->len / 4;
 	buf = skb->data;
 	for (w = 0; w < count; w++, buf += 4) {
 		val = get_unaligned((const u32 *)buf);
 		spx5_wr(val, sparx5, QS_INJ_WR(grp));
+	}
+
+	last = skb->len % 4;
+	if (last) {
+		val = 0;
+		memcpy(&val, buf, last);
+		spx5_wr(val, sparx5, QS_INJ_WR(grp));
+		w++;
 	}
 
 	/* Add padding */
@@ -321,6 +338,7 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 	const struct sparx5_ops *ops;
 	u32 ifh[IFH_LEN];
 	netdev_tx_t ret;
+	u32 len;
 
 	ops = sparx5->data->ops;
 
@@ -374,6 +392,9 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 #endif
 
 	skb_tx_timestamp(skb);
+
+	len = max_t(u32, skb->len, ETH_ZLEN);
+
 	spin_lock(&sparx5->tx_lock);
 	if (sparx5->fdma_irq > 0)
 		ret = ops->fdma_xmit(sparx5, ifh, skb, dev);
@@ -392,7 +413,7 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 		 */
 		return NETDEV_TX_OK;
 
-	stats->tx_bytes += skb->len;
+	stats->tx_bytes += len;
 	stats->tx_packets++;
 	sparx5->tx.packets++;
 
@@ -400,6 +421,10 @@ netdev_tx_t sparx5_port_xmit_impl(struct sk_buff *skb, struct net_device *dev)
 drop:
 	stats->tx_dropped++;
 	sparx5->tx.dropped++;
+	if (skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP &&
+	    SPARX5_SKB_CB(skb)->rew_op == IFH_REW_OP_TWO_STEP_PTP)
+		sparx5_ptp_txtstamp_release(port, skb);
+
 	dev_kfree_skb_any(skb);
 	return NETDEV_TX_OK;
 busy:

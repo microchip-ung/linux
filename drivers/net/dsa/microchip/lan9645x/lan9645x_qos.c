@@ -14,7 +14,7 @@ static int __lan9645x_qos_polix_alloc(struct lan9645x *lan9645x)
 
 	polix = find_first_zero_bit(lan9645x->pol_idx_mask,
 				    LAN9645X_NUM_POL_POOL);
-	if (polix >= LAN9645X_ISDX_MAX)
+	if (polix >= LAN9645X_NUM_POL_POOL)
 		return -ENOSPC;
 
 	set_bit(polix, lan9645x->pol_idx_mask);
@@ -57,7 +57,7 @@ static void lan9645x_qos_port_init(struct lan9645x_port *p)
 	mutex_init(&p->qos_lock);
 
 	p->qos.pfc_enable = 0;
-	p->qos.i_mode.tag_map_enable = false;
+	p->qos.i_mode.tag_map_enable = true;
 	p->qos.i_mode.dscp_map_enable = false;
 	/* Setup ingress 1:1 mapping between tag [PCP,DEI] and [PRIO,DPL].
 	 * PCP determines the priority (0..7) of the frame and

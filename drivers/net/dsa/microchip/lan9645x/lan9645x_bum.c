@@ -191,6 +191,37 @@ static int debugfs_burst_get(void *data, u64 *val)
 }
 DEFINE_DEBUGFS_ATTRIBUTE(fops_burst, debugfs_burst_get, debugfs_burst_set, "%llu\n");
 
+/* ANA_STORM_CFG.STORM_NO_POL_DIS brings frames that the classifier redirected
+ * to the CPU (VRAP, BPDU, GARP, CCM, IGMP, MLD) into scope for storm policing.
+ * It is global rather than per policer type, so it lives on the controller
+ * alongside burst. Without it those frames are exempt no matter how the
+ * individual policers are configured.
+ */
+static int debugfs_no_pol_dis_set(void *data, u64 val)
+{
+	struct lan9645x_bum_ctrl *bctrl = data;
+
+	mutex_lock(&bctrl->bum_lock);
+	bctrl->no_pol_dis = !!val;
+	lan_rmw(ANA_STORM_CFG_STORM_NO_POL_DIS_SET(bctrl->no_pol_dis),
+		ANA_STORM_CFG_STORM_NO_POL_DIS,
+		bctrl->lan9645x, ANA_STORM_CFG);
+	mutex_unlock(&bctrl->bum_lock);
+	return 0;
+}
+
+static int debugfs_no_pol_dis_get(void *data, u64 *val)
+{
+	struct lan9645x_bum_ctrl *bctrl = data;
+
+	mutex_lock(&bctrl->bum_lock);
+	*val = bctrl->no_pol_dis;
+	mutex_unlock(&bctrl->bum_lock);
+	return 0;
+}
+DEFINE_DEBUGFS_ATTRIBUTE(fops_no_pol_dis, debugfs_no_pol_dis_get,
+			 debugfs_no_pol_dis_set, "%llu\n");
+
 static ssize_t debugfs_read_file_bum_bool(struct file *file,
 					  char __user *user_buf, size_t count,
 					  loff_t *ppos)
@@ -353,6 +384,8 @@ static int lan9645x_bum_dbfs_add(struct lan9645x *lan9645x,
 		return PTR_ERR(bum_dir);
 
 	debugfs_create_file("burst", 0666, bum_dir, bctrl, &fops_burst);
+	debugfs_create_file("no_pol_dis", 0666, bum_dir, bctrl,
+			    &fops_no_pol_dis);
 	debugfs_create_file("stats", 0444, bum_dir, bctrl, &lan9645x_stats_fops);
 
 	for (int btype = 0; btype < __LAN9645X_BUM_NUM; btype++) {
@@ -376,6 +409,7 @@ int lan9645x_bum_init(struct lan9645x *lan9645x)
 	bctrl->lan9645x = lan9645x;
 	/* Default burst is 1<<7 frames */
 	bctrl->burst = 7;
+	bctrl->no_pol_dis = false;
 
 	INIT_LIST_HEAD(&bctrl->debugfs_list);
 
@@ -392,6 +426,11 @@ int lan9645x_bum_init(struct lan9645x *lan9645x)
 		bctrl->policers[btype].ipmc_known_ena = false;
 		bctrl->policers[btype].ipmc_unknown_ena = false;
 	}
+
+	lan_wr(QSYS_STORMLIM_BURST_STORM_BURST_SET(bctrl->burst),
+	       lan9645x, QSYS_STORMLIM_BURST);
+	for (int btype = 0; btype < __LAN9645X_BUM_NUM; btype++)
+		lan9645x_bum_pol_apply(&bctrl->policers[btype]);
 
 	lan9645x->bum = bctrl;
 

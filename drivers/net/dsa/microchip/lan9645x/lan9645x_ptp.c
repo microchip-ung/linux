@@ -273,21 +273,16 @@ static int lan9645x_ptp_setup_traps(struct lan9645x_port *port,
 		return lan9645x_ptp_add_traps(port);
 }
 
-int lan9645x_port_hwtstamp_set(struct dsa_switch *ds, int port,
-			       struct kernel_hwtstamp_config *config,
-			       struct netlink_ext_ack *extack)
+static int lan9645x_ptp_apply_cfg(struct lan9645x *lan9645x, int port,
+				  struct kernel_hwtstamp_config *cfg,
+				  struct netlink_ext_ack *extack)
 {
-	struct lan9645x *lan9645x = ds->priv;
-	struct kernel_hwtstamp_config cfg;
-	struct lan9645x_phc *phc;
 	struct lan9645x_port *p;
-	int err = 0;
-
-	memcpy(&cfg, config, sizeof(struct kernel_hwtstamp_config));
+	int err;
 
 	p = lan9645x_to_port(lan9645x, port);
 
-	switch (cfg.tx_type) {
+	switch (cfg->tx_type) {
 	case HWTSTAMP_TX_ON:
 		p->ptp_tx_cmd = IFH_REW_OP_TWO_STEP_PTP;
 		break;
@@ -315,7 +310,7 @@ int lan9645x_port_hwtstamp_set(struct dsa_switch *ds, int port,
 		return -ERANGE;
 	}
 
-	switch (cfg.rx_filter) {
+	switch (cfg->rx_filter) {
 	case HWTSTAMP_FILTER_NONE:
 		p->ptp_rx_cmd = false;
 		lan9645x_ptp_hsr_flush_tx_skbs(p);
@@ -335,38 +330,55 @@ int lan9645x_port_hwtstamp_set(struct dsa_switch *ds, int port,
 	case HWTSTAMP_FILTER_PTP_V2_DELAY_REQ:
 	case HWTSTAMP_FILTER_NTP_ALL:
 		p->ptp_rx_cmd = true;
-		cfg.rx_filter = HWTSTAMP_FILTER_ALL;
+		cfg->rx_filter = HWTSTAMP_FILTER_ALL;
 		break;
 	default:
 		return -ERANGE;
 	}
 
-	err = lan9645x_ptp_setup_traps(p, &cfg);
+	err = lan9645x_ptp_setup_traps(p, cfg);
 	if (err)
 		return err;
 
-	err = lan9645x_ptp_hsr_setup(lan9645x, port, &cfg);
-	if (err)
-		return err;
+	return lan9645x_ptp_hsr_setup(lan9645x, port, cfg, extack);
+}
 
-	/* Commit back the result & save it */
-	mutex_lock(&lan9645x->ptp_lock);
-	phc = &lan9645x->phc[LAN9645X_PHC_PORT];
-	phc->hwtstamp_config = cfg;
-	mutex_unlock(&lan9645x->ptp_lock);
+int lan9645x_port_hwtstamp_set(struct dsa_switch *ds, int port,
+			       struct kernel_hwtstamp_config *config,
+			       struct netlink_ext_ack *extack)
+{
+	struct kernel_hwtstamp_config cfg, last_good;
+	struct lan9645x *lan9645x = ds->priv;
+	struct lan9645x_port *p;
+	int err;
+
+	cfg = *config;
+	p = lan9645x_to_port(lan9645x, port);
+
+	err = lan9645x_ptp_apply_cfg(lan9645x, port, &cfg, extack);
+	if (err) {
+		last_good = p->hwtstamp_config;
+		if (lan9645x_ptp_apply_cfg(lan9645x, port, &last_good, NULL))
+			dev_err(lan9645x->dev,
+				"port %d: failed to restore the last good hwtstamp config after error %d\n",
+				port, err);
+		return err;
+	}
+
+	p->hwtstamp_config = cfg;
+
+	*config = cfg;
 
 	return 0;
 }
 
 int lan9645x_port_hwtstamp_get(struct dsa_switch *ds, int port,
-                               struct kernel_hwtstamp_config *config)
+			       struct kernel_hwtstamp_config *config)
 {
 	struct lan9645x *lan9645x = ds->priv;
-	struct lan9645x_phc *phc;
 
-	dev_dbg(lan9645x->dev, "port=%d", port);
-	phc = &lan9645x->phc[LAN9645X_PHC_PORT];
-	*config = phc->hwtstamp_config;
+	dev_dbg(lan9645x->dev, "port=%d\n", port);
+	*config = lan9645x_to_port(lan9645x, port)->hwtstamp_config;
 
 	return 0;
 }
@@ -1178,7 +1190,6 @@ int lan9645x_ptp_init(struct lan9645x *lan9645x)
 	}
 
 	spin_lock_init(&lan9645x->ptp_ts_id_lock);
-	mutex_init(&lan9645x->ptp_lock);
 
 	/* Disable master counters */
 	lan_wr(PTP_DOM_CFG_ENA_SET(0), lan9645x, PTP_DOM_CFG);

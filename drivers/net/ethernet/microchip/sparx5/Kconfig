@@ -40,7 +40,7 @@ config SPARX5_DEBUG
 
 config SPARX5_SWITCH_APPL
 	tristate "Sparx5 switch driver used by APPL"
-	select LAN969X_SWITCH
+	depends on LAN969X_SWITCH
 	help
 	  This driver supports the Sparx5 and Lan969x network switch devices for
 	  APPL.

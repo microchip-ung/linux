@@ -283,8 +283,13 @@ static int lan966x_fdma_pci_xmit(struct sk_buff *skb, __be32 *ifh,
 		return NETDEV_TX_BUSY;
 	}
 
-	if (skb_put_padto(skb, ETH_ZLEN)) {
+	if (__skb_put_padto(skb, ETH_ZLEN, false)) {
 		dev->stats.tx_dropped++;
+		if (skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP &&
+		    LAN966X_SKB_CB(skb)->rew_op == IFH_REW_OP_TWO_STEP_PTP)
+			lan966x_ptp_txtstamp_release(port, skb);
+
+		dev_kfree_skb_any(skb);
 		return NETDEV_TX_OK;
 	}
 

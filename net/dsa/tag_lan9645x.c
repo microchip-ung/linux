@@ -182,7 +182,17 @@ static struct sk_buff *lan9645x_xmit(struct sk_buff *skb, struct net_device *nde
 	ifh = skb_push(skb, LAN9645X_IFH_LEN);
 	memset(ifh, 0, LAN9645X_IFH_LEN);
 
-	if (dp->hsr_dev) {
+	/* Destination is the interlink port: bypass the analyzer and inject the
+	 * frame directly out of that port.
+	 */
+	if (dsa_port_is_hsr_interlink(dp)) {
+		LAN9645X_IFH_SET(ifh, IFH_BYPASS, 1);
+		LAN9645X_IFH_SET(ifh, IFH_SRCPORT, cpu_port);
+		LAN9645X_IFH_SET(ifh, IFH_QOS_CLASS, qos_class);
+		LAN9645X_IFH_SET(ifh, IFH_TCI, vlan_tci);
+		LAN9645X_IFH_SET(ifh, IFH_TAG_TYPE, tag_type);
+		LAN9645X_IFH_SET(ifh, IFH_DSTS, BIT_ULL(dp->index));
+	} else if (dp->hsr_dev) {
 		/* At the moment the HSR driver does not implement special
 		 * handling of PRP San nodes. The standard suggests that DANP
 		 * nodes which maintain a nodetable should:

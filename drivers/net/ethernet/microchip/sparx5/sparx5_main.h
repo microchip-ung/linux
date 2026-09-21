@@ -173,6 +173,7 @@ extern const u8 ifh_smac[];
 #define SPX5_BUM_KNOWN_UNICAST BIT(5)
 #define SPX5_BUM_LEARN_FRAMES BIT(6)
 
+#define SPX5_USXGMII_SINGLE 0
 #define SPX5_USXGMII_QUAD 2
 #define SPX5_USXGMII_SPEED 6
 
@@ -595,6 +596,7 @@ struct sparx5 {
 	DECLARE_BITMAP(bridge_mask, SPX5_PORTS);
 	DECLARE_BITMAP(bridge_fwd_mask, SPX5_PORTS);
 	DECLARE_BITMAP(bridge_lrn_mask, SPX5_PORTS);
+	DECLARE_BITMAP(bridge_learn_flag_mask, SPX5_PORTS);
 	DECLARE_BITMAP(bridge_psec_mask, SPX5_PORTS);
 	DECLARE_BITMAP(vlan_mask[VLAN_N_VID], SPX5_PORTS);
 	/* SW MAC table */
@@ -650,6 +652,10 @@ struct sparx5 {
 	struct mrp_control *mrp_ctrl;
 
 	int oam_vop_irq;
+	/* Watchdog pretimeout, shared with the watchdog timer */
+	int wdt_irq;
+	/* cleared before the irq is freed, the handler must then do nothing */
+	bool wdt_armed;
 };
 
 /* sparx5_main.c */
@@ -749,6 +755,7 @@ void sparx5_pgid_clear(struct sparx5 *spx5, int pgid);
 void sparx5_pgid_read_mask(struct sparx5 *sparx5, int pgid, u32 portmask[3]);
 void sparx5_update_fwd(struct sparx5 *sparx5);
 void sparx5_vlan_init(struct sparx5 *sparx5);
+int sparx5_vlant_set_mask(struct sparx5 *sparx5, u16 vid);
 void sparx5_vlan_port_setup(struct sparx5 *sparx5, int portno);
 int sparx5_vlan_vid_add(struct sparx5_port *port, u16 vid, bool pvid,
 			bool untagged);
@@ -951,10 +958,7 @@ struct sparx5_policer {
 	u8 event_mask;
 };
 
-#define SPARX5_POL_ACL_NUM 64 /* Number of acl policers */
 #define SPARX5_POL_SRV_NUM 4096
-/* Index of ACL discard policer */
-#define SPX5_POL_ACL_DISCARD (SPARX5_POL_ACL_NUM - 1)
 /* Bits for acl policer cnt statistics */
 #define SPX5_POL_ACL_STAT_CNT_UNMASKED_NO_ERR BIT(1)
 /* Bits for acl policer global event mask */
@@ -1107,6 +1111,10 @@ int sparx5_handle_mdb_del(struct net_device *dev,
 int sparx5_mdb_entries_clear(struct sparx5 *sparx5);
 int sparx5_mdb_entries_restore(struct sparx5 *sparx5);
 
+/* sparx5_watchdog.c */
+void sparx5_watchdog_init(struct sparx5 *sparx5);
+void sparx5_watchdog_deinit(struct sparx5 *sparx5);
+
 /* FDMA return action codes for checking if the frame is valid
  * FDMA_PASS, frame is valid and can be used
  * FDMA_ERROR, something went wrong, stop getting more frames
@@ -1138,6 +1146,8 @@ void sparx5_psec_set(struct sparx5_port *port, bool enable);
 
 /* sparx5_bpdu.c */
 void sparx5_bpdu_lacp_redir(struct sparx5_port *port);
+void sparx5_bpdu_stp_redir(struct sparx5_port *port);
+void sparx5_bpdu_lldp_redir(struct sparx5_port *port);
 void sparx5_bpdu_pause_discard(struct sparx5_port *port);
 void sparx5_bpdu_eapol_forward(struct sparx5_port *port);
 void sparx5_bpdu_eapol_redir(struct sparx5_port *port);
@@ -1165,6 +1175,18 @@ static inline bool sparx5_is_baser(phy_interface_t interface)
 	return interface == PHY_INTERFACE_MODE_5GBASER ||
 		   interface == PHY_INTERFACE_MODE_10GBASER ||
 		   interface == PHY_INTERFACE_MODE_25GBASER;
+}
+
+/* USXGMII on a 10G-class port is driven through the DEV10G (high-speed)
+ * PCS/MAC, just like the BaseR modes. On any other port it stays on the
+ * DEV2G5 (low-speed) PCS/MAC, capped at 2500 Mbps.
+ */
+static inline bool sparx5_port_is_high_speed(struct sparx5 *sparx5, u32 portno,
+					     phy_interface_t portmode)
+{
+	return sparx5_is_baser(portmode) ||
+		(portmode == PHY_INTERFACE_MODE_USXGMII &&
+		 sparx5->data->ops->is_port_10g(portno));
 }
 
 extern const struct phylink_mac_ops sparx5_phylink_mac_ops;

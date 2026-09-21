@@ -14,6 +14,7 @@ static const struct sparx5_main_io_resource lan969x_main_iomap[] =  {
 	{ TARGET_FDMA,                  0xc0400, 0 }, /* 0xe00c0400 */
 	{ TARGET_PCIE_DBI,             0x400000, 0 }, /* 0xe0400000 */
 	{ TARGET_GCB,                 0x2010000, 1 }, /* 0xe2010000 */
+	{ TARGET_CHIP_TOP,            0x2020000, 1 }, /* 0xe2020000 */
 	{ TARGET_QS,                  0x2030000, 1 }, /* 0xe2030000 */
 	{ TARGET_PTP,                 0x2040000, 1 }, /* 0xe2040000 */
 	{ TARGET_ANA_ACL,             0x2050000, 1 }, /* 0xe2050000 */
@@ -236,6 +237,29 @@ static u32 lan969x_port_dev_mapping(struct sparx5 *sparx5, int port)
 	return port;
 }
 
+static void lan969x_port_mux_clear(struct sparx5 *sparx5, u32 portno)
+{
+	u32 inst;
+
+	/* These mux enable bits are set-only, so clear whatever this port
+	 * could occupy before the target mode re-asserts its own bit below.
+	 */
+	if (lan969x_port_is_10g(portno)) {
+		inst = lan969x_port_dev_mapping(sparx5, portno);
+		spx5_rmw(0, BIT(inst), sparx5, PORT_CONF_USXGMII_ENA);
+	}
+
+	if (portno >= 8 && portno <= 23) {
+		inst = portno / 4;
+		spx5_rmw(0, BIT(inst), sparx5, PORT_CONF_USXGMII_ENA);
+	}
+
+	if (portno <= 23) {
+		inst = portno / 4;
+		spx5_rmw(0, BIT(inst), sparx5, PORT_CONF_QSGMII_ENA);
+	}
+}
+
 static int lan969x_port_mux_set(struct sparx5 *sparx5, struct sparx5_port *port,
 			 struct sparx5_port_config *conf)
 {
@@ -245,32 +269,45 @@ static int lan969x_port_mux_set(struct sparx5 *sparx5, struct sparx5_port *port,
 	if (port->conf.portmode == conf->portmode)
 		return 0; /* Nothing to do */
 
+	lan969x_port_mux_clear(sparx5, portno);
+
 	switch (conf->portmode) {
 	case PHY_INTERFACE_MODE_QSGMII: /* QSGMII: 4x2G5 devices. Mode Q'  */
 		inst = (portno - portno % 4) / 4;
 		spx5_rmw(BIT(inst), BIT(inst), sparx5, PORT_CONF_QSGMII_ENA);
 		break;
 	case PHY_INTERFACE_MODE_10G_QXGMII:
-		if (portno >= 8 && portno <= 23) {
-			/* equals index 2-5 */
+	case PHY_INTERFACE_MODE_USXGMII: {
+		u32 num_ports;
+
+		if (conf->portmode == PHY_INTERFACE_MODE_10G_QXGMII) {
+			if (portno < 8 || portno > 23)
+				return -EINVAL;
 			inst = portno / 4;
-
-			spx5_rmw(PORT_CONF_USXGMII_CFG_TX_ENA_SET(1) |
-				 PORT_CONF_USXGMII_CFG_RX_ENA_SET(1) |
-				 PORT_CONF_USXGMII_CFG_NUM_PORTS_SET(SPX5_USXGMII_QUAD),
-				 PORT_CONF_USXGMII_CFG_TX_ENA |
-				 PORT_CONF_USXGMII_CFG_RX_ENA |
-				 PORT_CONF_USXGMII_CFG_NUM_PORTS,
-				 sparx5,
-				 PORT_CONF_USXGMII_CFG(inst));
-
-			spx5_rmw(BIT(inst),
-				 BIT(inst),
-				 sparx5,
-				 PORT_CONF_USXGMII_ENA);
+			num_ports = SPX5_USXGMII_QUAD;
 		} else {
-			return -EINVAL;
+			if (!lan969x_port_is_10g(portno)) {
+				dev_err(sparx5->dev,
+					"USXGMII is only supported on 10G-class ports, not port %u\n",
+					portno);
+				return -EINVAL;
+			}
+			inst = lan969x_port_dev_mapping(sparx5, portno);
+			num_ports = SPX5_USXGMII_SINGLE;
 		}
+
+		spx5_rmw(PORT_CONF_USXGMII_CFG_TX_ENA_SET(1) |
+			 PORT_CONF_USXGMII_CFG_RX_ENA_SET(1) |
+			 PORT_CONF_USXGMII_CFG_NUM_PORTS_SET(num_ports),
+			 PORT_CONF_USXGMII_CFG_TX_ENA |
+			 PORT_CONF_USXGMII_CFG_RX_ENA |
+			 PORT_CONF_USXGMII_CFG_NUM_PORTS,
+			 sparx5,
+			 PORT_CONF_USXGMII_CFG(inst));
+
+		spx5_rmw(BIT(inst), BIT(inst), sparx5, PORT_CONF_USXGMII_ENA);
+		break;
+	}
 	default:
 		break;
 	}
@@ -405,6 +442,7 @@ static const struct sparx5_consts lan969x_consts = {
 	.n_hsch_queues       = 4,
 	.n_lb_groups         = 5,
 	.n_pgids             = 1054, /* (1024 + n_ports) */
+	.n_pol_acl           = 32,
 	.n_sio_clks          = 1,
 	.n_own_upsids        = 1,
 	.n_auto_cals         = 4,

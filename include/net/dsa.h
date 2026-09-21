@@ -9,6 +9,7 @@
 
 #include <linux/if.h>
 #include <linux/if_ether.h>
+#include <linux/if_hsr.h>
 #include <linux/list.h>
 #include <linux/notifier.h>
 #include <linux/timer.h>
@@ -306,6 +307,7 @@ struct dsa_port {
 	netdevice_tracker	conduit_tracker;
 	struct dsa_lag		*lag;
 	struct net_device	*hsr_dev;
+	u8			hsr_port_type;
 
 	struct list_head list;
 
@@ -752,6 +754,11 @@ static inline struct net_device *dsa_port_to_conduit(const struct dsa_port *dp)
 	return dp->cpu_dp->conduit;
 }
 
+static inline bool dsa_port_is_hsr_interlink(const struct dsa_port *dp)
+{
+	return dp->hsr_dev && dp->hsr_port_type == HSR_PT_INTERLINK;
+}
+
 static inline
 struct net_device *dsa_port_to_bridge_port(const struct dsa_port *dp)
 {
@@ -1120,6 +1127,12 @@ struct dsa_switch_ops {
 				  struct flow_cls_offload *cls, bool ingress);
 	int	(*cls_flower_stats)(struct dsa_switch *ds, int port,
 				    struct flow_cls_offload *cls, bool ingress);
+	int	(*cls_flower_tmplt_create)(struct dsa_switch *ds, int port,
+					   struct flow_cls_offload *cls,
+					   bool ingress);
+	int	(*cls_flower_tmplt_destroy)(struct dsa_switch *ds, int port,
+					    struct flow_cls_offload *cls,
+					    bool ingress);
 	int	(*port_mirror_add)(struct dsa_switch *ds, int port,
 				   struct dsa_mall_mirror_tc_entry *mirror,
 				   bool ingress, struct netlink_ext_ack *extack);

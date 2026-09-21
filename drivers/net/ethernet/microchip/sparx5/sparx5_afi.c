@@ -8,33 +8,54 @@
 #include "sparx5_main.h"
 
 #include "afi_api.h"
+#include "afi_netlink.h"
 
 #define SPARX5_AFI_SLOW_INJ_CNT			64
 #define SPARX5_AFI_FRM_CNT			64
+#define SPARX5_AFI_DTI_CNT			32
+#define LAN969X_AFI_DTI_CNT			16
 #define SPARX5_PRIO_SUPER			8
 
+/* Requested DTI rate bounds (layer 1). The maximum is a sanity clamp at the
+ * port line rate; the achievable rate is lower for small frames because the
+ * engine spends a fixed number of clock cycles per frame/delay entry.
+ */
+#define SPARX5_AFI_FAST_INJ_BPS_MIN		1000ULL
+#define SPARX5_AFI_FAST_INJ_BPS_MAX		25000000000ULL
+#define LAN969X_AFI_FAST_INJ_BPS_MAX		10000000000ULL
+
 #define SPARX5_AFI_FRM_PART0_FP_POS		0
-#define SPARX5_AFI_FRM_PART0_DSTP_POS		14
+#define SPARX5_AFI_FRM_PART0_DSTP_POS		15
 #define SPARX5_AFI_FRM_PART1_FSHORT_POS		0
 #define SPARX5_AFI_FRM_PART1_EPRIO_POS		1
 
 #define SPARX5_AFI_FRM_INFO_FP_MASK		GENMASK(14, 0)
-#define SPARX5_AFI_FRM_INFO_DSTP_MASK		GENMASK(20, 14)
-#define SPARX5_AFI_FRM_INFO_FSHORT_MASK		GENMASK(23, 20)
+#define SPARX5_AFI_FRM_INFO_DSTP_MASK		GENMASK(21, 15)
+#define SPARX5_AFI_FRM_INFO_EPRIO_MASK		GENMASK(24, 22)
+#define SPARX5_AFI_FRM_INFO_FSHORT_MASK		GENMASK(25, 25)
 
 #define LAN969X_AFI_FRM_PART0_FP_POS		0
 #define LAN969X_AFI_FRM_PART0_DSTP_POS		14
 #define LAN969X_AFI_FRM_PART1_FSHORT_POS	0
 #define LAN969X_AFI_FRM_PART1_EPRIO_POS		1
 
-#define LAN969X_AFI_FRM_INFO_FP_MASK		GENMASK(14, 0)
-#define LAN969X_AFI_FRM_INFO_DSTP_MASK		GENMASK(20, 14)
-#define LAN969X_AFI_FRM_INFO_FSHORT_MASK	GENMASK(23, 20)
+#define LAN969X_AFI_FRM_INFO_FP_MASK		GENMASK(13, 0)
+#define LAN969X_AFI_FRM_INFO_DSTP_MASK		GENMASK(19, 14)
+#define LAN969X_AFI_FRM_INFO_EPRIO_MASK		GENMASK(22, 20)
+#define LAN969X_AFI_FRM_INFO_FSHORT_MASK	GENMASK(23, 23)
 
 #define SPARX5_AFI_FRM_TBL_PART1_RM_POS		4
 
-#define SPARX5_AFI_FRM_TBL_PART1_RM_MASK	GENMASK(5, 4)
-#define SPARX5_AFI_FRM_TBL_PART1_GONE_MASK	GENMASK(6, 5)
+#define SPARX5_AFI_FRM_TBL_PART1_RM_MASK	GENMASK(4, 4)
+#define SPARX5_AFI_FRM_TBL_PART1_GONE_MASK	GENMASK(5, 5)
+
+/* Frame-entry sub-fields multiplexed into FRM_ENTRY_PART0. INJ_CNT sits above
+ * the frame pointer and destination port, which are wider on sparx5. A delay
+ * entry uses the whole 30-bit field on both chips.
+ */
+#define SPARX5_AFI_FRM_PART0_INJ_CNT		GENMASK(29, 22)
+#define LAN969X_AFI_FRM_PART0_INJ_CNT		GENMASK(27, 20)
+#define SPARX5_AFI_FRM_PART0_DELAY		GENMASK(29, 0)
 
 #define SPARX5_AFI_TTI_TBL_TIMER_LEN_WID	9
 
@@ -271,8 +292,7 @@ static inline int sparx5_afi_frm_get_ctrl(struct sparx5 *sparx5)
 }
 
 static bool sparx5_afi_frm_hijack(struct sparx5 *sparx5,
-				  s32 frm_idx,
-				  uint32_t prio)
+				  s32 frm_idx)
 {
 	struct afi_frm *frm = &sparx5->afi_ctrl->frm_tbl[frm_idx];
 	u32 frm_info, ret, val;
@@ -304,7 +324,8 @@ static bool sparx5_afi_frm_hijack(struct sparx5 *sparx5,
 					       frm_info);
 		frm->frm_info.fshort = FIELD_GET(SPARX5_AFI_FRM_INFO_FSHORT_MASK,
 						 frm_info);
-		frm->frm_info.eprio = prio;
+		frm->frm_info.eprio = FIELD_GET(SPARX5_AFI_FRM_INFO_EPRIO_MASK,
+						frm_info);
 
 		/* Setup FRM_TBL entry */
 		spx5_rmw(AFI_FRM_NXT_AND_TYPE_ENTRY_TYPE_SET(0),
@@ -324,7 +345,8 @@ static bool sparx5_afi_frm_hijack(struct sparx5 *sparx5,
 					       frm_info);
 		frm->frm_info.fshort = FIELD_GET(LAN969X_AFI_FRM_INFO_FSHORT_MASK,
 						 frm_info);
-		frm->frm_info.eprio = prio;
+		frm->frm_info.eprio = FIELD_GET(LAN969X_AFI_FRM_INFO_EPRIO_MASK,
+						frm_info);
 
 		/* Setup FRM_TBL entry */
 		spx5_rmw(AFI_FRM_NXT_AND_TYPE_ENTRY_TYPE_SET(0),
@@ -350,8 +372,7 @@ static int sparx5_afi_tti_frm_hijack(struct afi_control *afi, u32 tti_idx)
 	struct sparx5 *sparx5 = afi->priv;
 
 	return sparx5_afi_frm_hijack(sparx5,
-				     afi->tti_tbl[tti_idx].frm_idx,
-				     afi->tti_tbl[tti_idx].prio);
+				     afi->tti_tbl[tti_idx].frm_idx);
 }
 
 static int sparx5_afi_tti_frm_rm_inj(struct afi_control *afi, u32 tti_idx)
@@ -448,10 +469,195 @@ static int sparx5_afi_tti_stop(struct afi_control *afi, u32 tti_idx)
 	return 0;
 }
 
+static int sparx5_afi_frm_inject(struct afi_control *afi, u32 port_no,
+				 u32 prio, struct sk_buff *skb)
+{
+	struct sparx5 *sparx5 = afi->priv;
+	struct sparx5_port *port;
+	u32 ifh[IFH_LEN];
+	netdev_tx_t tx;
+
+	if (port_no >= SPX5_PORTS)
+		return -EINVAL;
+
+	port = sparx5->ports[port_no];
+	if (!port)
+		return -EINVAL;
+
+	memset(ifh, 0, IFH_LEN * 4);
+	sparx5_set_port_ifh(sparx5, ifh, port->portno);
+	sparx5_set_port_ifh_afi(sparx5, ifh, true);
+
+	local_bh_disable();
+	tx = sparx5_port_xmit_mrp(port, skb, ifh);
+	local_bh_enable();
+
+	if (tx != NETDEV_TX_OK)
+		return -EBUSY;
+
+	return 0;
+}
+
+static int sparx5_afi_dti_frm_hijack(struct afi_control *afi, u32 frm_idx)
+{
+	struct sparx5 *sparx5 = afi->priv;
+
+	return sparx5_afi_frm_hijack(sparx5, frm_idx);
+}
+
+static void sparx5_afi_dti_frm_entry_write(struct sparx5 *sparx5,
+					   struct afi_frm *frm, u32 frm_idx)
+{
+	if (frm->entry_type)
+		spx5_wr(FIELD_PREP(SPARX5_AFI_FRM_PART0_DELAY, frm->delay),
+			sparx5, AFI_FRM_ENTRY_PART0(frm_idx));
+	else if (is_sparx5(sparx5))
+		spx5_rmw(FIELD_PREP(SPARX5_AFI_FRM_PART0_INJ_CNT, frm->inj_cnt),
+			 SPARX5_AFI_FRM_PART0_INJ_CNT,
+			 sparx5, AFI_FRM_ENTRY_PART0(frm_idx));
+	else
+		spx5_rmw(FIELD_PREP(LAN969X_AFI_FRM_PART0_INJ_CNT, frm->inj_cnt),
+			 LAN969X_AFI_FRM_PART0_INJ_CNT,
+			 sparx5, AFI_FRM_ENTRY_PART0(frm_idx));
+
+	spx5_wr(AFI_FRM_NXT_AND_TYPE_NEXT_PTR_SET(frm->next_idx) |
+		AFI_FRM_NXT_AND_TYPE_ENTRY_TYPE_SET(frm->entry_type),
+		sparx5, AFI_FRM_NXT_AND_TYPE(frm_idx));
+}
+
+static void sparx5_afi_dti_qu_ref_update(struct sparx5 *sparx5, u32 dti_idx)
+{
+	struct afi_dti *dti = &sparx5->afi_ctrl->dti_tbl[dti_idx];
+	struct sparx5_afi_qu_ref qu_ref;
+
+	sparx5_afi_port_prio_2_qu_ref(sparx5, dti->port_no, dti->prio, &qu_ref);
+
+	spx5_wr(AFI_DTI_PORT_QU_PORT_NUM_SET(qu_ref.chip_port) |
+		AFI_DTI_PORT_QU_QU_NUM_SET(qu_ref.qu_num),
+		sparx5, AFI_DTI_PORT_QU(dti_idx));
+}
+
+static int sparx5_afi_dti_start(struct afi_control *afi, u32 dti_idx,
+				bool do_frm_cfg, bool do_dti_cfg, bool start)
+{
+	struct afi_dti *dti = &afi->dti_tbl[dti_idx];
+	struct sparx5 *sparx5 = afi->priv;
+	u32 frm_idx;
+
+	if (do_frm_cfg) {
+		frm_idx = dti->first_frm_idx;
+		while (frm_idx) {
+			struct afi_frm *frm = &afi->frm_tbl[frm_idx];
+
+			sparx5_afi_dti_frm_entry_write(sparx5, frm, frm_idx);
+			frm_idx = frm->next_idx;
+		}
+	}
+
+	if (do_dti_cfg) {
+		spx5_wr(AFI_DTI_MODE_MODE_SET(dti->mode) |
+			AFI_DTI_MODE_TRAILING_DELAY_SEQ_CNT_SET(dti->trailing_delay_seq_cnt) |
+			AFI_DTI_MODE_FRM_INJ_CNT_SET(0) |
+			AFI_DTI_MODE_DTI_NEXT_SET(dti->dti_next),
+			sparx5, AFI_DTI_MODE(dti_idx));
+
+		sparx5_afi_dti_qu_ref_update(sparx5, dti_idx);
+	}
+
+	spx5_wr(AFI_DTI_FRM_FIRST_FRM_PTR_SET(dti->first_frm_idx) |
+		AFI_DTI_FRM_NEXT_FRM_PTR_SET(dti->first_frm_idx),
+		sparx5, AFI_DTI_FRM(dti_idx));
+
+	spx5_wr(AFI_DTI_CNT_CNT_SET(dti->mode == 1 ? 0 : dti->frm_inj_cnt),
+		sparx5, AFI_DTI_CNT(dti_idx));
+
+	spx5_wr(0, sparx5, AFI_DTI_CNT_DOWN(dti_idx));
+	spx5_wr(0, sparx5, AFI_DTI_DURATION(dti_idx));
+
+	spx5_wr(AFI_DTI_CTRL_ENA_SET(start ? 1 : 0) |
+		AFI_DTI_CTRL_BW_SET(dti->bw),
+		sparx5, AFI_DTI_CTRL(dti_idx));
+
+	return 0;
+}
+
+static int sparx5_afi_dti_stop(struct afi_control *afi, u32 dti_idx)
+{
+	struct sparx5 *sparx5 = afi->priv;
+
+	spx5_rmw(AFI_DTI_CTRL_ENA_SET(0), AFI_DTI_CTRL_ENA,
+		 sparx5, AFI_DTI_CTRL(dti_idx));
+
+	return 0;
+}
+
+static int sparx5_afi_dti_frm_rm_inj(struct afi_control *afi, u32 dti_idx)
+{
+	struct afi_dti *dti = &afi->dti_tbl[dti_idx];
+	struct sparx5 *sparx5 = afi->priv;
+	s32 frm_idx, last_frm_idx = 0;
+	int ret;
+
+	if (dti->state != AFI_ENTRY_STATE_STOPPED) {
+		pr_info("ID = %u: Injection must be stopped before rm injection\n",
+			dti_idx);
+		return -EINVAL;
+	}
+
+	for (frm_idx = dti->first_frm_idx; frm_idx > 0;
+	     frm_idx = afi->frm_tbl[frm_idx].next_idx) {
+		if (afi->frm_tbl[frm_idx].entry_type == 0) {
+			ret = sparx5_afi_frm_set_rm(sparx5, frm_idx);
+			if (ret)
+				return ret;
+			last_frm_idx = frm_idx;
+		}
+	}
+
+	spx5_rmw(AFI_DTI_FRM_NEXT_FRM_PTR_SET(dti->first_frm_idx),
+		 AFI_DTI_FRM_NEXT_FRM_PTR, sparx5, AFI_DTI_FRM(dti_idx));
+
+	if (dti->mode != 0)
+		spx5_rmw(AFI_DTI_MODE_MODE_SET(0) | AFI_DTI_MODE_FRM_INJ_CNT_SET(0),
+			 AFI_DTI_MODE_MODE | AFI_DTI_MODE_FRM_INJ_CNT,
+			 sparx5, AFI_DTI_MODE(dti_idx));
+
+	spx5_rmw(AFI_DTI_CNT_CNT_SET(1), AFI_DTI_CNT_CNT,
+		 sparx5, AFI_DTI_CNT(dti_idx));
+
+	for (frm_idx = dti->first_frm_idx; frm_idx > 0;
+	     frm_idx = afi->frm_tbl[frm_idx].next_idx) {
+		if (afi->frm_tbl[frm_idx].entry_type == 1)
+			spx5_wr(0, sparx5, AFI_FRM_ENTRY_PART0(frm_idx));
+	}
+
+	spx5_wr(0, sparx5, AFI_DTI_CNT_DOWN(dti_idx));
+
+	spx5_wr(AFI_DTI_CTRL_ENA_SET(1) | AFI_DTI_CTRL_BW_SET(0),
+		sparx5, AFI_DTI_CTRL(dti_idx));
+
+	if (last_frm_idx)
+		sparx5_afi_frm_gone_wait(sparx5, dti_idx, dti->port_no,
+					 last_frm_idx, true);
+
+	return 0;
+}
+
+static int sparx5_afi_dti_seq_cnt_get(struct afi_control *afi, u32 dti_idx,
+				      u32 *seq_cnt)
+{
+	struct sparx5 *sparx5 = afi->priv;
+
+	*seq_cnt = AFI_DTI_CNT_CNT_GET(spx5_rd(sparx5, AFI_DTI_CNT(dti_idx)));
+
+	return 0;
+}
+
 struct afi_consts sparx5_afi_consts = {
 	.frm_cnt = SPARX5_AFI_FRM_CNT,
 	.slow_inj_cnt = SPARX5_AFI_SLOW_INJ_CNT,
 	.prio_super = SPARX5_PRIO_SUPER,
+	.fast_inj_bps_min = SPARX5_AFI_FAST_INJ_BPS_MIN,
 };
 
 struct afi_operations sparx5_afi_operations = {
@@ -462,26 +668,78 @@ struct afi_operations sparx5_afi_operations = {
 	.tti_frm_rm_inj = sparx5_afi_tti_frm_rm_inj,
 	.tti_start = sparx5_afi_tti_start,
 	.tti_stop = sparx5_afi_tti_stop,
+	.frm_inject = sparx5_afi_frm_inject,
+	.dti_frm_hijack = sparx5_afi_dti_frm_hijack,
+	.dti_frm_rm_inj = sparx5_afi_dti_frm_rm_inj,
+	.dti_start = sparx5_afi_dti_start,
+	.dti_stop = sparx5_afi_dti_stop,
+	.dti_seq_cnt_get = sparx5_afi_dti_seq_cnt_get,
+};
+
+static int sparx5_afi_nl_port_of(void *priv, struct net_device *ndev)
+{
+	struct sparx5 *sparx5 = priv;
+	struct sparx5_port *port;
+
+	if (!sparx5_netdevice_check(ndev))
+		return -ENODEV;
+
+	port = netdev_priv(ndev);
+	if (port->sparx5 != sparx5)
+		return -ENODEV;
+
+	return port->portno;
+}
+
+static const struct afi_nl_ops sparx5_afi_nl_ops = {
+	.port_of = sparx5_afi_nl_port_of,
 };
 
 int sparx5_afi_init(struct sparx5 *sparx5)
 {
 	struct afi_control *afi_ctrl;
+	int ret;
 
 	afi_ctrl = kzalloc(sizeof(*afi_ctrl), GFP_KERNEL);
 	if (!afi_ctrl)
 		return -ENOMEM;
+
+	/* The DTI table size and the maximum port line rate differ between
+	 * sparx5 and lan969x, so fill in the chip-specific constants here.
+	 */
+	sparx5_afi_consts.dti_cnt = is_sparx5(sparx5) ? SPARX5_AFI_DTI_CNT :
+							LAN969X_AFI_DTI_CNT;
+	sparx5_afi_consts.fast_inj_bps_max = is_sparx5(sparx5) ?
+					     SPARX5_AFI_FAST_INJ_BPS_MAX :
+					     LAN969X_AFI_FAST_INJ_BPS_MAX;
 
 	afi_ctrl->ops = &sparx5_afi_operations;
 	afi_ctrl->consts = &sparx5_afi_consts;
 	afi_ctrl->priv = sparx5;
 	sparx5->afi_ctrl = afi_ctrl;
 
-	return afi_init(afi_ctrl);
+	ret = afi_init(afi_ctrl);
+	if (ret)
+		goto err_free;
+
+	ret = afi_netlink_register(afi_ctrl, sparx5, &sparx5_afi_nl_ops);
+	if (ret)
+		goto err_deinit;
+
+	return 0;
+
+err_deinit:
+	afi_deinit(afi_ctrl);
+err_free:
+	kfree(afi_ctrl);
+	sparx5->afi_ctrl = NULL;
+	return ret;
 }
 
 void sparx5_afi_deinit(struct sparx5 *sparx5)
 {
+	afi_netlink_unregister(sparx5->afi_ctrl);
+
 	afi_deinit(sparx5->afi_ctrl);
 
 	kfree(sparx5->afi_ctrl);

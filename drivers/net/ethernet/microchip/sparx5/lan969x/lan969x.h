@@ -12,10 +12,16 @@
 
 #include "../sparx5/sparx5_main.h"
 #include "../sparx5/sparx5_regs.h"
+#include "../sparx5/sparx5_tc.h"
 #include "../sparx5/sparx5_vcap_impl.h"
 
 #define LAN969X_DSM_CAL_DEVS_PER_TAXI 10
 #define LAN969X_RB_REDBOX_CNT 5
+
+/* Reserved for redbox port isolation, one VID per redbox. Must be refused to
+ * users: a bridge VLAN here would share the redbox FID and its {vid, bcast} row.
+ */
+#define LAN969X_RB_VID_BASE (VLAN_N_VID - LAN969X_RB_REDBOX_CNT)
 
 /* lan969x.c */
 extern const struct sparx5_match_data lan969x_desc;

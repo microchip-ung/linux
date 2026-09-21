@@ -587,8 +587,8 @@ static void lan966x_port_qos_dscp_rewr_set(struct lan966x_port *port,
 		port->lan966x, REW_DSCP_CFG(port->chip_port));
 
 	/* Map each classified Qos class and DP to classified DSCP value */
-	for (int i = 0; i < ARRAY_SIZE(qos->map); i++) {
-		dscp = qos->map[i];
+	for (int i = 0; i < 2 * NUM_PRIO_QUEUES; i++) {
+		dscp = qos->map[i % NUM_PRIO_QUEUES];
 
 		lan_rmw(ANA_DSCP_REWR_CFG_DSCP_QOS_REWR_VAL_SET(dscp),
 			ANA_DSCP_REWR_CFG_DSCP_QOS_REWR_VAL,
@@ -622,6 +622,16 @@ void lan966x_port_init(struct lan966x_port *port)
 	lan_rmw(ANA_PORT_CFG_LEARN_ENA_SET(0),
 		ANA_PORT_CFG_LEARN_ENA,
 		lan966x, ANA_PORT_CFG(port->chip_port));
+
+	lan_rmw(DEV_MAC_TAGS_CFG_VLAN_AWR_ENA_SET(1) |
+		DEV_MAC_TAGS_CFG_VLAN_DBL_AWR_ENA_SET(1) |
+		DEV_MAC_TAGS_CFG_VLAN_LEN_AWR_ENA_SET(1) |
+		DEV_MAC_TAGS_CFG_TAG_ID_SET(ETH_P_8021AD),
+		DEV_MAC_TAGS_CFG_VLAN_AWR_ENA |
+		DEV_MAC_TAGS_CFG_VLAN_DBL_AWR_ENA |
+		DEV_MAC_TAGS_CFG_VLAN_LEN_AWR_ENA |
+		DEV_MAC_TAGS_CFG_TAG_ID,
+		lan966x, DEV_MAC_TAGS_CFG(port->chip_port));
 
 	lan966x_port_config_down(port);
 

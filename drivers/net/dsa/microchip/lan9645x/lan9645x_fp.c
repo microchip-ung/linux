@@ -36,12 +36,52 @@ int lan9645x_fp_get(struct lan9645x_port *p,
 	return 0;
 }
 
-static int __lan9645x_fp_set(struct lan9645x_port *p,
-			     struct lan9645x_fp_port_conf *c, bool link)
+static bool lan9645x_fp_ena(struct lan9645x_port *p, bool link)
 {
-	bool verify_dis, capable, fp_ena;
+	bool capable = p->duplex == DUPLEX_FULL &&
+		       p->speed >= LAN9645X_SPEED_100;
+
+	return capable && link && p->fp.enable_tx;
+}
+
+/* Returns true when the committed preemptible TC mask changed, in which case the
+ * caller must re-run lan9645x_taprio_guard_bands_recalc() once fp_lock is
+ * dropped: preemptible TCs are guard banded differently from express ones.
+ */
+static bool __lan9645x_fp_commit_pqueues(struct lan9645x_port *p, bool fp_ena)
+{
+	u32 status, mask;
+	bool active;
+
+	status = lan_rd(p->lan9645x, DEV_MM_STATUS(p->chip_port));
+	active = DEV_MM_STATUS_PRMPT_ACTIVE_STATUS_GET(status);
+
+	mask = (fp_ena && active) ? p->fp.admin_status : 0;
+
+	lan_rmw(QSYS_PREEMPT_CFG_P_QUEUES_SET(mask),
+		QSYS_PREEMPT_CFG_P_QUEUES,
+		p->lan9645x,
+		QSYS_PREEMPT_CFG(p->chip_port));
+
+	if (p->fp_active_tcs == mask)
+		return false;
+
+	p->fp_active_tcs = mask;
+
+	return true;
+}
+
+static void lan9645x_fp_recheck(struct lan9645x_port *p)
+{
+	mod_delayed_work(p->lan9645x->queue, &p->lan9645x->fp_work, 0);
+}
+
+static int __lan9645x_fp_set(struct lan9645x_port *p,
+			     struct lan9645x_fp_port_conf *c, bool link,
+			     bool *tcs_changed)
+{
+	bool verify_dis, fp_ena;
 	struct net_device *dev;
-	u32 mask;
 
 	dev = lan9645x_port_to_ndev(p);
 
@@ -61,10 +101,10 @@ static int __lan9645x_fp_set(struct lan9645x_port *p,
 		return -EINVAL;
 	}
 
-	capable = p->duplex == DUPLEX_FULL && p->speed >= LAN9645X_SPEED_100;
-	fp_ena = capable && link && c->enable_tx;
-	verify_dis = !(fp_ena && !c->verify_disable_tx);
-	mask = fp_ena ? c->admin_status : 0;
+	p->fp = *c;
+
+	fp_ena = lan9645x_fp_ena(p, link);
+	verify_dis = !(fp_ena && !p->fp.verify_disable_tx);
 
 	/* Toggle verification state machine on reconfiguration. */
 	lan_rmw(DEV_VERIF_CONFIG_PRM_VERIFY_DIS_SET(1),
@@ -72,48 +112,50 @@ static int __lan9645x_fp_set(struct lan9645x_port *p,
 		p->lan9645x, DEV_VERIF_CONFIG(p->chip_port));
 
 	lan_wr(DEV_VERIF_CONFIG_PRM_VERIFY_DIS_SET(verify_dis) |
-	       DEV_VERIF_CONFIG_PRM_VERIFY_TIME_SET(c->verify_time) |
+	       DEV_VERIF_CONFIG_PRM_VERIFY_TIME_SET(p->fp.verify_time) |
 	       DEV_VERIF_CONFIG_VERIF_TIMER_UNITS_SET(
 			p->speed == LAN9645X_SPEED_2500 ? 2 : 0),
 		p->lan9645x, DEV_VERIF_CONFIG(p->chip_port));
 
-	lan_rmw(SYS_FRONT_PORT_MODE_ADD_FRAG_SIZE_SET(c->add_frag_size),
+	lan_rmw(SYS_FRONT_PORT_MODE_ADD_FRAG_SIZE_SET(p->fp.add_frag_size),
 		SYS_FRONT_PORT_MODE_ADD_FRAG_SIZE,
 		p->lan9645x,
 		SYS_FRONT_PORT_MODE(p->chip_port));
 
-	lan_rmw(QSYS_PREEMPT_CFG_P_QUEUES_SET(mask),
-		QSYS_PREEMPT_CFG_P_QUEUES,
-		p->lan9645x,
-		QSYS_PREEMPT_CFG(p->chip_port));
+	*tcs_changed = __lan9645x_fp_commit_pqueues(p, fp_ena);
 
-	p->fp = *c;
 	return 0;
 }
 
 int lan9645x_fp_set(struct lan9645x_port *p,
 		    struct lan9645x_fp_port_conf *c, bool link)
 {
+	bool tcs_changed = false;
 	int err;
 
 	mutex_lock(&p->fp_lock);
-	err = __lan9645x_fp_set(p, c, link);
+	err = __lan9645x_fp_set(p, c, link, &tcs_changed);
 	mutex_unlock(&p->fp_lock);
-	return err;
+
+	if (err)
+		return err;
+
+	if (tcs_changed)
+		lan9645x_taprio_guard_bands_recalc(p);
+
+	lan9645x_fp_recheck(p);
+
+	return 0;
 }
 
 void lan9645x_fp_change_preemptable_tcs(struct lan9645x_port *p,
 					unsigned long preemptible_tcs)
 {
-	struct lan9645x_fp_port_conf c = {};
-	struct net_device *dev;
-
-	dev = lan9645x_port_to_ndev(p);
+	struct net_device *dev = lan9645x_port_to_ndev(p);
 
 	mutex_lock(&p->fp_lock);
-	c = p->fp;
-	c.admin_status = preemptible_tcs;
-	__lan9645x_fp_set(p, &c, netif_carrier_ok(dev));
+	p->fp.admin_status = preemptible_tcs;
+	__lan9645x_fp_commit_pqueues(p, lan9645x_fp_ena(p, netif_carrier_ok(dev)));
 	mutex_unlock(&p->fp_lock);
 
 	/* Recalculate TAS guard bands: preemptible TCs use MAC HOLD
@@ -121,6 +163,8 @@ void lan9645x_fp_change_preemptable_tcs(struct lan9645x_port *p,
 	 * changes when the preemptible TC set changes.
 	 */
 	lan9645x_taprio_guard_bands_recalc(p);
+
+	lan9645x_fp_recheck(p);
 }
 
 int lan9645x_fp_status(struct lan9645x_port *p,
@@ -137,7 +181,14 @@ int lan9645x_fp_status(struct lan9645x_port *p,
 	s->release_advance = FP_RELEASE_ADVANCE;
 
 	status = lan_rd(p->lan9645x, DEV_MM_STATUS(p->chip_port));
-	s->preemption_active = !!DEV_MM_STATUS_PRMPT_ACTIVE_STATUS_GET(status);
+
+	/* MM_TX_ENA is enabled for every port, so PRMPT_ACTIVE_STATUS reads set
+	 * on any port with verification disabled. Qualify it with the conditions
+	 * that gate P_QUEUES, so this cannot report active while preemption is
+	 * administratively off, the link is down or the speed is too low.
+	 */
+	s->preemption_active = lan9645x_fp_ena(p, netif_carrier_ok(dev)) &&
+			       !!DEV_MM_STATUS_PRMPT_ACTIVE_STATUS_GET(status);
 	sv = DEV_MM_STATUS_PRMPT_VERIFY_STATE_GET(status);
 
 	if (!netif_carrier_ok(dev))
@@ -190,23 +241,27 @@ static void lan9645x_fp_check_port(struct lan9645x_port *p)
 	struct net_device *dev = lan9645x_port_to_ndev(p);
 	struct lan9645x *lan9645x = p->lan9645x;
 	u32 status, verify_state, act_sticky;
+	bool tcs_changed = false;
 
 	mutex_lock(&p->fp_lock);
 
-	if (!p->fp.enable_tx || p->fp.verify_disable_tx ||
-	    (dev && !netif_carrier_ok(dev)))
+	if (!p->fp.enable_tx || (dev && !netif_carrier_ok(dev)))
 		goto unlock;
 
 	status = lan_rd(lan9645x, DEV_MM_STATUS(p->chip_port));
 	verify_state = DEV_MM_STATUS_PRMPT_VERIFY_STATE_GET(status);
 	act_sticky = DEV_MM_STATUS_PRMPT_ACTIVE_STICKY_GET(status);
 
-	if (act_sticky)
+	if (act_sticky) {
 		lan_rmw(DEV_MM_STATUS_PRMPT_ACTIVE_STICKY_SET(0),
 			DEV_MM_STATUS_PRMPT_ACTIVE_STICKY,
 			lan9645x, DEV_MM_STATUS(p->chip_port));
 
-	if (verify_state != FP_STATUS_VERIFY_FAILED)
+		tcs_changed = __lan9645x_fp_commit_pqueues(p,
+			lan9645x_fp_ena(p, dev && netif_carrier_ok(dev)));
+	}
+
+	if (p->fp.verify_disable_tx || verify_state != FP_STATUS_VERIFY_FAILED)
 		goto unlock;
 
 	/* Restart verification after fail. */
@@ -225,6 +280,9 @@ static void lan9645x_fp_check_port(struct lan9645x_port *p)
 
 unlock:
 	mutex_unlock(&p->fp_lock);
+
+	if (tcs_changed)
+		lan9645x_taprio_guard_bands_recalc(p);
 }
 
 static void lan9645x_fp_check_all(struct lan9645x *lan9645x)

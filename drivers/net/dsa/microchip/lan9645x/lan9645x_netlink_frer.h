@@ -5,6 +5,9 @@
 #ifndef __LAN9645X_NETLINK_FRER_H__
 #define __LAN9645X_NETLINK_FRER_H__
 
+#include <linux/mutex.h>
+#include <linux/workqueue.h>
+
 #include "lan9645x_main.h"
 #include "../../../ethernet/microchip/mchp_ui_qos.h"
 
@@ -17,6 +20,7 @@
 #define LAN9645X_FRER_HLEN_MAX     32 /* Maximum history length */
 #define LAN9645X_FRER_RESET_MIN     0 /* Minimum reset time */
 #define LAN9645X_FRER_RESET_MAX  4095 /* Maximum reset_time */
+#define LAN9645X_FRER_STATS_DELAY (4 * HZ)
 
 struct lan9645x_frer_prev_cnt {
 	u32 out_of_order_packets; /* frerCpsSeqRcvyOutOfOrderPackets */
@@ -34,6 +38,9 @@ struct lan9645x_frer_ms_adm {
 
 struct lan9645x_nl_frer {
 	struct lan9645x *lan9645x;
+
+	struct mutex cnt_lock;
+	struct delayed_work cnt_work;
 
 	struct mchp_frer_stream_cfg ms_cfg[LAN9645X_FRER_NUM_MSI];
 	struct mchp_frer_stream_cfg cs_cfg[LAN9645X_FRER_NUM_CSI];
@@ -89,6 +96,7 @@ int lan9645x_frer_isdx_alloc(struct lan9645x_nl_frer *frer);
 int lan9645x_frer_isdx_free(struct lan9645x_nl_frer *frer, u32 isdx);
 
 int lan9645x_frer_init(struct lan9645x_nl_frer *frer);
+void lan9645x_frer_deinit(struct lan9645x_nl_frer *frer);
 int lan9645x_netlink_frer_init(struct lan9645x *lan9645x);
 void lan9645x_netlink_frer_uninit(void);
 

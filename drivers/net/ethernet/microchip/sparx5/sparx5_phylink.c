@@ -42,6 +42,7 @@ sparx5_phylink_mac_select_pcs(struct phylink_config *config,
 	case PHY_INTERFACE_MODE_10GBASER:
 	case PHY_INTERFACE_MODE_25GBASER:
 	case PHY_INTERFACE_MODE_10G_QXGMII:
+	case PHY_INTERFACE_MODE_USXGMII:
 		return &port->phylink_pcs;
 	default:
 		return NULL;
@@ -130,7 +131,7 @@ static int sparx5_pcs_config(struct phylink_pcs *pcs, unsigned int neg_mode,
 		conf.pause_adv |= ADVERTISE_1000XPAUSE;
 	if (phylink_test(advertising, Asym_Pause))
 		conf.pause_adv |= ADVERTISE_1000XPSE_ASYM;
-	if (sparx5_is_baser(interface)) {
+	if (sparx5_port_is_high_speed(port->sparx5, port->portno, interface)) {
 		if (phylink_test(advertising, FIBRE))
 			conf.media = PHY_MEDIA_SR;
 		else
