@@ -224,11 +224,13 @@ static void sparx5_lag_map_logical_ports(struct sparx5 *sparx5)
 int sparx5_lag_aggr_masks_set(struct sparx5_port *port, bool leaving)
 {
 	const struct sparx5_consts *consts = port->sparx5->data->consts;
+	u32 lag_mask32[BITS_TO_U32(SPX5_PORTS)];
+	u32 lag_aggr32[BITS_TO_U32(SPX5_PORTS)];
 	struct sparx5 *sparx5 = port->sparx5;
 	DECLARE_BITMAP(lag_mask, SPX5_PORTS);
+	DECLARE_BITMAP(lag_aggr, SPX5_PORTS);
 	int n_active_ports = 0, portno = 0;
 	u8 active_idx[LAG_MASKS_CNT];
-	u32 mask;
 
 	sparx5_lag_mask_get(sparx5, port->lag_master, lag_mask);
 
@@ -239,18 +241,33 @@ int sparx5_lag_aggr_masks_set(struct sparx5_port *port, bool leaving)
 	if (!leaving && n_active_ports > LAG_MASKS_CNT)
 		return -EOPNOTSUPP;
 
+	/* If we are leaving, this portno is not part of the lag mask but its
+	 * value will need to be overwritten in the write to the AGGR_CFG
+	 * register below, so we add it to the mask. For the joining case, this
+	 * bit is already set.
+	 */
+	set_bit(port->portno, lag_mask);
+	bitmap_to_arr32(lag_mask32, lag_mask, SPX5_PORTS);
+
 	for (int i = 0; i < LAG_MASKS_CNT; i++) {
-		mask = leaving ? BIT(port->portno) : 0;
+		bitmap_zero(lag_aggr, SPX5_PORTS);
+		if (leaving)
+			set_bit(port->portno, lag_aggr);
 
 		if (n_active_ports)
-			mask |= BIT(active_idx[i % n_active_ports]);
+			set_bit(active_idx[i % n_active_ports], lag_aggr);
 
-		spx5_rmw(mask, lag_mask[0] | BIT(port->portno), sparx5,
+		bitmap_to_arr32(lag_aggr32, lag_aggr, SPX5_PORTS);
+
+		spx5_rmw(lag_aggr32[0], lag_mask32[0], sparx5,
 			 ANA_AC_AGGR_CFG(i));
 
-		if (is_sparx5(sparx5))
-			spx5_rmw(mask, lag_mask[1] | BIT(port->portno), sparx5,
-				 ANA_AC_AGGR_CFG(i));
+		if (is_sparx5(sparx5)) {
+			spx5_rmw(lag_aggr32[1], lag_mask32[1], sparx5,
+				 ANA_AC_AGGR_CFG1(i));
+			spx5_rmw(lag_aggr32[2], lag_mask32[2], sparx5,
+				 ANA_AC_AGGR_CFG2(i));
+		}
 	}
 
 	return 0;
