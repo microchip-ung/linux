@@ -43,8 +43,12 @@ void lan9645x_npi_port_init(struct lan9645x *lan9645x,
 
 	/* Any CPU extraction queue frames, are sent to external CPU on given port.
 	 * Never send injected frames back to cpu.
+	 *
+	 * The NPI port starts out link down, so leave the queue mask empty
+	 * here: lan9645x_npi_port_xtr_enable() fills it in once the link is
+	 * up.
 	 */
-	lan_wr(QSYS_EXT_CPU_CFG_EXT_CPUQ_MSK |
+	lan_wr(QSYS_EXT_CPU_CFG_EXT_CPUQ_MSK_SET(0) |
 	       QSYS_EXT_CPU_CFG_EXT_CPU_PORT_SET(p->chip_port) |
 	       QSYS_EXT_CPU_CFG_EXT_CPU_KILL_ENA_SET(1) |
 	       QSYS_EXT_CPU_CFG_INT_CPU_KILL_ENA_SET(1),
@@ -74,6 +78,32 @@ void lan9645x_npi_port_init(struct lan9645x *lan9645x,
 	 * output due to a CPU forwarding decision such as trapping or cpu copy.
 	 */
 	lan_rmw(0, BIT(port), lan9645x, ANA_PGID(PGID_SRC + CPU_PORT));
+}
+
+/* Frames for the CPU are redirected to the NPI port by QSYS_EXT_CPU_CFG.
+ * While a front port's link is down the bridge keeps it out of the forwarding
+ * masks, but nothing does that for the NPI port, so CPU frames keep being
+ * queued to it while lan9645x_phylink_port_down() holds its MAC in reset.
+ * Once that has happened the port never dequeues those frames again, even
+ * after the link is back: the queue is wedged, the port-down flush times out,
+ * and the host receives nothing until the switch is reset.
+ *
+ * So only redirect CPU frames to the NPI port while its link is up. While it
+ * is down they go to the internal CPU extraction queues instead, which
+ * nothing reads; flush those before redirecting to the NPI port again.
+ */
+void lan9645x_npi_port_xtr_enable(struct lan9645x *lan9645x, bool enable)
+{
+	if (enable) {
+		lan_wr(QS_XTR_FLUSH_FLUSH_SET(GENMASK(1, 0)), lan9645x,
+		       QS_XTR_FLUSH);
+		usleep_range(USEC_PER_MSEC, 2 * USEC_PER_MSEC);
+		lan_wr(QS_XTR_FLUSH_FLUSH_SET(0), lan9645x, QS_XTR_FLUSH);
+	}
+
+	lan_rmw(QSYS_EXT_CPU_CFG_EXT_CPUQ_MSK_SET(enable ? GENMASK(7, 0) : 0),
+		QSYS_EXT_CPU_CFG_EXT_CPUQ_MSK,
+		lan9645x, QSYS_EXT_CPU_CFG);
 }
 
 void lan9645x_npi_port_deinit(struct lan9645x *lan9645x, int port)

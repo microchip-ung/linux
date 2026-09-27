@@ -351,6 +351,12 @@ void lan9645x_phylink_mac_link_up(struct lan9645x *lan9645x, int port,
 		AFI_PORT_CFG_FRM_OUT_MAX,
 		lan9645x, AFI_PORT_CFG(p->chip_port));
 
+	/* The port is out of reset and enabled, so CPU frames can go to it
+	 * again, see lan9645x_npi_port_xtr_enable().
+	 */
+	if (port == lan9645x->npi)
+		lan9645x_npi_port_xtr_enable(lan9645x, true);
+
 	lan9645x_fp_link_change(p, true);
 }
 
@@ -503,6 +509,12 @@ void lan9645x_phylink_mac_link_down(struct lan9645x *lan9645x, int port,
 
 	dev_dbg(lan9645x->dev, "port=%d link_an_mode=%u interface=%u\n", port,
 		link_an_mode, interface);
+
+	/* Stop queueing CPU frames to the NPI port before it goes into reset,
+	 * see lan9645x_npi_port_xtr_enable().
+	 */
+	if (port == lan9645x->npi)
+		lan9645x_npi_port_xtr_enable(lan9645x, false);
 
 	lan9645x_phylink_port_down(lan9645x, port);
 

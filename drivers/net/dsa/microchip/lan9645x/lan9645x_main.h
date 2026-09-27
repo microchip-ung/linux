@@ -980,6 +980,7 @@ static inline void lan_rmw(u32 val, u32 mask, struct lan9645x *lan9645x,
 void lan9645x_npi_port_init(struct lan9645x *lan9645x,
 			    struct dsa_port *cpu_port);
 void lan9645x_npi_port_deinit(struct lan9645x *lan9645x, int port);
+void lan9645x_npi_port_xtr_enable(struct lan9645x *lan9645x, bool enable);
 
 /* lan9645x_phylink.c */
 void lan9645x_phylink_get_caps(struct lan9645x *lan9645x, int port,
