@@ -1124,7 +1124,11 @@ static int mchp_sparx5_probe(struct platform_device *pdev)
 		config->node = portnp;
 		config->serdes = serdes;
 
-		conf->media = PHY_MEDIA_DAC;
+		/* QSGMII lanes connect to an on-board PHY, not to a cable: use the
+		 * default SerDes preset (as MESA does) instead of the DAC preset.
+		 */
+		conf->media = conf->phy_mode == PHY_INTERFACE_MODE_QSGMII ?
+			      PHY_MEDIA_DEFAULT : PHY_MEDIA_DAC;
 		conf->serdes_reset = true;
 		conf->portmode = conf->phy_mode;
 		conf->power_down = true;
