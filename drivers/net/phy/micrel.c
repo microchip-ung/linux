@@ -3136,21 +3136,29 @@ static int lanphy_modify_page_reg(struct phy_device *phydev, int page, u16 addr,
 	return ret;
 }
 
-static int lan8814_rev_workaround(struct phy_device *phydev)
+/* LAN8814 erratum 4 (DS80001002, "Analog front-end not optimized for PHY-side
+ * shorted center taps", silicon up to rev C1): the POWER_MGMT mode settings
+ * must be applied to *each* port of the quad-PHY. Ports whose netdev is never
+ * opened would otherwise keep the hardware defaults, and such unconfigured
+ * sibling ports disturb the 1000BASE-T transmitter of the ports in use in the
+ * same package (random symbol/FCS errors at the link partner, FER ~1e-6).
+ * The analog front-end settings below (written by MEPA after every reset,
+ * never by this driver before) are applied together with it.
+ * Called from probe for every port and again from config_init, because the
+ * soft reset in phy_init_hw() restores the defaults.
+ */
+#define LAN8814_STRAP_STATUS_2			1	/* page 4 (common) */
+#define LAN8814_STRAP_STATUS_2_BOND_MASK	GENMASK(3, 0)
+#define LAN8814_ANALOG_CONTROL_4		4	/* page 28 */
+#define LAN8814_ANALOG_CONTROL_4_VAL		0x81e0
+#define LAN8814_ANALOG_CONTROL_4_LP_VAL		0x00fd
+#define LAN8814_AFED_CONTROL			9	/* page 28 */
+#define LAN8814_AFED_CONTROL_VAL		0xe214
+
+static void lan8814_port_errata(struct phy_device *phydev)
 {
-	struct kszphy_priv *priv = phydev->priv;
-	u16 val;
+	int bond;
 
-	/* work-around done for rev C */
-	if (priv->rev < 2) {
-		/* MDI-X setting for swap A,B transmit */
-		val = lanphy_read_page_reg(phydev, 2, LAN8814_ALIGN_SWAP);
-		val &= ~LAN8814_ALIGN_TX_A_B_SWAP_MASK;
-		val |= LAN8814_ALIGN_TX_A_B_SWAP;
-		lanphy_write_page_reg(phydev, 2, LAN8814_ALIGN_SWAP, val);
-	}
-
-	/* Magjack center tapped ports */
 	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_3_ANEG_MDI,
 			      LAN8814_POWER_MGMT_VAL1_);
 	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_4_ANEG_MDIX,
@@ -3175,6 +3183,39 @@ static int lan8814_rev_workaround(struct phy_device *phydev)
 			      LAN8814_POWER_MGMT_VAL4_);
 	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_14_100BTX_EEE_TX_RX,
 			      LAN8814_POWER_MGMT_VAL4_);
+
+	/* Analog front-end settings as Microchip MEPA applies them after every
+	 * reset (lan8814_workaround_after_reset()): AFED_CONTROL ("Clause 14 UNH
+	 * fix") and ANALOG_CONTROL_4 (low-power bond variants use a different
+	 * value). Without ANALOG_CONTROL_4 the receiver handles a marginal channel
+	 * far worse (idle-error count saturates, MSE rises, frames are lost).
+	 */
+	bond = lanphy_read_page_reg(phydev, LAN8814_PAGE_COMMON_REGS,
+				    LAN8814_STRAP_STATUS_2);
+	bond = bond < 0 ? 0 : (bond & LAN8814_STRAP_STATUS_2_BOND_MASK);
+	lanphy_write_page_reg(phydev, LAN8814_PAGE_POWER_REGS, LAN8814_AFED_CONTROL,
+			      LAN8814_AFED_CONTROL_VAL);
+	lanphy_write_page_reg(phydev, LAN8814_PAGE_POWER_REGS, LAN8814_ANALOG_CONTROL_4,
+			      (bond == 4 || bond == 5 || bond == 12 || bond == 13) ?
+			      LAN8814_ANALOG_CONTROL_4_LP_VAL : LAN8814_ANALOG_CONTROL_4_VAL);
+}
+
+static int lan8814_rev_workaround(struct phy_device *phydev)
+{
+	struct kszphy_priv *priv = phydev->priv;
+	u16 val;
+
+	/* work-around done for rev C */
+	if (priv->rev < 2) {
+		/* MDI-X setting for swap A,B transmit */
+		val = lanphy_read_page_reg(phydev, 2, LAN8814_ALIGN_SWAP);
+		val &= ~LAN8814_ALIGN_TX_A_B_SWAP_MASK;
+		val |= LAN8814_ALIGN_TX_A_B_SWAP;
+		lanphy_write_page_reg(phydev, 2, LAN8814_ALIGN_SWAP, val);
+	}
+
+	/* Magjack center tapped ports */
+	lan8814_port_errata(phydev);
 
 	/* Refresh time Waketx timer */
 	lanphy_write_page_reg(phydev, 3, LAN8814_EEE_WAKE_TX_TIMER,
@@ -5131,6 +5172,9 @@ static int lan8814_probe(struct phy_device *phydev)
 	lan8814_clear_2psp_bit(phydev);
 	lan8814_update_meas_time(phydev);
 	lan8814_workarounds_in_probe(phydev);
+
+	/* Per-port errata must cover every port of the package, also unused ones */
+	lan8814_port_errata(phydev);
 
 	INIT_DELAYED_WORK(&priv->phy_aneg_work, lan8814_phy_aneg_work);
 	INIT_DELAYED_WORK(&priv->phy_force_work, lan8814_phy_force_work);
