@@ -3136,21 +3136,29 @@ static int lanphy_modify_page_reg(struct phy_device *phydev, int page, u16 addr,
 	return ret;
 }
 
-static int lan8814_rev_workaround(struct phy_device *phydev)
+/* LAN8814 erratum 4 (DS80001002, "Analog front-end not optimized for PHY-side
+ * shorted center taps", silicon up to rev C1): the POWER_MGMT mode settings
+ * must be applied to *each* port of the quad-PHY. Ports whose netdev is never
+ * opened would otherwise keep the hardware defaults, and such unconfigured
+ * sibling ports disturb the 1000BASE-T transmitter of the ports in use in the
+ * same package (random symbol/FCS errors at the link partner, FER ~1e-6).
+ * The analog front-end settings below (written by MEPA after every reset,
+ * never by this driver before) are applied together with it.
+ * Called from probe for every port and again from config_init, because the
+ * soft reset in phy_init_hw() restores the defaults.
+ */
+#define LAN8814_STRAP_STATUS_2			1	/* page 4 (common) */
+#define LAN8814_STRAP_STATUS_2_BOND_MASK	GENMASK(3, 0)
+#define LAN8814_ANALOG_CONTROL_4		4	/* page 28 */
+#define LAN8814_ANALOG_CONTROL_4_VAL		0x81e0
+#define LAN8814_ANALOG_CONTROL_4_LP_VAL		0x00fd
+#define LAN8814_AFED_CONTROL			9	/* page 28 */
+#define LAN8814_AFED_CONTROL_VAL		0xe214
+
+static void lan8814_port_errata(struct phy_device *phydev)
 {
-	struct kszphy_priv *priv = phydev->priv;
-	u16 val;
+	int bond;
 
-	/* work-around done for rev C */
-	if (priv->rev < 2) {
-		/* MDI-X setting for swap A,B transmit */
-		val = lanphy_read_page_reg(phydev, 2, LAN8814_ALIGN_SWAP);
-		val &= ~LAN8814_ALIGN_TX_A_B_SWAP_MASK;
-		val |= LAN8814_ALIGN_TX_A_B_SWAP;
-		lanphy_write_page_reg(phydev, 2, LAN8814_ALIGN_SWAP, val);
-	}
-
-	/* Magjack center tapped ports */
 	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_3_ANEG_MDI,
 			      LAN8814_POWER_MGMT_VAL1_);
 	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_4_ANEG_MDIX,
@@ -3175,6 +3183,39 @@ static int lan8814_rev_workaround(struct phy_device *phydev)
 			      LAN8814_POWER_MGMT_VAL4_);
 	lanphy_write_page_reg(phydev, 28, LAN8814_POWER_MGMT_MODE_14_100BTX_EEE_TX_RX,
 			      LAN8814_POWER_MGMT_VAL4_);
+
+	/* Analog front-end settings as Microchip MEPA applies them after every
+	 * reset (lan8814_workaround_after_reset()): AFED_CONTROL ("Clause 14 UNH
+	 * fix") and ANALOG_CONTROL_4 (low-power bond variants use a different
+	 * value). Without ANALOG_CONTROL_4 the receiver handles a marginal channel
+	 * far worse (idle-error count saturates, MSE rises, frames are lost).
+	 */
+	bond = lanphy_read_page_reg(phydev, LAN8814_PAGE_COMMON_REGS,
+				    LAN8814_STRAP_STATUS_2);
+	bond = bond < 0 ? 0 : (bond & LAN8814_STRAP_STATUS_2_BOND_MASK);
+	lanphy_write_page_reg(phydev, LAN8814_PAGE_POWER_REGS, LAN8814_AFED_CONTROL,
+			      LAN8814_AFED_CONTROL_VAL);
+	lanphy_write_page_reg(phydev, LAN8814_PAGE_POWER_REGS, LAN8814_ANALOG_CONTROL_4,
+			      (bond == 4 || bond == 5 || bond == 12 || bond == 13) ?
+			      LAN8814_ANALOG_CONTROL_4_LP_VAL : LAN8814_ANALOG_CONTROL_4_VAL);
+}
+
+static int lan8814_rev_workaround(struct phy_device *phydev)
+{
+	struct kszphy_priv *priv = phydev->priv;
+	u16 val;
+
+	/* work-around done for rev C */
+	if (priv->rev < 2) {
+		/* MDI-X setting for swap A,B transmit */
+		val = lanphy_read_page_reg(phydev, 2, LAN8814_ALIGN_SWAP);
+		val &= ~LAN8814_ALIGN_TX_A_B_SWAP_MASK;
+		val |= LAN8814_ALIGN_TX_A_B_SWAP;
+		lanphy_write_page_reg(phydev, 2, LAN8814_ALIGN_SWAP, val);
+	}
+
+	/* Magjack center tapped ports */
+	lan8814_port_errata(phydev);
 
 	/* Refresh time Waketx timer */
 	lanphy_write_page_reg(phydev, 3, LAN8814_EEE_WAKE_TX_TIMER,
@@ -4828,15 +4869,21 @@ static void lan8814_setup_led(struct phy_device *phydev, int val)
 			      LAN8814_LED_CTRL_1, temp);
 }
 
+static void lan8814_cable_tuning(struct phy_device *phydev);
+
 static int lan8814_config_init(struct phy_device *phydev)
 {
 	struct kszphy_priv *lan8814 = phydev->priv;
 
-	/* Reset the PHY */
-	lanphy_modify_page_reg(phydev, LAN8814_PAGE_COMMON_REGS,
-			       LAN8814_QSGMII_SOFT_RESET,
-			       LAN8814_QSGMII_SOFT_RESET_BIT,
-			       LAN8814_QSGMII_SOFT_RESET_BIT);
+	/* The QSGMII soft reset affects all four ports of the package; do it
+	 * only once per package, so that configuring one port does not corrupt
+	 * live traffic on its siblings (backport of upstream e027c218c48).
+	 */
+	if (phy_package_init_once(phydev))
+		lanphy_modify_page_reg(phydev, LAN8814_PAGE_COMMON_REGS,
+				       LAN8814_QSGMII_SOFT_RESET,
+				       LAN8814_QSGMII_SOFT_RESET_BIT,
+				       LAN8814_QSGMII_SOFT_RESET_BIT);
 
 	/* Disable ANEG with QSGMII PCS Host side */
 	lanphy_modify_page_reg(phydev, LAN8814_PAGE_PORT_REGS,
@@ -4851,6 +4898,8 @@ static int lan8814_config_init(struct phy_device *phydev)
 
 	if (lan8814->led_mode >= 0)
 		lan8814_setup_led(phydev, lan8814->led_mode);
+
+	lan8814_cable_tuning(phydev);
 
 	return lan8814_rev_workaround(phydev);
 }
@@ -4929,9 +4978,13 @@ static void lan8814_update_meas_time(struct phy_device *phydev)
 
 #define LAN8841_EEE_STATE		56
 #define LAN8841_EEE_STATE_MASK2P5P	BIT(10)
-static void lan8814_workarounds_in_probe(struct phy_device *phydev)
+/* Cable/receive tuning (PD_CONTROLS, DFE_INIT2_100, 1G PGA table) and the LED
+ * EEE-state fix. These used to be written only at probe, so the soft reset in
+ * phy_init_hw() on attach restored the defaults on every port that is used.
+ * Called from probe and again from config_init, after every reset.
+ */
+static void lan8814_cable_tuning(struct phy_device *phydev)
 {
-	struct kszphy_priv *priv = phydev->priv;
 	u16 val;
 
 	/* Improve cable reach beyond 130m */
@@ -4976,6 +5029,14 @@ static void lan8814_workarounds_in_probe(struct phy_device *phydev)
 	lanphy_write_page_reg(phydev, 1, LAN8814_PGA_TABLE_1G_ENTRY_15, 0x2f);
 	lanphy_write_page_reg(phydev, 1, LAN8814_PGA_TABLE_1G_ENTRY_16, 0x2a);
 	lanphy_write_page_reg(phydev, 1, LAN8814_PGA_TABLE_1G_ENTRY_17, 0x26);
+}
+
+static void lan8814_workarounds_in_probe(struct phy_device *phydev)
+{
+	struct kszphy_priv *priv = phydev->priv;
+	u16 val;
+
+	lan8814_cable_tuning(phydev);
 
 	/* work-around for rev A */
 	if (priv->rev < 1) {
@@ -5114,7 +5175,7 @@ static int lan8814_probe(struct phy_device *phydev)
 	devm_phy_package_join(&phydev->mdio.dev, phydev,
 			      addr, sizeof(struct lan8814_shared_priv));
 
-	if (phy_package_init_once(phydev)) {
+	if (phy_package_probe_once(phydev)) {
 		err = lan8814_release_coma_mode(phydev);
 		if (err)
 			return err;
@@ -5131,6 +5192,9 @@ static int lan8814_probe(struct phy_device *phydev)
 	lan8814_clear_2psp_bit(phydev);
 	lan8814_update_meas_time(phydev);
 	lan8814_workarounds_in_probe(phydev);
+
+	/* Per-port errata must cover every port of the package, also unused ones */
+	lan8814_port_errata(phydev);
 
 	INIT_DELAYED_WORK(&priv->phy_aneg_work, lan8814_phy_aneg_work);
 	INIT_DELAYED_WORK(&priv->phy_force_work, lan8814_phy_force_work);
