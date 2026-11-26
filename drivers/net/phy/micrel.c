@@ -4869,6 +4869,8 @@ static void lan8814_setup_led(struct phy_device *phydev, int val)
 			      LAN8814_LED_CTRL_1, temp);
 }
 
+static void lan8814_cable_tuning(struct phy_device *phydev);
+
 static int lan8814_config_init(struct phy_device *phydev)
 {
 	struct kszphy_priv *lan8814 = phydev->priv;
@@ -4896,6 +4898,8 @@ static int lan8814_config_init(struct phy_device *phydev)
 
 	if (lan8814->led_mode >= 0)
 		lan8814_setup_led(phydev, lan8814->led_mode);
+
+	lan8814_cable_tuning(phydev);
 
 	return lan8814_rev_workaround(phydev);
 }
@@ -4974,9 +4978,13 @@ static void lan8814_update_meas_time(struct phy_device *phydev)
 
 #define LAN8841_EEE_STATE		56
 #define LAN8841_EEE_STATE_MASK2P5P	BIT(10)
-static void lan8814_workarounds_in_probe(struct phy_device *phydev)
+/* Cable/receive tuning (PD_CONTROLS, DFE_INIT2_100, 1G PGA table) and the LED
+ * EEE-state fix. These used to be written only at probe, so the soft reset in
+ * phy_init_hw() on attach restored the defaults on every port that is used.
+ * Called from probe and again from config_init, after every reset.
+ */
+static void lan8814_cable_tuning(struct phy_device *phydev)
 {
-	struct kszphy_priv *priv = phydev->priv;
 	u16 val;
 
 	/* Improve cable reach beyond 130m */
@@ -5021,6 +5029,14 @@ static void lan8814_workarounds_in_probe(struct phy_device *phydev)
 	lanphy_write_page_reg(phydev, 1, LAN8814_PGA_TABLE_1G_ENTRY_15, 0x2f);
 	lanphy_write_page_reg(phydev, 1, LAN8814_PGA_TABLE_1G_ENTRY_16, 0x2a);
 	lanphy_write_page_reg(phydev, 1, LAN8814_PGA_TABLE_1G_ENTRY_17, 0x26);
+}
+
+static void lan8814_workarounds_in_probe(struct phy_device *phydev)
+{
+	struct kszphy_priv *priv = phydev->priv;
+	u16 val;
+
+	lan8814_cable_tuning(phydev);
 
 	/* work-around for rev A */
 	if (priv->rev < 1) {
